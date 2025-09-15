@@ -22,6 +22,7 @@ AI-powered climate data exploration combining interactive visualization, tutoria
    npm install
    ```
 2. Create `.env.local` in the project root (same folder as `package.json`) and supply:
+
    ```ini
    # Chat backend
    LLAMA_MODEL=meta-llama/Meta-Llama-3-8B-Instruct
@@ -30,11 +31,12 @@ AI-powered climate data exploration combining interactive visualization, tutoria
    POSTGRES_URL=postgres://icharm_user:icharm_dev_password@localhost:5432/icharm_chat
    POSTGRES_URL_NON_POOLING=postgres://icharm_user:icharm_dev_password@localhost:5432/icharm_chat
    ```
+
    Add any other app-specific settings you need (API base URL, etc.).
 
 3. To generate embeddings, run:
-node src/components/Scripts/embedTutorial.js
-This will train the chatbot to gain information about the icharm website
+   node src/components/Scripts/embedTutorial.js
+   This will train the chatbot to gain information about the icharm website
 
 ## Database (Docker)
 
@@ -50,29 +52,31 @@ Install Docker before attempting to run the database
    ICHARM_DB_PORT=5432
    ```
 2. Start the database (and optional services):
+
    ```bash
    docker compose -f docker/docker-compose.yml --project-directory . up -d db data-api llm-service
    docker compose -f docker/docker-compose.yml --project-directory . down -v
    ```
+
    On first run the container executes `docker/postgres/init/00-init-db.sh`, which creates extensions, tables, triggers, indexes, and a sample `test@example.com` user.
 
-   IMPORTANT: This may not work, if not run 
+   IMPORTANT: This may not work, if not run
    docker compose exec db bash /docker-entrypoint-initdb.d/00-init-db.sh
-   
+
    in project root to create correct table names in container
 
-
 3. Verify connectivity from Node: (run from root)
+
    ```bash
    npx tsx src/components/Scripts/chat-db.ts
    ```
 
-4. Use 
-docker exec -it icharm-db psql -U icharm_user -d icharm_chat 
-to go into a psql terminal.
-Once in psql terminal, run:
-SELECT * FROM chat_messages ORDER BY created_at DESC LIMIT 10;
-to if database successfully initialized
+4. Use
+   docker exec -it icharm-db psql -U icharm_user -d icharm_chat
+   to go into a psql terminal.
+   Once in psql terminal, run:
+   SELECT \* FROM chat_messages ORDER BY created_at DESC LIMIT 10;
+   to if database successfully initialized
 
 5. Update/confirm the `POSTGRES_URL` values in `.env.local` match the credentials you used in step 1. The defaults match the connection string shown above.
 
