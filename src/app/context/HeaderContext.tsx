@@ -17,8 +17,13 @@ const useAppStateInternal = () => {
     showTutorial: false,
     showChat: false,
     showColorbar: true,
-    currentDataset: mockDatasets[0],
-    globePosition: { latitude: 0, longitude: 0, zoom: 1 },
+    showRegionInfo: false, // ✅ Add this line
+    currentDataset: mockDatasets[0], // assuming `dataset` is defined in scope
+    globePosition: {
+      latitude: 0,
+      longitude: 0,
+      zoom: 1,
+    },
     isLoading: false,
     error: null,
   });

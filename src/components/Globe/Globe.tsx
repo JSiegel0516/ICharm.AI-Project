@@ -66,19 +66,19 @@ const Globe: React.FC<GlobeProps> = ({
         // Configure globe appearance for responsive background
         viewer.scene.globe.enableLighting = false;
         viewer.scene.globe.showGroundAtmosphere = true;
-        
+
         // Set background to transparent so container background shows through
         viewer.scene.backgroundColor = Cesium.Color.TRANSPARENT;
-        
+
         // Enable skybox for better visual appearance
         viewer.scene.skyBox.show = false;
         viewer.scene.sun.show = false;
         viewer.scene.moon.show = false;
-        
+
         // Configure canvas to be responsive
         viewer.canvas.style.width = '100%';
         viewer.canvas.style.height = '100%';
-        
+
         // Set initial camera position
         viewer.camera.setView({
           destination: Cesium.Cartesian3.fromDegrees(0, 20, 25000000),
@@ -196,12 +196,13 @@ const Globe: React.FC<GlobeProps> = ({
   }
 
   return (
-    <div 
+    <div
       className="absolute inset-0 z-0 h-full w-full bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900"
-      style={{ 
-        background: 'radial-gradient(ellipse at center, #1e3a8a 0%, #0f172a 50%, #000000 100%)',
+      style={{
+        background:
+          'radial-gradient(ellipse at center, #1e3a8a 0%, #0f172a 50%, #000000 100%)',
         minHeight: '100vh',
-        minWidth: '100vw'
+        minWidth: '100vw',
       }}
     >
       {/* Loading overlay */}
@@ -216,22 +217,22 @@ const Globe: React.FC<GlobeProps> = ({
           </div>
         </div>
       )}
-      
+
       {/* Cesium container - positioned to fill entire viewport but stay behind other elements */}
       <div
         ref={containerRef}
         className="absolute inset-0 z-0 h-full w-full"
-        style={{ 
+        style={{
           minHeight: '100vh',
           minWidth: '100vw',
-          overflow: 'hidden'
+          overflow: 'hidden',
         }}
       />
 
       {/* Dataset info overlay - higher z-index to appear above globe */}
       {currentDataset && (
-        <div className="absolute bottom-4 left-4 z-30">
-          <div className="rounded-lg bg-black bg-opacity-70 px-3 py-2 text-xs text-white backdrop-blur-sm">
+        <div className="absolute inset-x-0 z-30 mx-auto max-w-max">
+          <div className="rounded-lg bg-black bg-opacity-70 py-6 text-2xl text-gray-400 backdrop-blur-sm">
             <div className="font-semibold">{currentDataset.name}</div>
           </div>
         </div>

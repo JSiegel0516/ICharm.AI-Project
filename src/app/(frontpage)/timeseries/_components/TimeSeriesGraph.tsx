@@ -58,11 +58,11 @@ const TimeSeriesGraph: React.FC<TimeSeriesGraphProps> = ({
         <LineChart
           data={data}
           onClick={(e) => {
-            if (e.activePayload) {
-              onYearSelect(e.activePayload[0].payload.year);
+            const payload = (e as any).activePayload;
+            if (payload && payload.length > 0) {
+              onYearSelect(payload[0].payload.year);
             }
           }}
-          margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
           <XAxis
