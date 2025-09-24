@@ -22,16 +22,16 @@ const Globe: React.FC<GlobeProps> = ({
     const initViewer = async () => {
       const container = containerRef.current;
       if (!container) return;
-      
+
       try {
         setIsLoading(true);
         setError(null);
 
         console.log('Loading Cesium from CDN...');
-        
+
         // Load Cesium from CDN
         const Cesium = await loadCesiumFromCDN();
-        
+
         console.log('Creating Cesium viewer...');
 
         // Create Cesium viewer with basic configuration
@@ -52,33 +52,41 @@ const Globe: React.FC<GlobeProps> = ({
         // Configure globe appearance
         viewer.scene.globe.enableLighting = false;
         viewer.scene.globe.showGroundAtmosphere = true;
-        
+
         // Set background color
-        viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#1a1a1a');
-        
+        viewer.scene.backgroundColor =
+          Cesium.Color.fromCssColorString('#1a1a1a');
+
         // Set initial camera position
         viewer.camera.setView({
           destination: Cesium.Cartesian3.fromDegrees(0, 20, 15000000),
         });
 
         // Add click handler
-        viewer.cesiumWidget.screenSpaceEventHandler.setInputAction((event: any) => {
-          const pickedPosition = viewer.camera.pickEllipsoid(event.position, viewer.scene.globe.ellipsoid);
-          if (pickedPosition && onRegionClick) {
-            const cartographic = Cesium.Cartographic.fromCartesian(pickedPosition);
-            const latitude = Cesium.Math.toDegrees(cartographic.latitude);
-            const longitude = Cesium.Math.toDegrees(cartographic.longitude);
-            
-            const regionData: RegionData = {
-              name: `${latitude.toFixed(2)}°, ${longitude.toFixed(2)}°`,
-              precipitation: Math.random() * 100,
-              temperature: -20 + Math.random() * 60,
-              dataset: currentDataset?.name || 'Sample Dataset',
-            };
-            
-            onRegionClick(latitude, longitude, regionData);
-          }
-        }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+        viewer.cesiumWidget.screenSpaceEventHandler.setInputAction(
+          (event: any) => {
+            const pickedPosition = viewer.camera.pickEllipsoid(
+              event.position,
+              viewer.scene.globe.ellipsoid
+            );
+            if (pickedPosition && onRegionClick) {
+              const cartographic =
+                Cesium.Cartographic.fromCartesian(pickedPosition);
+              const latitude = Cesium.Math.toDegrees(cartographic.latitude);
+              const longitude = Cesium.Math.toDegrees(cartographic.longitude);
+
+              const regionData: RegionData = {
+                name: `${latitude.toFixed(2)}°, ${longitude.toFixed(2)}°`,
+                precipitation: Math.random() * 100,
+                temperature: -20 + Math.random() * 60,
+                dataset: currentDataset?.name || 'Sample Dataset',
+              };
+
+              onRegionClick(latitude, longitude, regionData);
+            }
+          },
+          Cesium.ScreenSpaceEventType.LEFT_CLICK
+        );
 
         // Add camera change handler
         viewer.camera.changed.addEventListener(() => {
@@ -98,10 +106,11 @@ const Globe: React.FC<GlobeProps> = ({
         setIsLoading(false);
 
         console.log('Cesium viewer initialized successfully');
-
       } catch (err) {
         console.error('Failed to initialize Cesium:', err);
-        setError(err instanceof Error ? err.message : 'Failed to initialize globe');
+        setError(
+          err instanceof Error ? err.message : 'Failed to initialize globe'
+        );
         setIsLoading(false);
       }
     };
@@ -143,13 +152,13 @@ const Globe: React.FC<GlobeProps> = ({
         <div className="text-center">
           <div className="mb-4 text-6xl">🌍</div>
           <h3 className="mb-2 text-lg font-semibold">Failed to Load Globe</h3>
-          <p className="text-sm text-gray-400 mb-2">{error}</p>
-          <p className="text-xs text-gray-500 mb-4">
+          <p className="mb-2 text-sm text-gray-400">{error}</p>
+          <p className="mb-4 text-xs text-gray-500">
             Check your internet connection and try again
           </p>
-          <button 
-            onClick={() => window.location.reload()} 
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+          <button
+            onClick={() => window.location.reload()}
+            className="rounded bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
           >
             Retry
           </button>
@@ -159,18 +168,20 @@ const Globe: React.FC<GlobeProps> = ({
   }
 
   return (
-    <div className="relative h-full w-full">
+    <div className="relative h-screen w-screen">
       {/* Loading overlay */}
       {isLoading && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-900 bg-opacity-75">
           <div className="text-center text-white">
             <div className="mb-4 h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
             <p>Loading Globe from CDN...</p>
-            <p className="text-xs text-gray-400 mt-1">This may take a moment on first load</p>
+            <p className="mt-1 text-xs text-gray-400">
+              This may take a moment on first load
+            </p>
           </div>
         </div>
       )}
-      
+
       {/* Cesium container */}
       <div
         ref={containerRef}

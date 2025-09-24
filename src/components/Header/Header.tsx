@@ -22,7 +22,7 @@ const Header: React.FC = () => {
   return (
     <>
       {/* Logo and Title - Top Left */}
-      <div className="flex items-center gap-4 leading-relaxed">
+      <div className="fixed left-8 top-6 z-50 flex items-center gap-4 leading-relaxed">
         <Link href="/" className="flex items-center gap-6">
           <img
             src="/images/4DVD.png"
@@ -42,4 +42,5 @@ const Header: React.FC = () => {
     </>
   );
 };
+
 export default Header;
