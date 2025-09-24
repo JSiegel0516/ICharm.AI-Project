@@ -33,11 +33,9 @@ export default function RootLayout({
       lang="en"
       className={`${inter.className} dark overflow-hidden scroll-smooth`}
     >
-      <body
-        className={`h-screen bg-gradient-to-br from-black via-gray-900 to-black antialiased`}
-      >
+      <body className={`h-screen bg-white antialiased dark:bg-white`}>
         <AppStateProvider>
-          <div className="flex h-full flex-col lg:px-6 lg:py-4">
+          <div className="flex h-full flex-col">
             <main id="root" className="flex h-full flex-col overflow-hidden">
               <Header />
               {children}
