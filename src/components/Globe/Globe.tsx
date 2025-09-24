@@ -59,7 +59,7 @@ const Globe: React.FC<GlobeProps> = ({
 
         // Set initial camera position
         viewer.camera.setView({
-          destination: Cesium.Cartesian3.fromDegrees(0, 20, 15000000),
+          destination: Cesium.Cartesian3.fromDegrees(0, 20, 25000000),
         });
 
         // Add click handler
@@ -168,7 +168,7 @@ const Globe: React.FC<GlobeProps> = ({
   }
 
   return (
-    <div className="relative h-screen w-screen">
+    <div className="w-dvh relative h-dvh">
       {/* Loading overlay */}
       {isLoading && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-900 bg-opacity-75">
@@ -191,10 +191,9 @@ const Globe: React.FC<GlobeProps> = ({
 
       {/* Dataset info overlay */}
       {currentDataset && (
-        <div className="absolute bottom-4 left-4 z-20">
-          <div className="rounded-lg bg-black bg-opacity-70 px-3 py-2 text-xs text-white">
+        <div className="fixed inset-x-0 top-6 mx-auto max-w-max">
+          <div className="rounded-lg px-3 py-2 text-2xl text-gray-300">
             <div className="font-semibold">{currentDataset.name}</div>
-            <div className="opacity-75">{currentDataset.units}</div>
           </div>
         </div>
       )}
