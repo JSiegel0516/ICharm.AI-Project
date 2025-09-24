@@ -238,7 +238,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,
-        zIndex: isCollapsed ? 1000 : 35, // Higher z-index when collapsed
+        zIndex: isCollapsed ? 1000 : 10, // Higher z-index when collapsed
       }}
     >
       {isCollapsed ? (

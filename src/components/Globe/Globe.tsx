@@ -15,6 +15,20 @@ const Globe: React.FC<GlobeProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Handle window resize to ensure proper scaling
+  useEffect(() => {
+    const handleResize = () => {
+      if (viewerRef.current && !viewerRef.current.isDestroyed()) {
+        // Force Cesium to recalculate canvas dimensions
+        viewerRef.current.resize();
+        viewerRef.current.forceResize();
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // Initialize Cesium viewer
   useEffect(() => {
     if (!containerRef.current || viewerRef.current) return;
@@ -49,12 +63,21 @@ const Globe: React.FC<GlobeProps> = ({
           selectionIndicator: false,
         });
 
-        // Configure globe appearance
+        // Configure globe appearance for responsive background
         viewer.scene.globe.enableLighting = false;
         viewer.scene.globe.showGroundAtmosphere = true;
         
-        // Set background color
-        viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#1a1a1a');
+        // Set background to transparent so container background shows through
+        viewer.scene.backgroundColor = Cesium.Color.TRANSPARENT;
+        
+        // Enable skybox for better visual appearance
+        viewer.scene.skyBox.show = false;
+        viewer.scene.sun.show = false;
+        viewer.scene.moon.show = false;
+        
+        // Configure canvas to be responsive
+        viewer.canvas.style.width = '100%';
+        viewer.canvas.style.height = '100%';
         
         // Set initial camera position
         viewer.camera.setView({
@@ -93,6 +116,12 @@ const Globe: React.FC<GlobeProps> = ({
             }
           }
         });
+
+        // Ensure proper sizing after initialization
+        setTimeout(() => {
+          viewer.resize();
+          viewer.forceResize();
+        }, 100);
 
         viewerRef.current = viewer;
         setIsLoading(false);
@@ -139,7 +168,7 @@ const Globe: React.FC<GlobeProps> = ({
   // Loading and error states
   if (error) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-gray-900 text-white">
+      <div className="absolute inset-0 z-0 flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 text-white">
         <div className="text-center">
           <div className="mb-4 text-6xl">🌍</div>
           <h3 className="mb-2 text-lg font-semibold">Failed to Load Globe</h3>
@@ -159,10 +188,17 @@ const Globe: React.FC<GlobeProps> = ({
   }
 
   return (
-    <div className="relative h-full w-full">
+    <div 
+      className="absolute inset-0 z-0 h-full w-full bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900"
+      style={{ 
+        background: 'radial-gradient(ellipse at center, #1e3a8a 0%, #0f172a 50%, #000000 100%)',
+        minHeight: '100vh',
+        minWidth: '100vw'
+      }}
+    >
       {/* Loading overlay */}
       {isLoading && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-900 bg-opacity-75">
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900 bg-opacity-75">
           <div className="text-center text-white">
             <div className="mb-4 h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
             <p>Loading Globe from CDN...</p>
@@ -171,17 +207,21 @@ const Globe: React.FC<GlobeProps> = ({
         </div>
       )}
       
-      {/* Cesium container */}
+      {/* Cesium container - positioned to fill entire viewport but stay behind other elements */}
       <div
         ref={containerRef}
-        className="h-full w-full"
-        style={{ minHeight: '400px' }}
+        className="absolute inset-0 z-0 h-full w-full"
+        style={{ 
+          minHeight: '100vh',
+          minWidth: '100vw',
+          overflow: 'hidden'
+        }}
       />
 
-      {/* Dataset info overlay */}
+      {/* Dataset info overlay - higher z-index to appear above globe */}
       {currentDataset && (
-        <div className="absolute bottom-4 left-4 z-20">
-          <div className="rounded-lg bg-black bg-opacity-70 px-3 py-2 text-xs text-white">
+        <div className="absolute bottom-4 left-4 z-30">
+          <div className="rounded-lg bg-black bg-opacity-70 px-3 py-2 text-xs text-white backdrop-blur-sm">
             <div className="font-semibold">{currentDataset.name}</div>
             <div className="opacity-75">{currentDataset.units}</div>
           </div>

@@ -116,78 +116,89 @@ export default function HomePage() {
   };
 
   return (
-    <section className="flex h-full">
-      {/* Section Content Area */}
-      <div className="relative flex flex-1 flex-col">
-        <div className="relative flex flex-1">
-          {/* Enhanced Collapsible Sidebar */}
+    <section className="fixed inset-0 h-screen w-screen overflow-hidden">
+      {/* Full-screen Globe Background - Lowest Layer */}
+      <Globe
+        currentDataset={currentDataset}
+        onRegionClick={handleRegionClick}
+      />
+
+      {/* UI Layer - All interface elements positioned absolutely over the globe */}
+      <div className="absolute inset-0 z-10 pointer-events-none">
+        {/* Enhanced Collapsible Sidebar */}
+        <div className="absolute left-0 top-0 h-full pointer-events-auto z-20">
           <CollapsibleSidebar
             onShowSettings={() => setShowSettings(true)}
             activePanel={activeSidebarPanel}
             onPanelChange={handleSidebarPanelChange}
           />
+        </div>
 
-          {/* Center Globe Area */}
-          <div className="relative flex flex-1 flex-col overflow-hidden">
-            {/* Globe */}
-            <div className="relative flex-1">
-              <Globe
-                currentDataset={currentDataset}
-                onRegionClick={handleRegionClick}
-              />
+        {/* ColorBar */}
+        <div className="absolute pointer-events-auto z-10">
+          <ColorBar
+            show={showColorbar}
+            onToggle={toggleColorbar}
+            dataset={currentDataset}
+            unit={temperatureUnit}
+            onUnitChange={setTemperatureUnit}
+            onPositionChange={handleColorBarPositionChange}
+            collapsed={colorBarCollapsed}
+          />
+        </div>
 
-              {/* ColorBar */}
-              <ColorBar
-                show={showColorbar}
-                onToggle={toggleColorbar}
-                dataset={currentDataset}
-                unit={temperatureUnit}
-                onUnitChange={setTemperatureUnit}
-                onPositionChange={handleColorBarPositionChange}
-                collapsed={colorBarCollapsed}
-              />
+        {/* RegionInfoPanel */}
+        <div className="absolute pointer-events-auto z-30">
+          <RegionInfoPanel
+            show={showRegionInfo}
+            onClose={() => setShowRegionInfo(false)}
+            latitude={regionInfoData.latitude}
+            longitude={regionInfoData.longitude}
+            regionData={regionInfoData.regionData}
+            colorBarPosition={colorBarPosition}
+            colorBarCollapsed={colorBarCollapsed}
+          />
+        </div>
 
-              {/* RegionInfoPanel */}
-              <RegionInfoPanel
-                show={showRegionInfo}
-                onClose={() => setShowRegionInfo(false)}
-                latitude={regionInfoData.latitude}
-                longitude={regionInfoData.longitude}
-                regionData={regionInfoData.regionData}
-                colorBarPosition={colorBarPosition}
-                colorBarCollapsed={colorBarCollapsed}
-              />
-            </div>
+        {/* TimeBar - positioned at the bottom */}
+        <div className="absolute bottom-0 left-0 right-0 z-20 pb-4 pointer-events-auto">
+          <TimeBar
+            selectedYear={selectedYear}
+            onYearChange={handleYearChange}
+            onPlayPause={handleTimebarPlayPause}
+          />
+        </div>
 
-            {/* TimeBar - positioned at the bottom of the globe area */}
-            <div className="relative z-20 pb-4">
-              <TimeBar
-                selectedYear={selectedYear}
-                onYearChange={handleYearChange}
-                onPlayPause={handleTimebarPlayPause}
-              />
-            </div>
-          </div>
-
-          {/* Chat Bot */}
+        {/* Chat Bot - positioned on the right */}
+        <div className="absolute right-0 top-0 h-full pointer-events-auto z-20">
           <ChatBot show={showChat} onClose={() => setShowChat(false)} />
         </div>
       </div>
 
-      {/* Modals */}
-      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
-
-      {showAbout && (
-        <AboutModal
-          onClose={() => setShowAbout(false)}
-          onShowTutorial={() => {
-            setShowAbout(false);
-            setShowTutorial(true);
-          }}
-        />
+      {/* Modals - Highest Layer */}
+      {showSettings && (
+        <div className="absolute inset-0 z-50">
+          <SettingsModal onClose={() => setShowSettings(false)} />
+        </div>
       )}
 
-      {showTutorial && <TutorialModal onClose={() => setShowTutorial(false)} />}
+      {showAbout && (
+        <div className="absolute inset-0 z-50">
+          <AboutModal
+            onClose={() => setShowAbout(false)}
+            onShowTutorial={() => {
+              setShowAbout(false);
+              setShowTutorial(true);
+            }}
+          />
+        </div>
+      )}
+
+      {showTutorial && (
+        <div className="absolute inset-0 z-50">
+          <TutorialModal onClose={() => setShowTutorial(false)} />
+        </div>
+      )}
     </section>
   );
 }
