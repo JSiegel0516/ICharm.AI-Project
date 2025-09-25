@@ -24,26 +24,13 @@ const NavigationIcons: React.FC = () => {
   const settingsDropdownRef = useRef<HTMLDivElement>(null);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
 
-  const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  const clearHideTimeout = () => {
-    if (hideTimeoutRef.current) {
-      clearTimeout(hideTimeoutRef.current);
-      hideTimeoutRef.current = null;
-    }
-  };
-
-  const setHideTimeout = (delay: number = 300) => {
-    clearHideTimeout();
-    hideTimeoutRef.current = setTimeout(() => {
-      setActiveDropdown(null);
-    }, delay);
-  };
-
   const handleAboutClick = () => {
-    clearHideTimeout();
     setActiveDropdown(null);
     setShowAbout(true);
+  };
+
+  const handleDatasetClick = () => {
+    setActiveDropdown(activeDropdown === 'datasets' ? null : 'datasets');
   };
 
   const handleDatasetSelect = (dataset: any) => {
@@ -57,53 +44,31 @@ const NavigationIcons: React.FC = () => {
   };
 
   const handleSettingsClick = () => {
-    setShowSettings(true);
+    setActiveDropdown(activeDropdown === 'settings' ? null : 'settings');
   };
 
-  const handleDatasetMouseEnter = () => {
-    clearHideTimeout();
-    setActiveDropdown('datasets');
-  };
-
-  const handleDatasetMouseLeave = () => {
-    setHideTimeout(300);
-  };
-
-  const handleDatasetDropdownMouseEnter = () => {
-    clearHideTimeout();
-    setActiveDropdown('datasets');
-  };
-
-  const handleDatasetDropdownMouseLeave = () => {
-    setHideTimeout(200);
-  };
-
-  const handleSettingsMouseEnter = () => {
-    clearHideTimeout();
-    setActiveDropdown('settings');
-  };
-
-  const handleSettingsMouseLeave = () => {
-    setHideTimeout(300);
-  };
-
-  const handleSettingsDropdownMouseEnter = () => {
-    clearHideTimeout();
-    setActiveDropdown('settings');
-  };
-
-  const handleSettingsDropdownMouseLeave = () => {
-    setHideTimeout(200);
-  };
-
-  const handleAboutMouseEnter = () => {
-    clearHideTimeout();
-    setActiveDropdown(null);
-  };
-
+  // Close dropdowns when clicking outside
   useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      
+      // Check if click is outside both dropdown areas
+      const isOutsideDataset = 
+        datasetDropdownRef.current && !datasetDropdownRef.current.contains(target) &&
+        datasetButtonRef.current && !datasetButtonRef.current.contains(target);
+        
+      const isOutsideSettings = 
+        settingsDropdownRef.current && !settingsDropdownRef.current.contains(target) &&
+        settingsButtonRef.current && !settingsButtonRef.current.contains(target);
+
+      if (isOutsideDataset && isOutsideSettings) {
+        setActiveDropdown(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
     return () => {
-      clearHideTimeout();
+      document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
 
@@ -121,8 +86,7 @@ const NavigationIcons: React.FC = () => {
       <div className="relative" ref={datasetDropdownRef}>
         <button
           ref={datasetButtonRef}
-          onMouseEnter={handleDatasetMouseEnter}
-          onMouseLeave={handleDatasetMouseLeave}
+          onClick={handleDatasetClick}
           className={getIconButtonClasses(activeDropdown === 'datasets')}
         >
           <FileText size={20} />
@@ -131,21 +95,15 @@ const NavigationIcons: React.FC = () => {
           </div>
         </button>
 
-        <div
-          onMouseEnter={handleDatasetDropdownMouseEnter}
-          onMouseLeave={handleDatasetDropdownMouseLeave}
-        >
-          <DatasetDropdown
-            isVisible={activeDropdown === 'datasets'}
-            onSelectDataset={handleDatasetSelect}
-          />
-        </div>
+        <DatasetDropdown
+          isVisible={activeDropdown === 'datasets'}
+          onSelectDataset={handleDatasetSelect}
+        />
       </div>
 
       {/* About */}
       <button
         onClick={handleAboutClick}
-        onMouseEnter={handleAboutMouseEnter}
         className={getIconButtonClasses()}
       >
         <Info size={20} />
@@ -159,8 +117,6 @@ const NavigationIcons: React.FC = () => {
         <button
           ref={settingsButtonRef}
           onClick={handleSettingsClick}
-          onMouseEnter={handleSettingsMouseEnter}
-          onMouseLeave={handleSettingsMouseLeave}
           className={getIconButtonClasses(activeDropdown === 'settings')}
         >
           <Settings size={20} />
@@ -169,15 +125,10 @@ const NavigationIcons: React.FC = () => {
           </div>
         </button>
 
-        <div
-          onMouseEnter={handleSettingsDropdownMouseEnter}
-          onMouseLeave={handleSettingsDropdownMouseLeave}
-        >
-          <SettingsDropdown
-            isVisible={activeDropdown === 'settings'}
-            onSelectSetting={handleSettingSelect}
-          />
-        </div>
+        <SettingsDropdown
+          isVisible={activeDropdown === 'settings'}
+          onSelectSetting={handleSettingSelect}
+        />
       </div>
     </nav>
   );
