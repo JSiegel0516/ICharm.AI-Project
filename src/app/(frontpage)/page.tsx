@@ -124,9 +124,9 @@ export default function HomePage() {
       />
 
       {/* UI Layer - All interface elements positioned absolutely over the globe */}
-      <div className="absolute inset-0 z-10 pointer-events-none">
+      <div className="pointer-events-none absolute inset-0 z-10">
         {/* Enhanced Collapsible Sidebar */}
-        <div className="absolute left-0 top-0 h-full pointer-events-auto z-20">
+        <div className="pointer-events-auto absolute left-0 top-0 z-20 h-full">
           <CollapsibleSidebar
             onShowSettings={() => setShowSettings(true)}
             activePanel={activeSidebarPanel}
@@ -135,7 +135,7 @@ export default function HomePage() {
         </div>
 
         {/* ColorBar */}
-        <div className="absolute pointer-events-auto z-10">
+        <div className="pointer-events-auto absolute z-10">
           <ColorBar
             show={showColorbar}
             onToggle={toggleColorbar}
@@ -148,7 +148,7 @@ export default function HomePage() {
         </div>
 
         {/* RegionInfoPanel */}
-        <div className="absolute pointer-events-auto z-30">
+        <div className="pointer-events-auto absolute z-30">
           <RegionInfoPanel
             show={showRegionInfo}
             onClose={() => setShowRegionInfo(false)}
@@ -161,7 +161,7 @@ export default function HomePage() {
         </div>
 
         {/* TimeBar - positioned at the bottom */}
-        <div className="absolute bottom-0 left-0 right-0 z-20 pb-4 pointer-events-auto">
+        <div className="pointer-events-auto absolute bottom-0 left-0 right-0 z-20 pb-4">
           <TimeBar
             selectedYear={selectedYear}
             onYearChange={handleYearChange}
@@ -170,7 +170,7 @@ export default function HomePage() {
         </div>
 
         {/* Chat Bot - positioned on the right */}
-        <div className="absolute right-0 top-0 h-full pointer-events-auto z-20">
+        <div className="pointer-events-auto absolute right-0 top-0 z-20 h-full">
           <ChatBot show={showChat} onClose={() => setShowChat(false)} />
         </div>
       </div>

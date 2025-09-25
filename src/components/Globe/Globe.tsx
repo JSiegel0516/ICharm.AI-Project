@@ -71,9 +71,9 @@ const Globe: React.FC<GlobeProps> = ({
         viewer.scene.backgroundColor = Cesium.Color.TRANSPARENT;
 
         // Enable skybox for better visual appearance
-        viewer.scene.skyBox.show = false;
-        viewer.scene.sun.show = false;
-        viewer.scene.moon.show = false;
+        viewer.scene.skyBox.show = true;
+        viewer.scene.sun.show = true;
+        viewer.scene.moon.show = true;
 
         // Configure canvas to be responsive
         viewer.canvas.style.width = '100%';
@@ -197,7 +197,7 @@ const Globe: React.FC<GlobeProps> = ({
 
   return (
     <div
-      className="absolute inset-0 z-0 h-full w-full bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900"
+      className="absolute inset-0 z-0 h-full w-full"
       style={{
         background:
           'radial-gradient(ellipse at center, #1e3a8a 0%, #0f172a 50%, #000000 100%)',
@@ -221,7 +221,7 @@ const Globe: React.FC<GlobeProps> = ({
       {/* Cesium container - positioned to fill entire viewport but stay behind other elements */}
       <div
         ref={containerRef}
-        className="absolute inset-0 z-0 h-full w-full"
+        className="absolute inset-0 z-0 h-screen w-screen"
         style={{
           minHeight: '100vh',
           minWidth: '100vw',

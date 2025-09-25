@@ -33,7 +33,7 @@ export default function RootLayout({
       lang="en"
       className={`${inter.className} dark overflow-hidden scroll-smooth`}
     >
-      <body className={`h-screen bg-white antialiased dark:bg-white`}>
+      <body className={`h-screen w-screen bg-white antialiased dark:bg-white`}>
         <AppStateProvider>
           <div className="flex h-full flex-col">
             <main id="root" className="flex h-full flex-col overflow-hidden">
