@@ -14,6 +14,9 @@ const Globe: React.FC<GlobeProps> = ({
   const viewerRef = useRef<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Store reference to the current click marker (only one at a time)
+  const currentMarkerRef = useRef<any>(null);
 
   // Handle window resize to ensure proper scaling
   useEffect(() => {
@@ -28,6 +31,91 @@ const Globe: React.FC<GlobeProps> = ({
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Function to calculate appropriate radius based on camera height
+  const calculateRadiusFromCameraHeight = (cameraHeight: number): number => {
+    // Base radius at reference height (adjust these values to fine-tune scaling)
+    const referenceHeight = 10000000; // 10,000 km reference height
+    const baseRadius = 65000; // 50 km base radius - much smaller for proportional look
+    
+    // Calculate scale factor based on camera height
+    // Use square root to make scaling more gradual
+    const scaleFactor = Math.sqrt(cameraHeight / referenceHeight);
+    
+    // Apply min/max bounds to prevent circles from being too small or large
+    const minRadius = 8000; // 8 km minimum - very tight when zoomed in
+    const maxRadius = 120000; // 120 km maximum - reasonable when zoomed out
+    
+    const calculatedRadius = baseRadius * scaleFactor;
+    return Math.max(minRadius, Math.min(maxRadius, calculatedRadius));
+  };
+
+  // Function to add a circle marker at the clicked position (thick ring with hole using multiple outlines)
+  const addClickMarker = (Cesium: any, latitude: number, longitude: number) => {
+    if (!viewerRef.current) return;
+
+    // Remove existing markers if they exist
+    if (currentMarkerRef.current) {
+      if (Array.isArray(currentMarkerRef.current)) {
+        currentMarkerRef.current.forEach(marker => viewerRef.current.entities.remove(marker));
+      } else {
+        viewerRef.current.entities.remove(currentMarkerRef.current);
+      }
+      currentMarkerRef.current = null;
+    }
+
+    // Get current camera height for scaling
+    const cameraHeight = viewerRef.current.camera.positionCartographic.height;
+    const baseRadius = calculateRadiusFromCameraHeight(cameraHeight);
+    
+    // Create multiple concentric circles to simulate thickness
+    const markers = [];
+    const numRings = 8; // Number of concentric circles for thickness
+    const ringSpacing = baseRadius * 0.05; // 5% spacing between rings
+    
+    for (let i = 0; i < numRings; i++) {
+      const radius = baseRadius - (i * ringSpacing);
+      if (radius <= 0) break;
+      
+      const circleEntity = viewerRef.current.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(longitude, latitude, 1000 + i), // Slight height variation
+        ellipse: {
+          semiMajorAxis: radius,
+          semiMinorAxis: radius,
+          material: Cesium.Color.TRANSPARENT, // Transparent fill to create hole
+          outline: true,
+          outlineColor: Cesium.Color.LIME.withAlpha(0.9 - (i * 0.1)), // Slightly fade outer rings
+          outlineWidth: 3, // Thicker individual outlines
+          height: 0,
+          extrudedHeight: 0,
+        }
+      });
+      
+      markers.push(circleEntity);
+    }
+
+    // Store reference to all markers
+    currentMarkerRef.current = markers;
+  };
+
+  // Function to update existing marker radius when camera changes
+  const updateMarkerRadius = (Cesium: any) => {
+    if (!currentMarkerRef.current || !viewerRef.current) return;
+    
+    const cameraHeight = viewerRef.current.camera.positionCartographic.height;
+    const baseRadius = calculateRadiusFromCameraHeight(cameraHeight);
+    const ringSpacing = baseRadius * 0.05;
+    
+    if (Array.isArray(currentMarkerRef.current)) {
+      currentMarkerRef.current.forEach((marker, i) => {
+        const radius = baseRadius - (i * ringSpacing);
+        if (radius > 0) {
+          marker.ellipse.semiMajorAxis = radius;
+          marker.ellipse.semiMinorAxis = radius;
+        }
+      });
+    }
+  };
 
   // Initialize Cesium viewer
   useEffect(() => {
@@ -84,34 +172,45 @@ const Globe: React.FC<GlobeProps> = ({
           destination: Cesium.Cartesian3.fromDegrees(0, 20, 25000000),
         });
 
-        // Add click handler
+        // Add click handler with marker creation
         viewer.cesiumWidget.screenSpaceEventHandler.setInputAction(
           (event: any) => {
             const pickedPosition = viewer.camera.pickEllipsoid(
               event.position,
               viewer.scene.globe.ellipsoid
             );
-            if (pickedPosition && onRegionClick) {
+            if (pickedPosition) {
               const cartographic =
                 Cesium.Cartographic.fromCartesian(pickedPosition);
               const latitude = Cesium.Math.toDegrees(cartographic.latitude);
               const longitude = Cesium.Math.toDegrees(cartographic.longitude);
 
-              const regionData: RegionData = {
-                name: `${latitude.toFixed(2)}°, ${longitude.toFixed(2)}°`,
-                precipitation: Math.random() * 100,
-                temperature: -20 + Math.random() * 60,
-                dataset: currentDataset?.name || 'Sample Dataset',
-              };
+              // Add the circle marker at clicked position
+              addClickMarker(Cesium, latitude, longitude);
 
-              onRegionClick(latitude, longitude, regionData);
+              // Call the original callback if provided
+              if (onRegionClick) {
+                const regionData: RegionData = {
+                  name: `${latitude.toFixed(2)}°, ${longitude.toFixed(2)}°`,
+                  precipitation: Math.random() * 100,
+                  temperature: -20 + Math.random() * 60,
+                  dataset: currentDataset?.name || 'Sample Dataset',
+                };
+
+                onRegionClick(latitude, longitude, regionData);
+              }
             }
           },
           Cesium.ScreenSpaceEventType.LEFT_CLICK
         );
 
-        // Add camera change handler
+        // Add camera change handler with radius updating
         viewer.camera.changed.addEventListener(() => {
+          // Update marker radius when camera changes (zoom)
+          if (window.Cesium) {
+            updateMarkerRadius(window.Cesium);
+          }
+          
           if (onPositionChange) {
             const center = viewer.camera.positionCartographic;
             if (center) {
@@ -167,6 +266,21 @@ const Globe: React.FC<GlobeProps> = ({
   useEffect(() => {
     return () => {
       if (viewerRef.current && !viewerRef.current.isDestroyed()) {
+        // Clean up current markers
+        if (currentMarkerRef.current) {
+          if (Array.isArray(currentMarkerRef.current)) {
+            currentMarkerRef.current.forEach(marker => {
+              if (!viewerRef.current.isDestroyed()) {
+                viewerRef.current.entities.remove(marker);
+              }
+            });
+          } else {
+            if (!viewerRef.current.isDestroyed()) {
+              viewerRef.current.entities.remove(currentMarkerRef.current);
+            }
+          }
+        }
+        currentMarkerRef.current = null;
         viewerRef.current.destroy();
         viewerRef.current = null;
       }
