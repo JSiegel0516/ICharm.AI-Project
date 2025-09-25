@@ -36,7 +36,7 @@ const Globe: React.FC<GlobeProps> = ({
   const calculateRadiusFromCameraHeight = (cameraHeight: number): number => {
     // Base radius at reference height (adjust these values to fine-tune scaling)
     const referenceHeight = 10000000; // 10,000 km reference height
-    const baseRadius = 65000; // 50 km base radius - much smaller for proportional look
+    const baseRadius = 65000; // 65 km base radius - user's preferred size
     
     // Calculate scale factor based on camera height
     // Use square root to make scaling more gradual
@@ -44,7 +44,7 @@ const Globe: React.FC<GlobeProps> = ({
     
     // Apply min/max bounds to prevent circles from being too small or large
     const minRadius = 8000; // 8 km minimum - very tight when zoomed in
-    const maxRadius = 120000; // 120 km maximum - reasonable when zoomed out
+    const maxRadius = 150000; // 150 km maximum - reasonable when zoomed out
     
     const calculatedRadius = baseRadius * scaleFactor;
     return Math.max(minRadius, Math.min(maxRadius, calculatedRadius));
@@ -172,7 +172,7 @@ const Globe: React.FC<GlobeProps> = ({
           destination: Cesium.Cartesian3.fromDegrees(0, 20, 25000000),
         });
 
-        // Add click handler with marker creation
+        // Add click handlers for left and right clicks
         viewer.cesiumWidget.screenSpaceEventHandler.setInputAction(
           (event: any) => {
             const pickedPosition = viewer.camera.pickEllipsoid(
@@ -202,6 +202,31 @@ const Globe: React.FC<GlobeProps> = ({
             }
           },
           Cesium.ScreenSpaceEventType.LEFT_CLICK
+        );
+
+        // Add right-click handler for 180-degree globe rotation
+        viewer.cesiumWidget.screenSpaceEventHandler.setInputAction(
+          (event: any) => {
+            // Get current camera position
+            const currentPosition = viewer.camera.positionCartographic;
+            const currentLat = Cesium.Math.toDegrees(currentPosition.latitude);
+            const currentLon = Cesium.Math.toDegrees(currentPosition.longitude);
+            const currentHeight = currentPosition.height;
+
+            // Calculate opposite longitude (add/subtract 180 degrees)
+            let oppositeLon = currentLon + 180;
+            if (oppositeLon > 180) {
+              oppositeLon -= 360;
+            }
+
+            // Fly to the opposite side with smooth animation
+            viewer.camera.flyTo({
+              destination: Cesium.Cartesian3.fromDegrees(oppositeLon, currentLat, currentHeight),
+              duration: 2.0, // 2 second animation
+              easingFunction: Cesium.EasingFunction.CUBIC_IN_OUT,
+            });
+          },
+          Cesium.ScreenSpaceEventType.RIGHT_CLICK
         );
 
         // Add camera change handler with radius updating
