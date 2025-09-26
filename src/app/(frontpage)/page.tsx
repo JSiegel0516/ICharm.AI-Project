@@ -189,18 +189,16 @@ export default function HomePage() {
 
         {/* Bottom Control Bar - TimeBar with DateSelector and PressureSelector */}
         <div className="pointer-events-auto absolute bottom-0 left-0 right-0 z-20 pb-4">
-          <div className="relative flex items-center justify-center">
-            {/* TimeBar - Centered */}
-            <div className="flex-1">
-              <TimeBar
-                selectedYear={selectedYear}
-                onYearChange={handleYearChange}
-                onPlayPause={handleTimebarPlayPause}
-              />
-            </div>
+          <div className="flex items-center justify-center">
+            {/* TimeBar */}
+            <TimeBar
+              selectedYear={selectedYear}
+              onYearChange={handleYearChange}
+              onPlayPause={handleTimebarPlayPause}
+            />
             
             {/* Right Controls - DateSelector and PressureSelector */}
-            <div className="absolute right-8 top-1/2 flex -translate-y-1/2 transform items-center gap-3">
+            <div className="ml-3 flex items-center gap-3">
               <DateSelector
                 selectedDate={selectedDate}
                 onDateChange={handleDateChange}

@@ -151,7 +151,7 @@ const PressureLevelsSelector: React.FC<PressureLevelsSelectorProps> = ({
           </div>
 
           {/* Levels List */}
-          <div className="max-h-64 space-y-1 overflow-y-auto">
+          <div className="max-h-64 space-y-1 overflow-y-auto custom-scrollbar">
             {filteredLevels.length > 0 ? (
               filteredLevels.map((level) => {
                 const isSelected = level.id === currentLevel.id;
@@ -201,6 +201,26 @@ const PressureLevelsSelector: React.FC<PressureLevelsSelectorProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Rainbow bar at bottom */}
+          <div className="mt-4 h-1 w-full rounded-full bg-gradient-to-r from-red-500 via-yellow-500 via-green-500 via-blue-500 via-indigo-500 to-purple-500"></div>
+          {/* Custom Scrollbar Styles */}
+          <style jsx>{`
+            .custom-scrollbar::-webkit-scrollbar {
+              width: 6px;
+            }
+            .custom-scrollbar::-webkit-scrollbar-track {
+              background: #475569;
+              border-radius: 3px;
+            }
+            .custom-scrollbar::-webkit-scrollbar-thumb {
+              background: #64748b;
+              border-radius: 3px;
+            }
+            .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+              background: #94a3b8;
+            }
+          `}</style>
         </div>
       )}
     </div>
