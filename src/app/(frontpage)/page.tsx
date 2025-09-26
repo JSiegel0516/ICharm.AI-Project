@@ -5,13 +5,15 @@ import Globe from '@/components/Globe/Globe';
 import CollapsibleSidebar from '@/components/UI/CollapsibleSidebar';
 import ColorBar from '@/components/UI/ColorBar';
 import TimeBar from '@/components/UI/TimeBar';
+import DateSelector from '@/components/UI/Popups/DateSelector';
+import PressureLevelsSelector from '@/components/UI/Popups/PressureLevelsSelector';
 import RegionInfoPanel from '@/components/UI/RegionInfoPanel';
 import ChatBot from '@/components/Chat/ChatBot';
 import SettingsModal from '@/components/Modals/SettingsModal';
 import AboutModal from '@/components/Modals/AboutModal';
 import TutorialModal from '@/components/Modals/TutorialModal';
 import { useAppState } from '@/app/context/HeaderContext';
-import { TemperatureUnit, RegionData } from '@/types';
+import { TemperatureUnit, RegionData, PressureLevel } from '@/types';
 
 type SidebarPanel = 'datasets' | 'history' | 'about' | null;
 
@@ -44,6 +46,17 @@ export default function HomePage() {
     new Date().getFullYear()
   );
   const [isTimebarPlaying, setIsTimebarPlaying] = useState<boolean>(false);
+
+  // Add DateSelector state
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+
+  // Add PressureLevel state
+  const [selectedPressureLevel, setSelectedPressureLevel] = useState<PressureLevel>({
+    id: 'surface',
+    value: 1000,
+    label: 'Surface',
+    unit: 'hPa'
+  });
 
   // Add RegionInfoPanel state
   const [showRegionInfo, setShowRegionInfo] = useState<boolean>(false);
@@ -84,6 +97,20 @@ export default function HomePage() {
   const handleTimebarPlayPause = (isPlaying: boolean) => {
     setIsTimebarPlaying(isPlaying);
     console.log('Timebar playing:', isPlaying);
+  };
+
+  // DateSelector handler
+  const handleDateChange = (date: Date) => {
+    setSelectedDate(date);
+    // TODO: Update globe data based on selected date
+    console.log('Date changed to:', date);
+  };
+
+  // PressureLevel handler
+  const handlePressureLevelChange = (level: PressureLevel) => {
+    setSelectedPressureLevel(level);
+    // TODO: Update globe data based on selected pressure level
+    console.log('Pressure level changed to:', level);
   };
 
   // Globe region click handler
@@ -160,13 +187,30 @@ export default function HomePage() {
           />
         </div>
 
-        {/* TimeBar - positioned at the bottom */}
+        {/* Bottom Control Bar - TimeBar with DateSelector and PressureSelector */}
         <div className="pointer-events-auto absolute bottom-0 left-0 right-0 z-20 pb-4">
-          <TimeBar
-            selectedYear={selectedYear}
-            onYearChange={handleYearChange}
-            onPlayPause={handleTimebarPlayPause}
-          />
+          <div className="relative flex items-center justify-center">
+            {/* TimeBar - Centered */}
+            <div className="flex-1">
+              <TimeBar
+                selectedYear={selectedYear}
+                onYearChange={handleYearChange}
+                onPlayPause={handleTimebarPlayPause}
+              />
+            </div>
+            
+            {/* Right Controls - DateSelector and PressureSelector */}
+            <div className="absolute right-8 top-1/2 flex -translate-y-1/2 transform items-center gap-3">
+              <DateSelector
+                selectedDate={selectedDate}
+                onDateChange={handleDateChange}
+              />
+              <PressureLevelsSelector
+                selectedLevel={selectedPressureLevel}
+                onLevelChange={handlePressureLevelChange}
+              />
+            </div>
+          </div>
         </div>
 
         {/* Chat Bot - positioned on the right */}
