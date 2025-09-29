@@ -187,27 +187,28 @@ export default function HomePage() {
           />
         </div>
 
-        {/* Bottom Control Bar - TimeBar with DateSelector and PressureSelector */}
-        <div className="pointer-events-auto absolute bottom-0 left-0 right-0 z-20 pb-4">
-          <div className="flex items-center justify-center">
-            {/* TimeBar */}
+        {/* Bottom Control Bar */}
+        <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-20 pb-4">
+          {/* TimeBar - Centered */}
+          <div className="flex items-center justify-center gap-3" style={{ paddingRight: '25px' }}>
             <TimeBar
               selectedYear={selectedYear}
               onYearChange={handleYearChange}
               onPlayPause={handleTimebarPlayPause}
             />
-            
-            {/* Right Controls - DateSelector and PressureSelector */}
-            <div className="ml-3 flex items-center gap-3">
-              <DateSelector
-                selectedDate={selectedDate}
-                onDateChange={handleDateChange}
-              />
-              <PressureLevelsSelector
-                selectedLevel={selectedPressureLevel}
-                onLevelChange={handlePressureLevelChange}
-              />
-            </div>
+          </div>
+          
+          {/* Date and Pressure Buttons - Positioned independently */}
+          <div className="pointer-events-auto absolute bottom-4 right-[175px] flex items-center gap-3">
+
+            <DateSelector
+              selectedDate={selectedDate}
+              onDateChange={handleDateChange}
+            />
+            <PressureLevelsSelector
+              selectedLevel={selectedPressureLevel}
+              onLevelChange={handlePressureLevelChange}
+            />
           </div>
         </div>
 

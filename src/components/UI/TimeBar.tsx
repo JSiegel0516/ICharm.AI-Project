@@ -79,7 +79,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
   // Mouse events
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
-    e.stopPropagation(); // Prevent event from bubbling
+    e.stopPropagation();
     handleInteractionStart(e.clientX);
   };
 
@@ -98,7 +98,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
   // Touch events
   const handleTouchStart = (e: React.TouchEvent) => {
     e.preventDefault();
-    e.stopPropagation(); // Prevent event from bubbling
+    e.stopPropagation();
     const touch = e.touches[0];
     handleInteractionStart(touch.clientX);
   };
@@ -117,7 +117,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
     }
   };
 
-  // Global event listeners for dragging - with better cleanup and scoping
+  // Global event listeners for dragging
   useEffect(() => {
     if (isDragging) {
       document.addEventListener('mousemove', handleMouseMove, {
@@ -129,7 +129,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
       });
       document.addEventListener('touchend', handleTouchEnd, { passive: false });
 
-      // Only set user-select on the timebar container, not the whole body
       if (sliderRef.current) {
         sliderRef.current.style.userSelect = 'none';
       }
@@ -141,20 +140,17 @@ const TimeBar: React.FC<TimeBarProps> = ({
       document.removeEventListener('touchmove', handleTouchMove);
       document.removeEventListener('touchend', handleTouchEnd);
 
-      // Clean up user-select style
       if (sliderRef.current) {
         sliderRef.current.style.userSelect = '';
       }
     };
   }, [isDragging]);
 
-  // Additional cleanup effect to ensure body styles are reset
+  // Cleanup effect
   useEffect(() => {
-    // Reset any body styles that might have been set
     document.body.style.userSelect = '';
 
     return () => {
-      // Final cleanup on unmount
       document.body.style.userSelect = '';
     };
   }, []);
@@ -162,7 +158,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
   // Play/Pause functionality
   const handlePlayPause = (e: React.MouseEvent) => {
     e.preventDefault();
-    e.stopPropagation(); // Prevent interference with other components
+    e.stopPropagation();
 
     const newIsPlaying = !isPlaying;
     setIsPlaying(newIsPlaying);
@@ -195,13 +191,10 @@ const TimeBar: React.FC<TimeBarProps> = ({
       if (playIntervalRef.current) {
         clearInterval(playIntervalRef.current);
       }
-      // Ensure all global listeners are removed
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
       document.removeEventListener('touchmove', handleTouchMove);
       document.removeEventListener('touchend', handleTouchEnd);
-
-      // Reset body styles
       document.body.style.userSelect = '';
     };
   }, []);
@@ -213,7 +206,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
     }
   }, [currentYear, isDragging]);
 
-  // Sync with external year changes (from YearSelector)
+  // Sync with external year changes
   useEffect(() => {
     setCurrentYear(selectedYear);
   }, [selectedYear]);
@@ -225,7 +218,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
     <div
       ref={sliderRef}
       className={`mx-auto w-full max-w-3xl px-32 ${className}`}
-      style={{ transform: 'translateX(-20px)' }}
     >
       <div className="flex items-center justify-center gap-6">
         {/* Play/Pause Button */}
