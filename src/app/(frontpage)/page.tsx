@@ -179,25 +179,27 @@ export default function HomePage() {
 
         {/* Bottom Control Bar */}
         <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-20 pb-4">
-          {/* TimeBar - Centered - Made pointer-events-auto */}
-          <div className="pointer-events-auto flex items-center justify-center gap-3" style={{ paddingRight: '25px' }}>
-            <TimeBar
-              selectedYear={selectedYear}
-              onYearChange={handleYearChange}
-              onPlayPause={handleTimebarPlayPause}
-            />
-          </div>
-          
-          {/* Year and Pressure Buttons - Positioned independently */}
-          <div className="pointer-events-auto absolute bottom-4 right-[175px] flex items-center gap-3">
-            <YearSelector
-              selectedYear={selectedYear}
-              onYearChange={handleYearChange}
-            />
-            <PressureLevelsSelector
-              selectedLevel={selectedPressureLevel}
-              onLevelChange={handlePressureLevelChange}
-            />
+          <div className="relative flex items-end justify-center px-4">
+            {/* TimeBar - Centered with flexible width */}
+            <div className="pointer-events-auto w-full max-w-4xl">
+              <TimeBar
+                selectedYear={selectedYear}
+                onYearChange={handleYearChange}
+                onPlayPause={handleTimebarPlayPause}
+              />
+            </div>
+            
+            {/* Year and Pressure Buttons - Absolutely positioned to the right of TimeBar */}
+            <div className="pointer-events-auto absolute bottom-0 flex items-center gap-4" style={{ left: 'calc(50% + 300px)', transform: 'translateX(0)' }}>
+              <YearSelector
+                selectedYear={selectedYear}
+                onYearChange={handleYearChange}
+              />
+              <PressureLevelsSelector
+                selectedLevel={selectedPressureLevel}
+                onLevelChange={handlePressureLevelChange}
+              />
+            </div>
           </div>
         </div>
 
