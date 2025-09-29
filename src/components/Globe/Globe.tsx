@@ -371,7 +371,7 @@ const Globe: React.FC<GlobeProps> = ({
       {/* Dataset info overlay - higher z-index to appear above globe */}
       {currentDataset && (
         <div className="absolute inset-x-0 z-30 mx-auto max-w-max">
-          <div className="rounded-lg bg-black bg-opacity-70 py-6 text-2xl text-gray-400 backdrop-blur-sm">
+          <div className="rounded-lg py-6 text-2xl text-gray-400">
             <div className="font-semibold">{currentDataset.name}</div>
           </div>
         </div>
