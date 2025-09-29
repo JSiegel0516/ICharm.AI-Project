@@ -5,7 +5,7 @@ import Globe from '@/components/Globe/Globe';
 import CollapsibleSidebar from '@/components/UI/CollapsibleSidebar';
 import ColorBar from '@/components/UI/ColorBar';
 import TimeBar from '@/components/UI/TimeBar';
-import DateSelector from '@/components/UI/Popups/DateSelector';
+import YearSelector from '@/components/UI/Popups/YearSelector';
 import PressureLevelsSelector from '@/components/UI/Popups/PressureLevelsSelector';
 import RegionInfoPanel from '@/components/UI/RegionInfoPanel';
 import ChatBot from '@/components/Chat/ChatBot';
@@ -41,14 +41,11 @@ export default function HomePage() {
   const [activeSidebarPanel, setActiveSidebarPanel] =
     useState<SidebarPanel>(null);
 
-  // Add TimeBar state
+  // Unified year state - both TimeBar and YearSelector use this
   const [selectedYear, setSelectedYear] = useState<number>(
     new Date().getFullYear()
   );
   const [isTimebarPlaying, setIsTimebarPlaying] = useState<boolean>(false);
-
-  // Add DateSelector state
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
   // Add PressureLevel state
   const [selectedPressureLevel, setSelectedPressureLevel] = useState<PressureLevel>({
@@ -87,7 +84,7 @@ export default function HomePage() {
     setActiveSidebarPanel(panel);
   };
 
-  // TimeBar handlers
+  // Unified year change handler - used by both TimeBar and YearSelector
   const handleYearChange = (year: number) => {
     setSelectedYear(year);
     // TODO: Update globe data based on selected year
@@ -97,13 +94,6 @@ export default function HomePage() {
   const handleTimebarPlayPause = (isPlaying: boolean) => {
     setIsTimebarPlaying(isPlaying);
     console.log('Timebar playing:', isPlaying);
-  };
-
-  // DateSelector handler
-  const handleDateChange = (date: Date) => {
-    setSelectedDate(date);
-    // TODO: Update globe data based on selected date
-    console.log('Date changed to:', date);
   };
 
   // PressureLevel handler
@@ -189,8 +179,8 @@ export default function HomePage() {
 
         {/* Bottom Control Bar */}
         <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-20 pb-4">
-          {/* TimeBar - Centered */}
-          <div className="flex items-center justify-center gap-3" style={{ paddingRight: '25px' }}>
+          {/* TimeBar - Centered - Made pointer-events-auto */}
+          <div className="pointer-events-auto flex items-center justify-center gap-3" style={{ paddingRight: '25px' }}>
             <TimeBar
               selectedYear={selectedYear}
               onYearChange={handleYearChange}
@@ -198,12 +188,11 @@ export default function HomePage() {
             />
           </div>
           
-          {/* Date and Pressure Buttons - Positioned independently */}
+          {/* Year and Pressure Buttons - Positioned independently */}
           <div className="pointer-events-auto absolute bottom-4 right-[175px] flex items-center gap-3">
-
-            <DateSelector
-              selectedDate={selectedDate}
-              onDateChange={handleDateChange}
+            <YearSelector
+              selectedYear={selectedYear}
+              onYearChange={handleYearChange}
             />
             <PressureLevelsSelector
               selectedLevel={selectedPressureLevel}
