@@ -2,12 +2,9 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Send, Bot, User } from 'lucide-react';
-import { ChatMessage } from '@/types';
+import { ChatMessage, ChatPageProps } from '@/types';
 
-interface ChatPageProps {
-  show: boolean;
-  onClose: () => void;
-}
+
 
 const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([

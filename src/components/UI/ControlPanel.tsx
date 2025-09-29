@@ -2,10 +2,8 @@
 
 import React from 'react';
 import { Settings } from 'lucide-react';
+import { ControlPanelProps } from '@/types';
 
-interface ControlPanelProps {
-  onShowSettings: () => void;
-}
 
 const ControlPanel: React.FC<ControlPanelProps> = ({ onShowSettings }) => {
   return (

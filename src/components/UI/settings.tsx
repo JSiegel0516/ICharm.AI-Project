@@ -2,18 +2,12 @@
 
 import type { Transition } from 'motion/react';
 import { motion, useAnimation } from 'motion/react';
-import type { HTMLAttributes } from 'react';
 import { forwardRef, useCallback, useImperativeHandle, useRef } from 'react';
 import { cn } from '@/lib/utils';
+import { i } from 'motion/react-client';
+import { SettingsIconProps, SettingsIconHandle } from '@/types';
 
-export interface SettingsIconHandle {
-  startAnimation: () => void;
-  stopAnimation: () => void;
-}
 
-interface SettingsIconProps extends HTMLAttributes<HTMLDivElement> {
-  size?: number;
-}
 
 const defaultTransition: Transition = {
   type: 'spring',

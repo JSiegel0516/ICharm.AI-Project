@@ -1,15 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-
-interface TooltipProps {
-  content: string;
-  children: React.ReactNode;
-  position?: 'top' | 'bottom' | 'left' | 'right';
-  delay?: number;
-  disabled?: boolean;
-  className?: string;
-}
+import { TooltipProps } from '@/types';
 
 const Tooltip: React.FC<TooltipProps> = ({
   content,

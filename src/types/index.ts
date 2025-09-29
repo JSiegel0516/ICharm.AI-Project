@@ -1,3 +1,5 @@
+import type { HTMLAttributes } from 'react';
+
 export interface Dataset {
   id: string;
   name: string;
@@ -6,6 +8,10 @@ export interface Dataset {
   colorScale: ColorScale;
   dataType: 'temperature' | 'precipitation' | 'wind' | 'pressure' | 'humidity';
   temporalResolution: 'hourly' | 'daily' | 'monthly' | 'yearly';
+}
+
+export interface ControlPanelProps {
+  onShowSettings: () => void;
 }
 
 export interface ColorScale {
@@ -26,6 +32,11 @@ export interface ChatMessageProps {
   message: ChatMessage;
 }
 
+export interface ChatPageProps {
+  show: boolean;
+  onClose: () => void;
+}
+
 export interface GlobePosition {
   latitude: number;
   longitude: number;
@@ -37,6 +48,32 @@ export interface WeatherData {
   lng: number;
   value: number;
   timestamp: Date;
+}
+
+export interface RegionInfoPanelProps {
+  show: boolean;
+  onClose: () => void;
+  latitude?: number;
+  longitude?: number;
+  regionData?: {
+    name?: string;
+    precipitation?: number;
+    temperature?: number;
+    dataset?: string;
+  };
+  colorBarPosition?: { x: number; y: number };
+  colorBarCollapsed?: boolean;
+  className?: string;
+}
+
+export interface SettingsIconHandle {
+  startAnimation: () => void;
+  stopAnimation: () => void;
+}
+
+
+export interface SettingsIconProps extends HTMLAttributes<HTMLDivElement> {
+  size?: number;
 }
 
 export interface AppState {
@@ -139,11 +176,16 @@ export interface PressureLevelsDropdownProps {
   className?: string;
 }
 
+export interface PressureLevelsSelectorProps {
+  selectedLevel?: PressureLevel;
+  onLevelChange?: (level: PressureLevel) => void;
+  className?: string;
+}
+
+
 export interface YearSelectorProps {
-  selectedYear: number;
+  selectedYear?: number;
   onYearChange?: (year: number) => void;
-  minYear?: number;
-  maxYear?: number;
   className?: string;
 }
 

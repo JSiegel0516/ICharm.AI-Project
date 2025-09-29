@@ -2,12 +2,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Calendar, ChevronDown } from 'lucide-react';
+import { YearSelectorProps } from '@/types';
 
-interface YearSelectorProps {
-  selectedYear?: number;
-  onYearChange?: (year: number) => void;
-  className?: string;
-}
 
 const YearSelector: React.FC<YearSelectorProps> = ({
   selectedYear = new Date().getFullYear(),

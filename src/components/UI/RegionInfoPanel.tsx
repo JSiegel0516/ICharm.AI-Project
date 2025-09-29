@@ -2,22 +2,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { ChevronDown, ChevronUp, X, BarChart3, MapPin } from 'lucide-react';
+import { RegionInfoPanelProps } from '@/types';
 
-export interface RegionInfoPanelProps {
-  show: boolean;
-  onClose: () => void;
-  latitude?: number;
-  longitude?: number;
-  regionData?: {
-    name?: string;
-    precipitation?: number;
-    temperature?: number;
-    dataset?: string;
-  };
-  colorBarPosition?: { x: number; y: number };
-  colorBarCollapsed?: boolean;
-  className?: string;
-}
 
 const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   show,
