@@ -152,7 +152,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   return (
     <div
       ref={panelRef}
-      className={`fixed z-40 ${className}`}
+      className={`fixed z-20 ${className}`}
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,

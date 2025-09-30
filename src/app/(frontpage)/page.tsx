@@ -176,7 +176,7 @@ export default function HomePage() {
         </div>
 
         {/* RegionInfoPanel */}
-        <div className="pointer-events-auto absolute z-30">
+        <div className="pointer-events-auto absolute z-10">
           <RegionInfoPanel
             show={showRegionInfo}
             onClose={handleRegionInfoClose}
