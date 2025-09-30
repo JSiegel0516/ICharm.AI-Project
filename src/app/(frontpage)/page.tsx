@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import Globe from '@/components/Globe/Globe';
+import React, { useState, useRef } from 'react';
+import Globe, { GlobeRef } from '@/components/Globe/Globe';
 import CollapsibleSidebar from '@/components/UI/CollapsibleSidebar';
 import ColorBar from '@/components/UI/ColorBar';
 import TimeBar from '@/components/UI/TimeBar';
@@ -32,6 +32,9 @@ export default function HomePage() {
     toggleColorbar,
     setCurrentDataset,
   } = useAppState();
+
+  // Add ref for Globe component
+  const globeRef = useRef<GlobeRef>(null);
 
   // Add temperature unit state
   const [temperatureUnit, setTemperatureUnit] =
@@ -127,6 +130,13 @@ export default function HomePage() {
     setShowRegionInfo(true);
   };
 
+  // RegionInfoPanel close handler - also clears the marker on the globe
+  const handleRegionInfoClose = () => {
+    setShowRegionInfo(false);
+    // Clear the green circle marker from the globe
+    globeRef.current?.clearMarker();
+  };
+
   // ColorBar position change handler
   const handleColorBarPositionChange = (position: { x: number; y: number }) => {
     setColorBarPosition(position);
@@ -136,6 +146,7 @@ export default function HomePage() {
     <section className="fixed inset-0 h-screen w-screen overflow-hidden">
       {/* Full-screen Globe Background - Lowest Layer */}
       <Globe
+        ref={globeRef}
         currentDataset={currentDataset}
         onRegionClick={handleRegionClick}
       />
@@ -168,7 +179,7 @@ export default function HomePage() {
         <div className="pointer-events-auto absolute z-30">
           <RegionInfoPanel
             show={showRegionInfo}
-            onClose={() => setShowRegionInfo(false)}
+            onClose={handleRegionInfoClose}
             latitude={regionInfoData.latitude}
             longitude={regionInfoData.longitude}
             regionData={regionInfoData.regionData}

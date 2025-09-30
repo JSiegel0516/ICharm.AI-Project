@@ -20,18 +20,24 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   className = '',
 }) => {
   // Default position: top-right area (matching screenshot)
-  const defaultPosition = { x: window.innerWidth - 350, y: 200 };
+  // Use conditional check for window to avoid SSR errors
+  const getDefaultPosition = () => {
+    if (typeof window !== 'undefined') {
+      return { x: window.innerWidth - 350, y: 200 };
+    }
+    return { x: 1000, y: 200 }; // Fallback for SSR
+  };
   
-  const [position, setPosition] = useState(defaultPosition);
+  const [position, setPosition] = useState(getDefaultPosition);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [previousPosition, setPreviousPosition] = useState(defaultPosition);
+  const [previousPosition, setPreviousPosition] = useState(getDefaultPosition);
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Initialize position when component shows - top-right by default
   useEffect(() => {
-    if (show) {
+    if (show && typeof window !== 'undefined') {
       const initialPos = { x: window.innerWidth - 350, y: 200 };
       setPosition(initialPos);
       setPreviousPosition(initialPos);
@@ -41,6 +47,8 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   // Handle window resize to keep panel in bounds
   useEffect(() => {
     const handleResize = () => {
+      if (typeof window === 'undefined') return;
+      
       if (!isCollapsed && panelRef.current) {
         const panelWidth = panelRef.current.offsetWidth;
         const panelHeight = panelRef.current.offsetHeight;
@@ -52,8 +60,10 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       }
     };
 
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', handleResize);
+      return () => window.removeEventListener('resize', handleResize);
+    }
   }, [isCollapsed]);
 
   // Handle close
@@ -77,7 +87,9 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     } else {
       // Collapsing - save current position and move to bottom-right corner
       setPreviousPosition(position);
-      setPosition({ x: window.innerWidth - 200, y: window.innerHeight - 60 });
+      if (typeof window !== 'undefined') {
+        setPosition({ x: window.innerWidth - 200, y: window.innerHeight - 60 });
+      }
       setIsCollapsed(true);
     }
   };

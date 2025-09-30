@@ -1,15 +1,20 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import { GlobeProps, RegionData } from '@/types';
 import { loadCesiumFromCDN } from '@/utils/cesiumSetup';
 
-const Globe: React.FC<GlobeProps> = ({
+// Add ref type for exposing methods
+export interface GlobeRef {
+  clearMarker: () => void;
+}
+
+const Globe = forwardRef<GlobeRef, GlobeProps>(({
   currentDataset,
   position,
   onPositionChange,
   onRegionClick,
-}) => {
+}, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -17,6 +22,23 @@ const Globe: React.FC<GlobeProps> = ({
   
   // Store reference to the current click marker (only one at a time)
   const currentMarkerRef = useRef<any>(null);
+
+  // Function to clear the marker
+  const clearMarker = () => {
+    if (currentMarkerRef.current && viewerRef.current && !viewerRef.current.isDestroyed()) {
+      if (Array.isArray(currentMarkerRef.current)) {
+        currentMarkerRef.current.forEach(marker => viewerRef.current.entities.remove(marker));
+      } else {
+        viewerRef.current.entities.remove(currentMarkerRef.current);
+      }
+      currentMarkerRef.current = null;
+    }
+  };
+
+  // Expose clearMarker method to parent via ref
+  useImperativeHandle(ref, () => ({
+    clearMarker
+  }));
 
   // Handle window resize to ensure proper scaling
   useEffect(() => {
@@ -55,14 +77,7 @@ const Globe: React.FC<GlobeProps> = ({
     if (!viewerRef.current) return;
 
     // Remove existing markers if they exist
-    if (currentMarkerRef.current) {
-      if (Array.isArray(currentMarkerRef.current)) {
-        currentMarkerRef.current.forEach(marker => viewerRef.current.entities.remove(marker));
-      } else {
-        viewerRef.current.entities.remove(currentMarkerRef.current);
-      }
-      currentMarkerRef.current = null;
-    }
+    clearMarker();
 
     // Get current camera height for scaling
     const cameraHeight = viewerRef.current.camera.positionCartographic.height;
@@ -303,20 +318,7 @@ const Globe: React.FC<GlobeProps> = ({
     return () => {
       if (viewerRef.current && !viewerRef.current.isDestroyed()) {
         // Clean up current markers
-        if (currentMarkerRef.current) {
-          if (Array.isArray(currentMarkerRef.current)) {
-            currentMarkerRef.current.forEach(marker => {
-              if (!viewerRef.current.isDestroyed()) {
-                viewerRef.current.entities.remove(marker);
-              }
-            });
-          } else {
-            if (!viewerRef.current.isDestroyed()) {
-              viewerRef.current.entities.remove(currentMarkerRef.current);
-            }
-          }
-        }
-        currentMarkerRef.current = null;
+        clearMarker();
         viewerRef.current.destroy();
         viewerRef.current = null;
       }
@@ -389,6 +391,8 @@ const Globe: React.FC<GlobeProps> = ({
       )}
     </div>
   );
-};
+});
+
+Globe.displayName = 'Globe';
 
 export default Globe;
