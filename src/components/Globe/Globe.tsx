@@ -137,7 +137,7 @@ const Globe: React.FC<GlobeProps> = ({
         console.log('Creating Cesium viewer...');
 
         // Create Cesium viewer with basic configuration
-        const viewer = new Cesium.Viewer(container, {
+         const viewer = new Cesium.Viewer(container, {
           homeButton: false,
           sceneModePicker: false,
           baseLayerPicker: false,
@@ -150,6 +150,17 @@ const Globe: React.FC<GlobeProps> = ({
           infoBox: false,
           selectionIndicator: false,
         });
+
+        // Add Cesium Ion imagery layer with asset ID 2411391
+        try {
+          const layer = viewer.imageryLayers.addImageryProvider(
+            await Cesium.IonImageryProvider.fromAssetId(2411391)
+          );
+          console.log('Cesium Ion imagery layer added successfully');
+        } catch (ionError) {
+          console.warn('Failed to load Cesium Ion imagery:', ionError);
+          // Viewer will fall back to default imagery
+        }
 
         // Configure globe appearance for responsive background
         viewer.scene.globe.enableLighting = false;

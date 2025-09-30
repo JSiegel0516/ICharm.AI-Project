@@ -178,7 +178,7 @@ export default function HomePage() {
         </div>
 
         {/* Bottom Control Bar */}
-        <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-20 pb-4">
+        <div className="pointer-events-none absolute bottom-0 left-0 right-12 z-20 pb-4">
           <div className="relative flex items-end justify-center px-4">
             {/* TimeBar - Centered with flexible width */}
             <div className="pointer-events-auto w-full max-w-4xl">
