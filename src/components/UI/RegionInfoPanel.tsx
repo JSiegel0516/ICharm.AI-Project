@@ -1,9 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown, ChevronUp, X, BarChart3, MapPin } from 'lucide-react';
+import { ChevronDown, ChevronUp, X, MapPin } from 'lucide-react';
 import { RegionInfoPanelProps } from '@/types';
-
 
 const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   show,
@@ -20,38 +19,42 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   colorBarCollapsed = false,
   className = '',
 }) => {
-  const [position, setPosition] = useState({ x: 400, y: 100 });
+  // Default position: top-right area (matching screenshot)
+  const defaultPosition = { x: window.innerWidth - 350, y: 200 };
+  
+  const [position, setPosition] = useState(defaultPosition);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [previousPosition, setPreviousPosition] = useState({ x: 400, y: 100 });
+  const [previousPosition, setPreviousPosition] = useState(defaultPosition);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // Calculate position relative to ColorBar
-  const getPositionRelativeToColorBar = () => {
-    if (colorBarCollapsed) {
-      // Position to the right of collapsed ColorBar
-      return {
-        x: colorBarPosition.x + 150, // ColorBar collapsed width + margin
-        y: colorBarPosition.y,
-      };
-    } else {
-      // Position to the right of expanded ColorBar
-      return {
-        x: colorBarPosition.x + 350, // ColorBar expanded width + margin
-        y: colorBarPosition.y,
-      };
-    }
-  };
-
-  // Initialize position when component shows
+  // Initialize position when component shows - top-right by default
   useEffect(() => {
     if (show) {
-      const initialPos = getPositionRelativeToColorBar();
+      const initialPos = { x: window.innerWidth - 350, y: 200 };
       setPosition(initialPos);
       setPreviousPosition(initialPos);
     }
-  }, [show, colorBarPosition, colorBarCollapsed]);
+  }, [show]);
+
+  // Handle window resize to keep panel in bounds
+  useEffect(() => {
+    const handleResize = () => {
+      if (!isCollapsed && panelRef.current) {
+        const panelWidth = panelRef.current.offsetWidth;
+        const panelHeight = panelRef.current.offsetHeight;
+        
+        setPosition(prev => ({
+          x: Math.min(prev.x, window.innerWidth - panelWidth),
+          y: Math.min(prev.y, window.innerHeight - panelHeight)
+        }));
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isCollapsed]);
 
   // Handle close
   const handleClose = (e: React.MouseEvent) => {
@@ -72,9 +75,9 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       setPosition(previousPosition);
       setIsCollapsed(false);
     } else {
-      // Collapsing - save current position and move to a compact location
+      // Collapsing - save current position and move to bottom-right corner
       setPreviousPosition(position);
-      setPosition({ x: position.x, y: window.innerHeight - 60 });
+      setPosition({ x: window.innerWidth - 200, y: window.innerHeight - 60 });
       setIsCollapsed(true);
     }
   };
@@ -130,22 +133,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, dragStart, position, isCollapsed]);
-
-  // Update position when ColorBar position changes - only on initial show
-  useEffect(() => {
-    if (!isDragging && !isCollapsed && show) {
-      // Only auto-position if this is the initial show or if the panel hasn't been manually moved
-      const currentDistance = Math.abs(
-        position.x - getPositionRelativeToColorBar().x
-      );
-      if (currentDistance < 50) {
-        // Only auto-adjust if still close to ColorBar
-        const newPos = getPositionRelativeToColorBar();
-        setPosition(newPos);
-      }
-    }
-  }, [colorBarPosition, colorBarCollapsed]);
+  }, [isDragging, dragStart, isCollapsed]);
 
   if (!show) return null;
 
@@ -161,7 +149,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       {isCollapsed ? (
         // Collapsed State - Small Tab
         <div
-          className="cursor-pointer rounded-lg border border-purple-500/20 bg-gradient-to-br from-purple-900/95 to-blue-900/95 backdrop-blur-sm transition-all duration-200 hover:shadow-lg"
+          className="cursor-pointer rounded-lg border border-gray-600/30 bg-gray-800/95 backdrop-blur-sm transition-all duration-200 hover:shadow-lg hover:border-gray-500/50"
           onClick={handleCollapseToggle}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'scale(1.05)';
@@ -171,7 +159,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
           }}
         >
           <div className="pointer-events-auto px-3 py-2">
-            <div className="flex items-center gap-2 text-purple-100 transition-colors hover:text-white">
+            <div className="flex items-center gap-2 text-gray-300 transition-colors hover:text-white">
               <MapPin className="pointer-events-none h-4 w-4" />
               <span className="pointer-events-none select-none text-sm font-medium">
                 Region Info
@@ -180,17 +168,17 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
           </div>
         </div>
       ) : (
-        // Expanded State - Full Panel (made 1/3 smaller)
-        <div className="min-w-60 rounded-lg border border-purple-500/20 bg-gradient-to-br from-purple-900/95 to-blue-900/95 px-4 py-4 text-purple-100 backdrop-blur-sm">
+        // Expanded State - Full Panel with gray design
+        <div className="min-w-60 rounded-lg border border-gray-600/30 bg-gray-800/95 px-4 py-4 text-gray-200 backdrop-blur-sm shadow-xl">
           {/* Header with drag handle, collapse and close buttons */}
           <div className="-mt-1 mb-3 flex h-3 w-full items-center justify-between">
             <button
               onClick={handleCollapseToggle}
-              className="z-10 -m-1 flex cursor-pointer items-center p-1 text-purple-300 transition-colors hover:text-purple-200 focus:outline-none"
+              className="z-10 -m-1 flex cursor-pointer items-center p-1 text-gray-400 transition-colors hover:text-gray-200 focus:outline-none"
               title="Collapse"
               type="button"
             >
-              <ChevronDown className="h-2.5 w-2.5" />
+              <ChevronDown className="h-3 w-3" />
             </button>
 
             <div
@@ -200,55 +188,53 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
             >
               {/* Drag indicators */}
               <div className="flex h-full items-center justify-center gap-1">
-                <div className="h-0.5 w-0.5 rounded-full bg-purple-400"></div>
-                <div className="h-0.5 w-0.5 rounded-full bg-purple-400"></div>
-                <div className="h-0.5 w-0.5 rounded-full bg-purple-400"></div>
+                <div className="h-0.5 w-0.5 rounded-full bg-gray-500"></div>
+                <div className="h-0.5 w-0.5 rounded-full bg-gray-500"></div>
+                <div className="h-0.5 w-0.5 rounded-full bg-gray-500"></div>
               </div>
             </div>
 
             <button
               onClick={handleClose}
-              className="z-10 -m-1 flex cursor-pointer items-center p-1 text-purple-300 transition-colors hover:text-purple-200 focus:outline-none"
+              className="z-10 -m-1 flex cursor-pointer items-center p-1 text-gray-400 transition-colors hover:text-gray-200 focus:outline-none"
               title="Close"
               type="button"
             >
-              <X className="h-2.5 w-2.5" />
+              <X className="h-3 w-3" />
             </button>
           </div>
 
           {/* Content */}
           <div className="space-y-3">
-            {/* Dataset Title */}
-            <div className="flex items-start gap-1.5">
-              <BarChart3 className="mt-0.5 h-3 w-3 flex-shrink-0 text-purple-300" />
-              <div>
-                <h3 className="text-xs font-medium leading-tight text-white">
-                  {regionData.name}
-                </h3>
+            {/* Location Icon and Coordinates Header */}
+            <div className="flex items-start gap-2">
+              <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" />
+              <div className="text-sm font-medium text-white">
+                {latitude.toFixed(2)}°, {longitude.toFixed(2)}°
               </div>
             </div>
 
-            {/* Data Value */}
-            <div className="rounded-lg border border-purple-600/20 bg-purple-800/30 p-2">
+            {/* Data Value - Main Display */}
+            <div className="rounded-lg border border-gray-700/50 bg-gray-900/50 p-3">
               <div className="text-center">
-                <div className="mb-0.5 font-mono text-lg font-bold text-white">
-                  {regionData.precipitation} mm
+                <div className="mb-1 font-mono text-2xl font-bold text-white">
+                  {(regionData.precipitation ?? 0).toFixed(2)} <span className="text-base font-normal text-gray-400">mm</span>
                 </div>
-                <div className="text-xs text-purple-300">Precipitation</div>
+                <div className="text-sm text-gray-400">Precipitation</div>
               </div>
             </div>
 
-            {/* Coordinates */}
+            {/* Coordinates Grid */}
             <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-lg border border-purple-600/10 bg-purple-800/20 p-2">
-                <div className="mb-0.5 text-xs text-purple-300">Lat</div>
-                <div className="font-mono text-xs font-medium text-white">
-                  {latitude.toFixed(2)}° {latitude >= 0 ? 'N' : 'S'}
+              <div className="rounded-lg border border-gray-700/30 bg-gray-900/30 p-2">
+                <div className="mb-1 text-xs text-gray-400">Lat</div>
+                <div className="font-mono text-sm font-medium text-white">
+                  {Math.abs(latitude).toFixed(2)}° {latitude >= 0 ? 'N' : 'S'}
                 </div>
               </div>
-              <div className="rounded-lg border border-purple-600/10 bg-purple-800/20 p-2">
-                <div className="mb-0.5 text-xs text-purple-300">Lon</div>
-                <div className="font-mono text-xs font-medium text-white">
+              <div className="rounded-lg border border-gray-700/30 bg-gray-900/30 p-2">
+                <div className="mb-1 text-xs text-gray-400">Lon</div>
+                <div className="font-mono text-sm font-medium text-white">
                   {Math.abs(longitude).toFixed(2)}° {longitude >= 0 ? 'E' : 'W'}
                 </div>
               </div>
@@ -256,7 +242,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
 
             {/* Time Series Button */}
             <div className="pt-1">
-              <button className="w-full rounded-lg border border-purple-600/30 bg-purple-700/40 px-3 py-1.5 text-xs font-medium text-purple-100 transition-colors hover:border-purple-500/40 hover:bg-purple-600/40 hover:text-white">
+              <button className="w-full rounded-lg border border-gray-600/40 bg-gray-700/50 px-3 py-2 text-sm font-medium text-gray-200 transition-colors hover:border-gray-500/60 hover:bg-gray-600/50 hover:text-white">
                 Time Series
               </button>
             </div>
