@@ -80,7 +80,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
       return;
     }
 
-    setIsCollapsed(prev => {
+    setIsCollapsed((prev) => {
       console.log('ColorBar toggle: from', prev, 'to', !prev);
       if (prev) {
         // Expanding
@@ -132,7 +132,9 @@ const ColorBar: React.FC<ColorBarProps> = ({
 
       const colorBarElement = colorBarRef.current;
       const colorBarWidth = colorBarElement ? colorBarElement.offsetWidth : 320;
-      const colorBarHeight = colorBarElement ? colorBarElement.offsetHeight : 200;
+      const colorBarHeight = colorBarElement
+        ? colorBarElement.offsetHeight
+        : 200;
 
       const maxX = window.innerWidth - colorBarWidth;
       const maxY = window.innerHeight - colorBarHeight;
@@ -173,8 +175,12 @@ const ColorBar: React.FC<ColorBarProps> = ({
         setPosition({ x: 24, y: window.innerHeight - 60 });
       } else {
         const colorBarElement = colorBarRef.current;
-        const colorBarWidth = colorBarElement ? colorBarElement.offsetWidth : 320;
-        const colorBarHeight = colorBarElement ? colorBarElement.offsetHeight : 200;
+        const colorBarWidth = colorBarElement
+          ? colorBarElement.offsetWidth
+          : 320;
+        const colorBarHeight = colorBarElement
+          ? colorBarElement.offsetHeight
+          : 200;
 
         const maxX = window.innerWidth - colorBarWidth;
         const maxY = window.innerHeight - colorBarHeight;
@@ -202,7 +208,8 @@ const ColorBar: React.FC<ColorBarProps> = ({
 
     if (showDropdown) {
       document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
+      return () =>
+        document.removeEventListener('mousedown', handleClickOutside);
     }
   }, [showDropdown]);
 
@@ -212,7 +219,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
   return (
     <div
       ref={colorBarRef}
-      className="fixed pointer-events-auto"
+      className="pointer-events-auto fixed"
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,
@@ -221,7 +228,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
     >
       {isCollapsed ? (
         <div
-          className="cursor-pointer rounded-lg border border-blue-500/20 bg-gradient-to-br from-blue-900/95 to-purple-900/95 backdrop-blur-sm transition-all duration-200 hover:shadow-lg pointer-events-auto"
+          className="pointer-events-auto cursor-pointer rounded-lg border border-blue-500/20 bg-gradient-to-br from-blue-900/95 to-purple-900/95 backdrop-blur-sm transition-all duration-200 hover:shadow-lg"
           onClick={(e) => {
             console.log('Collapsed div clicked');
             handleCollapseToggle(e);
@@ -234,7 +241,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
             e.currentTarget.style.transform = 'scale(1)';
           }}
         >
-          <div className="px-3 py-2 pointer-events-none">
+          <div className="pointer-events-none px-3 py-2">
             <div className="flex items-center gap-2 text-blue-100 transition-colors hover:text-white">
               <ChevronUp className="h-4 w-4" />
               <span className="select-none text-sm font-medium">
@@ -244,7 +251,10 @@ const ColorBar: React.FC<ColorBarProps> = ({
           </div>
         </div>
       ) : (
-        <div className="rounded-lg border border-gray-700/30 bg-gray-800/60 px-6 py-6 text-blue-100 backdrop-blur-sm pointer-events-auto">
+        <div
+          id="temperature"
+          className="pointer-events-auto rounded-lg border border-gray-700/30 bg-gray-800/60 px-6 py-6 text-blue-100 backdrop-blur-sm"
+        >
           <div className="-mt-2 mb-2 flex h-4 w-full items-center justify-between">
             <button
               onClick={handleCollapseToggle}

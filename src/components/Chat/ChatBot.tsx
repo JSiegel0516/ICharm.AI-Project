@@ -19,13 +19,14 @@ const ChatBot: React.FC<ChatBotProps> = ({ show, onClose, onToggle }) => {
 
   return (
     <>
-      <div id="chatbot">
+      <div>
         {/* Full Page Chat */}
         <ChatPage show={showFullPage} onClose={handleCloseFullPage} />
 
         {/* Chat Toggle Button - Only show when chat panel is closed */}
         {!showFullPage && (
           <button
+            id="chatbot"
             onClick={show ? onClose : onToggle || handleOpenFullPage}
             className={`fixed bottom-6 right-6 z-50 flex h-16 w-16 items-center justify-center rounded-full text-white shadow-lg transition-all duration-300 hover:scale-110 hover:shadow-xl ${
               show
