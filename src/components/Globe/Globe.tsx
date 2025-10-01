@@ -43,7 +43,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     onPositionChange, 
     onRegionClick,
     customDataUrl,
-    tileServerUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png' // Default to OSM
+    
   }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const viewerRef = useRef<any>(null);
@@ -371,7 +371,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
       const timer = setTimeout(initViewer, 100);
       return () => clearTimeout(timer);
-    }, [onRegionClick, onPositionChange, currentDataset, customDataUrl, tileServerUrl]);
+    }, [onRegionClick, onPositionChange, currentDataset, customDataUrl]);
 
     // Handle position changes
     useEffect(() => {
