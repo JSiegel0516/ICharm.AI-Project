@@ -35,33 +35,18 @@ export default function HomePage() {
     setCurrentDataset,
   } = useAppState();
 
-  // Add ref for Globe component
   const globeRef = useRef<GlobeRef>(null);
-
-  // Add temperature unit state
-  const [temperatureUnit, setTemperatureUnit] =
-    useState<TemperatureUnit>('celsius');
-
-  // Add sidebar panel state
-  const [activeSidebarPanel, setActiveSidebarPanel] =
-    useState<SidebarPanel>(null);
-
-  // Unified year state - both TimeBar and YearSelector use this
-  const [selectedYear, setSelectedYear] = useState<number>(
-    new Date().getFullYear()
-  );
+  const [temperatureUnit, setTemperatureUnit] = useState<TemperatureUnit>('celsius');
+  const [activeSidebarPanel, setActiveSidebarPanel] = useState<SidebarPanel>(null);
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [isTimebarPlaying, setIsTimebarPlaying] = useState<boolean>(false);
+  const [selectedPressureLevel, setSelectedPressureLevel] = useState<PressureLevel>({
+    id: 'surface',
+    value: 1000,
+    label: 'Surface',
+    unit: 'hPa',
+  });
 
-  // Add PressureLevel state
-  const [selectedPressureLevel, setSelectedPressureLevel] =
-    useState<PressureLevel>({
-      id: 'surface',
-      value: 1000,
-      label: 'Surface',
-      unit: 'hPa',
-    });
-
-  // Add RegionInfoPanel state
   const [showRegionInfo, setShowRegionInfo] = useState<boolean>(false);
   const [regionInfoData, setRegionInfoData] = useState<{
     latitude: number;
@@ -78,9 +63,9 @@ export default function HomePage() {
     },
   });
 
-  // Add ColorBar position tracking
   const [colorBarPosition, setColorBarPosition] = useState({ x: 24, y: 300 });
   const [colorBarCollapsed, setColorBarCollapsed] = useState(false);
+  const [tutorialOpen, setTutorialOpen] = useState(false);
 
   const handleShowSidebarPanel = (panel: SidebarPanel) => {
     setActiveSidebarPanel(panel);
@@ -90,10 +75,8 @@ export default function HomePage() {
     setActiveSidebarPanel(panel);
   };
 
-  // Unified year change handler - used by both TimeBar and YearSelector
   const handleYearChange = (year: number) => {
     setSelectedYear(year);
-    // TODO: Update globe data based on selected year
     console.log('Year changed to:', year);
   };
 
@@ -102,61 +85,47 @@ export default function HomePage() {
     console.log('Timebar playing:', isPlaying);
   };
 
-  // PressureLevel handler
   const handlePressureLevelChange = (level: PressureLevel) => {
     setSelectedPressureLevel(level);
-    // TODO: Update globe data based on selected pressure level
     console.log('Pressure level changed to:', level);
   };
 
-  // Globe region click handler
   const handleRegionClick = (
     latitude: number,
     longitude: number,
     data?: RegionData
   ) => {
     console.log('Region clicked:', { latitude, longitude, data });
-
-    // Update region data with clicked coordinates
     setRegionInfoData({
       latitude,
       longitude,
       regionData: data || {
         name: 'GPCP V2.3 Precipitation',
-        precipitation: Math.random() * 2, // Random data for now
+        precipitation: Math.random() * 2,
         temperature: 15 + Math.random() * 20,
         dataset: 'Global Precipitation Climatology Project',
       },
     });
-
-    // Show the region info panel
     setShowRegionInfo(true);
   };
 
-  // RegionInfoPanel close handler - also clears the marker on the globe
   const handleRegionInfoClose = () => {
     setShowRegionInfo(false);
-    // Clear the green circle marker from the globe
     globeRef.current?.clearMarker();
   };
 
-  // ColorBar position change handler
   const handleColorBarPositionChange = (position: { x: number; y: number }) => {
     setColorBarPosition(position);
   };
 
-  const [tutorialOpen, setTutorialOpen] = useState(false);
-
   return (
     <section className="fixed inset-0 h-screen w-screen overflow-hidden">
-      {/* Full-screen Globe Background - Lowest Layer */}
       <Globe
         ref={globeRef}
         currentDataset={currentDataset}
         onRegionClick={handleRegionClick}
       />
 
-      {/* UI Layer - All interface elements positioned absolutely over the globe */}
       <div className="pointer-events-none absolute inset-0 z-10">
         <SettingsSideMenu />
         <Tutorial
@@ -164,35 +133,29 @@ export default function HomePage() {
           onClose={() => setTutorialOpen(false)}
         />
 
-        {/* ColorBar */}
-        <div className="pointer-events-auto absolute z-10">
-          <ColorBar
-            show={showColorbar}
-            onToggle={toggleColorbar}
-            dataset={currentDataset}
-            unit={temperatureUnit}
-            onUnitChange={setTemperatureUnit}
-            onPositionChange={handleColorBarPositionChange}
-            collapsed={colorBarCollapsed}
-          />
-        </div>
-        {/* RegionInfoPanel */}
-        <div className="pointer-events-auto absolute z-10">
-          <RegionInfoPanel
-            show={showRegionInfo}
-            onClose={handleRegionInfoClose}
-            latitude={regionInfoData.latitude}
-            longitude={regionInfoData.longitude}
-            regionData={regionInfoData.regionData}
-            colorBarPosition={colorBarPosition}
-            colorBarCollapsed={colorBarCollapsed}
-          />
-        </div>
+        {/* FIX: Remove wrapper divs - components already use fixed positioning */}
+        <ColorBar
+          show={showColorbar}
+          onToggle={toggleColorbar}
+          dataset={currentDataset}
+          unit={temperatureUnit}
+          onUnitChange={setTemperatureUnit}
+          onPositionChange={handleColorBarPositionChange}
+          collapsed={colorBarCollapsed}
+        />
 
-        {/* Bottom Control Bar */}
+        <RegionInfoPanel
+          show={showRegionInfo}
+          onClose={handleRegionInfoClose}
+          latitude={regionInfoData.latitude}
+          longitude={regionInfoData.longitude}
+          regionData={regionInfoData.regionData}
+          colorBarPosition={colorBarPosition}
+          colorBarCollapsed={colorBarCollapsed}
+        />
+
         <div className="pointer-events-auto absolute bottom-0 left-0 right-12 z-20 pb-4">
           <div className="relative flex items-end justify-center px-4">
-            {/* TimeBar - Centered with flexible width */}
             <div className="pointer-events-auto w-full max-w-4xl">
               <TimeBar
                 selectedYear={selectedYear}
@@ -201,7 +164,6 @@ export default function HomePage() {
               />
             </div>
 
-            {/* Year and Pressure Buttons - Absolutely positioned to the right of TimeBar */}
             <div
               className="pointer-events-auto absolute bottom-0 flex items-center gap-4"
               style={{ left: 'calc(50% + 300px)', transform: 'translateX(0)' }}
@@ -213,13 +175,12 @@ export default function HomePage() {
             </div>
           </div>
         </div>
-        {/* Chat Bot - positioned on the right */}
+
         <div className="pointer-events-auto absolute right-0 top-0 z-20 h-full">
           <ChatBot show={showChat} onClose={() => setShowChat(false)} />
         </div>
       </div>
 
-      {/* Modals - Highest Layer */}
       {showSettings && (
         <div className="absolute inset-0 z-50">
           <SettingsModal onClose={() => setShowSettings(false)} />

@@ -10,31 +10,24 @@ const ColorBar: React.FC<ColorBarProps> = ({
   dataset,
   unit = 'celsius',
   onUnitChange,
+  onPositionChange,
 }) => {
   const [showDropdown, setShowDropdown] = useState(false);
-  const [position, setPosition] = useState({ x: 24, y: 24 }); // Safe initial position
+  const [position, setPosition] = useState({ x: 24, y: 24 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [previousPosition, setPreviousPosition] = useState({ x: 24, y: 24 });
   const colorBarRef = useRef<HTMLDivElement>(null);
 
-  // Convert Celsius to Fahrenheit
   const celsiusToFahrenheit = (celsius: number) => {
     return Math.round((celsius * 9) / 5 + 32);
   };
 
-  // Convert Fahrenheit to Celsius
-  const fahrenheitToCelsius = (fahrenheit: number) => {
-    return Math.round(((fahrenheit - 32) * 5) / 9);
-  };
-
-  // Calculate default position based on current window size
   const getDefaultPosition = () => {
     return { x: 24, y: window.innerHeight - 180 };
   };
 
-  // Extract numeric values from labels
   const getNumericLabels = () => {
     return dataset.colorScale.labels.map((label) => {
       const numericValue = parseFloat(label.replace(/[^\d.-]/g, ''));
@@ -44,7 +37,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
 
   const numericLabels = getNumericLabels();
 
-  // Get display labels based on current unit
   const getDisplayLabels = () => {
     if (unit === 'fahrenheit') {
       return numericLabels.map((celsius) =>
@@ -54,12 +46,10 @@ const ColorBar: React.FC<ColorBarProps> = ({
     return dataset.colorScale.labels;
   };
 
-  // Get unit symbol
   const getUnitSymbol = () => {
     return unit === 'celsius' ? '°C' : '°F';
   };
 
-  // Handle unit change
   const handleUnitChange = (newUnit: TemperatureUnit) => {
     if (onUnitChange) {
       onUnitChange(newUnit);
@@ -67,7 +57,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     setShowDropdown(false);
   };
 
-  // Handle reset to default position
   const handleResetPosition = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -79,46 +68,48 @@ const ColorBar: React.FC<ColorBarProps> = ({
     }
   };
 
+  // FIX: Simplified collapse toggle with better event handling
   const handleCollapseToggle = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
-    console.log('Collapse toggle clicked, current state:', {
-      isCollapsed,
-      isDragging,
-    });
+    console.log('ColorBar collapse clicked', { isDragging, isCollapsed });
 
-    // Make sure we're not in a dragging state
     if (isDragging) {
-      console.log('Blocked due to dragging state');
+      console.log('Blocked: currently dragging');
       return;
     }
 
-    if (isCollapsed) {
-      console.log('Expanding from collapsed state');
-      // Expanding - restore previous position
-      setPosition(previousPosition);
-      setIsCollapsed(false);
-    } else {
-      console.log('Collapsing to collapsed state');
-      // Collapsing - save current position and move to bottom left
-      setPreviousPosition(position);
-      setPosition({ x: 24, y: window.innerHeight - 60 });
-      setIsCollapsed(true);
-    }
+    setIsCollapsed(prev => {
+      console.log('ColorBar toggle: from', prev, 'to', !prev);
+      if (prev) {
+        // Expanding
+        setPosition(previousPosition);
+        return false;
+      } else {
+        // Collapsing
+        setPreviousPosition(position);
+        setPosition({ x: 24, y: window.innerHeight - 60 });
+        return true;
+      }
+    });
     setShowDropdown(false);
   };
 
-  // Initialize position on mount
   useEffect(() => {
     const initialPosition = getDefaultPosition();
     setPosition(initialPosition);
     setPreviousPosition(initialPosition);
   }, []);
 
-  // Handle drag start
+  // Notify parent of position changes
+  useEffect(() => {
+    if (onPositionChange) {
+      onPositionChange(position);
+    }
+  }, [position, onPositionChange]);
+
   const handleMouseDown = (e: React.MouseEvent) => {
-    // Only allow dragging when not collapsed
     if (isCollapsed) return;
 
     e.preventDefault();
@@ -131,7 +122,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
     });
   };
 
-  // Handle mouse move during drag
+  // FIX: Remove position from dependency array to prevent infinite loop
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDragging || isCollapsed) return;
@@ -139,12 +130,9 @@ const ColorBar: React.FC<ColorBarProps> = ({
       const newX = e.clientX - dragStart.x;
       const newY = e.clientY - dragStart.y;
 
-      // Keep within screen bounds using actual element dimensions
       const colorBarElement = colorBarRef.current;
       const colorBarWidth = colorBarElement ? colorBarElement.offsetWidth : 320;
-      const colorBarHeight = colorBarElement
-        ? colorBarElement.offsetHeight
-        : 200;
+      const colorBarHeight = colorBarElement ? colorBarElement.offsetHeight : 200;
 
       const maxX = window.innerWidth - colorBarWidth;
       const maxY = window.innerHeight - colorBarHeight;
@@ -170,9 +158,8 @@ const ColorBar: React.FC<ColorBarProps> = ({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, dragStart, position, isCollapsed]);
+  }, [isDragging, dragStart, isCollapsed]); // Removed position from deps
 
-  // Handle dropdown toggle
   const handleDropdownToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!isDragging && !isCollapsed) {
@@ -180,21 +167,14 @@ const ColorBar: React.FC<ColorBarProps> = ({
     }
   };
 
-  // Update position when window is resized
   useEffect(() => {
     const handleResize = () => {
       if (isCollapsed) {
-        // Update collapsed position
         setPosition({ x: 24, y: window.innerHeight - 60 });
       } else {
-        // Check if current position is still within bounds
         const colorBarElement = colorBarRef.current;
-        const colorBarWidth = colorBarElement
-          ? colorBarElement.offsetWidth
-          : 320;
-        const colorBarHeight = colorBarElement
-          ? colorBarElement.offsetHeight
-          : 200;
+        const colorBarWidth = colorBarElement ? colorBarElement.offsetWidth : 320;
+        const colorBarHeight = colorBarElement ? colorBarElement.offsetHeight : 200;
 
         const maxX = window.innerWidth - colorBarWidth;
         const maxY = window.innerHeight - colorBarHeight;
@@ -210,7 +190,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     return () => window.removeEventListener('resize', handleResize);
   }, [isCollapsed]);
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -223,8 +202,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
 
     if (showDropdown) {
       document.addEventListener('mousedown', handleClickOutside);
-      return () =>
-        document.removeEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
     }
   }, [showDropdown]);
 
@@ -234,18 +212,21 @@ const ColorBar: React.FC<ColorBarProps> = ({
   return (
     <div
       ref={colorBarRef}
-      className="fixed"
+      className="fixed pointer-events-auto"
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,
-        zIndex: isCollapsed ? 1000 : 10, // Higher z-index when collapsed
+        zIndex: isCollapsed ? 1000 : 10,
       }}
     >
       {isCollapsed ? (
-        // Collapsed State - Small Tab with enhanced interactivity
         <div
-          className="cursor-pointer rounded-lg border border-blue-500/20 bg-gradient-to-br from-blue-900/95 to-purple-900/95 backdrop-blur-sm transition-all duration-200 hover:shadow-lg"
-          onClick={handleCollapseToggle}
+          className="cursor-pointer rounded-lg border border-blue-500/20 bg-gradient-to-br from-blue-900/95 to-purple-900/95 backdrop-blur-sm transition-all duration-200 hover:shadow-lg pointer-events-auto"
+          onClick={(e) => {
+            console.log('Collapsed div clicked');
+            handleCollapseToggle(e);
+          }}
+          style={{ transform: 'scale(1)' }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'scale(1.05)';
           }}
@@ -253,19 +234,17 @@ const ColorBar: React.FC<ColorBarProps> = ({
             e.currentTarget.style.transform = 'scale(1)';
           }}
         >
-          <div className="pointer-events-auto px-3 py-2">
+          <div className="px-3 py-2 pointer-events-none">
             <div className="flex items-center gap-2 text-blue-100 transition-colors hover:text-white">
-              <ChevronUp className="pointer-events-none h-4 w-4" />
-              <span className="pointer-events-none select-none text-sm font-medium">
+              <ChevronUp className="h-4 w-4" />
+              <span className="select-none text-sm font-medium">
                 Color Scale
               </span>
             </div>
           </div>
         </div>
       ) : (
-        // Expanded State - Full Color Bar
-        <div className="rounded-lg border border-gray-700/30 bg-gray-800/60 px-6 py-6 text-blue-100 backdrop-blur-sm">
-          {/* Drag Handle Area with Collapse Button and Reset Button */}
+        <div className="rounded-lg border border-gray-700/30 bg-gray-800/60 px-6 py-6 text-blue-100 backdrop-blur-sm pointer-events-auto">
           <div className="-mt-2 mb-2 flex h-4 w-full items-center justify-between">
             <button
               onClick={handleCollapseToggle}
@@ -281,7 +260,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
               onMouseDown={handleMouseDown}
               title="Drag to move"
             >
-              {/* Drag indicators */}
               <div className="flex h-full items-center justify-center gap-1">
                 <div className="h-1 w-1 rounded-full bg-blue-400"></div>
                 <div className="h-1 w-1 rounded-full bg-blue-400"></div>
@@ -299,7 +277,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
             </button>
           </div>
 
-          {/* Unit Selector Header */}
           <div className="relative mb-12 mt-2">
             <button
               onClick={handleDropdownToggle}
@@ -312,7 +289,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
               />
             </button>
 
-            {/* Dropdown */}
             {showDropdown && !isDragging && (
               <div className="absolute left-0 top-8 z-50 w-full rounded-md border border-gray-200 bg-white py-1 shadow-lg">
                 <button
@@ -341,7 +317,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
             )}
           </div>
 
-          {/* Color Scale */}
           <div className="relative">
             <div
               className="mx-auto h-8 w-60 rounded-md"
@@ -350,12 +325,10 @@ const ColorBar: React.FC<ColorBarProps> = ({
               }}
             />
 
-            {/* Unit Label (top center) */}
             <div className="absolute -top-[65px] right-6 text-xs">
               <span className="font-medium text-blue-200">{unitSymbol}</span>
             </div>
 
-            {/* Temperature Labels */}
             <div className="absolute -top-4 left-0 flex w-60 justify-between text-xs">
               {displayLabels.map((label, index) => (
                 <span key={index} className="leading-none text-blue-200">

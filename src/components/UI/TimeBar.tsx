@@ -2,13 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Play, Pause, Calendar } from 'lucide-react';
-
-interface TimeBarProps {
-  selectedYear?: number;
-  onYearChange?: (year: number) => void;
-  onPlayPause?: (isPlaying: boolean) => void;
-  className?: string;
-}
+import { TimeBarProps } from '@/types';
 
 const TimeBar: React.FC<TimeBarProps> = ({
   selectedYear = new Date().getFullYear(),
@@ -31,8 +25,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
   const dateInputRef = useRef<HTMLInputElement>(null);
   const calendarRef = useRef<HTMLDivElement>(null);
   const playIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Use refs to avoid triggering re-renders during drag
   const lastYearRef = useRef(currentDate.getFullYear());
   const rafRef = useRef<number | null>(null);
 
@@ -40,7 +32,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
   const maxYear = new Date().getFullYear();
   const yearRange = maxYear - minYear;
 
-  // Calculate position percentage from year
+  // FIX: Memoize these functions with useMemo instead of useCallback to prevent recreation
   const getPositionFromYear = useCallback(
     (year: number) => {
       return ((year - minYear) / yearRange) * 100;
@@ -48,7 +40,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
     [minYear, yearRange]
   );
 
-  // Calculate year from position percentage
   const getYearFromPosition = useCallback(
     (percentage: number) => {
       return Math.round(minYear + (percentage / 100) * yearRange);
@@ -56,7 +47,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
     [minYear, yearRange]
   );
 
-  // Format date for display
   const formatDate = useCallback((date: Date) => {
     return date.toLocaleDateString('en-US', {
       year: 'numeric',
@@ -65,7 +55,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
     });
   }, []);
 
-  // Format date for input field (YYYY-MM-DD)
   const formatDateForInput = useCallback((date: Date) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -73,9 +62,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
     return `${year}-${month}-${day}`;
   }, []);
 
-  // Parse date from input string
   const parseDateInput = useCallback((input: string): Date | null => {
-    // Try parsing as YYYY-MM-DD
     const parts = input.split('-');
     if (parts.length === 3) {
       const year = parseInt(parts[0]);
@@ -94,17 +81,14 @@ const TimeBar: React.FC<TimeBarProps> = ({
       }
     }
 
-    // Try parsing with Date constructor
     const parsed = new Date(input);
     return !isNaN(parsed.getTime()) ? parsed : null;
   }, []);
 
-  // Throttled update using requestAnimationFrame
   const updateYear = useCallback(
     (clientX: number) => {
       if (!trackRef.current) return;
 
-      // Cancel any pending animation frame
       if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);
       }
@@ -119,7 +103,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
         );
         const newYear = getYearFromPosition(percentage);
 
-        // Only update if year actually changed
         if (newYear !== lastYearRef.current) {
           lastYearRef.current = newYear;
           const newDate = new Date(
@@ -138,7 +121,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
     [getYearFromPosition, onYearChange, currentDate]
   );
 
-  // Handle mouse/touch events
   const handleInteractionStart = useCallback(
     (clientX: number) => {
       setIsDragging(true);
@@ -162,7 +144,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
     setTimeout(() => setShowTooltip(false), 1500);
   }, []);
 
-  // Mouse events
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
@@ -183,7 +164,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
     handleInteractionEnd();
   }, [handleInteractionEnd]);
 
-  // Touch events
   const handleTouchStart = useCallback(
     (e: React.TouchEvent) => {
       e.preventDefault();
@@ -207,7 +187,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
     handleInteractionEnd();
   }, [handleInteractionEnd]);
 
-  // Global event listeners for dragging
   useEffect(() => {
     if (isDragging) {
       document.addEventListener('mousemove', handleMouseMove);
@@ -240,7 +219,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
     handleTouchEnd,
   ]);
 
-  // Play/Pause functionality
   const handlePlayPause = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
@@ -277,7 +255,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
     [isPlaying, maxYear, onPlayPause, onYearChange]
   );
 
-  // Date input handlers
   const handleDateClick = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
@@ -305,40 +282,11 @@ const TimeBar: React.FC<TimeBarProps> = ({
     []
   );
 
-  const handleDateInputKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        handleDateSubmit();
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        setIsEditing(false);
-        setShowCalendar(false);
-        setDateInput('');
-      }
-    },
-    []
-  );
-
-  const handleDateInputBlur = useCallback(
-    (e: React.FocusEvent<HTMLInputElement>) => {
-      // Don't close if the blur is caused by clicking the calendar
-      if (calendarRef.current?.contains(e.relatedTarget as Node)) {
-        return;
-      }
-      setTimeout(() => {
-        handleDateSubmit();
-      }, 150);
-    },
-    []
-  );
-
   const handleDateSubmit = useCallback(() => {
     if (dateInput.trim()) {
       const parsedDate = parseDateInput(dateInput);
       if (parsedDate) {
         const year = parsedDate.getFullYear();
-        // Clamp year to valid range
         const clampedYear = Math.max(minYear, Math.min(maxYear, year));
         const newDate = new Date(
           clampedYear,
@@ -356,6 +304,33 @@ const TimeBar: React.FC<TimeBarProps> = ({
     setDateInput('');
   }, [dateInput, parseDateInput, minYear, maxYear, onYearChange]);
 
+  const handleDateInputKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleDateSubmit();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setIsEditing(false);
+        setShowCalendar(false);
+        setDateInput('');
+      }
+    },
+    [handleDateSubmit]
+  );
+
+  const handleDateInputBlur = useCallback(
+    (e: React.FocusEvent<HTMLInputElement>) => {
+      if (calendarRef.current?.contains(e.relatedTarget as Node)) {
+        return;
+      }
+      setTimeout(() => {
+        handleDateSubmit();
+      }, 150);
+    },
+    [handleDateSubmit]
+  );
+
   const handleCalendarDateSelect = useCallback(
     (date: Date) => {
       const year = date.getFullYear();
@@ -372,7 +347,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
     [minYear, maxYear, onYearChange]
   );
 
-  // Close calendar when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -394,7 +368,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
     };
   }, [showCalendar, handleDateSubmit]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (playIntervalRef.current) {
@@ -406,14 +379,15 @@ const TimeBar: React.FC<TimeBarProps> = ({
     };
   }, []);
 
-  // Update position when currentDate changes (but not during dragging)
+  // FIX: Only update tooltip position when not dragging and year changes
   useEffect(() => {
     if (!isDragging) {
-      setTooltipPosition(getPositionFromYear(currentDate.getFullYear()));
+      const year = currentDate.getFullYear();
+      const position = ((year - minYear) / yearRange) * 100;
+      setTooltipPosition(position);
     }
-  }, [currentDate, isDragging, getPositionFromYear]);
+  }, [currentDate.getFullYear(), isDragging, minYear, yearRange]);
 
-  // Sync with external year changes
   useEffect(() => {
     const newDate = new Date(
       selectedYear,
@@ -422,12 +396,11 @@ const TimeBar: React.FC<TimeBarProps> = ({
     );
     setCurrentDate(newDate);
     lastYearRef.current = selectedYear;
-  }, [selectedYear, currentDate]);
+  }, [selectedYear]);
 
   const sliderPosition = getPositionFromYear(currentDate.getFullYear());
   const isActive = isDragging || isHovered || isPlaying;
 
-  // Calendar component
   const renderCalendar = () => {
     const today = new Date();
     const currentMonth = new Date(
@@ -473,7 +446,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
         ref={calendarRef}
         className="absolute bottom-full left-1/2 z-50 mb-2 w-64 -translate-x-1/2 transform rounded-lg border border-gray-600 bg-gray-800 p-4 shadow-xl"
       >
-        {/* Calendar Header */}
         <div className="mb-4 flex items-center justify-between">
           <button
             onClick={handlePrevMonth}
@@ -495,7 +467,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
           </button>
         </div>
 
-        {/* Day Names */}
         <div className="mb-2 grid grid-cols-7 gap-1">
           {dayNames.map((day) => (
             <div
@@ -507,14 +478,11 @@ const TimeBar: React.FC<TimeBarProps> = ({
           ))}
         </div>
 
-        {/* Calendar Grid */}
         <div className="grid grid-cols-7 gap-1">
-          {/* Empty cells for offset */}
           {Array.from({ length: firstDay }).map((_, i) => (
             <div key={`empty-${i}`} />
           ))}
 
-          {/* Days */}
           {Array.from({ length: daysInMonth }).map((_, i) => {
             const day = i + 1;
             const date = new Date(
@@ -556,7 +524,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
       className={`mx-auto w-full max-w-3xl px-32 ${className}`}
     >
       <div className="flex items-center justify-center gap-6">
-        {/* Play/Pause Button */}
         <button
           onClick={handlePlayPause}
           className={`flex h-5 w-5 items-center justify-center rounded-full transition-all duration-200 hover:scale-110 focus:outline-none ${
@@ -570,7 +537,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
           {isPlaying ? <Pause size={12} /> : <Play size={12} />}
         </button>
 
-        {/* Slider Container */}
         <div
           className="relative flex-1"
           onMouseEnter={() => setIsHovered(true)}
@@ -580,7 +546,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
             }
           }}
         >
-          {/* Date Display and Input */}
           <div className="relative mb-2 flex items-center justify-center gap-2">
             {isEditing ? (
               <div className="relative">
@@ -607,7 +572,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
                   </button>
                 </div>
 
-                {/* Calendar Popup */}
                 {showCalendar && renderCalendar()}
               </div>
             ) : (
@@ -627,7 +591,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
             )}
           </div>
 
-          {/* Year Labels */}
           <div
             className={`mb-2 flex justify-between text-xs transition-colors duration-200 ${
               isActive ? 'text-white/90' : 'text-gray-500'
@@ -637,14 +600,12 @@ const TimeBar: React.FC<TimeBarProps> = ({
             <span>{maxYear}</span>
           </div>
 
-          {/* Track */}
           <div
             ref={trackRef}
             className={`relative h-1 cursor-pointer touch-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
             onMouseDown={handleMouseDown}
             onTouchStart={handleTouchStart}
           >
-            {/* Background Track */}
             <div
               className={`absolute inset-0 rounded-full transition-all duration-200 ${
                 isActive
@@ -653,7 +614,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
               }`}
             />
 
-            {/* Progress Fill */}
             <div
               className={`absolute left-0 top-0 h-full rounded-full transition-none ${
                 isActive
@@ -666,7 +626,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
               }}
             />
 
-            {/* Slider Handle */}
             <div
               className={`pointer-events-none absolute top-1/2 h-2 w-2 -translate-y-1/2 transform rounded-full border-2 shadow-lg transition-none ${
                 isDragging
@@ -681,7 +640,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
               }}
             />
 
-            {/* Tooltip */}
             {showTooltip && (
               <div
                 className="pointer-events-none absolute -top-12 z-50 -translate-x-1/2 transform rounded bg-gray-800 px-3 py-1 text-sm text-white shadow-lg"
@@ -695,7 +653,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
               </div>
             )}
 
-            {/* Tick Marks for Decades */}
             <div className="pointer-events-none absolute top-0 h-2 w-full">
               {Array.from(
                 { length: Math.floor(yearRange / 10) + 1 },

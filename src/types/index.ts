@@ -94,6 +94,15 @@ export interface AppState {
   error: string | null;
 }
 
+export interface TooltipProps {
+  content: string;
+  children: React.ReactNode;
+  position?: 'top' | 'bottom' | 'left' | 'right';
+  delay?: number;
+  disabled?: boolean;
+  className?: string;
+}
+
 // Component Props
 export interface HeaderProps {
   currentDataset: Dataset;
