@@ -36,16 +36,21 @@ export default function HomePage() {
   } = useAppState();
 
   const globeRef = useRef<GlobeRef>(null);
-  const [temperatureUnit, setTemperatureUnit] = useState<TemperatureUnit>('celsius');
-  const [activeSidebarPanel, setActiveSidebarPanel] = useState<SidebarPanel>(null);
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [temperatureUnit, setTemperatureUnit] =
+    useState<TemperatureUnit>('celsius');
+  const [activeSidebarPanel, setActiveSidebarPanel] =
+    useState<SidebarPanel>(null);
+  const [selectedYear, setSelectedYear] = useState<number>(
+    new Date().getFullYear()
+  );
   const [isTimebarPlaying, setIsTimebarPlaying] = useState<boolean>(false);
-  const [selectedPressureLevel, setSelectedPressureLevel] = useState<PressureLevel>({
-    id: 'surface',
-    value: 1000,
-    label: 'Surface',
-    unit: 'hPa',
-  });
+  const [selectedPressureLevel, setSelectedPressureLevel] =
+    useState<PressureLevel>({
+      id: 'surface',
+      value: 1000,
+      label: 'Surface',
+      unit: 'hPa',
+    });
 
   const [showRegionInfo, setShowRegionInfo] = useState<boolean>(false);
   const [regionInfoData, setRegionInfoData] = useState<{
@@ -156,6 +161,7 @@ export default function HomePage() {
 
         <div className="pointer-events-auto absolute bottom-0 left-0 right-12 z-20 pb-4">
           <div className="relative flex items-end justify-center px-4">
+            {/* TimeBar - Centered with flexible width */}
             <div className="pointer-events-auto w-full max-w-4xl">
               <TimeBar
                 selectedYear={selectedYear}

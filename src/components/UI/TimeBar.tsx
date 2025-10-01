@@ -523,7 +523,8 @@ const TimeBar: React.FC<TimeBarProps> = ({
       ref={sliderRef}
       className={`mx-auto w-full max-w-3xl px-32 ${className}`}
     >
-      <div className="flex items-center justify-center gap-6">
+      <div id="timebar" className="flex items-center justify-center gap-6">
+        {/* Play/Pause Button */}
         <button
           onClick={handlePlayPause}
           className={`flex h-5 w-5 items-center justify-center rounded-full transition-all duration-200 hover:scale-110 focus:outline-none ${

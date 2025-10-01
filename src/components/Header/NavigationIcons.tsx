@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import Link from 'next/link';
 import { Settings, Info, FileText } from 'lucide-react';
 import DatasetDropdown from './Dropdowns/DatasetDropdown';
 import SettingsDropdown from './Dropdowns/SettingsDropdown';
@@ -86,6 +87,9 @@ const NavigationIcons: React.FC = () => {
 
   return (
     <nav className="flex items-center gap-4">
+      <Link href="/timeseries" target="_blank" rel="noopener noreferrer">
+        Time Series
+      </Link>
       {/* Datasets with Dropdown */}
       <div className="relative" ref={datasetDropdownRef}>
         <button

@@ -129,10 +129,10 @@ export function SettingsSideMenu() {
         {
           element: '#temperature',
           popover: {
-            title: 'Date Selection',
+            title: 'Temperature Bar',
             description:
               'The temperature box is collapsable, draggable, adjusts between C/F, and can be reset to its original position.',
-            side: 'top',
+            side: 'right',
             align: 'center',
           },
         },
@@ -151,6 +151,15 @@ export function SettingsSideMenu() {
           popover: {
             title: 'Pressure Selection',
             description: 'Click on the button to select the pressure.',
+            side: 'top',
+            align: 'center',
+          },
+        },
+        {
+          element: '#chatbot',
+          popover: {
+            title: 'Chat Bot',
+            description: 'Prompt the chatbot to ask questions about the data.',
             side: 'top',
             align: 'center',
           },
