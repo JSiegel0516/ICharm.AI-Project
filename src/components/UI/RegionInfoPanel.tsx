@@ -25,7 +25,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     }
     return { x: 1000, y: 200 };
   };
-  
+
   const [position, setPosition] = useState(getDefaultPosition);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -44,14 +44,14 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   useEffect(() => {
     const handleResize = () => {
       if (typeof window === 'undefined') return;
-      
+
       if (!isCollapsed && panelRef.current) {
         const panelWidth = panelRef.current.offsetWidth;
         const panelHeight = panelRef.current.offsetHeight;
-        
-        setPosition(prev => ({
+
+        setPosition((prev) => ({
           x: Math.min(prev.x, window.innerWidth - panelWidth),
-          y: Math.min(prev.y, window.innerHeight - panelHeight)
+          y: Math.min(prev.y, window.innerHeight - panelHeight),
         }));
       }
     };
@@ -80,7 +80,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       return;
     }
 
-    setIsCollapsed(prev => {
+    setIsCollapsed((prev) => {
       console.log('RegionPanel toggle: from', prev, 'to', !prev);
       if (prev) {
         // Expanding
@@ -90,7 +90,10 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
         // Collapsing
         setPreviousPosition(position);
         if (typeof window !== 'undefined') {
-          setPosition({ x: window.innerWidth - 200, y: window.innerHeight - 60 });
+          setPosition({
+            x: window.innerWidth - 200,
+            y: window.innerHeight - 60,
+          });
         }
         return true;
       }
@@ -152,7 +155,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   return (
     <div
       ref={panelRef}
-      className={`fixed z-20 pointer-events-auto ${className}`}
+      className={`pointer-events-auto fixed z-20 ${className}`}
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,
@@ -161,7 +164,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     >
       {isCollapsed ? (
         <div
-          className="cursor-pointer rounded-lg border border-gray-600/30 bg-gray-800/95 backdrop-blur-sm transition-all duration-200 hover:shadow-lg hover:border-gray-500/50"
+          className="cursor-pointer rounded-xl border border-gray-600/30 bg-gray-800/95 backdrop-blur-sm transition-all duration-200 hover:border-gray-500/50 hover:shadow-lg"
           onClick={(e) => {
             console.log('Collapsed RegionPanel div clicked');
             handleCollapseToggle(e);
@@ -174,7 +177,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
             e.currentTarget.style.transform = 'scale(1)';
           }}
         >
-          <div className="px-3 py-2 pointer-events-none">
+          <div className="pointer-events-none px-3 py-2">
             <div className="flex items-center gap-2 text-gray-300 transition-colors hover:text-white">
               <MapPin className="h-4 w-4" />
               <span className="select-none text-sm font-medium">
@@ -184,7 +187,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
           </div>
         </div>
       ) : (
-        <div className="min-w-60 rounded-lg border border-gray-600/30 bg-gray-800/95 px-4 py-4 text-gray-200 backdrop-blur-sm shadow-xl">
+        <div className="min-w-60 rounded-xl border border-gray-600/30 bg-gray-800/95 px-4 py-4 text-gray-200 shadow-xl backdrop-blur-sm">
           <div className="-mt-1 mb-3 flex h-3 w-full items-center justify-between">
             <button
               onClick={handleCollapseToggle}
@@ -228,7 +231,10 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
             <div className="rounded-lg border border-gray-700/50 bg-gray-900/50 p-3">
               <div className="text-center">
                 <div className="mb-1 font-mono text-2xl font-bold text-white">
-                  {(regionData.precipitation ?? 0).toFixed(2)} <span className="text-base font-normal text-gray-400">mm</span>
+                  {(regionData.precipitation ?? 0).toFixed(2)}{' '}
+                  <span className="text-base font-normal text-gray-400">
+                    mm
+                  </span>
                 </div>
                 <div className="text-sm text-gray-400">Precipitation</div>
               </div>
