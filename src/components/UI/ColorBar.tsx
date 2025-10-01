@@ -228,7 +228,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
     >
       {isCollapsed ? (
         <div
-          className="pointer-events-auto cursor-pointer rounded-lg border border-blue-500/20 bg-gradient-to-br from-blue-900/95 to-purple-900/95 backdrop-blur-sm transition-all duration-200 hover:shadow-lg"
+          className="pointer-events-auto cursor-pointer rounded-xl border border-blue-500/20 bg-gradient-to-br from-blue-900/95 to-purple-900/95 backdrop-blur-sm transition-all duration-200 hover:shadow-lg"
           onClick={(e) => {
             console.log('Collapsed div clicked');
             handleCollapseToggle(e);

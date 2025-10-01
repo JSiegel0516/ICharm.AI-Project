@@ -49,7 +49,7 @@
     text-wrap: balance;
   }
   .btn-icon {
-    @apply relative flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl bg-slate-800/90 text-gray-400 hover:text-gray-100 transition-all hover:scale-105 hover:bg-slate-700/90;
+    @apply relative flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl bg-slate-800/50 text-gray-400 hover:text-gray-100 transition-all hover:scale-105 hover:bg-slate-700/90;
   }
   .btn-hover{
     @apply pointer-events-none absolute left-12 whitespace-nowrap rounded-xl bg-slate-900/95 px-3 py-1.5 text-sm text-gray-100 opacity-0 transition-opacity ;

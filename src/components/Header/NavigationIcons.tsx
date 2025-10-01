@@ -89,7 +89,7 @@ const NavigationIcons: React.FC = () => {
     return `relative group p-2 rounded-xl transition-all duration-300 ${
       isActive
         ? 'bg-blue-500/20 border border-blue-400/30 text-blue-400'
-        : 'bg-gray-800/50 hover:bg-gray-700/60 text-gray-400 hover:text-gray-200 border border-transparent hover:border-gray-600/50'
+        : 'bg-slate-800/50  hover:bg-slate-700/90 text-gray-400 hover:text-gray-200 border border-transparent hover:border-gray-600/50'
     }`;
   };
 
@@ -125,7 +125,7 @@ const NavigationIcons: React.FC = () => {
             <IconWrapper>
               <ChartSplineIcon size={ICON_SIZE} />
             </IconWrapper>
-            <div className="pointer-events-none absolute -bottom-10 left-1/2 -translate-x-1/2 transform whitespace-nowrap rounded-lg bg-gray-900/95 px-3 py-2 text-xs text-white opacity-0 transition-all duration-300 group-hover:-bottom-12 group-hover:opacity-100">
+            <div className="btn-hover pointer-events-none absolute -bottom-10 left-1/2 -translate-x-1/2 group-hover:-bottom-12 group-hover:opacity-100">
               Time Series Analysis
               <div className="absolute -top-1 left-1/2 -translate-x-1/2 transform border-b-4 border-l-4 border-r-4 border-transparent border-b-gray-900/95" />
             </div>
@@ -143,7 +143,7 @@ const NavigationIcons: React.FC = () => {
           <IconWrapper>
             <Info size={ICON_SIZE} />
           </IconWrapper>
-          <div className="pointer-events-none absolute -bottom-10 left-1/2 -translate-x-1/2 transform whitespace-nowrap rounded-lg bg-gray-900/95 px-3 py-2 text-xs text-white opacity-0 transition-all duration-300 group-hover:-bottom-12 group-hover:opacity-100">
+          <div className="btn-hover pointer-events-none absolute -bottom-10 left-1/2 -translate-x-1/2 group-hover:-bottom-12 group-hover:opacity-100">
             About iCharm
             <div className="absolute -top-1 left-1/2 -translate-x-1/2 transform border-b-4 border-l-4 border-r-4 border-transparent border-b-gray-900/95" />
           </div>
