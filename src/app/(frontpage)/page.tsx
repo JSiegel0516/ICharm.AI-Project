@@ -165,6 +165,7 @@ export default function HomePage() {
             </div>
 
             <div
+              id="pressure"
               className="pointer-events-auto absolute bottom-0 flex items-center gap-4"
               style={{ left: 'calc(50% + 300px)', transform: 'translateX(0)' }}
             >

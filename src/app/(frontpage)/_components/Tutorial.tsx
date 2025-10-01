@@ -28,6 +28,25 @@ export const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
       },
       steps: [
         {
+          element: '#dataset-title',
+          popover: {
+            title: 'Current Dataset',
+            description:
+              'This shows the name of the currently loaded dataset. Different datasets display different climate or geographical data on the globe.',
+            side: 'bottom',
+            align: 'center',
+          },
+        },
+        {
+          element: '#aboutme',
+          popover: {
+            title: 'About Me',
+            description: 'Description of iCharm',
+            side: 'bottom',
+            align: 'center',
+          },
+        },
+        {
           element: '#dataset',
           popover: {
             title: 'Dataset Selection',
@@ -81,7 +100,7 @@ export const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
           popover: {
             title: 'Tutorial Complete!',
             description:
-              'You now know all the main controls. The help button is always available if you need a refresher!',
+              'You now know all the main controls. The tutorial button is always available if you need a refresher!',
           },
         },
       ],

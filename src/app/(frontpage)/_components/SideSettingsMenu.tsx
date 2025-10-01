@@ -39,6 +39,44 @@ export function SettingsSideMenu() {
       },
       steps: [
         {
+          element: '#dataset-title',
+          popover: {
+            title: 'Current Dataset',
+            description:
+              'This shows the name of the currently loaded dataset. Different datasets display different climate or geographical data on the globe.',
+            side: 'bottom',
+            align: 'center',
+          },
+        },
+        {
+          element: '#aboutme',
+          popover: {
+            title: 'About Me',
+            description: 'Description of iCharm',
+            side: 'bottom',
+            align: 'center',
+          },
+        },
+        {
+          element: '#site-settings',
+          popover: {
+            title: 'Site Settings',
+            description: 'Adjust the settings for iCharm',
+            side: 'bottom',
+            align: 'center',
+          },
+        },
+        {
+          element: '#globe',
+          popover: {
+            title: 'Globe',
+            description:
+              'Zoom in and out using mouse scroll. Click and drag to rotate the globe. Select an area on the globe to get region-specific data.',
+            side: 'left',
+            align: 'center',
+          },
+        },
+        {
           element: '#dataset',
           popover: {
             title: 'Dataset Selection',
@@ -86,6 +124,35 @@ export function SettingsSideMenu() {
               'Toggle fullscreen mode for an immersive viewing experience.',
             side: 'right',
             align: 'start',
+          },
+        },
+        {
+          element: '#temperature',
+          popover: {
+            title: 'Date Selection',
+            description:
+              'The temperature box is collapsable, draggable, adjusts between C/F, and can be reset to its original position.',
+            side: 'top',
+            align: 'center',
+          },
+        },
+        {
+          element: '#timebar',
+          popover: {
+            title: 'Date Selection',
+            description:
+              'Slide along the bar or click on the shown date to adjust the time of the dataset.',
+            side: 'top',
+            align: 'center',
+          },
+        },
+        {
+          element: '#pressure',
+          popover: {
+            title: 'Pressure Selection',
+            description: 'Click on the button to select the pressure.',
+            side: 'top',
+            align: 'center',
           },
         },
         {
