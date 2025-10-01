@@ -1,6 +1,12 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useMemo,
+} from 'react';
 import type { Dataset, AppState, TemperatureUnit, RegionData } from '@/types';
 import { mockDatasets } from '@/utils/constants';
 
@@ -17,8 +23,8 @@ const useAppStateInternal = () => {
     showTutorial: false,
     showChat: false,
     showColorbar: true,
-    showRegionInfo: false, // ✅ Add this line
-    currentDataset: mockDatasets[0], // assuming `dataset` is defined in scope
+    showRegionInfo: false,
+    currentDataset: mockDatasets[0],
     globePosition: {
       latitude: 0,
       longitude: 0,
@@ -33,7 +39,6 @@ const useAppStateInternal = () => {
   );
   const [temperatureUnit, setTemperatureUnit] =
     useState<TemperatureUnit>('celsius');
-
   const [showRegionInfo, setShowRegionInfo] = useState<boolean>(false);
   const [regionInfoData, setRegionInfoData] = useState<{
     latitude: number;
@@ -100,8 +105,25 @@ export const AppStateProvider = ({
 }) => {
   const appState = useAppStateInternal();
 
+  const value = useMemo(
+    () => appState,
+    [
+      appState.showSettings,
+      appState.showAbout,
+      appState.showTutorial,
+      appState.showChat,
+      appState.showColorbar,
+      appState.showRegionInfo,
+      appState.currentDataset,
+      appState.selectedYear,
+      appState.temperatureUnit,
+      appState.showRegionInfo,
+      appState.regionInfoData,
+    ]
+  );
+
   return (
-    <AppStateContext.Provider value={appState}>
+    <AppStateContext.Provider value={value}>
       {children}
     </AppStateContext.Provider>
   );

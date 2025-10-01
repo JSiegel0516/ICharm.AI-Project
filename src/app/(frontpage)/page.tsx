@@ -15,6 +15,7 @@ import TutorialModal from '@/components/Modals/TutorialModal';
 import { useAppState } from '@/app/context/HeaderContext';
 import { TemperatureUnit, RegionData, PressureLevel } from '@/types';
 import { SettingsSideMenu } from './_components/SideSettingsMenu';
+import { Tutorial } from './_components/Tutorial';
 
 type SidebarPanel = 'datasets' | 'history' | 'about' | null;
 
@@ -144,6 +145,8 @@ export default function HomePage() {
     setColorBarPosition(position);
   };
 
+  const [tutorialOpen, setTutorialOpen] = useState(false);
+
   return (
     <section className="fixed inset-0 h-screen w-screen overflow-hidden">
       {/* Full-screen Globe Background - Lowest Layer */}
@@ -156,6 +159,10 @@ export default function HomePage() {
       {/* UI Layer - All interface elements positioned absolutely over the globe */}
       <div className="pointer-events-none absolute inset-0 z-10">
         <SettingsSideMenu />
+        <Tutorial
+          isOpen={tutorialOpen}
+          onClose={() => setTutorialOpen(false)}
+        />
 
         {/* ColorBar */}
         <div className="pointer-events-auto absolute z-10">
