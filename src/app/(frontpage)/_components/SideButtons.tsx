@@ -148,10 +148,7 @@ export function SideButtons() {
               }}
               transition={{ duration: 0.2 }}
             >
-              <div
-                className="group relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl bg-slate-800/90 transition-all hover:scale-105 hover:bg-slate-700/90"
-                onClick={handleFileTextClick}
-              >
+              <div className="btn-icon group" onClick={handleFileTextClick}>
                 <FileTextIcon size={18} />
                 <div className="pointer-events-none absolute left-12 whitespace-nowrap rounded-lg bg-slate-900/95 px-3 py-1.5 text-sm text-white opacity-0 transition-opacity group-hover:opacity-100">
                   Select Dataset
@@ -170,10 +167,7 @@ export function SideButtons() {
               }}
               transition={{ duration: 0.2, delay: 0.05 }}
             >
-              <div
-                className="group relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl bg-slate-800/90 transition-all hover:scale-105 hover:bg-slate-700/90"
-                onClick={handleCalendarClick}
-              >
+              <div className="btn-icon group" onClick={handleCalendarClick}>
                 <CalendarDaysIcon size={18} />
                 <div className="pointer-events-none absolute left-12 whitespace-nowrap rounded-lg bg-slate-900/95 px-3 py-1.5 text-sm text-white opacity-0 transition-opacity group-hover:opacity-100">
                   Set Date
@@ -192,10 +186,7 @@ export function SideButtons() {
               }}
               transition={{ duration: 0.2, delay: 0.1 }}
             >
-              <div
-                className="group relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl bg-slate-800/90 transition-all hover:scale-105 hover:bg-slate-700/90"
-                onClick={handleDownloadClick}
-              >
+              <div className="btn-icon group" onClick={handleDownloadClick}>
                 <DownloadIcon size={18} />
                 <div className="pointer-events-none absolute left-12 whitespace-nowrap rounded-lg bg-slate-900/95 px-3 py-1.5 text-sm text-white opacity-0 transition-opacity group-hover:opacity-100">
                   Download Dataset
@@ -214,10 +205,7 @@ export function SideButtons() {
               }}
               transition={{ duration: 0.2, delay: 0.2 }}
             >
-              <div
-                className="group relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl bg-slate-800/90 transition-all hover:scale-105 hover:bg-slate-700/90"
-                onClick={handlePreferencesClick}
-              >
+              <div className="btn-icon group" onClick={handlePreferencesClick}>
                 <EarthIcon size={18} />
                 <div className="pointer-events-none absolute left-12 whitespace-nowrap rounded-lg bg-slate-900/95 px-3 py-1.5 text-sm text-white opacity-0 transition-opacity group-hover:opacity-100">
                   Globe Settings
@@ -235,10 +223,7 @@ export function SideButtons() {
               }}
               transition={{ duration: 0.2, delay: 0.15 }}
             >
-              <div
-                className="group relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl bg-slate-800/90 transition-all hover:scale-105 hover:bg-slate-700/90"
-                onClick={handleTutorialClick}
-              >
+              <div className="btn-icon group" onClick={handleTutorialClick}>
                 <CircleHelpIcon size={18} />
                 <div className="pointer-events-none absolute left-12 whitespace-nowrap rounded-lg bg-slate-900/95 px-3 py-1.5 text-sm text-white opacity-0 transition-opacity group-hover:opacity-100">
                   Show Tutorial
@@ -257,10 +242,7 @@ export function SideButtons() {
               }}
               transition={{ duration: 0.2, delay: 0.25 }}
             >
-              <div
-                className="group relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl bg-slate-800/90 transition-all hover:scale-105 hover:bg-slate-700/90"
-                onClick={handleFullscreenClick}
-              >
+              <div className="btn-icon group" onClick={handleFullscreenClick}>
                 <Maximize2Icon size={18} />
                 <div className="pointer-events-none absolute left-12 whitespace-nowrap rounded-lg bg-slate-900/95 px-3 py-1.5 text-sm text-white opacity-0 transition-opacity group-hover:opacity-100">
                   Fullscreen
@@ -271,10 +253,14 @@ export function SideButtons() {
             {/* Settings Toggle Button */}
             <motion.div
               initial={false}
-              animate={{ scale: 1 }}
-              transition={{ duration: 0.2 }}
+              animate={{
+                opacity: isExpanded ? 1 : 0.8,
+                scale: isExpanded ? 1 : 1,
+                y: isExpanded ? 1 : 1,
+              }}
+              transition={{ duration: 0.2, delay: 0.25 }}
             >
-              <div className="group relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl bg-slate-900/90 transition-all hover:scale-105 hover:bg-slate-700/90">
+              <div className="btn-icon group">
                 <SettingsIcon size={18} onClick={toggleMenu} />
                 <div className="pointer-events-none absolute left-12 whitespace-nowrap rounded-lg bg-slate-900/95 px-3 py-1.5 text-sm text-white opacity-0 transition-opacity group-hover:opacity-100">
                   {isExpanded ? 'Hide Settings' : 'Show Settings'}
@@ -294,10 +280,7 @@ export function SideButtons() {
             exit={{ x: -100, opacity: 0 }}
             transition={{ duration: 0.3, ease: 'easeInOut' }}
             className="pointer-events-auto fixed left-4 top-1/2 z-[9999] w-80 -translate-y-1/2 rounded-xl bg-slate-800/95 p-4 shadow-2xl backdrop-blur-sm"
-          >
-            {/* Calendar content remains the same */}
-            {/* ... */}
-          </motion.div>
+          ></motion.div>
         )}
       </AnimatePresence>
 
