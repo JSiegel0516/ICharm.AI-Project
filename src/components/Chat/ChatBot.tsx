@@ -30,8 +30,8 @@ const ChatBot: React.FC<ChatBotProps> = ({ show, onClose, onToggle }) => {
             onClick={show ? onClose : onToggle || handleOpenFullPage}
             className={`fixed bottom-6 right-6 z-50 flex h-16 w-16 items-center justify-center rounded-full text-white shadow-lg transition-all duration-300 hover:scale-110 hover:shadow-xl ${
               show
-                ? 'bg-gray-800 hover:bg-gray-700'
-                : 'bg-gradient-to-br from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700'
+                ? 'border border-gray-700/30 bg-gray-800/60 text-blue-100 backdrop-blur-sm hover:bg-gray-800/80'
+                : 'border border-blue-500/20 bg-gradient-to-br from-blue-900/95 to-purple-900/95 text-blue-100 backdrop-blur-sm hover:from-blue-900 hover:to-purple-900'
             }`}
             aria-label={show ? 'Close chat' : 'Open chat'}
           >
