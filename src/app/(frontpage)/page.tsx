@@ -2,33 +2,24 @@
 
 import React, { useState, useRef } from 'react';
 import Globe, { GlobeRef } from '@/components/Globe/Globe';
-import CollapsibleSidebar from '@/components/UI/CollapsibleSidebar';
 import ColorBar from '@/components/UI/ColorBar';
 import TimeBar from '@/components/UI/TimeBar';
 import YearSelector from '@/components/UI/Popups/YearSelector';
 import PressureLevelsSelector from '@/components/UI/Popups/PressureLevelsSelector';
 import RegionInfoPanel from '@/components/UI/RegionInfoPanel';
-import ChatBot from '@/components/Chat/ChatBot';
-import { SettingsModal } from '@/app/(frontpage)/_components/Modals/SettingsModal';
-import AboutModal from '@/app/(frontpage)/_components/Modals/AboutModal';
+
 import { useAppState } from '@/context/HeaderContext';
 import { TemperatureUnit, RegionData, PressureLevel } from '@/types';
-import { SettingsSideMenu } from './_components/SideSettingsMenu';
+import { SideButtons } from './_components/SideButtons';
 import { Tutorial } from './_components/Tutorial';
 
 type SidebarPanel = 'datasets' | 'history' | 'about' | null;
 
 export default function HomePage() {
   const {
-    showSettings,
-    showAbout,
-    showTutorial,
     showChat,
     showColorbar,
     currentDataset,
-    setShowSettings,
-    setShowAbout,
-    setShowTutorial,
     setShowChat,
     toggleColorbar,
     setCurrentDataset,
@@ -131,13 +122,12 @@ export default function HomePage() {
       />
 
       <div className="pointer-events-none absolute inset-0 z-10">
-        <SettingsSideMenu />
+        <SideButtons />
         <Tutorial
           isOpen={tutorialOpen}
           onClose={() => setTutorialOpen(false)}
         />
 
-        {/* FIX: Remove wrapper divs - components already use fixed positioning */}
         <ColorBar
           show={showColorbar}
           onToggle={toggleColorbar}
@@ -181,35 +171,7 @@ export default function HomePage() {
             </div>
           </div>
         </div>
-
-        <div className="pointer-events-auto absolute right-0 top-0 z-20 h-full">
-          <ChatBot show={showChat} onClose={() => setShowChat(false)} />
-        </div>
       </div>
-
-      {showSettings && (
-        <div className="absolute inset-0 z-50">
-          <SettingsModal onClose={() => setShowSettings(false)} />
-        </div>
-      )}
-
-      {showAbout && (
-        <div className="absolute inset-0 z-50">
-          <AboutModal
-            onClose={() => setShowAbout(false)}
-            onShowTutorial={() => {
-              setShowAbout(false);
-              setShowTutorial(true);
-            }}
-          />
-        </div>
-      )}
-
-      {showTutorial && (
-        <div className="absolute inset-0 z-50">
-          <TutorialModal onClose={() => setShowTutorial(false)} />
-        </div>
-      )}
     </section>
   );
 }

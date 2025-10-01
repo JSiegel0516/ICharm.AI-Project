@@ -3,30 +3,24 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Info, Settings, X } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { ChartSplineIcon } from '../UI/chart-spline';
 import { SettingsGearIcon } from '../UI/settings-gear';
-import SettingsDropdown from './Dropdowns/SettingsDropdown';
 import { useAppState } from '@/context/HeaderContext';
 import { SettingsModal } from '@/app/(frontpage)/_components/Modals/SettingsModal';
+import AboutModal from '@/app/(frontpage)/_components/Modals/AboutModal';
 
 type ActiveDropdown = 'datasets' | 'settings' | null;
 
 const NavigationIcons: React.FC = () => {
-  const {
-    setShowSettings,
-    setShowAbout,
-    setShowChat,
-    setCurrentDataset,
-    currentDataset,
-  } = useAppState();
+  const { setCurrentDataset, currentDataset } = useAppState();
 
   const [activeDropdown, setActiveDropdown] = useState<ActiveDropdown>(null);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showAboutModal, setShowAboutModal] = useState(false); // Add state for About modal
 
   const datasetDropdownRef = useRef<HTMLDivElement>(null);
   const datasetButtonRef = useRef<HTMLButtonElement>(null);
-  const settingsDropdownRef = useRef<HTMLDivElement>(null);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
 
   // Standardized icon size
@@ -34,7 +28,7 @@ const NavigationIcons: React.FC = () => {
 
   const handleAboutClick = () => {
     setActiveDropdown(null);
-    setShowAbout(true);
+    setShowAboutModal(true); // Use local state instead of context
   };
 
   const handleDatasetClick = () => {
@@ -60,6 +54,10 @@ const NavigationIcons: React.FC = () => {
     setShowSettingsModal(false);
   };
 
+  const closeAboutModal = () => {
+    setShowAboutModal(false);
+  };
+
   // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -72,8 +70,6 @@ const NavigationIcons: React.FC = () => {
         !datasetButtonRef.current.contains(target);
 
       const isOutsideSettings =
-        settingsDropdownRef.current &&
-        !settingsDropdownRef.current.contains(target) &&
         settingsButtonRef.current &&
         !settingsButtonRef.current.contains(target);
 
@@ -179,10 +175,23 @@ const NavigationIcons: React.FC = () => {
       {/* Settings Modal */}
       <SettingsModal
         isOpen={showSettingsModal}
-        onClose={() => setShowSettingsModal(false)}
+        onClose={closeSettingsModal}
         onSave={(settings) => {
           // Save settings logic
-          setShowSettingsModal(false);
+          console.log('Saving settings:', settings);
+          closeSettingsModal();
+        }}
+      />
+
+      {/* About Modal */}
+      <AboutModal
+        isOpen={showAboutModal} // Pass the isOpen prop
+        onClose={closeAboutModal}
+        onShowTutorial={() => {
+          // Handle tutorial launch
+          closeAboutModal();
+          // You might want to add tutorial launch logic here
+          console.log('Launch tutorial from About modal');
         }}
       />
     </>

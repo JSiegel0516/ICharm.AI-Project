@@ -9,10 +9,9 @@ import { EarthIcon } from '@/components/UI/earth';
 import { CalendarDaysIcon } from '@/components/UI/calendar-days';
 import { Maximize2Icon } from '@/components/UI/maximize-2';
 import { CircleHelpIcon } from '@/components/UI/circle-help';
-import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { Tutorial } from './Tutorial'; // Import the tutorial component
 
-export function SettingsSideMenu() {
+export function SideButtons() {
   const [isExpanded, setIsExpanded] = useState(true); // Default to expanded
   const [showCalendar, setShowCalendar] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
