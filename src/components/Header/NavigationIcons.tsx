@@ -51,15 +51,19 @@ const NavigationIcons: React.FC = () => {
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
-      
+
       // Check if click is outside both dropdown areas
-      const isOutsideDataset = 
-        datasetDropdownRef.current && !datasetDropdownRef.current.contains(target) &&
-        datasetButtonRef.current && !datasetButtonRef.current.contains(target);
-        
-      const isOutsideSettings = 
-        settingsDropdownRef.current && !settingsDropdownRef.current.contains(target) &&
-        settingsButtonRef.current && !settingsButtonRef.current.contains(target);
+      const isOutsideDataset =
+        datasetDropdownRef.current &&
+        !datasetDropdownRef.current.contains(target) &&
+        datasetButtonRef.current &&
+        !datasetButtonRef.current.contains(target);
+
+      const isOutsideSettings =
+        settingsDropdownRef.current &&
+        !settingsDropdownRef.current.contains(target) &&
+        settingsButtonRef.current &&
+        !settingsButtonRef.current.contains(target);
 
       if (isOutsideDataset && isOutsideSettings) {
         setActiveDropdown(null);
@@ -73,10 +77,10 @@ const NavigationIcons: React.FC = () => {
   }, []);
 
   const getIconButtonClasses = (isActive: boolean = false) => {
-    return `px-4 py-2 transition-all duration-200 relative group ${
+    return `px-4 py-2 transition-colors duration-200 relative group ${
       isActive
         ? 'border-b-2 border-blue-400 text-blue-400'
-        : 'hover:opacity-80 hover:border hover:border-white/30 hover:rounded-lg text-gray-400'
+        : 'hover:text-white text-gray-400'
     }`;
   };
 
@@ -102,10 +106,7 @@ const NavigationIcons: React.FC = () => {
       </div>
 
       {/* About */}
-      <button
-        onClick={handleAboutClick}
-        className={getIconButtonClasses()}
-      >
+      <button onClick={handleAboutClick} className={getIconButtonClasses()}>
         <Info size={20} />
         <div className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 transform whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100">
           About 4DVD
