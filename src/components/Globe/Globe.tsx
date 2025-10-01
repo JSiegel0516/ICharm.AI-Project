@@ -8,26 +8,7 @@ import React, {
   forwardRef,
 } from 'react';
 
-// Types
-interface GlobeProps {
-  currentDataset?: { name: string };
-  position?: { latitude: number; longitude: number; zoom: number };
-  onPositionChange?: (pos: { latitude: number; longitude: number; zoom: number }) => void;
-  onRegionClick?: (lat: number, lon: number, data: RegionData) => void;
-  customDataUrl?: string; // URL to your self-hosted GeoJSON/custom data
-  tileServerUrl?: string; // Optional custom tile server URL
-}
-
-interface RegionData {
-  name: string;
-  precipitation: number;
-  temperature: number;
-  dataset: string;
-}
-
-export interface GlobeRef {
-  clearMarker: () => void;
-}
+import { GlobeRef, GlobeProps, RegionData } from '@/types';
 
 // Cesium setup function for CDN loading
 const loadCesiumFromCDN = async () => {

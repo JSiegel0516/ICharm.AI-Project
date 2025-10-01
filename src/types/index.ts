@@ -135,14 +135,23 @@ export interface CollapsibleSidebarProps {
 }
 
 export interface GlobeProps {
-  currentDataset: Dataset;
-  position?: GlobePosition;
-  onPositionChange?: (position: GlobePosition) => void;
-  onRegionClick?: (
-    latitude: number,
-    longitude: number,
-    data?: RegionData
-  ) => void;
+  currentDataset?: { name: string };
+  position?: { latitude: number; longitude: number; zoom: number };
+  onPositionChange?: (pos: { latitude: number; longitude: number; zoom: number }) => void;
+  onRegionClick?: (lat: number, lon: number, data: RegionData) => void;
+  customDataUrl?: string; // URL to your self-hosted GeoJSON/custom data
+  tileServerUrl?: string; // Optional custom tile server URL
+}
+
+export interface RegionData {
+  name: string;
+  precipitation: number;
+  temperature: number;
+  dataset: string;
+}
+
+export interface GlobeRef {
+  clearMarker: () => void;
 }
 
 export type TemperatureUnit = 'celsius' | 'fahrenheit';
@@ -198,15 +207,6 @@ export interface YearSelectorProps {
   className?: string;
 }
 
-export interface RegionData {
-  name?: string;
-  precipitation?: number;
-  temperature?: number;
-  dataset?: string;
-  windSpeed?: number;
-  pressure?: number;
-  humidity?: number;
-}
 
 export interface RegionInfoPanelProps {
   show: boolean;
