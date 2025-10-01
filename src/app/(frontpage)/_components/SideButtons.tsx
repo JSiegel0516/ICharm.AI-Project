@@ -150,7 +150,7 @@ export function SideButtons() {
             >
               <div className="btn-icon group" onClick={handleFileTextClick}>
                 <FileTextIcon size={18} />
-                <div className="pointer-events-none absolute left-12 whitespace-nowrap rounded-lg bg-slate-900/95 px-3 py-1.5 text-sm text-white opacity-0 transition-opacity group-hover:opacity-100">
+                <div className="btn-hover group-hover:opacity-100">
                   Select Dataset
                 </div>
               </div>
@@ -169,7 +169,7 @@ export function SideButtons() {
             >
               <div className="btn-icon group" onClick={handleCalendarClick}>
                 <CalendarDaysIcon size={18} />
-                <div className="pointer-events-none absolute left-12 whitespace-nowrap rounded-lg bg-slate-900/95 px-3 py-1.5 text-sm text-white opacity-0 transition-opacity group-hover:opacity-100">
+                <div className="btn-hover group-hover:opacity-100">
                   Set Date
                 </div>
               </div>
@@ -188,7 +188,7 @@ export function SideButtons() {
             >
               <div className="btn-icon group" onClick={handleDownloadClick}>
                 <DownloadIcon size={18} />
-                <div className="pointer-events-none absolute left-12 whitespace-nowrap rounded-lg bg-slate-900/95 px-3 py-1.5 text-sm text-white opacity-0 transition-opacity group-hover:opacity-100">
+                <div className="btn-hover group-hover:opacity-100">
                   Download Dataset
                 </div>
               </div>
@@ -207,7 +207,7 @@ export function SideButtons() {
             >
               <div className="btn-icon group" onClick={handlePreferencesClick}>
                 <EarthIcon size={18} />
-                <div className="pointer-events-none absolute left-12 whitespace-nowrap rounded-lg bg-slate-900/95 px-3 py-1.5 text-sm text-white opacity-0 transition-opacity group-hover:opacity-100">
+                <div className="btn-hover group-hover:opacity-100">
                   Globe Settings
                 </div>
               </div>
@@ -225,7 +225,7 @@ export function SideButtons() {
             >
               <div className="btn-icon group" onClick={handleTutorialClick}>
                 <CircleHelpIcon size={18} />
-                <div className="pointer-events-none absolute left-12 whitespace-nowrap rounded-lg bg-slate-900/95 px-3 py-1.5 text-sm text-white opacity-0 transition-opacity group-hover:opacity-100">
+                <div className="btn-hover group-hover:opacity-100">
                   Show Tutorial
                 </div>
               </div>
@@ -244,7 +244,7 @@ export function SideButtons() {
             >
               <div className="btn-icon group" onClick={handleFullscreenClick}>
                 <Maximize2Icon size={18} />
-                <div className="pointer-events-none absolute left-12 whitespace-nowrap rounded-lg bg-slate-900/95 px-3 py-1.5 text-sm text-white opacity-0 transition-opacity group-hover:opacity-100">
+                <div className="btn-hover group-hover:opacity-100">
                   Fullscreen
                 </div>
               </div>
@@ -262,7 +262,7 @@ export function SideButtons() {
             >
               <div className="btn-icon group">
                 <SettingsIcon size={18} onClick={toggleMenu} />
-                <div className="pointer-events-none absolute left-12 whitespace-nowrap rounded-lg bg-slate-900/95 px-3 py-1.5 text-sm text-white opacity-0 transition-opacity group-hover:opacity-100">
+                <div className="btn-hover group-hover:opacity-100">
                   {isExpanded ? 'Hide Settings' : 'Show Settings'}
                 </div>
               </div>

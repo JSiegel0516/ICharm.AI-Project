@@ -89,7 +89,7 @@ const NavigationIcons: React.FC = () => {
     return `relative group p-2 rounded-xl transition-all duration-300 ${
       isActive
         ? 'bg-blue-500/20 border border-blue-400/30 text-blue-400'
-        : 'bg-gray-800/50 hover:bg-gray-700/60 text-gray-400 hover:text-white border border-transparent hover:border-gray-600/50'
+        : 'bg-gray-800/50 hover:bg-gray-700/60 text-gray-400 hover:text-gray-200 border border-transparent hover:border-gray-600/50'
     }`;
   };
 
