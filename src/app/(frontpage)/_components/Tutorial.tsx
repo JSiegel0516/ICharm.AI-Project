@@ -39,7 +39,17 @@ export const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
           },
         },
         {
-          element: '#aboutme',
+          element: '#time-series-button',
+          popover: {
+            title: 'Time Series',
+            description:
+              'Click on this to open the time series page, where users can compare and analyze datasets.',
+            side: 'bottom',
+            align: 'center',
+          },
+        },
+        {
+          element: '#about-me-button',
           popover: {
             title: 'About Me',
             description: 'Description of iCharm',
@@ -48,10 +58,10 @@ export const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
           },
         },
         {
-          element: '#site-settings',
+          element: '#site-settings-button',
           popover: {
             title: 'Site Settings',
-            description: 'Adjust the settings for iCharm',
+            description: 'Adjust the page settings for iCharm',
             side: 'bottom',
             align: 'center',
           },

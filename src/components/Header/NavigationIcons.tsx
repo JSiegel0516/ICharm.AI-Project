@@ -117,6 +117,7 @@ const NavigationIcons: React.FC = () => {
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           className={getIconContainerClasses()}
+          id="time-series-button"
         >
           <Link
             href="/timeseries"
@@ -138,7 +139,7 @@ const NavigationIcons: React.FC = () => {
         <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
-          id="aboutme"
+          id="about-me-button"
           onClick={handleAboutClick}
           className={getIconContainerClasses()}
         >
@@ -158,7 +159,7 @@ const NavigationIcons: React.FC = () => {
           className={getIconContainerClasses(activeDropdown === 'settings')}
         >
           <button
-            id="site-settings"
+            id="site-settings-button"
             ref={settingsButtonRef}
             onClick={handleSettingsClick}
             className="flex items-center justify-center"
