@@ -7,23 +7,69 @@ import React, {
   useImperativeHandle,
   forwardRef,
 } from 'react';
-import { GlobeProps, RegionData } from '@/types';
-import { loadCesiumFromCDN } from '@/utils/cesiumSetup';
 
-// Add ref type for exposing methods
+// Types
+interface GlobeProps {
+  currentDataset?: { name: string };
+  position?: { latitude: number; longitude: number; zoom: number };
+  onPositionChange?: (pos: { latitude: number; longitude: number; zoom: number }) => void;
+  onRegionClick?: (lat: number, lon: number, data: RegionData) => void;
+  customDataUrl?: string; // URL to your self-hosted GeoJSON/custom data
+  tileServerUrl?: string; // Optional custom tile server URL
+}
+
+interface RegionData {
+  name: string;
+  precipitation: number;
+  temperature: number;
+  dataset: string;
+}
+
 export interface GlobeRef {
   clearMarker: () => void;
 }
 
+// Cesium setup function for CDN loading
+const loadCesiumFromCDN = async () => {
+  if (window.Cesium) {
+    return window.Cesium;
+  }
+
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Cesium.js';
+    script.async = true;
+    
+    script.onload = () => {
+      const link = document.createElement('link');
+      link.href = 'https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Widgets/widgets.css';
+      link.rel = 'stylesheet';
+      document.head.appendChild(link);
+      
+      window.CESIUM_BASE_URL = 'https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/';
+      resolve(window.Cesium);
+    };
+    
+    script.onerror = () => reject(new Error('Failed to load Cesium'));
+    document.head.appendChild(script);
+  });
+};
+
 const Globe = forwardRef<GlobeRef, GlobeProps>(
-  ({ currentDataset, position, onPositionChange, onRegionClick }, ref) => {
+  ({ 
+    currentDataset, 
+    position, 
+    onPositionChange, 
+    onRegionClick,
+    customDataUrl,
+    tileServerUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png' // Default to OSM
+  }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const viewerRef = useRef<any>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-
-    // Store reference to the current click marker (only one at a time)
     const currentMarkerRef = useRef<any>(null);
+    const customDataLayerRef = useRef<any>(null);
 
     // Function to clear the marker
     const clearMarker = () => {
@@ -48,11 +94,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       clearMarker,
     }));
 
-    // Handle window resize to ensure proper scaling
+    // Handle window resize
     useEffect(() => {
       const handleResize = () => {
         if (viewerRef.current && !viewerRef.current.isDestroyed()) {
-          // Force Cesium to recalculate canvas dimensions
           viewerRef.current.resize();
           viewerRef.current.forceResize();
         }
@@ -62,25 +107,18 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       return () => window.removeEventListener('resize', handleResize);
     }, []);
 
-    // Function to calculate appropriate radius based on camera height
+    // Calculate marker radius based on camera height
     const calculateRadiusFromCameraHeight = (cameraHeight: number): number => {
-      // Base radius at reference height (adjust these values to fine-tune scaling)
-      const referenceHeight = 10000000; // 10,000 km reference height
-      const baseRadius = 65000; // 65 km base radius - user's preferred size
-
-      // Calculate scale factor based on camera height
-      // Use square root to make scaling more gradual
+      const referenceHeight = 10000000;
+      const baseRadius = 65000;
       const scaleFactor = Math.sqrt(cameraHeight / referenceHeight);
-
-      // Apply min/max bounds to prevent circles from being too small or large
-      const minRadius = 8000; // 8 km minimum - very tight when zoomed in
-      const maxRadius = 150000; // 150 km maximum - reasonable when zoomed out
-
+      const minRadius = 8000;
+      const maxRadius = 150000;
       const calculatedRadius = baseRadius * scaleFactor;
       return Math.max(minRadius, Math.min(maxRadius, calculatedRadius));
     };
 
-    // Function to add a circle marker at the clicked position (thick ring with hole using multiple outlines)
+    // Add click marker
     const addClickMarker = (
       Cesium: any,
       latitude: number,
@@ -88,17 +126,14 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     ) => {
       if (!viewerRef.current) return;
 
-      // Remove existing markers if they exist
       clearMarker();
 
-      // Get current camera height for scaling
       const cameraHeight = viewerRef.current.camera.positionCartographic.height;
       const baseRadius = calculateRadiusFromCameraHeight(cameraHeight);
 
-      // Create multiple concentric circles to simulate thickness
       const markers = [];
-      const numRings = 8; // Number of concentric circles for thickness
-      const ringSpacing = baseRadius * 0.05; // 5% spacing between rings
+      const numRings = 8;
+      const ringSpacing = baseRadius * 0.05;
 
       for (let i = 0; i < numRings; i++) {
         const radius = baseRadius - i * ringSpacing;
@@ -109,14 +144,14 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             longitude,
             latitude,
             1000 + i
-          ), // Slight height variation
+          ),
           ellipse: {
             semiMajorAxis: radius,
             semiMinorAxis: radius,
-            material: Cesium.Color.TRANSPARENT, // Transparent fill to create hole
+            material: Cesium.Color.TRANSPARENT,
             outline: true,
-            outlineColor: Cesium.Color.LIME.withAlpha(0.9 - i * 0.1), // Slightly fade outer rings
-            outlineWidth: 3, // Thicker individual outlines
+            outlineColor: Cesium.Color.LIME.withAlpha(0.9 - i * 0.1),
+            outlineWidth: 3,
             height: 0,
             extrudedHeight: 0,
           },
@@ -125,11 +160,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         markers.push(circleEntity);
       }
 
-      // Store reference to all markers
       currentMarkerRef.current = markers;
     };
 
-    // Function to update existing marker radius when camera changes
+    // Update marker radius on zoom
     const updateMarkerRadius = (Cesium: any) => {
       if (!currentMarkerRef.current || !viewerRef.current) return;
 
@@ -148,6 +182,39 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       }
     };
 
+    // Load custom data from your server
+    const loadCustomData = async (Cesium: any, viewer: any) => {
+      if (!customDataUrl) return;
+
+      try {
+        console.log('Loading custom data from:', customDataUrl);
+        
+        // Load GeoJSON or custom format
+        const response = await fetch(customDataUrl);
+        const data = await response.json();
+
+        // Remove existing custom data layer if present
+        if (customDataLayerRef.current) {
+          viewer.dataSources.remove(customDataLayerRef.current);
+        }
+
+        // Add GeoJSON data source
+        const dataSource = await Cesium.GeoJsonDataSource.load(data, {
+          stroke: Cesium.Color.YELLOW,
+          fill: Cesium.Color.YELLOW.withAlpha(0.3),
+          strokeWidth: 3,
+          clampToGround: true,
+        });
+
+        viewer.dataSources.add(dataSource);
+        customDataLayerRef.current = dataSource;
+
+        console.log('Custom data loaded successfully');
+      } catch (error) {
+        console.warn('Failed to load custom data:', error);
+      }
+    };
+
     // Initialize Cesium viewer
     useEffect(() => {
       if (!containerRef.current || viewerRef.current) return;
@@ -161,13 +228,11 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           setError(null);
 
           console.log('Loading Cesium from CDN...');
-
-          // Load Cesium from CDN
           const Cesium = await loadCesiumFromCDN();
 
-          console.log('Creating Cesium viewer...');
+          console.log('Creating self-hosted Cesium viewer...');
 
-          // Create Cesium viewer with basic configuration
+          // Create Cesium viewer with minimal UI
           const viewer = new Cesium.Viewer(container, {
             homeButton: false,
             sceneModePicker: false,
@@ -180,41 +245,54 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             vrButton: false,
             infoBox: false,
             selectionIndicator: false,
+            imageryProvider: false, // Don't use default imagery
           });
 
-          // Add Cesium Ion imagery layer with asset ID 2411391
-          try {
-            const layer = viewer.imageryLayers.addImageryProvider(
-              await Cesium.IonImageryProvider.fromAssetId(2411391)
-            );
-            console.log('Cesium Ion imagery layer added successfully');
-          } catch (ionError) {
-            console.warn('Failed to load Cesium Ion imagery:', ionError);
-            // Viewer will fall back to default imagery
-          }
+          // Layer 1: USGS imagery as base (satellite/aerial photos)
+          const usgsProvider = new Cesium.ArcGisMapServerImageryProvider({
+            url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer',
+            credit: 'USGS National Map'
+          });
+          viewer.imageryLayers.addImageryProvider(usgsProvider);
 
-          // Configure globe appearance for responsive background
+          // Layer 2: Stamen Toner Lines - ONLY borders and boundaries, no labels or roads
+          const boundariesProvider = new Cesium.UrlTemplateImageryProvider({
+            url: 'https://tiles.stadiamaps.com/tiles/stamen_toner_lines/{z}/{x}/{y}.png',
+            credit: '© Stamen Design, © OpenStreetMap contributors',
+            alpha: 0.5, // Semi-transparent overlay
+            maximumLevel: 18
+          });
+          viewer.imageryLayers.addImageryProvider(boundariesProvider);
+
+          // Configure globe appearance
           viewer.scene.globe.enableLighting = false;
           viewer.scene.globe.showGroundAtmosphere = true;
-
-          // Set background to transparent so container background shows through
           viewer.scene.backgroundColor = Cesium.Color.TRANSPARENT;
-
-          // Enable skybox for better visual appearance
           viewer.scene.skyBox.show = true;
           viewer.scene.sun.show = true;
           viewer.scene.moon.show = true;
 
-          // Configure canvas to be responsive
+          // Configure canvas
           viewer.canvas.style.width = '100%';
           viewer.canvas.style.height = '100%';
+
+          // Hide Cesium branding/watermark
+          const cesiumCredit = container.querySelector('.cesium-viewer-bottom');
+          if (cesiumCredit) {
+            (cesiumCredit as HTMLElement).style.display = 'none';
+          }
 
           // Set initial camera position
           viewer.camera.setView({
             destination: Cesium.Cartesian3.fromDegrees(0, 20, 25000000),
           });
 
-          // Add click handlers for left and right clicks
+          // Load custom data if URL provided
+          if (customDataUrl) {
+            await loadCustomData(Cesium, viewer);
+          }
+
+          // Left click handler
           viewer.cesiumWidget.screenSpaceEventHandler.setInputAction(
             (event: any) => {
               const pickedPosition = viewer.camera.pickEllipsoid(
@@ -227,10 +305,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
                 const latitude = Cesium.Math.toDegrees(cartographic.latitude);
                 const longitude = Cesium.Math.toDegrees(cartographic.longitude);
 
-                // Add the circle marker at clicked position
                 addClickMarker(Cesium, latitude, longitude);
 
-                // Call the original callback if provided
                 if (onRegionClick) {
                   const regionData: RegionData = {
                     name: `${latitude.toFixed(2)}°, ${longitude.toFixed(2)}°`,
@@ -246,10 +322,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             Cesium.ScreenSpaceEventType.LEFT_CLICK
           );
 
-          // Add right-click handler for 180-degree globe rotation
+          // Right click handler (rotate 180°)
           viewer.cesiumWidget.screenSpaceEventHandler.setInputAction(
             (event: any) => {
-              // Get current camera position
               const currentPosition = viewer.camera.positionCartographic;
               const currentLat = Cesium.Math.toDegrees(
                 currentPosition.latitude
@@ -259,29 +334,26 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
               );
               const currentHeight = currentPosition.height;
 
-              // Calculate opposite longitude (add/subtract 180 degrees)
               let oppositeLon = currentLon + 180;
               if (oppositeLon > 180) {
                 oppositeLon -= 360;
               }
 
-              // Fly to the opposite side with smooth animation
               viewer.camera.flyTo({
                 destination: Cesium.Cartesian3.fromDegrees(
                   oppositeLon,
                   currentLat,
                   currentHeight
                 ),
-                duration: 2.0, // 2 second animation
+                duration: 2.0,
                 easingFunction: Cesium.EasingFunction.CUBIC_IN_OUT,
               });
             },
             Cesium.ScreenSpaceEventType.RIGHT_CLICK
           );
 
-          // Add camera change handler with radius updating
+          // Camera change handler
           viewer.camera.changed.addEventListener(() => {
-            // Update marker radius when camera changes (zoom)
             if (window.Cesium) {
               updateMarkerRadius(window.Cesium);
             }
@@ -298,7 +370,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             }
           });
 
-          // Ensure proper sizing after initialization
           setTimeout(() => {
             viewer.resize();
             viewer.forceResize();
@@ -307,7 +378,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           viewerRef.current = viewer;
           setIsLoading(false);
 
-          console.log('Cesium viewer initialized successfully');
+          console.log('Self-hosted Cesium viewer initialized successfully');
         } catch (err) {
           console.error('Failed to initialize Cesium:', err);
           setError(
@@ -317,10 +388,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         }
       };
 
-      // Small delay to ensure DOM is ready
       const timer = setTimeout(initViewer, 100);
       return () => clearTimeout(timer);
-    }, [onRegionClick, onPositionChange, currentDataset]);
+    }, [onRegionClick, onPositionChange, currentDataset, customDataUrl, tileServerUrl]);
 
     // Handle position changes
     useEffect(() => {
@@ -341,15 +411,16 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     useEffect(() => {
       return () => {
         if (viewerRef.current && !viewerRef.current.isDestroyed()) {
-          // Clean up current markers
           clearMarker();
+          if (customDataLayerRef.current) {
+            viewerRef.current.dataSources.remove(customDataLayerRef.current);
+          }
           viewerRef.current.destroy();
           viewerRef.current = null;
         }
       };
     }, []);
 
-    // Loading and error states
     if (error) {
       return (
         <div className="absolute inset-0 z-0 flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 text-white">
@@ -358,7 +429,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             <h3 className="mb-2 text-lg font-semibold">Failed to Load Globe</h3>
             <p className="mb-2 text-sm text-gray-400">{error}</p>
             <p className="mb-4 text-xs text-gray-500">
-              Check your internet connection and try again
+              Check your tile server and try again
             </p>
             <button
               onClick={() => window.location.reload()}
@@ -381,20 +452,18 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           minWidth: '100vw',
         }}
       >
-        {/* Loading overlay */}
         {isLoading && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900 bg-opacity-75">
             <div className="text-center text-white">
               <div className="mb-4 h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-              <p>Loading Globe from CDN...</p>
+              <p>Loading Self-Hosted Globe...</p>
               <p className="mt-1 text-xs text-gray-400">
-                This may take a moment on first load
+                Loading custom data sources
               </p>
             </div>
           </div>
         )}
 
-        {/* Cesium container - positioned to fill entire viewport but stay behind other elements */}
         <div
           ref={containerRef}
           className="absolute inset-0 z-0 h-screen w-screen"
@@ -405,7 +474,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           }}
         />
 
-        {/* Dataset info overlay - higher z-index to appear above globe */}
         {currentDataset && (
           <div className="absolute inset-x-0 z-30 mx-auto max-w-max">
             <div className="rounded-lg py-6 text-2xl text-gray-300">
