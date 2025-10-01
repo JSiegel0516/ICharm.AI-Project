@@ -157,8 +157,6 @@ export default function HomePage() {
       <div className="pointer-events-none absolute inset-0 z-10">
         <SettingsSideMenu />
 
-        {/* Enhanced Collapsible Sidebar */}
-
         {/* ColorBar */}
         <div className="pointer-events-auto absolute z-10">
           <ColorBar
@@ -183,6 +181,7 @@ export default function HomePage() {
             colorBarCollapsed={colorBarCollapsed}
           />
         </div>
+
         {/* Bottom Control Bar */}
         <div className="pointer-events-auto absolute bottom-0 left-0 right-12 z-20 pb-4">
           <div className="relative flex items-end justify-center px-4">
@@ -200,10 +199,6 @@ export default function HomePage() {
               className="pointer-events-auto absolute bottom-0 flex items-center gap-4"
               style={{ left: 'calc(50% + 300px)', transform: 'translateX(0)' }}
             >
-              <YearSelector
-                selectedYear={selectedYear}
-                onYearChange={handleYearChange}
-              />
               <PressureLevelsSelector
                 selectedLevel={selectedPressureLevel}
                 onLevelChange={handlePressureLevelChange}
