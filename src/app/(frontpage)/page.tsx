@@ -10,7 +10,7 @@ import RegionInfoPanel from '@/components/UI/RegionInfoPanel';
 
 import { useAppState } from '@/context/HeaderContext';
 import { TemperatureUnit, RegionData, PressureLevel } from '@/types';
-import { SettingsSideMenu } from './_components/SideSettingsMenu';
+import { SideButtons } from './_components/SideButtons';
 import { Tutorial } from './_components/Tutorial';
 
 type SidebarPanel = 'datasets' | 'history' | 'about' | null;
@@ -122,7 +122,7 @@ export default function HomePage() {
       />
 
       <div className="pointer-events-none absolute inset-0 z-10">
-        <SettingsSideMenu />
+        <SideButtons />
         <Tutorial
           isOpen={tutorialOpen}
           onClose={() => setTutorialOpen(false)}
