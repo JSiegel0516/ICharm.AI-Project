@@ -14,6 +14,7 @@ import AboutModal from '@/components/Modals/AboutModal';
 import TutorialModal from '@/components/Modals/TutorialModal';
 import { useAppState } from '@/app/context/HeaderContext';
 import { TemperatureUnit, RegionData, PressureLevel } from '@/types';
+import { SettingsSideMenu } from './_components/SideSettingsMenu';
 
 type SidebarPanel = 'datasets' | 'history' | 'about' | null;
 
@@ -51,12 +52,13 @@ export default function HomePage() {
   const [isTimebarPlaying, setIsTimebarPlaying] = useState<boolean>(false);
 
   // Add PressureLevel state
-  const [selectedPressureLevel, setSelectedPressureLevel] = useState<PressureLevel>({
-    id: 'surface',
-    value: 1000,
-    label: 'Surface',
-    unit: 'hPa'
-  });
+  const [selectedPressureLevel, setSelectedPressureLevel] =
+    useState<PressureLevel>({
+      id: 'surface',
+      value: 1000,
+      label: 'Surface',
+      unit: 'hPa',
+    });
 
   // Add RegionInfoPanel state
   const [showRegionInfo, setShowRegionInfo] = useState<boolean>(false);
@@ -153,14 +155,9 @@ export default function HomePage() {
 
       {/* UI Layer - All interface elements positioned absolutely over the globe */}
       <div className="pointer-events-none absolute inset-0 z-10">
+        <SettingsSideMenu />
+
         {/* Enhanced Collapsible Sidebar */}
-        <div className="pointer-events-auto absolute left-0 top-0 z-20 h-full">
-          <CollapsibleSidebar
-            onShowSettings={() => setShowSettings(true)}
-            activePanel={activeSidebarPanel}
-            onPanelChange={handleSidebarPanelChange}
-          />
-        </div>
 
         {/* ColorBar */}
         <div className="pointer-events-auto absolute z-10">
@@ -174,7 +171,6 @@ export default function HomePage() {
             collapsed={colorBarCollapsed}
           />
         </div>
-
         {/* RegionInfoPanel */}
         <div className="pointer-events-auto absolute z-10">
           <RegionInfoPanel
@@ -187,9 +183,8 @@ export default function HomePage() {
             colorBarCollapsed={colorBarCollapsed}
           />
         </div>
-
         {/* Bottom Control Bar */}
-        <div className="pointer-events-none absolute bottom-0 left-0 right-12 z-20 pb-4">
+        <div className="pointer-events-auto absolute bottom-0 left-0 right-12 z-20 pb-4">
           <div className="relative flex items-end justify-center px-4">
             {/* TimeBar - Centered with flexible width */}
             <div className="pointer-events-auto w-full max-w-4xl">
@@ -199,9 +194,12 @@ export default function HomePage() {
                 onPlayPause={handleTimebarPlayPause}
               />
             </div>
-            
+
             {/* Year and Pressure Buttons - Absolutely positioned to the right of TimeBar */}
-            <div className="pointer-events-auto absolute bottom-0 flex items-center gap-4" style={{ left: 'calc(50% + 300px)', transform: 'translateX(0)' }}>
+            <div
+              className="pointer-events-auto absolute bottom-0 flex items-center gap-4"
+              style={{ left: 'calc(50% + 300px)', transform: 'translateX(0)' }}
+            >
               <YearSelector
                 selectedYear={selectedYear}
                 onYearChange={handleYearChange}
@@ -213,7 +211,6 @@ export default function HomePage() {
             </div>
           </div>
         </div>
-
         {/* Chat Bot - positioned on the right */}
         <div className="pointer-events-auto absolute right-0 top-0 z-20 h-full">
           <ChatBot show={showChat} onClose={() => setShowChat(false)} />

@@ -264,7 +264,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
         </div>
       ) : (
         // Expanded State - Full Color Bar
-        <div className="rounded-lg border border-blue-500/20 bg-gradient-to-br from-blue-900/95 to-purple-900/95 px-6 py-6 text-blue-100 backdrop-blur-sm">
+        <div className="rounded-lg border border-gray-700/30 bg-gray-800/60 px-6 py-6 text-blue-100 backdrop-blur-sm">
           {/* Drag Handle Area with Collapse Button and Reset Button */}
           <div className="-mt-2 mb-2 flex h-4 w-full items-center justify-between">
             <button
