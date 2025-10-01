@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import '@/app/globals.css';
 import { AppStateProvider } from '@/context/HeaderContext';
 import Header from '@/components/Header/Header';
+import ChatBot from '@/components/Chat/ChatBot';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -39,6 +40,9 @@ export default function RootLayout({
             <main id="root" className="flex h-full flex-col overflow-hidden">
               <Header />
               {children}
+              <div className="pointer-events-auto absolute right-0 top-0 z-20 h-full">
+                <ChatBot />
+              </div>
             </main>
           </div>
         </AppStateProvider>

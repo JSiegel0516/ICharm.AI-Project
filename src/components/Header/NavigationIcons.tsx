@@ -9,6 +9,7 @@ import { SettingsGearIcon } from '../UI/settings-gear';
 import SettingsDropdown from './Dropdowns/SettingsDropdown';
 import { useAppState } from '@/context/HeaderContext';
 import { SettingsModal } from '@/app/(frontpage)/_components/Modals/SettingsModal';
+import AboutModal from '@/app/(frontpage)/_components/Modals/AboutModal';
 
 type ActiveDropdown = 'datasets' | 'settings' | null;
 
@@ -23,6 +24,7 @@ const NavigationIcons: React.FC = () => {
 
   const [activeDropdown, setActiveDropdown] = useState<ActiveDropdown>(null);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showAboutModal, setShowAboutModal] = useState(false); // Add state for About modal
 
   const datasetDropdownRef = useRef<HTMLDivElement>(null);
   const datasetButtonRef = useRef<HTMLButtonElement>(null);
@@ -34,7 +36,7 @@ const NavigationIcons: React.FC = () => {
 
   const handleAboutClick = () => {
     setActiveDropdown(null);
-    setShowAbout(true);
+    setShowAboutModal(true); // Use local state instead of context
   };
 
   const handleDatasetClick = () => {
@@ -58,6 +60,10 @@ const NavigationIcons: React.FC = () => {
 
   const closeSettingsModal = () => {
     setShowSettingsModal(false);
+  };
+
+  const closeAboutModal = () => {
+    setShowAboutModal(false);
   };
 
   // Close dropdowns when clicking outside
@@ -179,10 +185,23 @@ const NavigationIcons: React.FC = () => {
       {/* Settings Modal */}
       <SettingsModal
         isOpen={showSettingsModal}
-        onClose={() => setShowSettingsModal(false)}
+        onClose={closeSettingsModal}
         onSave={(settings) => {
           // Save settings logic
-          setShowSettingsModal(false);
+          console.log('Saving settings:', settings);
+          closeSettingsModal();
+        }}
+      />
+
+      {/* About Modal */}
+      <AboutModal
+        isOpen={showAboutModal} // Pass the isOpen prop
+        onClose={closeAboutModal}
+        onShowTutorial={() => {
+          // Handle tutorial launch
+          closeAboutModal();
+          // You might want to add tutorial launch logic here
+          console.log('Launch tutorial from About modal');
         }}
       />
     </>
