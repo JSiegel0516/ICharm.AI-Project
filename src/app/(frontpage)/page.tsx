@@ -11,7 +11,7 @@ import RegionInfoPanel from '@/components/UI/RegionInfoPanel';
 import ChatBot from '@/components/Chat/ChatBot';
 import { SettingsModal } from '@/app/(frontpage)/_components/Modals/SettingsModal';
 import AboutModal from '@/app/(frontpage)/_components/Modals/AboutModal';
-import { useAppState } from '@/app/context/HeaderContext';
+import { useAppState } from '@/context/HeaderContext';
 import { TemperatureUnit, RegionData, PressureLevel } from '@/types';
 import { SettingsSideMenu } from './_components/SideSettingsMenu';
 import { Tutorial } from './_components/Tutorial';

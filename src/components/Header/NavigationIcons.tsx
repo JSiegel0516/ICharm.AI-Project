@@ -7,7 +7,7 @@ import { Info, Settings, X } from 'lucide-react';
 import { ChartSplineIcon } from '../UI/chart-spline';
 import { SettingsGearIcon } from '../UI/settings-gear';
 import SettingsDropdown from './Dropdowns/SettingsDropdown';
-import { useAppState } from '@/app/context/HeaderContext';
+import { useAppState } from '@/context/HeaderContext';
 import { SettingsModal } from '@/app/(frontpage)/_components/Modals/SettingsModal';
 
 type ActiveDropdown = 'datasets' | 'settings' | null;
