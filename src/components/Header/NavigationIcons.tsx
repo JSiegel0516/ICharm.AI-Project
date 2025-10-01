@@ -106,7 +106,11 @@ const NavigationIcons: React.FC = () => {
       </div>
 
       {/* About */}
-      <button onClick={handleAboutClick} className={getIconButtonClasses()}>
+      <button
+        id="aboutme"
+        onClick={handleAboutClick}
+        className={getIconButtonClasses()}
+      >
         <Info size={20} />
         <div className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 transform whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100">
           About 4DVD
@@ -116,6 +120,7 @@ const NavigationIcons: React.FC = () => {
       {/* Settings with Dropdown */}
       <div className="relative" ref={settingsDropdownRef}>
         <button
+          id="site-settings"
           ref={settingsButtonRef}
           onClick={handleSettingsClick}
           className={getIconButtonClasses(activeDropdown === 'settings')}

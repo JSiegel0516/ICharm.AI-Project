@@ -148,7 +148,10 @@ export default function HomePage() {
   const [tutorialOpen, setTutorialOpen] = useState(false);
 
   return (
-    <section className="fixed inset-0 h-screen w-screen overflow-hidden">
+    <section
+      id="globe"
+      className="fixed inset-0 h-screen w-screen overflow-hidden"
+    >
       {/* Full-screen Globe Background - Lowest Layer */}
       <Globe
         ref={globeRef}
@@ -165,7 +168,7 @@ export default function HomePage() {
         />
 
         {/* ColorBar */}
-        <div className="pointer-events-auto absolute z-10">
+        <div id="temperature" className="pointer-events-auto absolute z-10">
           <ColorBar
             show={showColorbar}
             onToggle={toggleColorbar}
@@ -193,7 +196,7 @@ export default function HomePage() {
         <div className="pointer-events-auto absolute bottom-0 left-0 right-12 z-20 pb-4">
           <div className="relative flex items-end justify-center px-4">
             {/* TimeBar - Centered with flexible width */}
-            <div className="pointer-events-auto w-full max-w-4xl">
+            <div id="timebar" className="pointer-events-auto w-full max-w-4xl">
               <TimeBar
                 selectedYear={selectedYear}
                 onYearChange={handleYearChange}
@@ -203,6 +206,7 @@ export default function HomePage() {
 
             {/* Year and Pressure Buttons - Absolutely positioned to the right of TimeBar */}
             <div
+              id="pressure"
               className="pointer-events-auto absolute bottom-0 flex items-center gap-4"
               style={{ left: 'calc(50% + 300px)', transform: 'translateX(0)' }}
             >
