@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import { SettingsIcon } from '@/components/UI/settings';
 import { FileTextIcon } from '@/components/UI/file-text';
 import { DownloadIcon } from '@/components/UI/download';
-import { SettingsGearIcon } from '@/components/UI/settings-gear';
+import { EarthIcon } from '@/components/UI/earth';
 import { CalendarDaysIcon } from '@/components/UI/calendar-days';
 import { Maximize2Icon } from '@/components/UI/maximize-2';
 import { CircleHelpIcon } from '@/components/UI/circle-help';
@@ -379,7 +379,7 @@ export function SettingsSideMenu() {
                 className="group relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl bg-slate-800/90 transition-all hover:scale-105 hover:bg-slate-700/90"
                 onClick={handlePreferencesClick}
               >
-                <SettingsGearIcon size={18} />
+                <EarthIcon size={18} />
                 <div className="pointer-events-none absolute left-12 whitespace-nowrap rounded-lg bg-slate-900/95 px-3 py-1.5 text-sm text-white opacity-0 transition-opacity group-hover:opacity-100">
                   Globe Settings
                 </div>

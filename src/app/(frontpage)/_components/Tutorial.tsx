@@ -18,6 +18,7 @@ export const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
       animate: true,
       overlayOpacity: 0.5,
       smoothScroll: true,
+      preventScroll: true, // Prevent auto-scrolling
       onDestroyStarted: () => {
         driverObj.destroy();
         onClose();
@@ -43,6 +44,25 @@ export const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
             title: 'About Me',
             description: 'Description of iCharm',
             side: 'bottom',
+            align: 'center',
+          },
+        },
+        {
+          element: '#site-settings',
+          popover: {
+            title: 'Site Settings',
+            description: 'Adjust the settings for iCharm',
+            side: 'bottom',
+            align: 'center',
+          },
+        },
+        {
+          element: '#globe',
+          popover: {
+            title: 'Globe',
+            description:
+              'Zoom in and out using mouse scroll. Click and drag to rotate the globe. Select an area on the globe to get region-specific data.',
+            side: 'left',
             align: 'center',
           },
         },
@@ -97,19 +117,55 @@ export const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
           },
         },
         {
+          element: '#temperature',
+          popover: {
+            title: 'Temperature Bar',
+            description:
+              'The temperature box is collapsable, draggable, adjusts between C/F, and can be reset to its original position.',
+            side: 'right',
+            align: 'center',
+          },
+        },
+        {
+          element: '#timebar',
+          popover: {
+            title: 'Date Selection',
+            description:
+              'Slide along the bar or click on the shown date to adjust the time of the dataset.',
+            side: 'top',
+            align: 'center',
+          },
+        },
+        {
+          element: '#pressure',
+          popover: {
+            title: 'Pressure Selection',
+            description: 'Click on the button to select the pressure.',
+            side: 'top',
+            align: 'center',
+          },
+        },
+        {
+          element: '#chatbot',
+          popover: {
+            title: 'Chat Bot',
+            description: 'Prompt the chatbot to ask questions about the data.',
+            side: 'top',
+            align: 'center',
+          },
+        },
+        {
           popover: {
             title: 'Tutorial Complete!',
             description:
-              'You now know all the main controls. The tutorial button is always available if you need a refresher!',
+              'You now know all the main controls. The help button is always available if you need a refresher!',
           },
         },
       ],
     });
 
-    // Start the tour
     driverObj.drive();
 
-    // Clean up function
     return () => {
       if (driverObj.isActive()) {
         driverObj.destroy();
