@@ -158,12 +158,12 @@ const addGeographicBoundaries = (Cesium: any, viewer: any, boundaryData: any[]) 
     // Legacy format support (if your files use Lon/Lat arrays)
     else if (data.Lon && data.Lat) {
       const positions: any[] = [];
-      let color = Cesium.Color.WHITE.withAlpha(0.8);
-      let width = 2;
+      let color = Cesium.Color.GRAY.withAlpha(0.6);
+      let width = 0.5;
 
       if (name.includes('coastline')) {
         color = Cesium.Color.WHITE.withAlpha(0.9);
-        width = 3;
+        width = 2;
       }
 
       for (let i = 0; i < data.Lon.length; i++) {
