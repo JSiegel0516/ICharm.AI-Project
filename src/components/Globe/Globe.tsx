@@ -36,6 +36,165 @@ const loadCesiumFromCDN = async () => {
   });
 };
 
+// Load geographic boundary data
+const loadGeographicBoundaries = async () => {
+  const files = [
+    // 'ne_10m_coastline.json',
+    //'ne_10m_lakes_europe.json',
+    //'ne_10m_lakes_historic.json',
+    //'ne_10m_lakes_north_america.json',
+    //'ne_10m_lakes.json',
+    //'ne_10m_minor_islands_coastline.json',
+    //'ne_10m_rivers_lake_centerlines.json',
+    //'ne_10m_time_zones.json',
+    // 'ne_50m_coastline.json',
+    //'ne_50m_lakes.json',
+    //'ne_50m_rivers_lake_centerlines.json',
+    'ne_110m_coastline.json',
+    'ne_110m_lakes.json',
+    'ne_110m_rivers_lake_centerlines.json',
+  ];
+
+  const boundaryData = [];
+
+  for (const file of files) {
+    try {
+      console.log(`Attempting to load: /_countries/${file}`);
+      const response = await fetch(`/_countries/${file}`);
+      console.log(`Response for ${file}:`, response.status, response.ok);
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`Successfully loaded ${file}, type:`, data.type, 'features:', data.features?.length);
+        boundaryData.push({ name: file, data });
+      } else {
+        console.warn(`Failed to fetch ${file}: ${response.status} ${response.statusText}`);
+      }
+    } catch (error) {
+      console.error(`Error loading ${file}:`, error);
+    }
+  }
+
+  console.log(`Total boundary files loaded: ${boundaryData.length}`);
+  return boundaryData;
+};
+
+// Draw geographic boundaries on the globe
+const addGeographicBoundaries = (Cesium: any, viewer: any, boundaryData: any[]) => {
+  let totalLinesAdded = 0;
+
+  boundaryData.forEach(({ name, data }) => {
+    console.log(`Processing ${name}, type: ${data.type}`);
+    
+    // Handle standard GeoJSON format
+    if (data.type === 'FeatureCollection' && data.features) {
+      let color = Cesium.Color.BLACK.withAlpha(1.0);
+      let width = 2;
+
+      // Customize width based on file type (all black)
+      if (name.includes('coastline')) {
+        width = 3;
+      } else if (name.includes('geographic_lines')) {
+        width = 2;
+      } else if (name.includes('lakes')) {
+        width = 2;
+      } else if (name.includes('rivers')) {
+        width = 2;
+      } else if (name.includes('time_zones')) {
+        width = 1.5;
+      }
+
+      data.features.forEach((feature: any) => {
+        const geometry = feature.geometry;
+        if (!geometry) return;
+
+        const processCoordinates = (coords: any[]) => {
+          if (coords.length < 2) return;
+          
+          const positions = coords.map((coord: number[]) => 
+            Cesium.Cartesian3.fromDegrees(coord[0], coord[1], 10000)
+          );
+
+          if (positions.length > 1) {
+            viewer.entities.add({
+              polyline: {
+                positions: positions,
+                width: width,
+                material: color,
+                clampToGround: false,
+              },
+            });
+            totalLinesAdded++;
+          }
+        };
+
+        // Handle different geometry types
+        if (geometry.type === 'LineString') {
+          processCoordinates(geometry.coordinates);
+        } else if (geometry.type === 'MultiLineString') {
+          geometry.coordinates.forEach((lineCoords: any[]) => {
+            processCoordinates(lineCoords);
+          });
+        } else if (geometry.type === 'Polygon') {
+          geometry.coordinates.forEach((ring: any[]) => {
+            processCoordinates(ring);
+          });
+        } else if (geometry.type === 'MultiPolygon') {
+          geometry.coordinates.forEach((polygon: any[]) => {
+            polygon.forEach((ring: any[]) => {
+              processCoordinates(ring);
+            });
+          });
+        }
+      });
+    }
+    // Legacy format support (if your files use Lon/Lat arrays)
+    else if (data.Lon && data.Lat) {
+      const positions: any[] = [];
+      let color = Cesium.Color.BLACK.withAlpha(1.0);
+      let width = 2;
+
+      if (name.includes('coastline')) {
+        width = 3;
+      }
+
+      for (let i = 0; i < data.Lon.length; i++) {
+        if (data.Lon[i] !== null && data.Lat[i] !== null) {
+          positions.push(
+            Cesium.Cartesian3.fromDegrees(data.Lon[i], data.Lat[i], 10000)
+          );
+        } else if (positions.length > 0) {
+          viewer.entities.add({
+            polyline: {
+              positions: positions.slice(),
+              width: width,
+              material: color,
+              clampToGround: false,
+            },
+          });
+          totalLinesAdded++;
+          positions.length = 0;
+        }
+      }
+
+      if (positions.length > 0) {
+        viewer.entities.add({
+          polyline: {
+            positions: positions,
+            width: width,
+            material: color,
+            clampToGround: false,
+          },
+        });
+        totalLinesAdded++;
+      }
+    } else {
+      console.warn(`Unknown data format for ${name}:`, Object.keys(data));
+    }
+  });
+
+  console.log(`Geographic boundaries added: ${totalLinesAdded} lines from ${boundaryData.length} files`);
+};
+
 const Globe = forwardRef<GlobeRef, GlobeProps>(
   ({ 
     currentDataset, 
@@ -170,16 +329,13 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       try {
         console.log('Loading custom data from:', customDataUrl);
         
-        // Load GeoJSON or custom format
         const response = await fetch(customDataUrl);
         const data = await response.json();
 
-        // Remove existing custom data layer if present
         if (customDataLayerRef.current) {
           viewer.dataSources.remove(customDataLayerRef.current);
         }
 
-        // Add GeoJSON data source
         const dataSource = await Cesium.GeoJsonDataSource.load(data, {
           stroke: Cesium.Color.YELLOW,
           fill: Cesium.Color.YELLOW.withAlpha(0.3),
@@ -211,9 +367,11 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           console.log('Loading Cesium from CDN...');
           const Cesium = await loadCesiumFromCDN();
 
+          // Suppress ion token warnings since we're using self-hosted tiles
+          Cesium.Ion.defaultAccessToken = '';
+
           console.log('Creating self-hosted Cesium viewer...');
 
-          // Create Cesium viewer with minimal UI
           const viewer = new Cesium.Viewer(container, {
             homeButton: false,
             sceneModePicker: false,
@@ -226,26 +384,25 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             vrButton: false,
             infoBox: false,
             selectionIndicator: false,
-            imageryProvider: false, // Don't use default imagery
+            imageryProvider: false,
           });
 
-          // Layer 1: USGS imagery as base (satellite/aerial photos)
+          // Layer 1: USGS imagery as base
           const usgsProvider = new Cesium.ArcGisMapServerImageryProvider({
             url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer',
             credit: 'USGS National Map'
           });
           viewer.imageryLayers.addImageryProvider(usgsProvider);
 
-          // Layer 2: Stamen Toner Lines - ONLY borders and boundaries, no labels or roads
+          // Layer 2: Stamen Toner Lines - boundaries only
           const boundariesProvider = new Cesium.UrlTemplateImageryProvider({
             url: 'https://tiles.stadiamaps.com/tiles/stamen_toner_lines/{z}/{x}/{y}.png',
             credit: '© Stamen Design, © OpenStreetMap contributors',
-            alpha: 0.5, // Semi-transparent overlay
+            alpha: 0.5,
             maximumLevel: 18
           });
           viewer.imageryLayers.addImageryProvider(boundariesProvider);
 
-          // Configure globe appearance
           viewer.scene.globe.enableLighting = false;
           viewer.scene.globe.showGroundAtmosphere = true;
           viewer.scene.backgroundColor = Cesium.Color.TRANSPARENT;
@@ -253,22 +410,23 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           viewer.scene.sun.show = true;
           viewer.scene.moon.show = true;
 
-          // Configure canvas
           viewer.canvas.style.width = '100%';
           viewer.canvas.style.height = '100%';
 
-          // Hide Cesium branding/watermark
           const cesiumCredit = container.querySelector('.cesium-viewer-bottom');
           if (cesiumCredit) {
             (cesiumCredit as HTMLElement).style.display = 'none';
           }
 
-          // Set initial camera position
           viewer.camera.setView({
             destination: Cesium.Cartesian3.fromDegrees(0, 20, 25000000),
           });
 
-          // Load custom data if URL provided
+          // Load and add geographic boundaries
+          console.log('Loading geographic boundaries...');
+          const boundaryData = await loadGeographicBoundaries();
+          addGeographicBoundaries(Cesium, viewer, boundaryData);
+
           if (customDataUrl) {
             await loadCustomData(Cesium, viewer);
           }
@@ -303,7 +461,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             Cesium.ScreenSpaceEventType.LEFT_CLICK
           );
 
-          // Right click handler (rotate 180°)
+          // Right click handler
           viewer.cesiumWidget.screenSpaceEventHandler.setInputAction(
             (event: any) => {
               const currentPosition = viewer.camera.positionCartographic;
@@ -437,9 +595,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900 bg-opacity-75">
             <div className="text-center text-white">
               <div className="mb-4 h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-              <p>Loading Self-Hosted Globe...</p>
+              <p>Loading Globe with Geographic Boundaries...</p>
               <p className="mt-1 text-xs text-gray-400">
-                Loading custom data sources
+                Loading coastlines, rivers, lakes, and boundaries
               </p>
             </div>
           </div>
