@@ -73,8 +73,8 @@ const PressureLevelsSelector: React.FC<PressureLevelsSelectorProps> = ({
         onClick={() => setIsOpen(!isOpen)}
         className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-all duration-200 hover:scale-105 focus:outline-none ${
           isOpen
-            ? 'border-white/30 bg-white/20 text-white'
-            : 'border-gray-500/30 bg-gray-600/40 text-gray-400 hover:border-white/20 hover:bg-white/10 hover:text-white'
+            ? 'border-white/30 bg-slate-700 text-white'
+            : 'border-gray-500/30 bg-slate-800 text-gray-400 hover:border-white/20 hover:bg-slate-700 hover:text-white'
         }`}
         title="Select Pressure Level"
         type="button"
