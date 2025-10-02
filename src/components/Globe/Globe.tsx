@@ -39,8 +39,7 @@ const loadCesiumFromCDN = async () => {
 // Load geographic boundary data
 const loadGeographicBoundaries = async () => {
   const files = [
-    //'ne_10m_coastline.json',
-    //'ne_10m_geographic_lines.json',
+    // 'ne_10m_coastline.json',
     //'ne_10m_lakes_europe.json',
     //'ne_10m_lakes_historic.json',
     //'ne_10m_lakes_north_america.json',
@@ -48,14 +47,12 @@ const loadGeographicBoundaries = async () => {
     //'ne_10m_minor_islands_coastline.json',
     //'ne_10m_rivers_lake_centerlines.json',
     //'ne_10m_time_zones.json',
-    //'ne_50m_coastline.json',
-    //'ne_50m_geographic_lines.json',
+    // 'ne_50m_coastline.json',
     //'ne_50m_lakes.json',
     //'ne_50m_rivers_lake_centerlines.json',
     'ne_110m_coastline.json',
-    //'ne_110m_geographic_lines.json',
     'ne_110m_lakes.json',
-    //'ne_110m_rivers_lake_centerlines.json',
+    'ne_110m_rivers_lake_centerlines.json',
   ];
 
   const boundaryData = [];
@@ -90,24 +87,19 @@ const addGeographicBoundaries = (Cesium: any, viewer: any, boundaryData: any[]) 
     
     // Handle standard GeoJSON format
     if (data.type === 'FeatureCollection' && data.features) {
-      let color = Cesium.Color.WHITE.withAlpha(0.8);
-      let width = .5;
+      let color = Cesium.Color.BLACK.withAlpha(1.0);
+      let width = 2;
 
-      // Customize appearance based on file type
+      // Customize width based on file type (all black)
       if (name.includes('coastline')) {
-        color = Cesium.Color.WHITE.withAlpha(0.9);
         width = 3;
       } else if (name.includes('geographic_lines')) {
-        color = Cesium.Color.YELLOW.withAlpha(0.7);
         width = 2;
       } else if (name.includes('lakes')) {
-        color = Cesium.Color.BLUE.withAlpha(0.7);
         width = 2;
       } else if (name.includes('rivers')) {
-        color = Cesium.Color.CYAN.withAlpha(0.7);
         width = 2;
       } else if (name.includes('time_zones')) {
-        color = Cesium.Color.ORANGE.withAlpha(0.5);
         width = 1.5;
       }
 
@@ -158,11 +150,15 @@ const addGeographicBoundaries = (Cesium: any, viewer: any, boundaryData: any[]) 
     // Legacy format support (if your files use Lon/Lat arrays)
     else if (data.Lon && data.Lat) {
       const positions: any[] = [];
-      let color = Cesium.Color.GRAY.withAlpha(0.6);
-      let width = 0.5;
+      let color = Cesium.Color.CYAN.withAlpha(.3);
+      let width = 1.5;
 
       if (name.includes('coastline')) {
-        color = Cesium.Color.WHITE.withAlpha(0.9);
+        color = Cesium.Color.WHITE.withAlpha(.6);
+        width = 2;
+      }
+      if (name.includes('lakes')) {
+        color = Cesium.Color.WHITE.withAlpha(.3);
         width = 2;
       }
 
@@ -404,13 +400,13 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           viewer.imageryLayers.addImageryProvider(usgsProvider);
 
           // Layer 2: Stamen Toner Lines - boundaries only
-          const boundariesProvider = new Cesium.UrlTemplateImageryProvider({
+          /* const boundariesProvider = new Cesium.UrlTemplateImageryProvider({
             url: 'https://tiles.stadiamaps.com/tiles/stamen_toner_lines/{z}/{x}/{y}.png',
             credit: '© Stamen Design, © OpenStreetMap contributors',
             alpha: 0.5,
             maximumLevel: 18
           });
-          viewer.imageryLayers.addImageryProvider(boundariesProvider);
+          viewer.imageryLayers.addImageryProvider(boundariesProvider); */
 
           viewer.scene.globe.enableLighting = false;
           viewer.scene.globe.showGroundAtmosphere = true;
