@@ -4,8 +4,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { X, Send, Bot, User } from 'lucide-react';
 import { ChatMessage, ChatPageProps } from '@/types';
 
-
-
 const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -85,27 +83,27 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
 
   return (
     <div
-      className={`fixed bottom-6 right-6 z-50 flex h-[500px] w-80 transform flex-col rounded-2xl border border-blue-500/20 bg-gradient-to-br from-blue-900/95 to-purple-900/95 shadow-2xl backdrop-blur-sm transition-all duration-300 ease-out ${
+      className={`fixed bottom-6 right-6 z-50 flex h-[500px] w-80 transform flex-col rounded-xl border border-gray-600/30 bg-gray-800/95 shadow-2xl backdrop-blur-sm transition-all duration-300 ease-out ${
         show
           ? 'translate-x-0 scale-100 opacity-100'
           : 'pointer-events-none translate-x-full scale-95 opacity-0'
       }`}
     >
       {/* Header */}
-      <div className="flex items-center justify-between rounded-t-2xl border-b border-blue-500/20 bg-gradient-to-r from-blue-800/50 to-purple-800/50 p-3">
+      <div className="flex items-center justify-between rounded-t-xl border-b border-gray-700/50 bg-gray-900/50 p-3">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600">
-            <Bot size={16} className="text-white" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-700">
+            <Bot size={16} className="text-gray-200" />
           </div>
           <div>
-            <h1 className="text-base font-semibold text-blue-100">
+            <h1 className="text-base font-semibold text-gray-200">
               Climate AI Assistant
             </h1>
           </div>
         </div>
         <button
           onClick={onClose}
-          className="rounded-full p-1 text-blue-300 transition-colors hover:bg-blue-600/30 hover:text-white"
+          className="rounded-full p-1 text-gray-400 transition-colors hover:bg-gray-700/50 hover:text-gray-200"
         >
           <X size={18} />
         </button>
@@ -119,24 +117,24 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
             className={`flex gap-3 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             {message.type === 'bot' && (
-              <div className="mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-600">
-                <Bot size={16} className="text-white" />
+              <div className="mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gray-700">
+                <Bot size={16} className="text-gray-200" />
               </div>
             )}
 
             <div
               className={`max-w-[85%] rounded-2xl px-3 py-2 ${
                 message.type === 'user'
-                  ? 'bg-blue-600 text-white'
-                  : 'border border-blue-500/30 bg-blue-800/40 text-blue-100'
+                  ? 'bg-gray-700 text-gray-100'
+                  : 'border border-gray-700/30 bg-gray-900/30 text-gray-200'
               }`}
             >
               <p className="text-sm leading-relaxed">{message.message}</p>
             </div>
 
             {message.type === 'user' && (
-              <div className="mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-purple-600">
-                <User size={16} className="text-white" />
+              <div className="mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gray-600">
+                <User size={16} className="text-gray-200" />
               </div>
             )}
           </div>
@@ -145,23 +143,23 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
         {/* Typing Indicator */}
         {isTyping && (
           <div className="flex justify-start gap-3">
-            <div className="mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-600">
-              <Bot size={16} className="text-white" />
+            <div className="mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gray-700">
+              <Bot size={16} className="text-gray-200" />
             </div>
-            <div className="rounded-2xl border border-blue-500/30 bg-blue-800/40 px-3 py-2 text-blue-100">
+            <div className="rounded-2xl border border-gray-700/30 bg-gray-900/30 px-3 py-2 text-gray-200">
               <div className="flex items-center gap-1">
                 <div className="flex space-x-1">
-                  <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-300"></div>
+                  <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400"></div>
                   <div
-                    className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-300"
+                    className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400"
                     style={{ animationDelay: '0.1s' }}
                   ></div>
                   <div
-                    className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-300"
+                    className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400"
                     style={{ animationDelay: '0.2s' }}
                   ></div>
                 </div>
-                <span className="ml-2 text-xs text-blue-300">
+                <span className="ml-2 text-xs text-gray-400">
                   AI is typing...
                 </span>
               </div>
@@ -173,7 +171,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
       </div>
 
       {/* Input Area */}
-      <div className="rounded-b-2xl border-t border-blue-500/20 bg-gradient-to-r from-blue-800/50 to-purple-800/50 p-3">
+      <div className="rounded-b-xl border-t border-gray-700/50 bg-gray-900/50 p-3">
         <div className="flex items-end gap-2">
           <input
             ref={inputRef}
@@ -182,12 +180,12 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
             onChange={(e) => setInputValue(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder="Ask about climate data..."
-            className="flex-1 rounded-xl border border-blue-500/30 bg-blue-900/50 px-3 py-2 text-sm text-blue-100 placeholder-blue-300 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="flex-1 rounded-xl border border-gray-700/30 bg-gray-900/30 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-600"
           />
           <button
             onClick={handleSendMessage}
             disabled={!inputValue.trim() || isTyping}
-            className="flex items-center justify-center rounded-xl bg-blue-600 p-2 text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex items-center justify-center rounded-xl bg-gray-700 p-2 text-gray-200 transition-colors hover:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Send size={16} />
           </button>
