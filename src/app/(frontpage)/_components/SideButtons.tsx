@@ -137,6 +137,24 @@ export function SideButtons() {
             transition={{ duration: 0.3, ease: 'easeInOut' }}
             className="pointer-events-auto fixed left-4 top-0 z-[9999] flex h-screen flex-col items-center justify-center gap-2"
           >
+            {/* Tutorial Button */}
+            <motion.div
+              initial={false}
+              animate={{
+                opacity: isExpanded ? 1 : 0,
+                scale: isExpanded ? 1 : 0.8,
+                y: isExpanded ? 0 : 10,
+              }}
+              transition={{ duration: 0.2, delay: 0.15 }}
+            >
+              <div className="btn-icon group" onClick={handleTutorialClick}>
+                <CircleHelpIcon size={18} />
+                <div className="btn-hover group-hover:opacity-100">
+                  Show Tutorial
+                </div>
+              </div>
+            </motion.div>
+
             {/* Dataset Button */}
             <motion.div
               id="dataset"
@@ -209,24 +227,6 @@ export function SideButtons() {
                 <EarthIcon size={18} />
                 <div className="btn-hover group-hover:opacity-100">
                   Globe Settings
-                </div>
-              </div>
-            </motion.div>
-
-            {/* Tutorial Button */}
-            <motion.div
-              initial={false}
-              animate={{
-                opacity: isExpanded ? 1 : 0,
-                scale: isExpanded ? 1 : 0.8,
-                y: isExpanded ? 0 : 10,
-              }}
-              transition={{ duration: 0.2, delay: 0.15 }}
-            >
-              <div className="btn-icon group" onClick={handleTutorialClick}>
-                <CircleHelpIcon size={18} />
-                <div className="btn-hover group-hover:opacity-100">
-                  Show Tutorial
                 </div>
               </div>
             </motion.div>

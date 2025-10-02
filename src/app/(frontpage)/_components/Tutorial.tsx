@@ -29,6 +29,12 @@ export const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
       },
       steps: [
         {
+          popover: {
+            title: 'Begin tutorial',
+            description: "The current dataset's full name is NOAA ___ . ",
+          },
+        },
+        {
           element: '#dataset-title',
           popover: {
             title: 'Current Dataset',
