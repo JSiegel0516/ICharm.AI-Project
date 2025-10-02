@@ -581,7 +581,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
                 className={`group flex items-center gap-2 rounded-lg px-3 py-1 text-base font-medium transition-all duration-200 hover:bg-white/10 ${
                   isActive
                     ? 'scale-105 text-white'
-                    : 'text-gray-400 hover:text-white'
+                    : 'text-gray-200 hover:text-white'
                 }`}
                 title="Click to edit date"
                 type="button"
