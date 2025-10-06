@@ -1,0 +1,84 @@
+{
+  "sections": [
+    {
+      "id": "intro",
+      "title": "Introduction to iCharm",
+      "content": "iCharm is a climate visualization platform that displays NOAA datasets on an interactive 3D globe. The platform allows users to explore various climate and geographical data through an intuitive interface. Users can interact with the globe, select different datasets, adjust time periods, and analyze climate patterns across different regions and atmospheric pressure levels."
+    },
+    {
+      "id": "dataset-display",
+      "title": "Current Dataset Display",
+      "content": "The current dataset name is shown at the top of the interface. This displays the name of the currently loaded dataset. Different datasets display different climate or geographical data on the globe. The full name format is NOAA followed by the specific dataset identifier. This helps users understand what data they are currently viewing."
+    },
+    {
+      "id": "time-series",
+      "title": "Time Series Analysis",
+      "content": "The Time Series button opens a dedicated page where users can compare and analyze datasets over time. This feature allows for temporal analysis of climate data, helping users identify trends, patterns, and changes in climate variables across different time periods. Users can compare multiple datasets side by side to understand correlations and differences."
+    },
+    {
+      "id": "about-section",
+      "title": "About iCharm",
+      "content": "The About Me section provides a comprehensive description of iCharm, including its purpose, capabilities, and the data sources it uses. This section explains the platform's mission to make climate data accessible and understandable through interactive visualization."
+    },
+    {
+      "id": "site-settings",
+      "title": "Site Settings and Preferences",
+      "content": "Site Settings allow users to adjust page settings for iCharm. This includes various configuration options to customize the user experience, interface preferences, and display settings to suit individual needs and preferences."
+    },
+    {
+      "id": "globe-interaction",
+      "title": "Globe Interaction and Controls",
+      "content": "The interactive 3D globe is the main visualization component. Users can zoom in and out using mouse scroll. Click and drag to rotate the globe and view different regions. Select an area on the globe to get region-specific data. The globe provides an intuitive way to explore global climate patterns and select specific geographic regions for detailed analysis."
+    },
+    {
+      "id": "dataset-selection",
+      "title": "Dataset Selection",
+      "content": "The Dataset Selection button allows users to browse and load different datasets for visualization. Click here to open the dataset menu and choose from various NOAA climate datasets. Each dataset provides different types of climate or geographical information, such as temperature, precipitation, wind patterns, or other atmospheric variables."
+    },
+    {
+      "id": "calendar-dates",
+      "title": "Date Selection with Calendar",
+      "content": "The Calendar feature allows users to set specific dates for data visualization. Users can select particular time points to view historical climate data or compare conditions across different dates. This precise date selection helps in analyzing specific weather events or comparing seasonal patterns."
+    },
+    {
+      "id": "data-download",
+      "title": "Data Download and Export",
+      "content": "The Download button enables users to export their current dataset or visualization in various formats. This feature allows researchers and analysts to save data for offline analysis, reporting, or integration with other tools. Multiple export formats are supported to accommodate different use cases."
+    },
+    {
+      "id": "globe-settings",
+      "title": "Globe Preferences and Customization",
+      "content": "Globe Settings (Preferences) allow users to customize the globe appearance, layers, and visualization settings. Users can adjust visual parameters such as color schemes, layer visibility, projection types, and rendering options to optimize the display for their specific analysis needs."
+    },
+    {
+      "id": "fullscreen",
+      "title": "Fullscreen Mode",
+      "content": "The Fullscreen button toggles fullscreen mode for an immersive viewing experience. This maximizes the globe visualization area, removing distractions and providing a better view for presentations, detailed analysis, or when working with large displays. Press escape or click the button again to exit fullscreen mode."
+    },
+    {
+      "id": "temperature-bar",
+      "title": "Temperature Display Bar",
+      "content": "The Temperature Bar shows current temperature values and includes several interactive features. The temperature box is collapsable to save screen space, draggable to reposition on the screen, can switch between Celsius and Fahrenheit units, and can be reset to its original position. This flexible display helps users monitor temperature data while maintaining a customizable interface."
+    },
+    {
+      "id": "timebar-control",
+      "title": "Time Bar Navigation",
+      "content": "The Time Bar at the bottom of the screen allows for temporal navigation through the dataset. Users can slide along the bar to smoothly transition between different time points, or click directly on the shown date to jump to specific moments. This control enables easy exploration of how climate variables change over time."
+    },
+    {
+      "id": "pressure-levels",
+      "title": "Atmospheric Pressure Level Selection",
+      "content": "The Pressure Selection button allows users to choose different atmospheric pressure levels for data visualization. Different pressure levels correspond to different altitudes in the atmosphere, from surface level to upper atmosphere. This is crucial for understanding vertical atmospheric structure and analyzing weather patterns at various heights. Click the button to open a menu of available pressure levels measured in hectopascals (hPa)."
+    },
+    {
+      "id": "chatbot",
+      "title": "AI Chat Assistant",
+      "content": "The Chat Bot button opens an AI assistant that can answer questions about the climate data and help users understand the visualizations. Users can prompt the chatbot to ask questions about specific data points, request explanations of climate phenomena, or get help interpreting the displayed information. The chatbot provides contextual assistance based on the current dataset and user selections."
+    },
+    {
+      "id": "navigation-tips",
+      "title": "Navigation and Usage Tips",
+      "content": "The help button is always available throughout the interface if you need a refresher on any controls or features. All main controls are accessible from the primary interface. The tutorial can be restarted at any time to review the features. For best results, start by selecting a dataset, choose your desired date and pressure level, then interact with the globe to explore specific regions."
+    }
+  ]
+}
