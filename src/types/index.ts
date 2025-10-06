@@ -26,6 +26,11 @@ export interface ChatMessage {
   type: 'user' | 'bot';
   message: string;
   timestamp: Date;
+  sources?: Array<{
+    id: string;
+    title: string;
+    score: number;
+  }>;
 }
 
 export interface ChatMessageProps {

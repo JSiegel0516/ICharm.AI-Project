@@ -16,6 +16,7 @@
     "clean-cesium": "rimraf public/cesium"
   },
   "dependencies": {
+    "@xenova/transformers": "^2.17.2",
     "cesium": "^1.133.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
