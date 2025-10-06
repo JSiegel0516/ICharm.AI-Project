@@ -26,10 +26,13 @@ function isValidMessagesPayload(payload: unknown): payload is ChatMessage[] {
   );
 }
 
+export const maxDuration = 120; // Allow up to 120 seconds
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: NextRequest) {
   if (!HF_API_KEY) {
-    return new Response(
-      JSON.stringify({ error: 'Missing HF API key' }),
+    return Response.json(
+      { error: 'Missing HF API key' },
       { status: 500 }
     );
   }
@@ -40,8 +43,8 @@ export async function POST(req: NextRequest) {
   const { messages } = await req.json();
 
   if (!isValidMessagesPayload(messages)) {
-    return new Response(
-      JSON.stringify({ error: 'Invalid chat payload' }),
+    return Response.json(
+      { error: 'Invalid chat payload' },
       { status: 400 }
     );
   }
@@ -81,11 +84,11 @@ export async function POST(req: NextRequest) {
       
       // Handle specific errors
       if (result.error) {
-        return new Response(
-          JSON.stringify({
+        return Response.json(
+          {
             error: 'LLM request failed',
             details: typeof result.error === 'string' ? result.error : JSON.stringify(result.error),
-          }),
+          },
           { status: response.status }
         );
       }
@@ -96,8 +99,8 @@ export async function POST(req: NextRequest) {
     const completionText = result.choices?.[0]?.message?.content || '';
 
     if (!completionText) {
-      return new Response(
-        JSON.stringify({ error: 'Empty response from model' }),
+      return Response.json(
+        { error: 'Empty response from model' },
         { status: 502 }
       );
     }
@@ -105,31 +108,23 @@ export async function POST(req: NextRequest) {
     console.log('✅ Success! Model response:', completionText);
     console.log('Provider used:', result.model);
 
-    const stream = new TransformStream();
-    const writer = stream.writable.getWriter();
-    const encoder = new TextEncoder();
-
-    await writer.write(
-      encoder.encode(
-        `data: ${JSON.stringify({ content: completionText })}\n\n`
-      )
+    // Return plain JSON instead of SSE stream
+    return Response.json(
+      { content: completionText },
+      {
+        headers: {
+          'Cache-Control': 'no-store',
+        },
+      }
     );
-    await writer.close();
-
-    return new Response(stream.readable, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-store',
-      },
-    });
   } catch (error) {
     console.error('HF chat error:', error);
     
-    return new Response(
-      JSON.stringify({
+    return Response.json(
+      {
         error: 'LLM request failed',
         details: (error as Error).message ?? 'Unknown error from Hugging Face',
-      }),
+      },
       { status: 500 }
     );
   }

@@ -43,35 +43,98 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
     };
 
     setMessages((prev) => [...prev, userMessage]);
+    const currentInput = inputValue;
     setInputValue('');
     setIsTyping(true);
 
-    // Simulate AI response delay
-    setTimeout(() => {
-      const responses = [
-        'I can help you analyze temperature patterns across different regions. What specific area interests you?',
-        'This dataset shows monthly temperature averages. Would you like to explore seasonal variations?',
-        'The color gradient represents temperature ranges. What questions do you have about the data?',
-        'I can explain climate trends, help you navigate the interface, or provide insights about specific regions.',
-        'Let me help you understand the data visualization. Which aspect would you like to explore?',
-        'Would you like me to explain how to interpret the color patterns on the globe?',
-        'I can guide you through the different datasets available. What type of climate data interests you most?',
-        'The precipitation data shows interesting patterns. Would you like me to highlight specific regions?',
-        "I notice you're looking at sea surface temperatures. These can indicate climate change trends.",
-      ];
+    try {
+      // Build conversation history for context
+      const conversationHistory = messages.map((msg) => ({
+        role: msg.type === 'user' ? 'user' : 'assistant',
+        content: msg.message,
+      }));
 
-      const randomResponse =
-        responses[Math.floor(Math.random() * responses.length)];
+      // Add the current user message
+      conversationHistory.push({
+        role: 'user',
+        content: currentInput,
+      });
+
+      console.log('Sending to API:', conversationHistory); // Debug log
+
+      // Call the backend API with timeout
+      let response;
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+        response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messages: conversationHistory,
+          }),
+          signal: controller.signal,
+        });
+        
+        clearTimeout(timeoutId);
+        console.log('Fetch completed!'); // Debug log
+      } catch (fetchError) {
+        console.error('Fetch failed:', fetchError);
+        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+          throw new Error('Request timed out after 30 seconds');
+        }
+        throw fetchError;
+      }
+
+      console.log('Response status:', response.status); // Debug log
+      console.log('Response ok:', response.ok); // Debug log
+      console.log('Response headers:', response.headers); // Debug log
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('API error response:', errorText);
+        throw new Error(`API error: ${response.status} - ${errorText}`);
+      }
+
+      console.log('About to parse JSON response...'); // Debug log
+
+      // Parse JSON response directly
+      const data = await response.json();
+      console.log('Received data:', data); // Debug log
+
+      const botResponse = data.content || '';
+      console.log('Bot response:', botResponse); // Debug log
+
+      if (!botResponse) {
+        throw new Error('Empty response from API');
+      }
+
       const botMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         type: 'bot',
-        message: randomResponse,
+        message: botResponse,
         timestamp: new Date(),
       };
 
+      console.log('Adding bot message:', botMessage); // Debug log
       setMessages((prev) => [...prev, botMessage]);
+    } catch (error) {
+      console.error('Chat error:', error);
+      
+      const errorMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        type: 'bot',
+        message: 'Sorry, I encountered an error. Please try again.',
+        timestamp: new Date(),
+      };
+
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
       setIsTyping(false);
-    }, 1500);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
