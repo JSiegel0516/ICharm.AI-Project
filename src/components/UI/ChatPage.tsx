@@ -173,7 +173,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
       </div>
 
       {/* Messages Area */}
-      <div className="flex-1 space-y-3 overflow-y-auto p-4">
+      <div className="custom-scrollbar flex-1 space-y-3 overflow-y-auto p-4">
         {messages.map((message) => (
           <div
             key={message.id}
@@ -254,6 +254,24 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
           </button>
         </div>
       </div>
+
+      {/* Custom Scrollbar Styles */}
+      <style jsx>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: #475569;
+          border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #64748b;
+          border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: #94a3b8;
+        }
+      `}</style>
     </div>
   );
 };
