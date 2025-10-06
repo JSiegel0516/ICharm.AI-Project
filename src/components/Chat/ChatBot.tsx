@@ -9,24 +9,11 @@ const ChatBot: React.FC = () => {
   const [show, setShow] = useState(false);
   const [showFullPage, setShowFullPage] = useState(false);
 
-  // Load state from localStorage on component mount
+  // Ensure the chat is collapsed on initial load
   useEffect(() => {
-    const savedState = localStorage.getItem('chatbot-state');
-    if (savedState) {
-      const { show: savedShow, showFullPage: savedFullPage } =
-        JSON.parse(savedState);
-      setShow(savedShow);
-      setShowFullPage(savedFullPage);
-    }
+    setShow(false);
+    setShowFullPage(false);
   }, []);
-
-  // Save state to localStorage whenever it changes
-  useEffect(() => {
-    localStorage.setItem(
-      'chatbot-state',
-      JSON.stringify({ show, showFullPage })
-    );
-  }, [show, showFullPage]);
 
   const handleToggle = () => {
     setShow(!show);
