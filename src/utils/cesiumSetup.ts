@@ -36,20 +36,6 @@ export const loadCesiumFromCDN = (): Promise<any> => {
       const script = document.createElement('script');
       script.src = 'https://cesium.com/downloads/cesiumjs/releases/1.133/Build/Cesium/Cesium.js';
       
-      script.onload = () => {
-        if (window.Cesium) {
-          // Configure Cesium with your token
-          window.Cesium.Ion.defaultAccessToken = process.env.NEXT_PUBLIC_CESIUM_ACCESS_TOKEN || 
-            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIxY2I4YmViYi0zZTk4LTRjMGEtYThkZi0zYzU5ZWM0ODQ3OTEiLCJpZCI6MzQyNjc5LCJpYXQiOjE3NTgyMzkzNTR9.UEhf6smCV5FVMBolNxzmgkjYFraxf8TPnppDdJ6TmuY";
-          
-          cesiumLoaded = true;
-          console.log('✓ Cesium loaded from CDN successfully');
-          resolve(window.Cesium);
-        } else {
-          reject(new Error('Cesium failed to load from CDN'));
-        }
-      };
-
       script.onerror = () => {
         console.error('Failed to load Cesium from CDN');
         reject(new Error('Failed to load Cesium script from CDN'));
