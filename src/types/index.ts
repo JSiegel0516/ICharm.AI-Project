@@ -229,6 +229,22 @@ export interface RegionInfoPanelProps {
   className?: string;
 }
 
+export interface TutorialSection {
+  id: string;
+  title: string;
+  content: string;
+  embedding: number[];
+  category?: string;
+}
+
+export interface RetrievalResult {
+  id: string;
+  title: string;
+  content: string;
+  score: number;
+  category?: string;
+}
+
 // Base modal props
 export interface ModalProps {
   onClose: () => void;

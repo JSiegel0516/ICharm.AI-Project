@@ -1,6 +1,6 @@
 // app/api/chat/route.ts
 import { NextRequest } from 'next/server';
-import { retrieveRelevantSections, buildContextString, isTutorialQuery } from '@/utils/ragRetriever';
+import { retrieveRelevantContext, buildContextString } from '@/utils/ragRetriever';
 
 const HF_MODEL =
   process.env.LLAMA_MODEL ?? 'meta-llama/Llama-3.1-8B-Instruct';
@@ -56,67 +56,78 @@ export async function POST(req: NextRequest) {
   const lastUserMessage = messages[messages.length - 1];
   const userQuery = lastUserMessage?.content || '';
 
-  // Check if this is a tutorial-related query
-  const isAboutTutorial = isTutorialQuery(userQuery);
-  
-  let contextSources: any[] = [];
+  let contextSources: Array<{
+    id: string;
+    title: string;
+    category?: string;
+    score: number;
+  }> = [];
   let enhancedMessages = [...messages];
 
-  // If it's tutorial-related, retrieve relevant sections
-  if (isAboutTutorial) {
-    console.log('📚 Tutorial query detected, retrieving relevant sections...');
+  // Retrieve relevant context (tutorial, about, or general)
+  console.log('🔍 Analyzing query...');
+  
+  try {
+    const { results: relevantSections, contextType } = await retrieveRelevantContext(userQuery, 3);
     
-    try {
-      const relevantSections = await retrieveRelevantSections(userQuery, 3);
-      console.log(`✅ Found ${relevantSections.length} relevant sections`);
+    if (relevantSections.length > 0) {
+      console.log(`📚 Found ${relevantSections.length} relevant sections (${contextType})`);
       
-      if (relevantSections.length > 0) {
-        // Build context string
-        const contextString = buildContextString(relevantSections);
-        
-        // Store sources for response
-        contextSources = relevantSections.map(section => ({
-          id: section.id,
-          title: section.title,
-          score: Math.round(section.score * 100) / 100 // Round to 2 decimals
-        }));
-        
-        console.log('📖 Retrieved sources:', contextSources.map(s => s.title).join(', '));
-        
-        // Add system message with context
-        const systemMessage: ChatMessage = {
-          role: 'system',
-          content: `You are an AI assistant for iCharm, a climate visualization platform. Use the following context from the tutorial to answer the user's question. If the answer is not in the context, say you don't have that specific information but offer to help with general guidance.
+      // Build context string
+      const contextString = buildContextString(relevantSections, contextType as 'tutorial' | 'about');
+      
+      // Store sources for response
+      contextSources = relevantSections.map(section => ({
+        id: section.id,
+        title: section.title,
+        category: section.category || contextType,
+        score: Math.round(section.score * 100) / 100
+      }));
+      
+      console.log('📖 Retrieved sources:', contextSources.map(s => s.title).join(', '));
+      
+      // Create appropriate system message based on context type
+      let systemPrompt = '';
+      if (contextType === 'about') {
+        systemPrompt = `You are an AI assistant for iCharm/4DVD, a climate visualization platform. Use the following context about the platform's history, development, and information to answer the user's question.
+
+${contextString}
+
+Instructions:
+- Be informative and accurate based on the provided context
+- Reference specific details when applicable (names, dates, citations)
+- If asked about licensing or technical details, be precise
+- If the answer is not in the context, acknowledge that and offer general guidance
+- Use a professional, informative tone`;
+      } else {
+        systemPrompt = `You are an AI assistant for iCharm, a climate visualization platform. Use the following context from the tutorial to answer the user's question.
 
 ${contextString}
 
 Instructions:
 - Be concise and helpful
 - Reference the relevant tutorial sections when applicable
+- Provide step-by-step guidance for how-to questions
 - If the user asks about features not covered in the context, acknowledge that and provide general guidance
-- Use a friendly, professional tone`
-        };
-        
-        // Insert system message at the beginning or update existing system message
-        const hasSystemMessage = messages[0]?.role === 'system';
-        if (hasSystemMessage) {
-          // Replace existing system message
-          enhancedMessages = [
-            systemMessage,
-            ...messages.slice(1)
-          ];
-        } else {
-          // Add new system message at the start
-          enhancedMessages = [
-            systemMessage,
-            ...messages
-          ];
-        }
+- Use a friendly, professional tone`;
       }
-    } catch (error) {
-      console.error('❌ RAG retrieval error:', error);
-      // Continue without RAG enhancement if it fails
+      
+      const systemMessage: ChatMessage = {
+        role: 'system',
+        content: systemPrompt
+      };
+      
+      // Insert system message at the beginning or update existing system message
+      const hasSystemMessage = messages[0]?.role === 'system';
+      if (hasSystemMessage) {
+        enhancedMessages = [systemMessage, ...messages.slice(1)];
+      } else {
+        enhancedMessages = [systemMessage, ...messages];
+      }
     }
+  } catch (error) {
+    console.error('❌ RAG retrieval error:', error);
+    // Continue without RAG enhancement if it fails
   }
   // === RAG ENHANCEMENT END ===
 
