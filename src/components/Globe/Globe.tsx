@@ -372,9 +372,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           console.log('Loading Cesium from CDN...');
           const Cesium = await loadCesiumFromCDN();
 
-          // Suppress ion token warnings since we're using self-hosted tiles
-          Cesium.Ion.defaultAccessToken = '';
-
           console.log('Creating self-hosted Cesium viewer...');
 
           const viewer = new Cesium.Viewer(container, {
