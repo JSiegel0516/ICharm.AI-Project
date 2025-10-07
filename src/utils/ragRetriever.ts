@@ -4,6 +4,8 @@ import tutorialIndex from '@/data/tutorial/tutorialIndex.json';
 import { TutorialSection, RetrievalResult } from '@/types';
 
 
+// use node src/components/Scripts/embedTutorial.js to generate embeddings
+
 let embedder: any = null;
 
 // Initialize the embedding model (lazy loading)
