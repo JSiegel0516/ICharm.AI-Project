@@ -20,6 +20,9 @@ node_modules
 # cesium
 cesium/
 
+# embeddings 
+/src/data/tutorial/tutorialIndex.json
+
 # production
 /build
 
