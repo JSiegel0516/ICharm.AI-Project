@@ -18,19 +18,22 @@ const loadCesiumFromCDN = async () => {
 
   return new Promise((resolve, reject) => {
     const script = document.createElement('script');
-    script.src = 'https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Cesium.js';
+    script.src =
+      'https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Cesium.js';
     script.async = true;
-    
+
     script.onload = () => {
       const link = document.createElement('link');
-      link.href = 'https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Widgets/widgets.css';
+      link.href =
+        'https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Widgets/widgets.css';
       link.rel = 'stylesheet';
       document.head.appendChild(link);
-      
-      window.CESIUM_BASE_URL = 'https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/';
+
+      window.CESIUM_BASE_URL =
+        'https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/';
       resolve(window.Cesium);
     };
-    
+
     script.onerror = () => reject(new Error('Failed to load Cesium'));
     document.head.appendChild(script);
   });
@@ -64,10 +67,17 @@ const loadGeographicBoundaries = async () => {
       console.log(`Response for ${file}:`, response.status, response.ok);
       if (response.ok) {
         const data = await response.json();
-        console.log(`Successfully loaded ${file}, type:`, data.type, 'features:', data.features?.length);
+        console.log(
+          `Successfully loaded ${file}, type:`,
+          data.type,
+          'features:',
+          data.features?.length
+        );
         boundaryData.push({ name: file, data });
       } else {
-        console.warn(`Failed to fetch ${file}: ${response.status} ${response.statusText}`);
+        console.warn(
+          `Failed to fetch ${file}: ${response.status} ${response.statusText}`
+        );
       }
     } catch (error) {
       console.error(`Error loading ${file}:`, error);
@@ -79,12 +89,16 @@ const loadGeographicBoundaries = async () => {
 };
 
 // Draw geographic boundaries on the globe
-const addGeographicBoundaries = (Cesium: any, viewer: any, boundaryData: any[]) => {
+const addGeographicBoundaries = (
+  Cesium: any,
+  viewer: any,
+  boundaryData: any[]
+) => {
   let totalLinesAdded = 0;
 
   boundaryData.forEach(({ name, data }) => {
     console.log(`Processing ${name}, type: ${data.type}`);
-    
+
     // Handle standard GeoJSON format
     if (data.type === 'FeatureCollection' && data.features) {
       let color = Cesium.Color.BLACK.withAlpha(1.0);
@@ -109,8 +123,8 @@ const addGeographicBoundaries = (Cesium: any, viewer: any, boundaryData: any[]) 
 
         const processCoordinates = (coords: any[]) => {
           if (coords.length < 2) return;
-          
-          const positions = coords.map((coord: number[]) => 
+
+          const positions = coords.map((coord: number[]) =>
             Cesium.Cartesian3.fromDegrees(coord[0], coord[1], 10000)
           );
 
@@ -150,15 +164,15 @@ const addGeographicBoundaries = (Cesium: any, viewer: any, boundaryData: any[]) 
     // Legacy format support (if your files use Lon/Lat arrays)
     else if (data.Lon && data.Lat) {
       const positions: any[] = [];
-      let color = Cesium.Color.CYAN.withAlpha(.3);
+      let color = Cesium.Color.CYAN.withAlpha(0.3);
       let width = 1.5;
 
       if (name.includes('coastline')) {
-        color = Cesium.Color.WHITE.withAlpha(.6);
+        color = Cesium.Color.WHITE.withAlpha(0.6);
         width = 2;
       }
       if (name.includes('lakes')) {
-        color = Cesium.Color.WHITE.withAlpha(.3);
+        color = Cesium.Color.WHITE.withAlpha(0.3);
         width = 2;
       }
 
@@ -197,18 +211,22 @@ const addGeographicBoundaries = (Cesium: any, viewer: any, boundaryData: any[]) 
     }
   });
 
-  console.log(`Geographic boundaries added: ${totalLinesAdded} lines from ${boundaryData.length} files`);
+  console.log(
+    `Geographic boundaries added: ${totalLinesAdded} lines from ${boundaryData.length} files`
+  );
 };
 
 const Globe = forwardRef<GlobeRef, GlobeProps>(
-  ({ 
-    currentDataset, 
-    position, 
-    onPositionChange, 
-    onRegionClick,
-    customDataUrl,
-    
-  }, ref) => {
+  (
+    {
+      currentDataset,
+      position,
+      onPositionChange,
+      onRegionClick,
+      customDataUrl,
+    },
+    ref
+  ) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const viewerRef = useRef<any>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -333,7 +351,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
       try {
         console.log('Loading custom data from:', customDataUrl);
-        
+
         const response = await fetch(customDataUrl);
         const data = await response.json();
 
@@ -392,7 +410,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           // Layer 1: USGS imagery as base
           const usgsProvider = new Cesium.ArcGisMapServerImageryProvider({
             url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer',
-            credit: 'USGS National Map'
+            credit: 'USGS National Map',
           });
           viewer.imageryLayers.addImageryProvider(usgsProvider);
 

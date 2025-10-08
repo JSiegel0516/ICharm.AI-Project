@@ -30,20 +30,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html
-      lang="en"
-      className={`${inter.className} dark overflow-hidden scroll-smooth`}
-    >
-      <body className={`h-screen w-screen bg-white antialiased dark:bg-white`}>
+    <html lang="en" className={`${inter.className} dark scroll-smooth`}>
+      <body
+        className={`min-h-screen w-full bg-white antialiased dark:bg-black`}
+      >
         <AppStateProvider>
-          <div className="flex h-full flex-col">
-            <main id="root" className="flex h-full flex-col overflow-hidden">
-              <Header />
+          <div className="flex min-h-screen flex-col">
+            <Header />
+            <main id="root" className="flex-1 overflow-y-auto">
               {children}
-              <div className="pointer-events-auto absolute right-0 top-0 z-20 h-full">
-                <ChatBot />
-              </div>
             </main>
+            <div className="pointer-events-auto fixed right-0 top-0 z-20 h-full">
+              <ChatBot />
+            </div>
           </div>
         </AppStateProvider>
       </body>
