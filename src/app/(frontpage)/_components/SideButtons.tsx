@@ -3,13 +3,13 @@
 import React, { useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useEffect, useCallback } from 'react';
-import { SettingsIcon } from '@/components/UI/settings';
-import { FileTextIcon } from '@/components/UI/file-text';
-import { DownloadIcon } from '@/components/UI/download';
-import { EarthIcon } from '@/components/UI/earth';
-import { CalendarDaysIcon } from '@/components/UI/calendar-days';
-import { Maximize2Icon } from '@/components/UI/maximize-2';
-import { CircleHelpIcon } from '@/components/UI/circle-help';
+import { SettingsIcon } from '@/components/ui/settings';
+import { FileTextIcon } from '@/components/ui/file-text';
+import { DownloadIcon } from '@/components/ui/download';
+import { EarthIcon } from '@/components/ui/earth';
+import { CalendarDaysIcon } from '@/components/ui/calendar-days';
+import { Maximize2Icon } from '@/components/ui/maximize-2';
+import { CircleHelpIcon } from '@/components/ui/circle-help';
 
 interface SideButtonsProps {
   selectedDate: Date;
@@ -252,7 +252,7 @@ export function SideButtons({
             initial={{ x: 0 }}
             exit={{ x: -100, opacity: 0 }}
             transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="pointer-events-auto fixed left-4 top-0 z-9999 flex h-screen flex-col items-center justify-center gap-2"
+            className="pointer-events-auto fixed top-0 left-4 z-9999 flex h-screen flex-col items-center justify-center gap-2"
           >
             {/* Dynamic Buttons */}
             {buttonConfigs.map(({ id, icon, label, onClick, delay }) => (
@@ -301,7 +301,7 @@ export function SideButtons({
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -100, opacity: 0 }}
             transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="pointer-events-auto fixed left-4 top-1/2 z-9999 w-80 -translate-y-1/2 rounded-xl bg-slate-800/95 p-4 text-slate-100 shadow-2xl backdrop-blur-sm"
+            className="pointer-events-auto fixed top-1/2 left-4 z-9999 w-80 -translate-y-1/2 rounded-xl bg-slate-800/95 p-4 text-slate-100 shadow-2xl backdrop-blur-sm"
           >
             {/* Header */}
             <div className="mb-3 flex items-center justify-between">
@@ -331,7 +331,7 @@ export function SideButtons({
                 value={inputValue}
                 onChange={handleInputChange}
                 placeholder="MM/DD/YYYY"
-                className="w-full rounded-lg border border-slate-600 bg-slate-700/60 px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-400/50"
+                className="w-full rounded-lg border border-slate-600 bg-slate-700/60 px-3 py-2 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-rose-400/50 focus:outline-none"
                 aria-label="Date input"
               />
             </div>

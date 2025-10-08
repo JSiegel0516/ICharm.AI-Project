@@ -7,8 +7,10 @@ import React, {
   useCallback,
   useMemo,
 } from 'react';
-import { Play, Pause, Calendar } from 'lucide-react';
+import { Play, Pause } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
+import { Calendar } from '@/components/ui/calendar';
+import { Slider } from '@/components/ui/slider';
 
 interface TimeBarProps {
   selectedDate?: Date;
@@ -424,7 +426,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
                   onKeyDown={handleDateInputKeyDown}
                   min={`${minYear}-01-01`}
                   max={`${maxYear}-12-31`}
-                  className="rounded bg-gray-700 px-2 py-1 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="rounded bg-gray-700 px-2 py-1 text-sm text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   aria-label="Select date"
                 />
 
@@ -437,9 +439,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
                   title="Toggle calendar"
                   type="button"
                   aria-label="Toggle calendar"
-                >
-                  <Calendar size={16} />
-                </button>
+                ></button>
                 <AnimatePresence>
                   {showCalendar && (
                     <div
@@ -556,7 +556,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
                 type="button"
                 aria-label="Edit date"
               >
-                <Calendar size={16} className="opacity-70" />
                 <span>{formatDate(selectedDate)}</span>
               </button>
             )}
@@ -584,7 +583,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
               }`}
             />
             <div
-              className={`absolute left-0 top-0 h-full rounded-full transition-none ${
+              className={`absolute top-0 left-0 h-full rounded-full transition-none ${
                 isActive
                   ? 'bg-linear-to-r from-white/70 to-white/50'
                   : 'bg-linear-to-r from-gray-400/50 to-gray-500/40'
