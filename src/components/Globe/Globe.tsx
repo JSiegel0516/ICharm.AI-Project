@@ -1,16 +1,36 @@
 'use client';
 
 import React, {
-  useEffect,
-  useRef,
   useState,
+  useRef,
+  useEffect,
   useImperativeHandle,
   forwardRef,
 } from 'react';
 
-import { GlobeRef, GlobeProps, RegionData } from '@/types';
+// Type definitions
+interface RegionData {
+  name: string;
+  precipitation: number;
+  temperature: number;
+  dataset: string;
+}
 
-import DatasetTitleModal from '@/app/(frontpage)/_components/Modals/DatasetTitleModal';
+interface GlobeProps {
+  currentDataset?: {
+    name: string;
+    description?: string;
+  };
+  onRegionClick?: (
+    latitude: number,
+    longitude: number,
+    data?: RegionData
+  ) => void;
+}
+
+interface GlobeRef {
+  clearMarker: () => void;
+}
 
 // Cesium setup function for CDN loading
 const loadCesiumFromCDN = async () => {
@@ -44,17 +64,6 @@ const loadCesiumFromCDN = async () => {
 // Load geographic boundary data
 const loadGeographicBoundaries = async () => {
   const files = [
-    // 'ne_10m_coastline.json',
-    //'ne_10m_lakes_europe.json',
-    //'ne_10m_lakes_historic.json',
-    //'ne_10m_lakes_north_america.json',
-    //'ne_10m_lakes.json',
-    //'ne_10m_minor_islands_coastline.json',
-    //'ne_10m_rivers_lake_centerlines.json',
-    //'ne_10m_time_zones.json',
-    // 'ne_50m_coastline.json',
-    //'ne_50m_lakes.json',
-    //'ne_50m_rivers_lake_centerlines.json',
     'ne_110m_coastline.json',
     'ne_110m_lakes.json',
     'ne_110m_rivers_lake_centerlines.json',
@@ -101,12 +110,10 @@ const addGeographicBoundaries = (
   boundaryData.forEach(({ name, data }) => {
     console.log(`Processing ${name}, type: ${data.type}`);
 
-    // Handle standard GeoJSON format
     if (data.type === 'FeatureCollection' && data.features) {
       let color = Cesium.Color.BLACK.withAlpha(1.0);
       let width = 2;
 
-      // Customize width based on file type (all black)
       if (name.includes('coastline')) {
         width = 3;
       } else if (name.includes('geographic_lines')) {
@@ -143,7 +150,6 @@ const addGeographicBoundaries = (
           }
         };
 
-        // Handle different geometry types
         if (geometry.type === 'LineString') {
           processCoordinates(geometry.coordinates);
         } else if (geometry.type === 'MultiLineString') {
@@ -162,9 +168,7 @@ const addGeographicBoundaries = (
           });
         }
       });
-    }
-    // Legacy format support (if your files use Lon/Lat arrays)
-    else if (data.Lon && data.Lat) {
+    } else if (data.Lon && data.Lat) {
       const positions: any[] = [];
       let color = Cesium.Color.CYAN.withAlpha(0.3);
       let width = 1.5;
@@ -219,26 +223,14 @@ const addGeographicBoundaries = (
 };
 
 const Globe = forwardRef<GlobeRef, GlobeProps>(
-  (
-    {
-      currentDataset,
-      position,
-      onPositionChange,
-      onRegionClick,
-      customDataUrl,
-    },
-    ref
-  ) => {
+  ({ currentDataset, onRegionClick }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const viewerRef = useRef<any>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const currentMarkerRef = useRef<any>(null);
-    const customDataLayerRef = useRef<any>(null);
-
     const [isModalOpen, setIsModalOpen] = useState(false);
 
-    // Function to clear the marker
     const clearMarker = () => {
       if (
         currentMarkerRef.current &&
@@ -256,12 +248,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       }
     };
 
-    // Expose clearMarker method to parent via ref
     useImperativeHandle(ref, () => ({
       clearMarker,
     }));
 
-    // Handle window resize
     useEffect(() => {
       const handleResize = () => {
         if (viewerRef.current && !viewerRef.current.isDestroyed()) {
@@ -274,7 +264,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       return () => window.removeEventListener('resize', handleResize);
     }, []);
 
-    // Calculate marker radius based on camera height
     const calculateRadiusFromCameraHeight = (cameraHeight: number): number => {
       const referenceHeight = 10000000;
       const baseRadius = 65000;
@@ -285,7 +274,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       return Math.max(minRadius, Math.min(maxRadius, calculatedRadius));
     };
 
-    // Add click marker
     const addClickMarker = (
       Cesium: any,
       latitude: number,
@@ -330,7 +318,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       currentMarkerRef.current = markers;
     };
 
-    // Update marker radius on zoom
     const updateMarkerRadius = (Cesium: any) => {
       if (!currentMarkerRef.current || !viewerRef.current) return;
 
@@ -349,37 +336,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       }
     };
 
-    // Load custom data from your server
-    const loadCustomData = async (Cesium: any, viewer: any) => {
-      if (!customDataUrl) return;
-
-      try {
-        console.log('Loading custom data from:', customDataUrl);
-
-        const response = await fetch(customDataUrl);
-        const data = await response.json();
-
-        if (customDataLayerRef.current) {
-          viewer.dataSources.remove(customDataLayerRef.current);
-        }
-
-        const dataSource = await Cesium.GeoJsonDataSource.load(data, {
-          stroke: Cesium.Color.YELLOW,
-          fill: Cesium.Color.YELLOW.withAlpha(0.3),
-          strokeWidth: 3,
-          clampToGround: true,
-        });
-
-        viewer.dataSources.add(dataSource);
-        customDataLayerRef.current = dataSource;
-
-        console.log('Custom data loaded successfully');
-      } catch (error) {
-        console.warn('Failed to load custom data:', error);
-      }
-    };
-
-    // Initialize Cesium viewer
     useEffect(() => {
       if (!containerRef.current || viewerRef.current) return;
 
@@ -411,21 +367,11 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             imageryProvider: false,
           });
 
-          // Layer 1: USGS imagery as base
           const usgsProvider = new Cesium.ArcGisMapServerImageryProvider({
             url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer',
             credit: 'USGS National Map',
           });
           viewer.imageryLayers.addImageryProvider(usgsProvider);
-
-          // Layer 2: Stamen Toner Lines - boundaries only
-          /* const boundariesProvider = new Cesium.UrlTemplateImageryProvider({
-            url: 'https://tiles.stadiamaps.com/tiles/stamen_toner_lines/{z}/{x}/{y}.png',
-            credit: '© Stamen Design, © OpenStreetMap contributors',
-            alpha: 0.5,
-            maximumLevel: 18
-          });
-          viewer.imageryLayers.addImageryProvider(boundariesProvider); */
 
           viewer.scene.globe.enableLighting = false;
           viewer.scene.globe.showGroundAtmosphere = true;
@@ -446,16 +392,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             destination: Cesium.Cartesian3.fromDegrees(0, 20, 25000000),
           });
 
-          // Load and add geographic boundaries
           console.log('Loading geographic boundaries...');
           const boundaryData = await loadGeographicBoundaries();
           addGeographicBoundaries(Cesium, viewer, boundaryData);
 
-          if (customDataUrl) {
-            await loadCustomData(Cesium, viewer);
-          }
-
-          // Left click handler
           viewer.cesiumWidget.screenSpaceEventHandler.setInputAction(
             (event: any) => {
               const pickedPosition = viewer.camera.pickEllipsoid(
@@ -485,7 +425,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             Cesium.ScreenSpaceEventType.LEFT_CLICK
           );
 
-          // Right click handler
           viewer.cesiumWidget.screenSpaceEventHandler.setInputAction(
             (event: any) => {
               const currentPosition = viewer.camera.positionCartographic;
@@ -515,21 +454,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             Cesium.ScreenSpaceEventType.RIGHT_CLICK
           );
 
-          // Camera change handler
           viewer.camera.changed.addEventListener(() => {
             if (window.Cesium) {
               updateMarkerRadius(window.Cesium);
-            }
-
-            if (onPositionChange) {
-              const center = viewer.camera.positionCartographic;
-              if (center) {
-                onPositionChange({
-                  latitude: Cesium.Math.toDegrees(center.latitude),
-                  longitude: Cesium.Math.toDegrees(center.longitude),
-                  zoom: center.height,
-                });
-              }
             }
           });
 
@@ -553,31 +480,12 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
       const timer = setTimeout(initViewer, 100);
       return () => clearTimeout(timer);
-    }, [onRegionClick, onPositionChange, currentDataset, customDataUrl]);
+    }, [onRegionClick, currentDataset]);
 
-    // Handle position changes
-    useEffect(() => {
-      if (position && viewerRef.current && window.Cesium) {
-        const Cesium = window.Cesium;
-        viewerRef.current.camera.flyTo({
-          destination: Cesium.Cartesian3.fromDegrees(
-            position.longitude,
-            position.latitude,
-            position.zoom
-          ),
-          duration: 1.5,
-        });
-      }
-    }, [position]);
-
-    // Cleanup
     useEffect(() => {
       return () => {
         if (viewerRef.current && !viewerRef.current.isDestroyed()) {
           clearMarker();
-          if (customDataLayerRef.current) {
-            viewerRef.current.dataSources.remove(customDataLayerRef.current);
-          }
           viewerRef.current.destroy();
           viewerRef.current = null;
         }
@@ -649,14 +557,21 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           </div>
         )}
 
-        {/* Modal */}
-        {currentDataset && (
-          <DatasetTitleModal
-            isOpen={isModalOpen}
-            onClose={() => setIsModalOpen(false)}
-            datasetName={currentDataset.name}
-            datasetDescription={'currentDataset.description'}
-          />
+        {currentDataset && isModalOpen && (
+          <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/50">
+            <div className="max-w-2xl rounded-lg bg-slate-800 p-6 text-white">
+              <h2 className="mb-4 text-2xl font-bold">{currentDataset.name}</h2>
+              <p className="mb-4">
+                {currentDataset.description || 'No description available'}
+              </p>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="rounded bg-blue-600 px-4 py-2 transition-colors hover:bg-blue-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         )}
       </div>
     );
