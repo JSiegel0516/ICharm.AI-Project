@@ -10,6 +10,8 @@ import React, {
 
 import { GlobeRef, GlobeProps, RegionData } from '@/types';
 
+import DatasetTitleModal from '@/app/(frontpage)/_components/Modals/DatasetTitleModal';
+
 // Cesium setup function for CDN loading
 const loadCesiumFromCDN = async () => {
   if (window.Cesium) {
@@ -233,6 +235,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const [error, setError] = useState<string | null>(null);
     const currentMarkerRef = useRef<any>(null);
     const customDataLayerRef = useRef<any>(null);
+
+    const [isModalOpen, setIsModalOpen] = useState(false);
 
     // Function to clear the marker
     const clearMarker = () => {
@@ -634,13 +638,25 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         />
 
         {currentDataset && (
-          <div className="absolute inset-x-0 z-30 mx-auto max-w-max">
-            <div className="rounded-lg py-6 text-2xl text-gray-300">
-              <div className="font-semibold" id="dataset-title">
-                {currentDataset.name}
-              </div>
-            </div>
+          <div className="absolute inset-x-0 top-4 z-30 mx-auto max-w-max">
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="rounded-lg px-6 py-3 text-2xl font-semibold text-gray-300 transition hover:rounded-xl hover:bg-slate-800/50"
+              title="Click for dataset details"
+            >
+              {currentDataset.name}
+            </button>
           </div>
+        )}
+
+        {/* Modal */}
+        {currentDataset && (
+          <DatasetTitleModal
+            isOpen={isModalOpen}
+            onClose={() => setIsModalOpen(false)}
+            datasetName={currentDataset.name}
+            datasetDescription={'currentDataset.description'}
+          />
         )}
       </div>
     );
