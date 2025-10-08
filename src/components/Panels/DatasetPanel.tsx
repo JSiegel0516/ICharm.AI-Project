@@ -52,7 +52,7 @@ const DatasetPanel: React.FC = () => {
               onClick={() => setSelectedPressure(level)}
               className={`group flex w-full items-center justify-between rounded-xl p-3 transition-all duration-200 ${
                 selectedPressure === level
-                  ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg'
+                  ? 'bg-linear-to-r from-blue-600 to-purple-600 text-white shadow-lg'
                   : 'border border-blue-600/30 bg-blue-800/30 text-blue-100 hover:border-blue-500/50 hover:bg-blue-700/50 hover:text-white'
               }`}
             >
@@ -75,19 +75,19 @@ const DatasetPanel: React.FC = () => {
         </div>
 
         <div className="space-y-3">
-          <button className="w-full transform rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 px-4 py-3 font-medium text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:from-blue-700 hover:to-blue-800 hover:shadow-blue-500/25">
+          <button className="w-full transform rounded-xl bg-linear-to-r from-blue-600 to-blue-700 px-4 py-3 font-medium text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:from-blue-700 hover:to-blue-800 hover:shadow-blue-500/25">
             Download as CSV
           </button>
-          <button className="w-full transform rounded-xl bg-gradient-to-r from-purple-600 to-purple-700 px-4 py-3 font-medium text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:from-purple-700 hover:to-purple-800 hover:shadow-purple-500/25">
+          <button className="w-full transform rounded-xl bg-linear-to-r from-purple-600 to-purple-700 px-4 py-3 font-medium text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:from-purple-700 hover:to-purple-800 hover:shadow-purple-500/25">
             Download as NetCDF
           </button>
-          <button className="w-full transform rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 px-4 py-3 font-medium text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:from-blue-600 hover:to-purple-700 hover:shadow-purple-500/25">
+          <button className="w-full transform rounded-xl bg-linear-to-r from-blue-500 to-purple-600 px-4 py-3 font-medium text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:from-blue-600 hover:to-purple-700 hover:shadow-purple-500/25">
             Export Visualization
           </button>
         </div>
 
         {/* Current Selection */}
-        <div className="mt-6 rounded-xl border border-blue-500/20 bg-gradient-to-br from-blue-800/30 to-purple-800/30 p-4 backdrop-blur-sm">
+        <div className="mt-6 rounded-xl border border-blue-500/20 bg-linear-to-br from-blue-800/30 to-purple-800/30 p-4 backdrop-blur-sm">
           <h4 className="mb-3 flex items-center gap-2 font-medium text-white">
             <div className="h-2 w-2 rounded-full bg-blue-400"></div>
             Current Selection

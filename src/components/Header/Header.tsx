@@ -29,7 +29,7 @@ const Header: React.FC = () => {
             alt="IC Logo"
             className="h-10 w-10 rounded-lg"
           />
-          <h1 className="bg-gradient-to-r from-red-400 via-green-400 to-blue-400 bg-clip-text text-xl font-semibold text-transparent">
+          <h1 className="bg-linear-to-r from-red-400 via-green-400 to-blue-400 bg-clip-text text-xl font-semibold text-transparent">
             iCharm
           </h1>
         </Link>

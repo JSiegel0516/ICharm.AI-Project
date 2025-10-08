@@ -494,7 +494,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
     if (error) {
       return (
-        <div className="absolute inset-0 z-0 flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 text-white">
+        <div className="absolute inset-0 z-0 flex h-full w-full items-center justify-center bg-linear-to-br from-slate-900 via-blue-900 to-indigo-900 text-white">
           <div className="text-center">
             <div className="mb-4 text-6xl">🌍</div>
             <h3 className="mb-2 text-lg font-semibold">Failed to Load Globe</h3>
