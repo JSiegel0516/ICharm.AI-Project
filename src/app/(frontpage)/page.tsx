@@ -1,10 +1,9 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo, useCallback } from 'react';
 import Globe, { GlobeRef } from '@/components/Globe/Globe';
 import ColorBar from '@/components/UI/ColorBar';
 import TimeBar from '@/components/UI/TimeBar';
-import YearSelector from '@/components/UI/Popups/YearSelector';
 import PressureLevelsSelector from '@/components/UI/Popups/PressureLevelsSelector';
 import RegionInfoPanel from '@/components/UI/RegionInfoPanel';
 
@@ -15,25 +14,31 @@ import { Tutorial } from './_components/Tutorial';
 
 type SidebarPanel = 'datasets' | 'history' | 'about' | null;
 
-export default function HomePage() {
-  const {
-    showChat,
-    showColorbar,
-    currentDataset,
-    setShowChat,
-    toggleColorbar,
-    setCurrentDataset,
-  } = useAppState();
+interface UIState {
+  temperatureUnit: TemperatureUnit;
+  activeSidebarPanel: SidebarPanel;
+  isTimebarPlaying: boolean;
+  showRegionInfo: boolean;
+  tutorialOpen: boolean;
+  colorBarCollapsed: boolean;
+}
 
+export default function HomePage() {
+  const { showColorbar, currentDataset, toggleColorbar } = useAppState();
+
+  const [selectedDate, setSelectedDate] = useState(new Date());
   const globeRef = useRef<GlobeRef>(null);
-  const [temperatureUnit, setTemperatureUnit] =
-    useState<TemperatureUnit>('celsius');
-  const [activeSidebarPanel, setActiveSidebarPanel] =
-    useState<SidebarPanel>(null);
-  const [selectedYear, setSelectedYear] = useState<number>(
-    new Date().getFullYear()
-  );
-  const [isTimebarPlaying, setIsTimebarPlaying] = useState<boolean>(false);
+
+  // Consolidated UI state - removed duplicate selectedYear
+  const [uiState, setUiState] = useState<UIState>({
+    temperatureUnit: 'celsius',
+    activeSidebarPanel: null,
+    isTimebarPlaying: false,
+    showRegionInfo: false,
+    tutorialOpen: false,
+    colorBarCollapsed: false,
+  });
+
   const [selectedPressureLevel, setSelectedPressureLevel] =
     useState<PressureLevel>({
       id: 'surface',
@@ -42,7 +47,6 @@ export default function HomePage() {
       unit: 'hPa',
     });
 
-  const [showRegionInfo, setShowRegionInfo] = useState<boolean>(false);
   const [regionInfoData, setRegionInfoData] = useState<{
     latitude: number;
     longitude: number;
@@ -54,88 +58,135 @@ export default function HomePage() {
       name: 'GPCP V2.3 Precipitation',
       precipitation: 0.9,
       temperature: 24.5,
-      dataset: 'Global Precipitation Climatology Project',
+      dataset: 'Global Precipitation Climatation Project',
     },
   });
 
   const [colorBarPosition, setColorBarPosition] = useState({ x: 24, y: 300 });
-  const [colorBarCollapsed, setColorBarCollapsed] = useState(false);
-  const [tutorialOpen, setTutorialOpen] = useState(false);
 
-  const handleShowSidebarPanel = (panel: SidebarPanel) => {
-    setActiveSidebarPanel(panel);
-  };
+  // Unified state updaters
+  const updateUIState = useCallback((updates: Partial<UIState>) => {
+    setUiState((prev) => ({ ...prev, ...updates }));
+  }, []);
 
-  const handleSidebarPanelChange = (panel: SidebarPanel) => {
-    setActiveSidebarPanel(panel);
-  };
+  // Event handlers
+  const handleDateChange = useCallback((date: Date) => {
+    setSelectedDate(date);
+    console.log('Selected date:', date);
+    // If you need the year separately, you can extract it here
+    const year = date.getFullYear();
+    console.log('Year:', year);
+  }, []);
 
-  const handleYearChange = (year: number) => {
-    setSelectedYear(year);
-    console.log('Year changed to:', year);
-  };
+  const handlePlayPause = useCallback(
+    (isPlaying: boolean) => {
+      updateUIState({ isTimebarPlaying: isPlaying });
+      console.log('Play/Pause:', isPlaying);
+    },
+    [updateUIState]
+  );
 
-  const handleTimebarPlayPause = (isPlaying: boolean) => {
-    setIsTimebarPlaying(isPlaying);
-    console.log('Timebar playing:', isPlaying);
-  };
-
-  const handlePressureLevelChange = (level: PressureLevel) => {
+  const handlePressureLevelChange = useCallback((level: PressureLevel) => {
     setSelectedPressureLevel(level);
     console.log('Pressure level changed to:', level);
-  };
+  }, []);
 
-  const handleRegionClick = (
-    latitude: number,
-    longitude: number,
-    data?: RegionData
-  ) => {
-    console.log('Region clicked:', { latitude, longitude, data });
-    setRegionInfoData({
-      latitude,
-      longitude,
-      regionData: data || {
-        name: 'GPCP V2.3 Precipitation',
-        precipitation: Math.random() * 2,
-        temperature: 15 + Math.random() * 20,
-        dataset: 'Global Precipitation Climatology Project',
-      },
-    });
-    setShowRegionInfo(true);
-  };
+  const handleRegionClick = useCallback(
+    (latitude: number, longitude: number, data?: RegionData) => {
+      try {
+        console.log('Region clicked:', { latitude, longitude, data });
+        setRegionInfoData({
+          latitude,
+          longitude,
+          regionData: data || {
+            name: 'GPCP V2.3 Precipitation',
+            precipitation: Math.random() * 2,
+            temperature: 15 + Math.random() * 20,
+            dataset: 'Global Precipitation Climatation Project',
+          },
+        });
+        updateUIState({ showRegionInfo: true });
+      } catch (error) {
+        console.error('Error handling region click:', error);
+      }
+    },
+    [updateUIState]
+  );
 
-  const handleRegionInfoClose = () => {
-    setShowRegionInfo(false);
+  const handleRegionInfoClose = useCallback(() => {
+    updateUIState({ showRegionInfo: false });
     globeRef.current?.clearMarker();
-  };
+  }, [updateUIState]);
 
-  const handleColorBarPositionChange = (position: { x: number; y: number }) => {
-    setColorBarPosition(position);
-  };
+  const handleColorBarPositionChange = useCallback(
+    (position: { x: number; y: number }) => {
+      setColorBarPosition(position);
+    },
+    []
+  );
 
-  return (
-    <section className="fixed inset-0 h-screen w-screen overflow-hidden">
+  const handleShowSidebarPanel = useCallback(
+    (panel: SidebarPanel) => {
+      updateUIState({ activeSidebarPanel: panel });
+    },
+    [updateUIState]
+  );
+
+  const handleTutorialClose = useCallback(() => {
+    updateUIState({ tutorialOpen: false });
+  }, [updateUIState]);
+
+  const handleTutorialOpen = useCallback(() => {
+    updateUIState({ tutorialOpen: true });
+  }, [updateUIState]);
+
+  // Memoized Globe component for performance
+  const memoizedGlobe = useMemo(
+    () => (
       <Globe
         ref={globeRef}
         currentDataset={currentDataset}
         onRegionClick={handleRegionClick}
       />
+    ),
+    [currentDataset, handleRegionClick, selectedDate]
+  );
+
+  // Destructure state for easier access
+  const {
+    temperatureUnit,
+    activeSidebarPanel,
+    isTimebarPlaying,
+    showRegionInfo,
+    tutorialOpen,
+    colorBarCollapsed,
+  } = uiState;
+
+  return (
+    <section className="fixed inset-0 h-screen w-screen overflow-hidden bg-background">
+      {memoizedGlobe}
 
       <div className="pointer-events-none absolute inset-0 z-10">
-        <SideButtons />
-        <Tutorial
-          isOpen={tutorialOpen}
-          onClose={() => setTutorialOpen(false)}
+        <SideButtons
+          selectedDate={selectedDate}
+          onDateChange={handleDateChange}
+          onShowTutorial={handleTutorialOpen}
+          onShowSidebarPanel={handleShowSidebarPanel}
         />
+
+        <Tutorial isOpen={tutorialOpen} onClose={handleTutorialClose} />
 
         <ColorBar
           show={showColorbar}
           onToggle={toggleColorbar}
           dataset={currentDataset}
           unit={temperatureUnit}
-          onUnitChange={setTemperatureUnit}
+          onUnitChange={(unit) => updateUIState({ temperatureUnit: unit })}
           onPositionChange={handleColorBarPositionChange}
           collapsed={colorBarCollapsed}
+          onToggleCollapse={(collapsed) =>
+            updateUIState({ colorBarCollapsed: collapsed })
+          }
         />
 
         <RegionInfoPanel
@@ -153,9 +204,10 @@ export default function HomePage() {
             {/* TimeBar - Centered with flexible width */}
             <div className="pointer-events-auto w-full max-w-4xl">
               <TimeBar
-                selectedYear={selectedYear}
-                onYearChange={handleYearChange}
-                onPlayPause={handleTimebarPlayPause}
+                selectedDate={selectedDate}
+                onDateChange={handleDateChange}
+                onPlayPause={handlePlayPause}
+                isPlaying={isTimebarPlaying}
               />
             </div>
 

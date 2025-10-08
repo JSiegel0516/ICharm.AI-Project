@@ -1,17 +1,31 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useMemo,
+} from 'react';
 import { Play, Pause, Calendar } from 'lucide-react';
-import { TimeBarProps } from '@/types';
+import { AnimatePresence } from 'framer-motion';
+
+interface TimeBarProps {
+  selectedDate?: Date;
+  onDateChange?: (date: Date) => void;
+  onPlayPause?: (isPlaying: boolean) => void;
+  isPlaying?: boolean;
+  className?: string;
+}
 
 const TimeBar: React.FC<TimeBarProps> = ({
-  selectedYear = new Date().getFullYear(),
-  onYearChange,
+  selectedDate = new Date(),
+  onDateChange,
   onPlayPause,
+  isPlaying = false,
   className = '',
 }) => {
-  const [currentDate, setCurrentDate] = useState(new Date(selectedYear, 0, 1));
-  const [isPlaying, setIsPlaying] = useState(false);
+  // All state declarations at the top
   const [isDragging, setIsDragging] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [showTooltip, setShowTooltip] = useState(false);
@@ -20,40 +34,40 @@ const TimeBar: React.FC<TimeBarProps> = ({
   const [dateInput, setDateInput] = useState('');
   const [showCalendar, setShowCalendar] = useState(false);
 
+  // All refs at the top
   const sliderRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const dateInputRef = useRef<HTMLInputElement>(null);
   const calendarRef = useRef<HTMLDivElement>(null);
   const playIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const lastYearRef = useRef(currentDate.getFullYear());
   const rafRef = useRef<number | null>(null);
 
+  // Constants
   const minYear = 1979;
   const maxYear = new Date().getFullYear();
   const yearRange = maxYear - minYear;
 
-  // FIX: Memoize these functions with useMemo instead of useCallback to prevent recreation
+  // All useCallback hooks together
   const getPositionFromYear = useCallback(
-    (year: number) => {
-      return ((year - minYear) / yearRange) * 100;
-    },
+    (year: number) => ((year - minYear) / yearRange) * 100,
     [minYear, yearRange]
   );
 
   const getYearFromPosition = useCallback(
-    (percentage: number) => {
-      return Math.round(minYear + (percentage / 100) * yearRange);
-    },
+    (percentage: number) =>
+      Math.round(minYear + (percentage / 100) * yearRange),
     [minYear, yearRange]
   );
 
-  const formatDate = useCallback((date: Date) => {
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
-  }, []);
+  const formatDate = useCallback(
+    (date: Date) =>
+      date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      }),
+    []
+  );
 
   const formatDateForInput = useCallback((date: Date) => {
     const year = date.getFullYear();
@@ -63,62 +77,71 @@ const TimeBar: React.FC<TimeBarProps> = ({
   }, []);
 
   const parseDateInput = useCallback((input: string): Date | null => {
-    const parts = input.split('-');
-    if (parts.length === 3) {
-      const year = parseInt(parts[0]);
-      const month = parseInt(parts[1]) - 1;
-      const day = parseInt(parts[2]);
-
-      if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
-        const date = new Date(year, month, day);
-        if (
-          date.getFullYear() === year &&
-          date.getMonth() === month &&
-          date.getDate() === day
-        ) {
-          return date;
+    try {
+      const parts = input.split('-');
+      if (parts.length === 3) {
+        const year = parseInt(parts[0]);
+        const month = parseInt(parts[1]) - 1;
+        const day = parseInt(parts[2]);
+        if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+          const date = new Date(year, month, day);
+          if (
+            date.getFullYear() === year &&
+            date.getMonth() === month &&
+            date.getDate() === day
+          ) {
+            return date;
+          }
         }
       }
+      const parsed = new Date(input);
+      return !isNaN(parsed.getTime()) ? parsed : null;
+    } catch (error) {
+      console.error('Error parsing date input:', error);
+      return null;
     }
-
-    const parsed = new Date(input);
-    return !isNaN(parsed.getTime()) ? parsed : null;
   }, []);
+
+  const setDate = useCallback(
+    (date: Date) => {
+      try {
+        const clampedYear = Math.max(
+          minYear,
+          Math.min(maxYear, date.getFullYear())
+        );
+        const newDate = new Date(clampedYear, date.getMonth(), date.getDate());
+        onDateChange?.(newDate);
+      } catch (error) {
+        console.error('Error setting date:', error);
+      }
+    },
+    [minYear, maxYear, onDateChange]
+  );
 
   const updateYear = useCallback(
     (clientX: number) => {
       if (!trackRef.current) return;
-
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-      }
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
 
       rafRef.current = requestAnimationFrame(() => {
         if (!trackRef.current) return;
-
         const rect = trackRef.current.getBoundingClientRect();
         const percentage = Math.max(
           0,
           Math.min(100, ((clientX - rect.left) / rect.width) * 100)
         );
         const newYear = getYearFromPosition(percentage);
-
-        if (newYear !== lastYearRef.current) {
-          lastYearRef.current = newYear;
-          const newDate = new Date(
-            newYear,
-            currentDate.getMonth(),
-            currentDate.getDate()
-          );
-          setCurrentDate(newDate);
-          setTooltipPosition(percentage);
-          onYearChange?.(newYear);
-        }
-
+        const newDate = new Date(
+          newYear,
+          selectedDate.getMonth(),
+          selectedDate.getDate()
+        );
+        setDate(newDate);
+        setTooltipPosition(percentage);
         rafRef.current = null;
       });
     },
-    [getYearFromPosition, onYearChange, currentDate]
+    [selectedDate, getYearFromPosition, setDate]
   );
 
   const handleInteractionStart = useCallback(
@@ -132,9 +155,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
 
   const handleInteractionMove = useCallback(
     (clientX: number) => {
-      if (isDragging) {
-        updateYear(clientX);
-      }
+      if (isDragging) updateYear(clientX);
     },
     [isDragging, updateYear]
   );
@@ -147,45 +168,127 @@ const TimeBar: React.FC<TimeBarProps> = ({
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
-      e.stopPropagation();
       handleInteractionStart(e.clientX);
     },
     [handleInteractionStart]
   );
 
   const handleMouseMove = useCallback(
-    (e: MouseEvent) => {
-      handleInteractionMove(e.clientX);
-    },
+    (e: MouseEvent) => handleInteractionMove(e.clientX),
     [handleInteractionMove]
   );
 
-  const handleMouseUp = useCallback(() => {
-    handleInteractionEnd();
-  }, [handleInteractionEnd]);
+  const handleMouseUp = useCallback(
+    () => handleInteractionEnd(),
+    [handleInteractionEnd]
+  );
 
   const handleTouchStart = useCallback(
-    (e: React.TouchEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const touch = e.touches[0];
-      handleInteractionStart(touch.clientX);
-    },
+    (e: React.TouchEvent) => handleInteractionStart(e.touches[0].clientX),
     [handleInteractionStart]
   );
 
   const handleTouchMove = useCallback(
     (e: TouchEvent) => {
       e.preventDefault();
-      const touch = e.touches[0];
-      handleInteractionMove(touch.clientX);
+      handleInteractionMove(e.touches[0].clientX);
     },
     [handleInteractionMove]
   );
 
-  const handleTouchEnd = useCallback(() => {
-    handleInteractionEnd();
-  }, [handleInteractionEnd]);
+  const handleTouchEnd = useCallback(
+    () => handleInteractionEnd(),
+    [handleInteractionEnd]
+  );
+
+  const handlePlayPause = useCallback(() => {
+    const newIsPlaying = !isPlaying;
+    onPlayPause?.(newIsPlaying);
+  }, [isPlaying, onPlayPause]);
+
+  // Separate effect to handle play interval
+  useEffect(() => {
+    if (isPlaying && !playIntervalRef.current) {
+      playIntervalRef.current = setInterval(() => {
+        const next = new Date(selectedDate);
+        next.setFullYear(selectedDate.getFullYear() + 1);
+        if (next.getFullYear() > maxYear) {
+          onPlayPause?.(false);
+        } else {
+          onDateChange?.(next);
+        }
+      }, 500);
+    } else if (!isPlaying && playIntervalRef.current) {
+      clearInterval(playIntervalRef.current);
+      playIntervalRef.current = null;
+    }
+
+    return () => {
+      if (playIntervalRef.current) {
+        clearInterval(playIntervalRef.current);
+        playIntervalRef.current = null;
+      }
+    };
+  }, [isPlaying, selectedDate, maxYear, onDateChange, onPlayPause]);
+
+  const handleDateClick = useCallback(() => {
+    setIsEditing(true);
+    setShowCalendar(true);
+    setDateInput(formatDateForInput(selectedDate));
+    setTimeout(() => dateInputRef.current?.focus(), 0);
+  }, [selectedDate, formatDateForInput]);
+
+  const handleCalendarDateSelect = useCallback(
+    (date: Date) => {
+      setDate(date);
+      setIsEditing(false);
+      setShowCalendar(false);
+      setDateInput('');
+    },
+    [setDate]
+  );
+
+  const handleDateSubmit = useCallback(() => {
+    const parsed = parseDateInput(dateInput);
+    if (parsed) {
+      setDate(parsed);
+      setIsEditing(false);
+      setShowCalendar(false); // Make sure this closes calendar
+      setDateInput('');
+    } else {
+      setIsEditing(false);
+      setShowCalendar(false); // Close even if invalid
+      setDateInput('');
+    }
+  }, [dateInput, parseDateInput, setDate]);
+
+  const handleDateInputKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter') handleDateSubmit();
+      if (e.key === 'Escape') {
+        setIsEditing(false);
+        setShowCalendar(false);
+      }
+    },
+    [handleDateSubmit]
+  );
+
+  const handleCalendarClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+  }, []);
+
+  const handleCalendarMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault(); // This prevents the input from losing focus
+  }, []);
+
+  // All useEffect hooks together
+  useEffect(() => {
+    if (!isPlaying && playIntervalRef.current) {
+      clearInterval(playIntervalRef.current);
+      playIntervalRef.current = null;
+    }
+  }, [isPlaying]);
 
   useEffect(() => {
     if (isDragging) {
@@ -195,21 +298,14 @@ const TimeBar: React.FC<TimeBarProps> = ({
         passive: false,
       });
       document.addEventListener('touchend', handleTouchEnd);
-
-      if (sliderRef.current) {
-        sliderRef.current.style.userSelect = 'none';
-      }
+      if (sliderRef.current) sliderRef.current.style.userSelect = 'none';
     }
-
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
       document.removeEventListener('touchmove', handleTouchMove);
       document.removeEventListener('touchend', handleTouchEnd);
-
-      if (sliderRef.current) {
-        sliderRef.current.style.userSelect = '';
-      }
+      if (sliderRef.current) sliderRef.current.style.userSelect = '';
     };
   }, [
     isDragging,
@@ -219,154 +315,10 @@ const TimeBar: React.FC<TimeBarProps> = ({
     handleTouchEnd,
   ]);
 
-  const handlePlayPause = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      const newIsPlaying = !isPlaying;
-      setIsPlaying(newIsPlaying);
-      onPlayPause?.(newIsPlaying);
-
-      if (newIsPlaying) {
-        playIntervalRef.current = setInterval(() => {
-          setCurrentDate((prevDate) => {
-            const nextDate = new Date(prevDate);
-            nextDate.setFullYear(prevDate.getFullYear() + 1);
-
-            if (nextDate.getFullYear() > maxYear) {
-              setIsPlaying(false);
-              onPlayPause?.(false);
-              return new Date(maxYear, prevDate.getMonth(), prevDate.getDate());
-            }
-
-            lastYearRef.current = nextDate.getFullYear();
-            onYearChange?.(nextDate.getFullYear());
-            return nextDate;
-          });
-        }, 500);
-      } else {
-        if (playIntervalRef.current) {
-          clearInterval(playIntervalRef.current);
-          playIntervalRef.current = null;
-        }
-      }
-    },
-    [isPlaying, maxYear, onPlayPause, onYearChange]
-  );
-
-  const handleDateClick = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsEditing(true);
-      setShowCalendar(true);
-      setDateInput(formatDateForInput(currentDate));
-    },
-    [currentDate, formatDateForInput]
-  );
-
-  const handleCalendarClick = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setShowCalendar(!showCalendar);
-    },
-    [showCalendar]
-  );
-
-  const handleDateInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      setDateInput(e.target.value);
-    },
-    []
-  );
-
-  const handleDateSubmit = useCallback(() => {
-    if (dateInput.trim()) {
-      const parsedDate = parseDateInput(dateInput);
-      if (parsedDate) {
-        const year = parsedDate.getFullYear();
-        const clampedYear = Math.max(minYear, Math.min(maxYear, year));
-        const newDate = new Date(
-          clampedYear,
-          parsedDate.getMonth(),
-          parsedDate.getDate()
-        );
-
-        setCurrentDate(newDate);
-        lastYearRef.current = clampedYear;
-        onYearChange?.(clampedYear);
-      }
-    }
-    setIsEditing(false);
-    setShowCalendar(false);
-    setDateInput('');
-  }, [dateInput, parseDateInput, minYear, maxYear, onYearChange]);
-
-  const handleDateInputKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        handleDateSubmit();
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        setIsEditing(false);
-        setShowCalendar(false);
-        setDateInput('');
-      }
-    },
-    [handleDateSubmit]
-  );
-
-  const handleDateInputBlur = useCallback(
-    (e: React.FocusEvent<HTMLInputElement>) => {
-      if (calendarRef.current?.contains(e.relatedTarget as Node)) {
-        return;
-      }
-      setTimeout(() => {
-        handleDateSubmit();
-      }, 150);
-    },
-    [handleDateSubmit]
-  );
-
-  const handleCalendarDateSelect = useCallback(
-    (date: Date) => {
-      const year = date.getFullYear();
-      const clampedYear = Math.max(minYear, Math.min(maxYear, year));
-      const newDate = new Date(clampedYear, date.getMonth(), date.getDate());
-
-      setCurrentDate(newDate);
-      lastYearRef.current = clampedYear;
-      onYearChange?.(clampedYear);
-      setIsEditing(false);
-      setShowCalendar(false);
-      setDateInput('');
-    },
-    [minYear, maxYear, onYearChange]
-  );
-
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        calendarRef.current &&
-        !calendarRef.current.contains(event.target as Node) &&
-        dateInputRef.current &&
-        !dateInputRef.current.contains(event.target as Node)
-      ) {
-        handleDateSubmit();
-      }
-    };
-
-    if (showCalendar) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [showCalendar, handleDateSubmit]);
+    if (!isDragging)
+      setTooltipPosition(getPositionFromYear(selectedDate.getFullYear()));
+  }, [selectedDate, isDragging, getPositionFromYear]);
 
   useEffect(() => {
     return () => {
@@ -379,144 +331,60 @@ const TimeBar: React.FC<TimeBarProps> = ({
     };
   }, []);
 
-  // FIX: Only update tooltip position when not dragging and year changes
-  useEffect(() => {
-    if (!isDragging) {
-      const year = currentDate.getFullYear();
-      const position = ((year - minYear) / yearRange) * 100;
-      setTooltipPosition(position);
-    }
-  }, [currentDate.getFullYear(), isDragging, minYear, yearRange]);
-
-  useEffect(() => {
-    const newDate = new Date(
-      selectedYear,
-      currentDate.getMonth(),
-      currentDate.getDate()
-    );
-    setCurrentDate(newDate);
-    lastYearRef.current = selectedYear;
-  }, [selectedYear]);
-
-  const sliderPosition = getPositionFromYear(currentDate.getFullYear());
-  const isActive = isDragging || isHovered || isPlaying;
-
-  const renderCalendar = () => {
+  // All useMemo hooks at the end
+  const calendarData = useMemo(() => {
     const today = new Date();
     const currentMonth = new Date(
-      currentDate.getFullYear(),
-      currentDate.getMonth(),
+      selectedDate.getFullYear(),
+      selectedDate.getMonth(),
       1
     );
-
-    const getDaysInMonth = (date: Date) => {
-      const year = date.getFullYear();
-      const month = date.getMonth();
-      const firstDay = new Date(year, month, 1).getDay();
-      const daysInMonth = new Date(year, month + 1, 0).getDate();
-      return { firstDay, daysInMonth };
-    };
-
-    const { firstDay, daysInMonth } = getDaysInMonth(currentMonth);
+    const firstDay = new Date(
+      currentMonth.getFullYear(),
+      currentMonth.getMonth(),
+      1
+    ).getDay();
+    const daysInMonth = new Date(
+      currentMonth.getFullYear(),
+      currentMonth.getMonth() + 1,
+      0
+    ).getDate();
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-    const handlePrevMonth = () => {
-      const newDate = new Date(currentMonth);
-      newDate.setMonth(newDate.getMonth() - 1);
-      setCurrentDate(newDate);
-    };
+    return { today, currentMonth, firstDay, daysInMonth, dayNames };
+  }, [selectedDate]);
 
-    const handleNextMonth = () => {
-      const newDate = new Date(currentMonth);
-      newDate.setMonth(newDate.getMonth() + 1);
-      setCurrentDate(newDate);
-    };
+  const calendarDays = useMemo(
+    () => Array.from({ length: calendarData.daysInMonth }, (_, i) => i + 1),
+    [calendarData.daysInMonth]
+  );
 
-    const handleDateClick = (day: number) => {
-      const selectedDate = new Date(
-        currentMonth.getFullYear(),
-        currentMonth.getMonth(),
-        day
-      );
-      handleCalendarDateSelect(selectedDate);
-    };
+  const emptyDays = useMemo(
+    () => Array.from({ length: calendarData.firstDay }, (_, i) => i),
+    [calendarData.firstDay]
+  );
 
-    return (
-      <div
-        ref={calendarRef}
-        className="absolute bottom-full left-1/2 z-50 mb-2 w-64 -translate-x-1/2 transform rounded-lg border border-gray-600 bg-gray-800 p-4 shadow-xl"
-      >
-        <div className="mb-4 flex items-center justify-between">
-          <button
-            onClick={handlePrevMonth}
-            className="rounded p-1 text-gray-300 hover:bg-gray-700 hover:text-white"
-          >
-            ‹
-          </button>
-          <div className="font-medium text-white">
-            {currentMonth.toLocaleDateString('en-US', {
-              month: 'long',
-              year: 'numeric',
-            })}
-          </div>
-          <button
-            onClick={handleNextMonth}
-            className="rounded p-1 text-gray-300 hover:bg-gray-700 hover:text-white"
-          >
-            ›
-          </button>
-        </div>
+  // Computed values
+  const sliderPosition = getPositionFromYear(selectedDate.getFullYear());
+  const isActive = isDragging || isHovered || isPlaying;
 
-        <div className="mb-2 grid grid-cols-7 gap-1">
-          {dayNames.map((day) => (
-            <div
-              key={day}
-              className="py-1 text-center text-xs font-medium text-gray-400"
-            >
-              {day}
-            </div>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-7 gap-1">
-          {Array.from({ length: firstDay }).map((_, i) => (
-            <div key={`empty-${i}`} />
-          ))}
-
-          {Array.from({ length: daysInMonth }).map((_, i) => {
-            const day = i + 1;
-            const date = new Date(
-              currentMonth.getFullYear(),
-              currentMonth.getMonth(),
-              day
-            );
-            const isSelected =
-              currentDate.toDateString() === date.toDateString();
-            const isToday = today.toDateString() === date.toDateString();
-            const isValidYear =
-              date.getFullYear() >= minYear && date.getFullYear() <= maxYear;
-
-            return (
-              <button
-                key={day}
-                onClick={() => handleDateClick(day)}
-                disabled={!isValidYear}
-                className={`h-8 rounded text-sm transition-colors ${
-                  isSelected
-                    ? 'bg-blue-500 text-white'
-                    : isToday
-                      ? 'bg-gray-600 text-white'
-                      : 'text-gray-300 hover:bg-gray-700'
-                } ${!isValidYear ? 'cursor-not-allowed opacity-30' : ''} `}
-              >
-                {day}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+  const handlePrevMonth = useCallback(() => {
+    const newDate = new Date(
+      calendarData.currentMonth.getFullYear(),
+      calendarData.currentMonth.getMonth() - 1,
+      selectedDate.getDate()
     );
-  };
+    setDate(newDate);
+  }, [calendarData.currentMonth, selectedDate, setDate]);
+
+  const handleNextMonth = useCallback(() => {
+    const newDate = new Date(
+      calendarData.currentMonth.getFullYear(),
+      calendarData.currentMonth.getMonth() + 1,
+      selectedDate.getDate()
+    );
+    setDate(newDate);
+  }, [calendarData.currentMonth, selectedDate, setDate]);
 
   return (
     <div
@@ -524,7 +392,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
       className={`mx-auto w-full max-w-3xl px-32 ${className}`}
     >
       <div id="timebar" className="flex items-center justify-center gap-6">
-        {/* Play/Pause Button */}
+        {/* Play/Pause */}
         <button
           onClick={handlePlayPause}
           className={`flex h-5 w-5 items-center justify-center rounded-full transition-all duration-200 hover:scale-110 focus:outline-none ${
@@ -534,46 +402,147 @@ const TimeBar: React.FC<TimeBarProps> = ({
           }`}
           title={isPlaying ? 'Pause' : 'Play'}
           type="button"
+          aria-label={isPlaying ? 'Pause animation' : 'Play animation'}
         >
           {isPlaying ? <Pause size={12} /> : <Play size={12} />}
         </button>
 
+        {/* Date Display / Input */}
         <div
           className="relative flex-1"
           onMouseEnter={() => setIsHovered(true)}
-          onMouseLeave={() => {
-            if (!isDragging) {
-              setIsHovered(false);
-            }
-          }}
+          onMouseLeave={() => !isDragging && setIsHovered(false)}
         >
           <div className="relative mb-2 flex items-center justify-center gap-2">
             {isEditing ? (
-              <div className="relative">
-                <div className="flex items-center gap-2">
-                  <input
-                    ref={dateInputRef}
-                    type="date"
-                    value={dateInput}
-                    onChange={handleDateInputChange}
-                    onKeyDown={handleDateInputKeyDown}
-                    onBlur={handleDateInputBlur}
-                    min={`${minYear}-01-01`}
-                    max={`${maxYear}-12-31`}
-                    className="rounded bg-gray-700 px-2 py-1 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="YYYY-MM-DD"
-                  />
-                  <button
-                    onClick={handleCalendarClick}
-                    className="rounded p-1 text-gray-300 hover:bg-gray-600 hover:text-white"
-                    title="Toggle calendar"
-                    type="button"
-                  >
-                    <Calendar size={16} />
-                  </button>
-                </div>
+              <div className="relative flex items-center gap-2">
+                <input
+                  ref={dateInputRef}
+                  type="date"
+                  value={dateInput}
+                  onChange={(e) => setDateInput(e.target.value)}
+                  onKeyDown={handleDateInputKeyDown}
+                  min={`${minYear}-01-01`}
+                  max={`${maxYear}-12-31`}
+                  className="rounded bg-gray-700 px-2 py-1 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  aria-label="Select date"
+                />
 
-                {showCalendar && renderCalendar()}
+                <button
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setShowCalendar(!showCalendar);
+                  }}
+                  className="rounded p-1 text-gray-300 transition-colors hover:bg-gray-600 hover:text-white"
+                  title="Toggle calendar"
+                  type="button"
+                  aria-label="Toggle calendar"
+                >
+                  <Calendar size={16} />
+                </button>
+                <AnimatePresence>
+                  {showCalendar && (
+                    <div
+                      ref={calendarRef}
+                      onClick={handleCalendarClick}
+                      onMouseDown={handleCalendarMouseDown} // NEW - Prevent input blur
+                      className="absolute bottom-full left-1/2 z-50 mb-2 w-64 -translate-x-1/2 transform rounded-lg border border-gray-600 bg-gray-800 p-4 shadow-xl"
+                    >
+                      <div className="mb-4 flex items-center justify-between">
+                        <button
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            handlePrevMonth();
+                          }}
+                          className="rounded p-1 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
+                          aria-label="Previous month"
+                        >
+                          ‹
+                        </button>
+                        <div className="font-medium text-white">
+                          {calendarData.currentMonth.toLocaleDateString(
+                            'en-US',
+                            {
+                              month: 'long',
+                              year: 'numeric',
+                            }
+                          )}
+                        </div>
+                        <button
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            handleNextMonth();
+                          }}
+                          className="rounded p-1 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
+                          aria-label="Next month"
+                        >
+                          ›
+                        </button>
+                      </div>
+
+                      <div className="mb-2 grid grid-cols-7 gap-1">
+                        {calendarData.dayNames.map((day) => (
+                          <div
+                            key={day}
+                            className="py-1 text-center text-xs font-medium text-gray-400"
+                          >
+                            {day}
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="grid grid-cols-7 gap-1">
+                        {emptyDays.map((index) => (
+                          <div key={`empty-${index}`} />
+                        ))}
+                        {calendarDays.map((day) => {
+                          const date = new Date(
+                            calendarData.currentMonth.getFullYear(),
+                            calendarData.currentMonth.getMonth(),
+                            day
+                          );
+                          const isSelected =
+                            selectedDate.toDateString() === date.toDateString();
+                          const isToday =
+                            calendarData.today.toDateString() ===
+                            date.toDateString();
+                          const isValidYear =
+                            date.getFullYear() >= minYear &&
+                            date.getFullYear() <= maxYear;
+
+                          return (
+                            <button
+                              key={day}
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                handleCalendarDateSelect(date);
+                              }}
+                              disabled={!isValidYear}
+                              className={`h-8 rounded text-sm transition-colors ${
+                                isSelected
+                                  ? 'bg-blue-500 text-white'
+                                  : isToday
+                                    ? 'bg-gray-600 text-white'
+                                    : 'text-gray-300 hover:bg-gray-700'
+                              } ${!isValidYear ? 'cursor-not-allowed opacity-30' : ''}`}
+                              aria-label={`Select ${date.toLocaleDateString(
+                                'en-US',
+                                {
+                                  month: 'long',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                }
+                              )}`}
+                              aria-selected={isSelected}
+                            >
+                              {day}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </AnimatePresence>
               </div>
             ) : (
               <button
@@ -585,27 +554,27 @@ const TimeBar: React.FC<TimeBarProps> = ({
                 }`}
                 title="Click to edit date"
                 type="button"
+                aria-label="Edit date"
               >
                 <Calendar size={16} className="opacity-70" />
-                <span>{formatDate(currentDate)}</span>
+                <span>{formatDate(selectedDate)}</span>
               </button>
             )}
           </div>
 
+          {/* Slider Track */}
           <div
-            className={`mb-2 flex justify-between text-xs transition-colors duration-200 ${
-              isActive ? 'text-white/90' : 'text-gray-500'
+            className={`relative h-1 touch-none ${
+              isDragging ? 'cursor-grabbing' : 'cursor-grab'
             }`}
-          >
-            <span>{minYear}</span>
-            <span>{maxYear}</span>
-          </div>
-
-          <div
             ref={trackRef}
-            className={`relative h-1 cursor-pointer touch-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
             onMouseDown={handleMouseDown}
             onTouchStart={handleTouchStart}
+            role="slider"
+            aria-label="Time slider"
+            aria-valuenow={selectedDate.getFullYear()}
+            aria-valuemin={minYear}
+            aria-valuemax={maxYear}
           >
             <div
               className={`absolute inset-0 rounded-full transition-all duration-200 ${
@@ -614,19 +583,14 @@ const TimeBar: React.FC<TimeBarProps> = ({
                   : 'border border-gray-500/20 bg-gray-600/30'
               }`}
             />
-
             <div
               className={`absolute left-0 top-0 h-full rounded-full transition-none ${
                 isActive
                   ? 'bg-gradient-to-r from-white/70 to-white/50'
                   : 'bg-gradient-to-r from-gray-400/50 to-gray-500/40'
               }`}
-              style={{
-                width: `${sliderPosition}%`,
-                willChange: isDragging ? 'width' : 'auto',
-              }}
+              style={{ width: `${sliderPosition}%` }}
             />
-
             <div
               className={`pointer-events-none absolute top-1/2 h-2 w-2 -translate-y-1/2 transform rounded-full border-2 shadow-lg transition-none ${
                 isDragging
@@ -635,44 +599,8 @@ const TimeBar: React.FC<TimeBarProps> = ({
                     ? 'scale-110 border-white/70 bg-white/90'
                     : 'border-gray-400/50 bg-gray-400/70'
               }`}
-              style={{
-                left: `calc(${sliderPosition}% - 8px)`,
-                willChange: isDragging ? 'left' : 'auto',
-              }}
+              style={{ left: `calc(${sliderPosition}% - 8px)` }}
             />
-
-            {showTooltip && (
-              <div
-                className="pointer-events-none absolute -top-12 z-50 -translate-x-1/2 transform rounded bg-gray-800 px-3 py-1 text-sm text-white shadow-lg"
-                style={{
-                  left: `${tooltipPosition}%`,
-                  willChange: isDragging ? 'left' : 'auto',
-                }}
-              >
-                {formatDate(currentDate)}
-                <div className="absolute left-1/2 top-full -translate-x-1/2 transform border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-800" />
-              </div>
-            )}
-
-            <div className="pointer-events-none absolute top-0 h-2 w-full">
-              {Array.from(
-                { length: Math.floor(yearRange / 10) + 1 },
-                (_, i) => {
-                  const year = minYear + i * 10;
-                  if (year > maxYear) return null;
-                  const position = getPositionFromYear(year);
-                  return (
-                    <div
-                      key={year}
-                      className={`absolute h-full w-px transition-colors duration-200 ${
-                        isActive ? 'bg-white/40' : 'bg-gray-500/30'
-                      }`}
-                      style={{ left: `${position}%` }}
-                    />
-                  );
-                }
-              )}
-            </div>
           </div>
         </div>
       </div>
