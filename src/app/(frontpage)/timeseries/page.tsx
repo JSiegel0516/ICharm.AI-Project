@@ -17,6 +17,32 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler,
+} from 'chart.js';
+import { Line, Bar } from 'react-chartjs-2';
+
+// Register Chart.js components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+);
 
 // Types
 interface Dataset {
@@ -252,6 +278,105 @@ export default function TimeSeriesPage() {
       setTimeSeriesData([]);
     }
   }, [selectedDatasets, comparisonConfig.dateRange]);
+
+  // Normalize data if needed
+  const normalizeData = (data: number[]): number[] => {
+    const min = Math.min(...data);
+    const max = Math.max(...data);
+    const range = max - min;
+    if (range === 0) return data.map(() => 0);
+    return data.map((value) => ((value - min) / range) * 100);
+  };
+
+  // Prepare chart data
+  const chartData = {
+    labels: timeSeriesData.map((point) => point.date),
+    datasets: selectedDatasets
+      .filter((dataset) => visibleDatasets.has(dataset.id))
+      .map((dataset) => {
+        const rawData = timeSeriesData.map(
+          (point) => point.values[dataset.id] || 0
+        );
+        const data = comparisonConfig.normalize
+          ? normalizeData(rawData)
+          : rawData;
+
+        return {
+          label: dataset.name,
+          data: data,
+          borderColor: dataset.color,
+          backgroundColor:
+            comparisonConfig.chartType === 'area'
+              ? `${dataset.color}33`
+              : dataset.color,
+          borderWidth: 2,
+          fill: comparisonConfig.chartType === 'area',
+          tension: 0.4,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+        };
+      }),
+  };
+
+  // Chart options
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: {
+      mode: 'index' as const,
+      intersect: false,
+    },
+    plugins: {
+      legend: {
+        display: false,
+      },
+      tooltip: {
+        backgroundColor: 'rgba(15, 23, 42, 0.9)',
+        titleColor: '#fff',
+        bodyColor: '#fff',
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        borderWidth: 1,
+        padding: 12,
+        displayColors: true,
+        callbacks: {
+          label: function (context: any) {
+            let label = context.dataset.label || '';
+            if (label) {
+              label += ': ';
+            }
+            if (context.parsed.y !== null) {
+              label += comparisonConfig.normalize
+                ? context.parsed.y.toFixed(2) + '%'
+                : context.parsed.y.toFixed(2);
+            }
+            return label;
+          },
+        },
+      },
+    },
+    scales: {
+      x: {
+        grid: {
+          color: 'rgba(255, 255, 255, 0.05)',
+        },
+        ticks: {
+          color: '#9ca3af',
+          maxTicksLimit: 10,
+        },
+      },
+      y: {
+        grid: {
+          color: 'rgba(255, 255, 255, 0.05)',
+        },
+        ticks: {
+          color: '#9ca3af',
+          callback: function (value: any) {
+            return comparisonConfig.normalize ? value + '%' : value;
+          },
+        },
+      },
+    },
+  };
 
   // Download data as CSV
   const downloadData = () => {
@@ -525,31 +650,59 @@ export default function TimeSeriesPage() {
                     animate={{ opacity: 1 }}
                     className="space-y-4"
                   >
-                    {/* Chart will go here - you can integrate Chart.js, D3.js, or any other charting library */}
-                    <div className="h-96 rounded-lg bg-slate-700/30 p-4">
+                    {/* Chart */}
+                    <div className="rounded-lg bg-slate-700/30 p-4">
                       <div className="mb-4 flex items-center justify-between">
                         <h3 className="text-lg font-semibold">
                           Time Series Comparison
                         </h3>
-                        <div className="flex items-center gap-2 text-sm text-gray-400">
-                          <Calendar size={16} />
-                          <span>
-                            {comparisonConfig.dateRange.start} to{' '}
-                            {comparisonConfig.dateRange.end}
-                          </span>
+                        <div className="flex items-center gap-4">
+                          <div className="flex items-center gap-2 text-sm text-gray-400">
+                            <Calendar size={16} />
+                            <span>
+                              {comparisonConfig.dateRange.start} to{' '}
+                              {comparisonConfig.dateRange.end}
+                            </span>
+                          </div>
+                          <button
+                            onClick={downloadData}
+                            className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-blue-700"
+                          >
+                            <Download size={16} />
+                            Export CSV
+                          </button>
                         </div>
                       </div>
 
-                      {/* Placeholder for chart */}
-                      <div className="flex h-full items-center justify-center text-gray-400">
-                        <div className="text-center">
-                          <LineChart size={48} className="mx-auto mb-4" />
-                          <p>Chart visualization would appear here</p>
-                          <p className="mt-2 text-sm">
-                            {selectedDatasets.length} dataset(s) loaded with{' '}
-                            {timeSeriesData.length} data points
-                          </p>
-                        </div>
+                      {/* Chart */}
+                      <div className="h-80">
+                        {comparisonConfig.chartType === 'line' ||
+                        comparisonConfig.chartType === 'area' ? (
+                          <Line data={chartData} options={chartOptions} />
+                        ) : (
+                          <Bar data={chartData} options={chartOptions} />
+                        )}
+                      </div>
+
+                      {/* Custom Legend */}
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        {selectedDatasets.map((dataset) => (
+                          <button
+                            key={dataset.id}
+                            onClick={() => toggleDatasetVisibility(dataset.id)}
+                            className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-all ${
+                              visibleDatasets.has(dataset.id)
+                                ? 'bg-slate-600/50'
+                                : 'bg-slate-700/30 opacity-50'
+                            }`}
+                          >
+                            <div
+                              className="h-3 w-3 rounded-full"
+                              style={{ backgroundColor: dataset.color }}
+                            />
+                            <span>{dataset.name}</span>
+                          </button>
+                        ))}
                       </div>
                     </div>
 
