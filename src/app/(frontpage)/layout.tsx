@@ -40,7 +40,7 @@ export default function RootLayout({
             <main id="root" className="flex-1 overflow-y-auto">
               {children}
             </main>
-            <div className="pointer-events-auto fixed right-0 top-0 z-20 h-full">
+            <div className="pointer-events-auto fixed top-0 right-0 z-20 h-full">
               <ChatBot />
             </div>
           </div>
