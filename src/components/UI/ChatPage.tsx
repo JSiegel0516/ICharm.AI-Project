@@ -180,7 +180,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
             className={`flex gap-3 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             {message.type === 'bot' && (
-              <div className="mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gray-700">
+              <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-700">
                 <Bot size={16} className="text-gray-200" />
               </div>
             )}
@@ -196,7 +196,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
             </div>
 
             {message.type === 'user' && (
-              <div className="mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gray-600">
+              <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-600">
                 <User size={16} className="text-gray-200" />
               </div>
             )}
@@ -206,7 +206,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
         {/* Typing Indicator */}
         {isTyping && (
           <div className="flex justify-start gap-3">
-            <div className="mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gray-700">
+            <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-700">
               <Bot size={16} className="text-gray-200" />
             </div>
             <div className="rounded-2xl border border-gray-700/30 bg-gray-900/30 px-3 py-2 text-gray-200">

@@ -90,22 +90,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     {
       value: 'default',
       label: 'Default',
-      preview: 'bg-gradient-to-r from-blue-500 to-purple-600',
+      preview: 'bg-linear-to-r from-blue-500 to-purple-600',
     },
     {
       value: 'high',
       label: 'High Contrast',
-      preview: 'bg-gradient-to-r from-yellow-400 to-red-600',
+      preview: 'bg-linear-to-r from-yellow-400 to-red-600',
     },
     {
       value: 'mono',
       label: 'Monochrome',
-      preview: 'bg-gradient-to-r from-gray-700 to-gray-900',
+      preview: 'bg-linear-to-r from-gray-700 to-gray-900',
     },
     {
       value: 'inverted',
       label: 'Inverted',
-      preview: 'bg-gradient-to-r from-white to-gray-300',
+      preview: 'bg-linear-to-r from-white to-gray-300',
     },
   ];
 

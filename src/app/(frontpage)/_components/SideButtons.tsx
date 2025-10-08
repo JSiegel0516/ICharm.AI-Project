@@ -252,7 +252,7 @@ export function SideButtons({
             initial={{ x: 0 }}
             exit={{ x: -100, opacity: 0 }}
             transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="pointer-events-auto fixed left-4 top-0 z-[9999] flex h-screen flex-col items-center justify-center gap-2"
+            className="pointer-events-auto fixed left-4 top-0 z-9999 flex h-screen flex-col items-center justify-center gap-2"
           >
             {/* Dynamic Buttons */}
             {buttonConfigs.map(({ id, icon, label, onClick, delay }) => (
@@ -301,7 +301,7 @@ export function SideButtons({
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -100, opacity: 0 }}
             transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="pointer-events-auto fixed left-4 top-1/2 z-[9999] w-80 -translate-y-1/2 rounded-xl bg-slate-800/95 p-4 text-slate-100 shadow-2xl backdrop-blur-sm"
+            className="pointer-events-auto fixed left-4 top-1/2 z-9999 w-80 -translate-y-1/2 rounded-xl bg-slate-800/95 p-4 text-slate-100 shadow-2xl backdrop-blur-sm"
           >
             {/* Header */}
             <div className="mb-3 flex items-center justify-between">

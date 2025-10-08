@@ -586,8 +586,8 @@ const TimeBar: React.FC<TimeBarProps> = ({
             <div
               className={`absolute left-0 top-0 h-full rounded-full transition-none ${
                 isActive
-                  ? 'bg-gradient-to-r from-white/70 to-white/50'
-                  : 'bg-gradient-to-r from-gray-400/50 to-gray-500/40'
+                  ? 'bg-linear-to-r from-white/70 to-white/50'
+                  : 'bg-linear-to-r from-gray-400/50 to-gray-500/40'
               }`}
               style={{ width: `${sliderPosition}%` }}
             />

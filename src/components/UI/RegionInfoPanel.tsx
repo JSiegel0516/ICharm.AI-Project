@@ -222,7 +222,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
 
           <div className="space-y-3">
             <div className="flex items-start gap-2">
-              <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" />
+              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
               <div className="text-sm font-medium text-white">
                 {latitude.toFixed(2)}°, {longitude.toFixed(2)}°
               </div>

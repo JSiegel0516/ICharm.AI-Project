@@ -194,7 +194,7 @@ const YearSelector: React.FC<YearSelectorProps> = ({
           </div>
 
           {/* Rainbow bar at bottom */}
-          <div className="mt-4 h-1 w-full rounded-full bg-gradient-to-r from-red-500 via-yellow-500 via-green-500 via-blue-500 via-indigo-500 to-purple-500"></div>
+          <div className="mt-4 h-1 w-full rounded-full bg-linear-to-r from-red-500 via-yellow-500 via-green-500 via-blue-500 via-indigo-500 to-purple-500"></div>
         </div>
       )}
     </div>
