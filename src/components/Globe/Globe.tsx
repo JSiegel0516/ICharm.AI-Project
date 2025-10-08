@@ -524,7 +524,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         }}
       >
         {isLoading && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900 bg-opacity-75">
+          <div className="bg-opacity-75 absolute inset-0 z-10 flex items-center justify-center bg-slate-900">
             <div className="text-center text-white">
               <div className="mb-4 h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
               <p>Loading Globe with Geographic Boundaries...</p>
