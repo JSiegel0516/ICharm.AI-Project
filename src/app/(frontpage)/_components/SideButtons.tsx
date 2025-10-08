@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Calendar } from '@/components/ui/calendar';
 
 interface SideButtonsProps {
   selectedDate: Date;
@@ -176,105 +177,27 @@ export function SideButtons({
     return { firstDay, daysInMonth };
   }, []);
 
-  const handlePrevMonth = useCallback(() => {
-    setViewDate((prev) => {
-      const newDate = new Date(prev.getFullYear(), prev.getMonth() - 1, 1);
-      return newDate;
-    });
-  }, []);
-
-  const handleNextMonth = useCallback(() => {
-    setViewDate((prev) => {
-      const newDate = new Date(prev.getFullYear(), prev.getMonth() + 1, 1);
-      return newDate;
-    });
-  }, []);
-
   const handleDateSelect = useCallback(
-    (day: number) => {
-      const newDate = new Date(
-        viewDate.getFullYear(),
-        viewDate.getMonth(),
-        day,
-        selectedDate.getHours(),
-        selectedDate.getMinutes(),
-        selectedDate.getSeconds()
-      );
-      onDateChange(newDate);
-      closeCalendar();
-    },
-    [viewDate, selectedDate, onDateChange, closeCalendar]
-  );
-
-  const handleInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const value = e.target.value;
-      setInputValue(value);
-
-      const parsed = new Date(value);
-      if (!isNaN(parsed.getTime())) {
+    (date: Date | undefined) => {
+      if (date) {
+        // Create new date while preserving the time components from selectedDate
         const newDate = new Date(
-          parsed.getFullYear(),
-          parsed.getMonth(),
-          parsed.getDate(),
+          date.getFullYear(),
+          date.getMonth(),
+          date.getDate(),
           selectedDate.getHours(),
           selectedDate.getMinutes(),
           selectedDate.getSeconds()
         );
         onDateChange(newDate);
-        setViewDate(newDate);
+        closeCalendar();
       }
     },
-    [selectedDate, onDateChange]
+    [selectedDate, onDateChange, closeCalendar]
   );
 
   // Memoized calendar data based on viewDate
   const { firstDay, daysInMonth } = getDaysInMonth(viewDate);
-
-  const monthNames = useMemo(
-    () => [
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
-    ],
-    []
-  );
-
-  const dayNames = useMemo(
-    () => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
-    []
-  );
-
-  const calendarDays = useMemo(
-    () => Array.from({ length: daysInMonth }, (_, i) => i + 1),
-    [daysInMonth]
-  );
-
-  const emptyDays = useMemo(
-    () => Array.from({ length: firstDay }, (_, i) => i),
-    [firstDay]
-  );
-
-  // Check if a day is selected
-  const isDaySelected = useCallback(
-    (day: number) => {
-      return (
-        selectedDate.getDate() === day &&
-        selectedDate.getMonth() === viewDate.getMonth() &&
-        selectedDate.getFullYear() === viewDate.getFullYear()
-      );
-    },
-    [selectedDate, viewDate]
-  );
 
   // Button data for cleaner rendering
   const buttonConfigs = useMemo(
@@ -390,85 +313,15 @@ export function SideButtons({
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -100, opacity: 0 }}
             transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="pointer-events-auto fixed top-1/2 left-4 z-9999 w-80 -translate-y-1/2 rounded-xl bg-slate-800/95 p-4 text-slate-100 shadow-2xl backdrop-blur-sm"
+            className="pointer-events-auto fixed top-1/2 left-4 z-9999 w-80 -translate-y-1/2"
           >
-            {/* Header */}
-            <div className="mb-3 flex items-center justify-between">
-              <button
-                onClick={handlePrevMonth}
-                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-700 hover:text-white"
-                aria-label="Previous month"
-              >
-                ‹
-              </button>
-              <h2 className="text-center text-lg font-semibold">
-                {monthNames[viewDate.getMonth()]} {viewDate.getFullYear()}
-              </h2>
-              <button
-                onClick={handleNextMonth}
-                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-700 hover:text-white"
-                aria-label="Next month"
-              >
-                ›
-              </button>
-            </div>
-
-            {/* Input */}
-            <div className="mb-4">
-              <input
-                type="text"
-                value={inputValue}
-                onChange={handleInputChange}
-                placeholder="MM/DD/YYYY"
-                className="w-full rounded-lg border border-slate-600 bg-slate-700/60 px-3 py-2 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-rose-400/50 focus:outline-none"
-                aria-label="Date input"
-              />
-            </div>
-
-            {/* Day Labels */}
-            <div className="mb-1 grid grid-cols-7 gap-1 text-center text-xs text-slate-400">
-              {dayNames.map((day) => (
-                <div key={day}>{day}</div>
-              ))}
-            </div>
-
-            {/* Days Grid */}
-            <div className="grid grid-cols-7 gap-1 text-center">
-              {/* Empty days for calendar alignment */}
-              {emptyDays.map((index) => (
-                <div key={`empty-${index}`} />
-              ))}
-
-              {/* Calendar days */}
-              {calendarDays.map((day) => {
-                const selected = isDaySelected(day);
-                return (
-                  <button
-                    key={day}
-                    onClick={() => handleDateSelect(day)}
-                    className={`aspect-square rounded-md text-sm transition-all ${
-                      selected
-                        ? 'bg-rose-500 font-semibold text-white'
-                        : 'hover:bg-slate-700'
-                    }`}
-                    aria-label={`Select ${monthNames[viewDate.getMonth()]} ${day}, ${viewDate.getFullYear()}`}
-                    aria-selected={selected}
-                  >
-                    {day}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Footer */}
-            <div className="mt-4 flex justify-end">
-              <button
-                onClick={closeCalendar}
-                className="rounded-md bg-slate-700 px-3 py-1.5 text-sm font-medium text-slate-200 transition-colors hover:bg-slate-600"
-              >
-                Close
-              </button>
-            </div>
+            <Calendar
+              mode="single"
+              selected={selectedDate}
+              onSelect={handleDateSelect}
+              className="rounded-md border shadow-sm lg:h-[300px] lg:w-[250px]"
+              captionLayout="dropdown"
+            />
           </motion.div>
         )}
       </AnimatePresence>
@@ -483,18 +336,15 @@ export function SideButtons({
             transition={{ duration: 0.3, ease: 'easeInOut' }}
             className="pointer-events-auto fixed top-1/2 left-4 z-9999 w-96 -translate-y-1/2"
           >
-            <Card className="border-slate-700 bg-slate-800/95 text-slate-100 shadow-2xl backdrop-blur-sm">
+            <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center justify-between text-lg">
                   <span>Select Datasets</span>
-                  <Badge
-                    variant="secondary"
-                    className="bg-slate-700 text-slate-300"
-                  >
+                  <Badge variant="secondary" className="">
                     {selectedDatasets.size} selected
                   </Badge>
                 </CardTitle>
-                <CardDescription className="text-slate-400">
+                <CardDescription className="">
                   Choose datasets to visualize on the globe
                 </CardDescription>
               </CardHeader>
@@ -504,7 +354,7 @@ export function SideButtons({
                     key={dataset.id}
                     className={`cursor-pointer rounded-lg border p-3 transition-all ${
                       selectedDatasets.has(dataset.id)
-                        ? 'border-rose-500/50 bg-rose-500/20'
+                        ? 'border-slate-300/50 bg-slate-300/20'
                         : 'border-slate-600 bg-slate-700/50 hover:bg-slate-700/70'
                     }`}
                     onClick={() => toggleDatasetSelection(dataset.id)}
@@ -518,10 +368,7 @@ export function SideButtons({
                           {dataset.description}
                         </p>
                         <div className="mt-2 flex items-center gap-3">
-                          <Badge
-                            variant="outline"
-                            className="border-slate-500 bg-slate-600/50 text-xs text-slate-300"
-                          >
+                          <Badge variant="outline" className="text-xs">
                             {dataset.category}
                           </Badge>
                           <span className="text-xs text-slate-500">

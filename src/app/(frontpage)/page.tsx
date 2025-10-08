@@ -155,7 +155,6 @@ export default function HomePage() {
   // Destructure state for easier access
   const {
     temperatureUnit,
-    activeSidebarPanel,
     isTimebarPlaying,
     showRegionInfo,
     tutorialOpen,
@@ -163,7 +162,7 @@ export default function HomePage() {
   } = uiState;
 
   return (
-    <section className="fixed inset-0 h-screen w-screen overflow-hidden bg-background">
+    <section className="bg-background fixed inset-0 h-screen w-screen overflow-hidden">
       {memoizedGlobe}
 
       <div className="pointer-events-none absolute inset-0 z-10">
@@ -199,7 +198,7 @@ export default function HomePage() {
           colorBarCollapsed={colorBarCollapsed}
         />
 
-        <div className="pointer-events-auto absolute bottom-0 left-0 right-12 z-20 pb-4">
+        <div className="pointer-events-auto absolute right-12 bottom-0 left-0 z-20 pb-4">
           <div className="relative flex items-end justify-center px-4">
             {/* TimeBar - Centered with flexible width */}
             <div className="pointer-events-auto w-full max-w-4xl">
