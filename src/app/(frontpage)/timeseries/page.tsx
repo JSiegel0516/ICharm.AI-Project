@@ -30,6 +30,36 @@ import {
   Filler,
 } from 'chart.js';
 import { Line, Bar } from 'react-chartjs-2';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Skeleton } from '@/components/ui/skeleton';
 
 // Register Chart.js components
 ChartJS.register(
@@ -408,350 +438,418 @@ export default function TimeSeriesPage() {
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-4">
           {/* Sidebar - Dataset Selection */}
           <div className="space-y-6 lg:col-span-1">
-            {/* Search and Filter */}
-            <div className="rounded-xl bg-slate-800/50 p-6 backdrop-blur-sm">
-              <h3 className="mb-4 text-lg font-semibold">Add Datasets</h3>
+            <Card className="bg-slate-800/50 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle className="text-lg">Add Datasets</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Search */}
+                <div className="relative">
+                  <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  <Input
+                    type="text"
+                    placeholder="Search datasets..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="border-slate-600 bg-slate-700/50 pl-10 text-white placeholder-gray-400"
+                  />
+                </div>
 
-              {/* Search */}
-              <div className="relative mb-4">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search datasets..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full rounded-lg bg-slate-700/50 py-2 pl-10 pr-4 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              {/* Category Filter */}
-              <div className="mb-4">
-                <label className="mb-2 block text-sm font-medium text-gray-300">
-                  Category
-                </label>
-                <select
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="w-full rounded-lg bg-slate-700/50 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {categories.map((category) => (
-                    <option key={category} value={category}>
-                      {category}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Available Datasets List */}
-              <div className="max-h-96 space-y-3 overflow-y-auto">
-                {filteredDatasets.map((dataset) => (
-                  <motion.div
-                    key={dataset.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`cursor-pointer rounded-lg p-3 transition-all ${
-                      selectedDatasets.find((d) => d.id === dataset.id)
-                        ? 'border border-blue-500/50 bg-blue-600/20'
-                        : 'bg-slate-700/30 hover:bg-slate-700/50'
-                    }`}
-                    onClick={() => addDatasetToComparison(dataset)}
+                {/* Category Filter */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-300">
+                    Category
+                  </label>
+                  <Select
+                    value={selectedCategory}
+                    onValueChange={setSelectedCategory}
                   >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <div
-                            className="h-3 w-3 rounded-full"
-                            style={{ backgroundColor: dataset.color }}
-                          />
-                          <h4 className="text-sm font-medium">
-                            {dataset.name}
-                          </h4>
-                        </div>
-                        <p className="mt-1 line-clamp-2 text-xs text-gray-400">
-                          {dataset.description}
-                        </p>
-                        <div className="mt-2 flex items-center gap-4 text-xs text-gray-500">
-                          <span>{dataset.category}</span>
-                          <span>{dataset.frequency}</span>
-                        </div>
-                      </div>
-                      <Plus size={16} className="text-gray-400" />
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            </div>
+                    <SelectTrigger className="border-slate-600 bg-slate-700/50 text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="border-slate-600 bg-slate-800 text-white">
+                      {categories.map((category) => (
+                        <SelectItem key={category} value={category}>
+                          {category}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Available Datasets List */}
+                <ScrollArea className="h-96">
+                  <div className="space-y-3">
+                    {filteredDatasets.map((dataset) => (
+                      <motion.div
+                        key={dataset.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                      >
+                        <Card
+                          className={`cursor-pointer transition-all ${
+                            selectedDatasets.find((d) => d.id === dataset.id)
+                              ? 'border-blue-500/50 bg-blue-600/20'
+                              : 'border-slate-600 bg-slate-700/30 hover:bg-slate-700/50'
+                          }`}
+                          onClick={() => addDatasetToComparison(dataset)}
+                        >
+                          <CardContent className="p-3">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1 space-y-2">
+                                <div className="flex items-center gap-2">
+                                  <div
+                                    className="h-3 w-3 rounded-full"
+                                    style={{ backgroundColor: dataset.color }}
+                                  />
+                                  <h4 className="text-sm font-medium">
+                                    {dataset.name}
+                                  </h4>
+                                </div>
+                                <p className="line-clamp-2 text-xs text-gray-400">
+                                  {dataset.description}
+                                </p>
+                                <div className="flex items-center gap-4 text-xs text-gray-500">
+                                  <Badge
+                                    variant="secondary"
+                                    className="bg-slate-600/50 text-gray-300"
+                                  >
+                                    {dataset.category}
+                                  </Badge>
+                                  <span>{dataset.frequency}</span>
+                                </div>
+                              </div>
+                              <Plus size={16} className="mt-1 text-gray-400" />
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </motion.div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
 
             {/* Selected Datasets */}
             {selectedDatasets.length > 0 && (
-              <div className="rounded-xl bg-slate-800/50 p-6 backdrop-blur-sm">
-                <h3 className="mb-4 text-lg font-semibold">
-                  Selected Datasets ({selectedDatasets.length})
-                </h3>
-                <div className="space-y-3">
-                  {selectedDatasets.map((dataset) => (
-                    <motion.div
-                      key={dataset.id}
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="rounded-lg bg-slate-700/30 p-3"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => toggleDatasetVisibility(dataset.id)}
-                            className="text-gray-400 transition-colors hover:text-white"
-                          >
-                            {visibleDatasets.has(dataset.id) ? (
-                              <Eye size={16} />
-                            ) : (
-                              <EyeOff size={16} />
-                            )}
-                          </button>
-                          <div
-                            className="h-3 w-3 rounded-full"
-                            style={{ backgroundColor: dataset.color }}
-                          />
-                          <span className="text-sm font-medium">
-                            {dataset.name}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() =>
-                            removeDatasetFromComparison(dataset.id)
-                          }
-                          className="text-gray-400 transition-colors hover:text-red-400"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              </div>
+              <Card className="bg-slate-800/50 backdrop-blur-sm">
+                <CardHeader>
+                  <CardTitle className="text-lg">
+                    Selected Datasets ({selectedDatasets.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {selectedDatasets.map((dataset) => (
+                      <motion.div
+                        key={dataset.id}
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                      >
+                        <Card className="border-slate-600 bg-slate-700/30">
+                          <CardContent className="p-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    toggleDatasetVisibility(dataset.id)
+                                  }
+                                  className="h-6 w-6 p-0 text-gray-400 hover:text-white"
+                                >
+                                  {visibleDatasets.has(dataset.id) ? (
+                                    <Eye size={14} />
+                                  ) : (
+                                    <EyeOff size={14} />
+                                  )}
+                                </Button>
+                                <div
+                                  className="h-3 w-3 rounded-full"
+                                  style={{ backgroundColor: dataset.color }}
+                                />
+                                <span className="text-sm font-medium">
+                                  {dataset.name}
+                                </span>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  removeDatasetFromComparison(dataset.id)
+                                }
+                                className="h-6 w-6 p-0 text-gray-400 hover:text-red-400"
+                              >
+                                <Trash2 size={14} />
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </motion.div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
             )}
           </div>
 
           {/* Main Content */}
           <div className="space-y-6 lg:col-span-3">
             {/* Configuration Panel */}
-            <div className="rounded-xl bg-slate-800/50 p-6 backdrop-blur-sm">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                {/* Date Range */}
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-gray-300">
-                    Date Range
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="date"
-                      value={comparisonConfig.dateRange.start}
-                      onChange={(e) =>
-                        setComparisonConfig((prev) => ({
-                          ...prev,
-                          dateRange: {
-                            ...prev.dateRange,
-                            start: e.target.value,
-                          },
-                        }))
-                      }
-                      className="flex-1 rounded-lg bg-slate-700/50 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <input
-                      type="date"
-                      value={comparisonConfig.dateRange.end}
-                      onChange={(e) =>
-                        setComparisonConfig((prev) => ({
-                          ...prev,
-                          dateRange: { ...prev.dateRange, end: e.target.value },
-                        }))
-                      }
-                      className="flex-1 rounded-lg bg-slate-700/50 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-
-                {/* Chart Type */}
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-gray-300">
-                    Chart Type
-                  </label>
-                  <select
-                    value={comparisonConfig.chartType}
-                    onChange={(e) =>
-                      setComparisonConfig((prev) => ({
-                        ...prev,
-                        chartType: e.target.value as 'line' | 'bar' | 'area',
-                      }))
-                    }
-                    className="w-full rounded-lg bg-slate-700/50 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="line">Line Chart</option>
-                    <option value="bar">Bar Chart</option>
-                    <option value="area">Area Chart</option>
-                  </select>
-                </div>
-
-                {/* Options */}
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-gray-300">
-                    Options
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="normalize"
-                      checked={comparisonConfig.normalize}
-                      onChange={(e) =>
-                        setComparisonConfig((prev) => ({
-                          ...prev,
-                          normalize: e.target.checked,
-                        }))
-                      }
-                      className="rounded bg-slate-700/50 text-blue-500 focus:ring-blue-500"
-                    />
-                    <label
-                      htmlFor="normalize"
-                      className="text-sm text-gray-300"
-                    >
-                      Normalize Data
+            <Card className="bg-slate-800/50 backdrop-blur-sm">
+              <CardContent className="p-6">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  {/* Date Range */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-300">
+                      Date Range
                     </label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="date"
+                        value={comparisonConfig.dateRange.start}
+                        onChange={(e) =>
+                          setComparisonConfig((prev) => ({
+                            ...prev,
+                            dateRange: {
+                              ...prev.dateRange,
+                              start: e.target.value,
+                            },
+                          }))
+                        }
+                        className="border-slate-600 bg-slate-700/50 text-white"
+                      />
+                      <Input
+                        type="date"
+                        value={comparisonConfig.dateRange.end}
+                        onChange={(e) =>
+                          setComparisonConfig((prev) => ({
+                            ...prev,
+                            dateRange: {
+                              ...prev.dateRange,
+                              end: e.target.value,
+                            },
+                          }))
+                        }
+                        className="border-slate-600 bg-slate-700/50 text-white"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Chart Type */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-300">
+                      Chart Type
+                    </label>
+                    <Select
+                      value={comparisonConfig.chartType}
+                      onValueChange={(value: 'line' | 'bar' | 'area') =>
+                        setComparisonConfig((prev) => ({
+                          ...prev,
+                          chartType: value,
+                        }))
+                      }
+                    >
+                      <SelectTrigger className="border-slate-600 bg-slate-700/50 text-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="border-slate-600 bg-slate-800 text-white">
+                        <SelectItem value="line">Line Chart</SelectItem>
+                        <SelectItem value="bar">Bar Chart</SelectItem>
+                        <SelectItem value="area">Area Chart</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Options */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-300">
+                      Options
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="normalize"
+                        checked={comparisonConfig.normalize}
+                        onCheckedChange={(checked) =>
+                          setComparisonConfig((prev) => ({
+                            ...prev,
+                            normalize: checked as boolean,
+                          }))
+                        }
+                        className="border-slate-600 data-[state=checked]:bg-blue-500"
+                      />
+                      <label
+                        htmlFor="normalize"
+                        className="text-sm text-gray-300"
+                      >
+                        Normalize Data
+                      </label>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
 
             {/* Visualization Area */}
-            <div className="rounded-xl bg-slate-800/50 p-6 backdrop-blur-sm">
-              <AnimatePresence>
-                {selectedDatasets.length === 0 ? (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="flex h-64 flex-col items-center justify-center text-gray-400"
-                  >
-                    <BarChart3 size={48} className="mb-4" />
-                    <p className="text-lg">No datasets selected</p>
-                    <p className="text-sm">
-                      Add datasets from the sidebar to start comparing
-                    </p>
-                  </motion.div>
-                ) : isLoading ? (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="flex h-64 items-center justify-center"
-                  >
-                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="space-y-4"
-                  >
-                    {/* Chart */}
-                    <div className="rounded-lg bg-slate-700/30 p-4">
-                      <div className="mb-4 flex items-center justify-between">
-                        <h3 className="text-lg font-semibold">
-                          Time Series Comparison
-                        </h3>
-                        <div className="flex items-center gap-4">
-                          <div className="flex items-center gap-2 text-sm text-gray-400">
-                            <Calendar size={16} />
-                            <span>
-                              {comparisonConfig.dateRange.start} to{' '}
-                              {comparisonConfig.dateRange.end}
-                            </span>
-                          </div>
-                          <button
-                            onClick={downloadData}
-                            className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-blue-700"
-                          >
-                            <Download size={16} />
-                            Export CSV
-                          </button>
-                        </div>
+            <Card className="bg-slate-800/50 backdrop-blur-sm">
+              <CardContent className="p-6">
+                <AnimatePresence>
+                  {selectedDatasets.length === 0 ? (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="flex h-64 flex-col items-center justify-center text-gray-400"
+                    >
+                      <BarChart3 size={48} className="mb-4" />
+                      <p className="text-lg">No datasets selected</p>
+                      <p className="text-sm">
+                        Add datasets from the sidebar to start comparing
+                      </p>
+                    </motion.div>
+                  ) : isLoading ? (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="space-y-4"
+                    >
+                      <div className="flex items-center justify-between">
+                        <Skeleton className="h-6 w-48 bg-slate-700" />
+                        <Skeleton className="h-8 w-32 bg-slate-700" />
                       </div>
-
-                      {/* Chart */}
-                      <div className="h-80">
-                        {comparisonConfig.chartType === 'line' ||
-                        comparisonConfig.chartType === 'area' ? (
-                          <Line data={chartData} options={chartOptions} />
-                        ) : (
-                          <Bar data={chartData} options={chartOptions} />
-                        )}
-                      </div>
-
-                      {/* Custom Legend */}
-                      <div className="mt-4 flex flex-wrap gap-3">
+                      <Skeleton className="h-80 w-full bg-slate-700" />
+                      <div className="flex gap-3">
                         {selectedDatasets.map((dataset) => (
-                          <button
+                          <Skeleton
                             key={dataset.id}
-                            onClick={() => toggleDatasetVisibility(dataset.id)}
-                            className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-all ${
-                              visibleDatasets.has(dataset.id)
-                                ? 'bg-slate-600/50'
-                                : 'bg-slate-700/30 opacity-50'
-                            }`}
-                          >
-                            <div
-                              className="h-3 w-3 rounded-full"
-                              style={{ backgroundColor: dataset.color }}
-                            />
-                            <span>{dataset.name}</span>
-                          </button>
+                            className="h-8 w-24 bg-slate-700"
+                          />
                         ))}
                       </div>
-                    </div>
-
-                    {/* Data Table Preview */}
-                    <div className="rounded-lg bg-slate-700/30 p-4">
-                      <h4 className="mb-3 text-sm font-semibold">
-                        Data Preview
-                      </h4>
-                      <div className="max-h-48 overflow-y-auto">
-                        <table className="w-full text-xs">
-                          <thead>
-                            <tr className="border-b border-white/10">
-                              <th className="px-3 py-2 text-left">Date</th>
-                              {selectedDatasets.map((dataset) => (
-                                <th
-                                  key={dataset.id}
-                                  className="px-3 py-2 text-right"
-                                >
-                                  {dataset.name}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {timeSeriesData.slice(0, 10).map((point, index) => (
-                              <tr
-                                key={index}
-                                className="border-b border-white/5"
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="space-y-4"
+                    >
+                      {/* Chart */}
+                      <Card className="border-slate-600 bg-slate-700/30">
+                        <CardContent className="p-4">
+                          <div className="mb-4 flex items-center justify-between">
+                            <h3 className="text-lg font-semibold">
+                              Time Series Comparison
+                            </h3>
+                            <div className="flex items-center gap-4">
+                              <div className="flex items-center gap-2 text-sm text-gray-400">
+                                <Calendar size={16} />
+                                <span>
+                                  {comparisonConfig.dateRange.start} to{' '}
+                                  {comparisonConfig.dateRange.end}
+                                </span>
+                              </div>
+                              <Button
+                                onClick={downloadData}
+                                className="bg-blue-600 hover:bg-blue-700"
                               >
-                                <td className="px-3 py-2">{point.date}</td>
-                                {selectedDatasets.map((dataset) => (
-                                  <td
-                                    key={dataset.id}
-                                    className="px-3 py-2 text-right"
-                                  >
-                                    {point.values[dataset.id]?.toFixed(2) ||
-                                      '-'}
-                                  </td>
-                                ))}
-                              </tr>
+                                <Download size={16} className="mr-2" />
+                                Export CSV
+                              </Button>
+                            </div>
+                          </div>
+
+                          {/* Chart */}
+                          <div className="h-80">
+                            {comparisonConfig.chartType === 'line' ||
+                            comparisonConfig.chartType === 'area' ? (
+                              <Line data={chartData} options={chartOptions} />
+                            ) : (
+                              <Bar data={chartData} options={chartOptions} />
+                            )}
+                          </div>
+
+                          {/* Custom Legend */}
+                          <div className="mt-4 flex flex-wrap gap-3">
+                            {selectedDatasets.map((dataset) => (
+                              <Button
+                                key={dataset.id}
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  toggleDatasetVisibility(dataset.id)
+                                }
+                                className={`border-slate-600 ${
+                                  visibleDatasets.has(dataset.id)
+                                    ? 'bg-slate-600/50 text-white'
+                                    : 'bg-slate-700/30 text-gray-400 opacity-50'
+                                }`}
+                              >
+                                <div
+                                  className="mr-2 h-3 w-3 rounded-full"
+                                  style={{ backgroundColor: dataset.color }}
+                                />
+                                {dataset.name}
+                              </Button>
                             ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      {/* Data Table Preview */}
+                      <Card className="border-slate-600 bg-slate-700/30">
+                        <CardContent className="p-4">
+                          <h4 className="mb-3 text-sm font-semibold">
+                            Data Preview
+                          </h4>
+                          <ScrollArea className="h-48">
+                            <Table>
+                              <TableHeader>
+                                <TableRow className="border-slate-600">
+                                  <TableHead className="text-gray-300">
+                                    Date
+                                  </TableHead>
+                                  {selectedDatasets.map((dataset) => (
+                                    <TableHead
+                                      key={dataset.id}
+                                      className="text-right text-gray-300"
+                                    >
+                                      {dataset.name}
+                                    </TableHead>
+                                  ))}
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {timeSeriesData
+                                  .slice(0, 10)
+                                  .map((point, index) => (
+                                    <TableRow
+                                      key={index}
+                                      className="border-slate-600"
+                                    >
+                                      <TableCell className="font-medium">
+                                        {point.date}
+                                      </TableCell>
+                                      {selectedDatasets.map((dataset) => (
+                                        <TableCell
+                                          key={dataset.id}
+                                          className="text-right"
+                                        >
+                                          {point.values[dataset.id]?.toFixed(
+                                            2
+                                          ) || '-'}
+                                        </TableCell>
+                                      ))}
+                                    </TableRow>
+                                  ))}
+                              </TableBody>
+                            </Table>
+                          </ScrollArea>
+                        </CardContent>
+                      </Card>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </CardContent>
+            </Card>
           </div>
         </div>
       </div>

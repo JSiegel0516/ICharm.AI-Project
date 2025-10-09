@@ -2,15 +2,15 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import '@/app/globals.css';
 import { AppStateProvider } from '@/context/HeaderContext';
-import Header from '@/components/Header/Header';
+import Header from '@/app/(frontpage)/_components/Header/Header';
 import ChatBot from '@/components/Chat/ChatBot';
 
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   title: {
-    template: '%s | ICharm.AI',
-    default: 'ICharm.AI - Climate Data Visualization',
+    template: '%s | iCharm',
+    default: 'iCharm - Climate Data Visualization',
   },
   description:
     'Advanced weather and climate data visualization platform with AI assistance',

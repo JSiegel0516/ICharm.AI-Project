@@ -9,8 +9,6 @@ import React, {
 } from 'react';
 import { Play, Pause } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
-import { Calendar } from '@/components/ui/calendar';
-import { Slider } from '@/components/ui/slider';
 
 interface TimeBarProps {
   selectedDate?: Date;
@@ -27,7 +25,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
   isPlaying = false,
   className = '',
 }) => {
-  // All state declarations at the top
   const [isDragging, setIsDragging] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [showTooltip, setShowTooltip] = useState(false);
@@ -36,7 +33,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
   const [dateInput, setDateInput] = useState('');
   const [showCalendar, setShowCalendar] = useState(false);
 
-  // All refs at the top
   const sliderRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const dateInputRef = useRef<HTMLInputElement>(null);
@@ -44,12 +40,10 @@ const TimeBar: React.FC<TimeBarProps> = ({
   const playIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const rafRef = useRef<number | null>(null);
 
-  // Constants
   const minYear = 1979;
   const maxYear = new Date().getFullYear();
   const yearRange = maxYear - minYear;
 
-  // All useCallback hooks together
   const getPositionFromYear = useCallback(
     (year: number) => ((year - minYear) / yearRange) * 100,
     [minYear, yearRange]
@@ -208,7 +202,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
     onPlayPause?.(newIsPlaying);
   }, [isPlaying, onPlayPause]);
 
-  // Separate effect to handle play interval
   useEffect(() => {
     if (isPlaying && !playIntervalRef.current) {
       playIntervalRef.current = setInterval(() => {
@@ -233,6 +226,13 @@ const TimeBar: React.FC<TimeBarProps> = ({
     };
   }, [isPlaying, selectedDate, maxYear, onDateChange, onPlayPause]);
 
+  // Update dateInput when selectedDate changes externally
+  useEffect(() => {
+    if (isEditing) {
+      setDateInput(formatDateForInput(selectedDate));
+    }
+  }, [selectedDate, isEditing, formatDateForInput]);
+
   const handleDateClick = useCallback(() => {
     setIsEditing(true);
     setShowCalendar(true);
@@ -254,14 +254,10 @@ const TimeBar: React.FC<TimeBarProps> = ({
     const parsed = parseDateInput(dateInput);
     if (parsed) {
       setDate(parsed);
-      setIsEditing(false);
-      setShowCalendar(false); // Make sure this closes calendar
-      setDateInput('');
-    } else {
-      setIsEditing(false);
-      setShowCalendar(false); // Close even if invalid
-      setDateInput('');
     }
+    setIsEditing(false);
+    setShowCalendar(false);
+    setDateInput('');
   }, [dateInput, parseDateInput, setDate]);
 
   const handleDateInputKeyDown = useCallback(
@@ -270,6 +266,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
       if (e.key === 'Escape') {
         setIsEditing(false);
         setShowCalendar(false);
+        setDateInput('');
       }
     },
     [handleDateSubmit]
@@ -277,20 +274,34 @@ const TimeBar: React.FC<TimeBarProps> = ({
 
   const handleCalendarClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    e.preventDefault();
   }, []);
 
   const handleCalendarMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault(); // This prevents the input from losing focus
+    e.preventDefault();
   }, []);
 
-  // All useEffect hooks together
+  // Close calendar when clicking outside
   useEffect(() => {
-    if (!isPlaying && playIntervalRef.current) {
-      clearInterval(playIntervalRef.current);
-      playIntervalRef.current = null;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        showCalendar &&
+        calendarRef.current &&
+        !calendarRef.current.contains(e.target as Node) &&
+        dateInputRef.current &&
+        !dateInputRef.current.contains(e.target as Node)
+      ) {
+        setShowCalendar(false);
+        setIsEditing(false);
+        setDateInput('');
+      }
+    };
+
+    if (showCalendar) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () =>
+        document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [isPlaying]);
+  }, [showCalendar]);
 
   useEffect(() => {
     if (isDragging) {
@@ -333,7 +344,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
     };
   }, []);
 
-  // All useMemo hooks at the end
   const calendarData = useMemo(() => {
     const today = new Date();
     const currentMonth = new Date(
@@ -366,7 +376,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
     [calendarData.firstDay]
   );
 
-  // Computed values
   const sliderPosition = getPositionFromYear(selectedDate.getFullYear());
   const isActive = isDragging || isHovered || isPlaying;
 
@@ -394,7 +403,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
       className={`mx-auto w-full max-w-3xl px-32 ${className}`}
     >
       <div id="timebar" className="flex items-center justify-center gap-6">
-        {/* Play/Pause */}
         <button
           onClick={handlePlayPause}
           className={`flex h-5 w-5 items-center justify-center rounded-full transition-all duration-200 hover:scale-110 focus:outline-none ${
@@ -409,7 +417,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
           {isPlaying ? <Pause size={12} /> : <Play size={12} />}
         </button>
 
-        {/* Date Display / Input */}
         <div
           className="relative flex-1"
           onMouseEnter={() => setIsHovered(true)}
@@ -424,28 +431,19 @@ const TimeBar: React.FC<TimeBarProps> = ({
                   value={dateInput}
                   onChange={(e) => setDateInput(e.target.value)}
                   onKeyDown={handleDateInputKeyDown}
+                  onBlur={handleDateSubmit}
                   min={`${minYear}-01-01`}
                   max={`${maxYear}-12-31`}
                   className="rounded bg-gray-700 px-2 py-1 text-sm text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   aria-label="Select date"
                 />
 
-                <button
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    setShowCalendar(!showCalendar);
-                  }}
-                  className="rounded p-1 text-gray-300 transition-colors hover:bg-gray-600 hover:text-white"
-                  title="Toggle calendar"
-                  type="button"
-                  aria-label="Toggle calendar"
-                ></button>
                 <AnimatePresence>
                   {showCalendar && (
                     <div
                       ref={calendarRef}
                       onClick={handleCalendarClick}
-                      onMouseDown={handleCalendarMouseDown} // NEW - Prevent input blur
+                      onMouseDown={handleCalendarMouseDown}
                       className="absolute bottom-full left-1/2 z-50 mb-2 w-64 -translate-x-1/2 transform rounded-lg border border-gray-600 bg-gray-800 p-4 shadow-xl"
                     >
                       <div className="mb-4 flex items-center justify-between">
@@ -561,7 +559,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
             )}
           </div>
 
-          {/* Slider Track */}
           <div
             className={`relative h-1 touch-none ${
               isDragging ? 'cursor-grabbing' : 'cursor-grab'
