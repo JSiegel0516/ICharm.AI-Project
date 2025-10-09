@@ -1,138 +1,61 @@
-'use client';
+"use client"
 
-import React, { useState, useRef, useEffect } from 'react';
-import { TooltipProps } from '@/types';
+import * as React from "react"
+import * as TooltipPrimitive from "@radix-ui/react-tooltip"
 
-const Tooltip: React.FC<TooltipProps> = ({
-  content,
-  children,
-  position = 'top',
-  delay = 200,
-  disabled = false,
-  className = '',
-}) => {
-  const [isVisible, setIsVisible] = useState(false);
-  const [actualPosition, setActualPosition] = useState(position);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const triggerRef = useRef<HTMLDivElement>(null);
-  const tooltipRef = useRef<HTMLDivElement>(null);
+import { cn } from "@/lib/utils"
 
-  const showTooltip = () => {
-    if (disabled) return;
-
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
-
-    timeoutRef.current = setTimeout(() => {
-      setIsVisible(true);
-      updatePosition();
-    }, delay);
-  };
-
-  const hideTooltip = () => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
-    setIsVisible(false);
-  };
-
-  const updatePosition = () => {
-    if (!triggerRef.current || !tooltipRef.current) return;
-
-    const triggerRect = triggerRef.current.getBoundingClientRect();
-    const tooltipRect = tooltipRef.current.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-
-    let newPosition = position;
-
-    // Check if tooltip would go outside viewport and adjust
-    switch (position) {
-      case 'top':
-        if (triggerRect.top - tooltipRect.height < 10) {
-          newPosition = 'bottom';
-        }
-        break;
-      case 'bottom':
-        if (triggerRect.bottom + tooltipRect.height > viewportHeight - 10) {
-          newPosition = 'top';
-        }
-        break;
-      case 'left':
-        if (triggerRect.left - tooltipRect.width < 10) {
-          newPosition = 'right';
-        }
-        break;
-      case 'right':
-        if (triggerRect.right + tooltipRect.width > viewportWidth - 10) {
-          newPosition = 'left';
-        }
-        break;
-    }
-
-    setActualPosition(newPosition);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-    };
-  }, []);
-
-  const getTooltipClasses = () => {
-    const baseClasses =
-      'absolute z-50 px-3 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg shadow-sm transition-opacity duration-200';
-    const visibleClasses = isVisible
-      ? 'opacity-100'
-      : 'opacity-0 pointer-events-none';
-
-    const positionClasses = {
-      top: 'bottom-full left-1/2 transform -translate-x-1/2 mb-2',
-      bottom: 'top-full left-1/2 transform -translate-x-1/2 mt-2',
-      left: 'right-full top-1/2 transform -translate-y-1/2 mr-2',
-      right: 'left-full top-1/2 transform -translate-y-1/2 ml-2',
-    };
-
-    return `${baseClasses} ${visibleClasses} ${positionClasses[actualPosition]} ${className}`;
-  };
-
-  const getArrowClasses = () => {
-    const baseArrowClasses = 'absolute w-2 h-2 bg-gray-900 transform rotate-45';
-
-    const arrowPositionClasses = {
-      top: 'top-full left-1/2 transform -translate-x-1/2 -mt-1',
-      bottom: 'bottom-full left-1/2 transform -translate-x-1/2 -mb-1',
-      left: 'left-full top-1/2 transform -translate-y-1/2 -ml-1',
-      right: 'right-full top-1/2 transform -translate-y-1/2 -mr-1',
-    };
-
-    return `${baseArrowClasses} ${arrowPositionClasses[actualPosition]}`;
-  };
-
-  if (disabled || !content) {
-    return <>{children}</>;
-  }
-
+function TooltipProvider({
+  delayDuration = 0,
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
   return (
-    <div
-      ref={triggerRef}
-      className="relative inline-block"
-      onMouseEnter={showTooltip}
-      onMouseLeave={hideTooltip}
-      onFocus={showTooltip}
-      onBlur={hideTooltip}
-    >
-      {children}
+    <TooltipPrimitive.Provider
+      data-slot="tooltip-provider"
+      delayDuration={delayDuration}
+      {...props}
+    />
+  )
+}
 
-      <div ref={tooltipRef} className={getTooltipClasses()} role="tooltip">
-        {content}
-        <div className={getArrowClasses()}></div>
-      </div>
-    </div>
-  );
-};
+function Tooltip({
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Root>) {
+  return (
+    <TooltipProvider>
+      <TooltipPrimitive.Root data-slot="tooltip" {...props} />
+    </TooltipProvider>
+  )
+}
 
-export default Tooltip;
+function TooltipTrigger({
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
+  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
+}
+
+function TooltipContent({
+  className,
+  sideOffset = 0,
+  children,
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Content>) {
+  return (
+    <TooltipPrimitive.Portal>
+      <TooltipPrimitive.Content
+        data-slot="tooltip-content"
+        sideOffset={sideOffset}
+        className={cn(
+          "bg-foreground text-background animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 w-fit origin-(--radix-tooltip-content-transform-origin) rounded-md px-3 py-1.5 text-xs text-balance",
+          className
+        )}
+        {...props}
+      >
+        {children}
+        <TooltipPrimitive.Arrow className="bg-foreground fill-foreground z-50 size-2.5 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-[2px]" />
+      </TooltipPrimitive.Content>
+    </TooltipPrimitive.Portal>
+  )
+}
+
+export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider }

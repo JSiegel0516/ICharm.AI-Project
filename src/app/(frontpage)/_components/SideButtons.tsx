@@ -1,8 +1,7 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useState, useEffect, useCallback } from 'react';
 import { SettingsIcon } from '@/components/ui/settings';
 import { FileTextIcon } from '@/components/ui/file-text';
 import { DownloadIcon } from '@/components/ui/download';
@@ -35,8 +34,50 @@ interface Dataset {
   size: string;
   lastUpdated: string;
   category: string;
-  selected?: boolean;
 }
+
+const DATASETS: Dataset[] = [
+  {
+    id: 'global-temp',
+    name: 'Global Temperature',
+    description: 'Global surface temperature data from 1880 to present',
+    size: '2.4 GB',
+    lastUpdated: '2024-01-15',
+    category: 'Climate',
+  },
+  {
+    id: 'co2-concentration',
+    name: 'CO₂ Concentration',
+    description: 'Atmospheric carbon dioxide measurements worldwide',
+    size: '1.1 GB',
+    lastUpdated: '2024-01-10',
+    category: 'Atmosphere',
+  },
+  {
+    id: 'sea-level',
+    name: 'Sea Level Rise',
+    description: 'Global mean sea level measurements from satellite altimetry',
+    size: '3.2 GB',
+    lastUpdated: '2024-01-08',
+    category: 'Oceans',
+  },
+  {
+    id: 'arctic-ice',
+    name: 'Arctic Sea Ice',
+    description: 'Daily Arctic sea ice extent and concentration',
+    size: '4.7 GB',
+    lastUpdated: '2024-01-12',
+    category: 'Cryosphere',
+  },
+  {
+    id: 'precipitation',
+    name: 'Global Precipitation',
+    description: 'Worldwide precipitation measurements and estimates',
+    size: '5.1 GB',
+    lastUpdated: '2024-01-05',
+    category: 'Hydrology',
+  },
+];
 
 export function SideButtons({
   selectedDate,
@@ -47,70 +88,14 @@ export function SideButtons({
   const [isExpanded, setIsExpanded] = useState(true);
   const [showCalendar, setShowCalendar] = useState(false);
   const [showDatasetCard, setShowDatasetCard] = useState(false);
-  const [inputValue, setInputValue] = useState(
-    selectedDate.toLocaleDateString('en-US')
-  );
-  const [viewDate, setViewDate] = useState(selectedDate);
   const [selectedDatasets, setSelectedDatasets] = useState<Set<string>>(
     new Set()
   );
 
-  // Sample datasets data
-  const datasets: Dataset[] = [
-    {
-      id: 'global-temp',
-      name: 'Global Temperature',
-      description: 'Global surface temperature data from 1880 to present',
-      size: '2.4 GB',
-      lastUpdated: '2024-01-15',
-      category: 'Climate',
-    },
-    {
-      id: 'co2-concentration',
-      name: 'CO₂ Concentration',
-      description: 'Atmospheric carbon dioxide measurements worldwide',
-      size: '1.1 GB',
-      lastUpdated: '2024-01-10',
-      category: 'Atmosphere',
-    },
-    {
-      id: 'sea-level',
-      name: 'Sea Level Rise',
-      description:
-        'Global mean sea level measurements from satellite altimetry',
-      size: '3.2 GB',
-      lastUpdated: '2024-01-08',
-      category: 'Oceans',
-    },
-    {
-      id: 'arctic-ice',
-      name: 'Arctic Sea Ice',
-      description: 'Daily Arctic sea ice extent and concentration',
-      size: '4.7 GB',
-      lastUpdated: '2024-01-12',
-      category: 'Cryosphere',
-    },
-    {
-      id: 'precipitation',
-      name: 'Global Precipitation',
-      description: 'Worldwide precipitation measurements and estimates',
-      size: '5.1 GB',
-      lastUpdated: '2024-01-05',
-      category: 'Hydrology',
-    },
-  ];
-
-  // Update input and viewDate when selectedDate changes
-  useEffect(() => {
-    setInputValue(selectedDate.toLocaleDateString('en-US'));
-    setViewDate(selectedDate);
-  }, [selectedDate]);
-
-  // Event handlers with useCallback for performance
+  // Event Handlers
   const toggleMenu = useCallback(() => setIsExpanded((prev) => !prev), []);
 
   const handleFileTextClick = useCallback(() => {
-    console.log('Dataset selection clicked');
     setShowDatasetCard(true);
     onShowSidebarPanel('datasets');
   }, [onShowSidebarPanel]);
@@ -120,7 +105,6 @@ export function SideButtons({
   }, []);
 
   const handlePreferencesClick = useCallback(() => {
-    console.log('Preferences clicked');
     onShowSidebarPanel('about');
   }, [onShowSidebarPanel]);
 
@@ -132,14 +116,9 @@ export function SideButtons({
     }
   }, []);
 
-  const handleTutorialClick = useCallback(() => {
-    onShowTutorial();
-  }, [onShowTutorial]);
-
   const handleCalendarClick = useCallback(() => {
     setShowCalendar(true);
-    setViewDate(selectedDate);
-  }, [selectedDate]);
+  }, []);
 
   const closeCalendar = useCallback(() => {
     setShowCalendar(false);
@@ -164,23 +143,12 @@ export function SideButtons({
 
   const handleApplyDatasets = useCallback(() => {
     console.log('Selected datasets:', Array.from(selectedDatasets));
-    // Here you would typically apply the selected datasets
     closeDatasetCard();
   }, [selectedDatasets, closeDatasetCard]);
-
-  // Calendar helpers
-  const getDaysInMonth = useCallback((date: Date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    const firstDay = new Date(year, month, 1).getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    return { firstDay, daysInMonth };
-  }, []);
 
   const handleDateSelect = useCallback(
     (date: Date | undefined) => {
       if (date) {
-        // Create new date while preserving the time components from selectedDate
         const newDate = new Date(
           date.getFullYear(),
           date.getMonth(),
@@ -196,17 +164,14 @@ export function SideButtons({
     [selectedDate, onDateChange, closeCalendar]
   );
 
-  // Memoized calendar data based on viewDate
-  const { firstDay, daysInMonth } = getDaysInMonth(viewDate);
-
-  // Button data for cleaner rendering
+  // Button configurations
   const buttonConfigs = useMemo(
     () => [
       {
         id: 'tutorial',
         icon: <CircleHelpIcon size={18} />,
         label: 'Show Tutorial',
-        onClick: handleTutorialClick,
+        onClick: onShowTutorial,
         delay: 0.15,
       },
       {
@@ -246,7 +211,7 @@ export function SideButtons({
       },
     ],
     [
-      handleTutorialClick,
+      onShowTutorial,
       handleFileTextClick,
       handleCalendarClick,
       handleDownloadClick,
@@ -319,6 +284,17 @@ export function SideButtons({
               mode="single"
               selected={selectedDate}
               onSelect={handleDateSelect}
+              month={selectedDate}
+              onMonthChange={(newMonth) => {
+                // When year/month dropdown changes, update the date to the first of that month
+                const newDate = new Date(
+                  newMonth.getFullYear(),
+                  newMonth.getMonth(),
+                  selectedDate.getDate()
+                );
+                onDateChange(newDate);
+                closeCalendar();
+              }}
               className="rounded-md border shadow-sm lg:h-[300px] lg:w-[250px]"
               captionLayout="dropdown"
             />
@@ -340,16 +316,16 @@ export function SideButtons({
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center justify-between text-lg">
                   <span>Select Datasets</span>
-                  <Badge variant="secondary" className="">
+                  <Badge variant="secondary">
                     {selectedDatasets.size} selected
                   </Badge>
                 </CardTitle>
-                <CardDescription className="">
+                <CardDescription>
                   Choose datasets to visualize on the globe
                 </CardDescription>
               </CardHeader>
               <CardContent className="max-h-96 space-y-3 overflow-y-auto">
-                {datasets.map((dataset) => (
+                {DATASETS.map((dataset) => (
                   <div
                     key={dataset.id}
                     className={`cursor-pointer rounded-lg border p-3 transition-all ${
