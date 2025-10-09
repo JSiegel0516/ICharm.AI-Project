@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Settings, X, Monitor, Globe, Eye, Zap, RotateCcw } from 'lucide-react';
+import { ModeToggle } from '@/components/ui/modetoggle';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -179,7 +180,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         onChange={(e) =>
                           updateSetting('language', e.target.value)
                         }
-                        className="rounded-lg bg-gray-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="rounded-lg bg-gray-700 px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                       >
                         {languageOptions.map((option) => (
                           <option key={option.value} value={option.value}>
@@ -236,7 +237,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           onChange={(e) =>
                             updateSetting('colorContrast', e.target.value)
                           }
-                          className="rounded-lg bg-gray-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="rounded-lg bg-gray-700 px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                         >
                           {contrastOptions.map((option) => (
                             <option key={option.value} value={option.value}>
@@ -342,32 +343,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
 
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <button
-                      onClick={() => updateSetting('theme', 'light')}
-                      className={`rounded-lg border-2 p-4 text-left transition-colors duration-200 ${
-                        settings.theme === 'light'
-                          ? 'border-blue-500 bg-blue-500/20'
-                          : 'border-gray-600 bg-gray-800/50 hover:border-blue-500'
-                      }`}
-                    >
-                      <div className="font-medium text-white">Light Mode</div>
-                      <div className="mt-1 text-sm text-gray-400">
-                        Bright theme
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => updateSetting('theme', 'dark')}
-                      className={`rounded-lg border-2 p-4 text-left transition-colors duration-200 ${
-                        settings.theme === 'dark'
-                          ? 'border-blue-500 bg-blue-500/20'
-                          : 'border-gray-600 bg-gray-800/50 hover:border-blue-500'
-                      }`}
-                    >
-                      <div className="font-medium text-white">Dark Mode</div>
-                      <div className="mt-1 text-sm text-blue-400">
-                        Currently active
-                      </div>
-                    </button>
+                    <ModeToggle />
                   </div>
                 </section>
 
@@ -436,7 +412,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         onChange={(e) =>
                           updateSetting('animationQuality', e.target.value)
                         }
-                        className="rounded-lg bg-gray-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="rounded-lg bg-gray-700 px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                       >
                         <option value="high">High</option>
                         <option value="medium">Medium</option>
@@ -450,7 +426,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         onChange={(e) =>
                           updateSetting('cacheDuration', e.target.value)
                         }
-                        className="rounded-lg bg-gray-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="rounded-lg bg-gray-700 px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                       >
                         <option value="1 hour">1 hour</option>
                         <option value="6 hours">6 hours</option>
