@@ -2,10 +2,10 @@
 
 import React, { useState, useRef, useMemo, useCallback } from 'react';
 import Globe, { GlobeRef } from '@/components/Globe/Globe';
-import ColorBar from '@/components/UI/ColorBar';
-import TimeBar from '@/components/UI/TimeBar';
-import PressureLevelsSelector from '@/components/UI/Popups/PressureLevelsSelector';
-import RegionInfoPanel from '@/components/UI/RegionInfoPanel';
+import ColorBar from '@/components/ui/ColorBar';
+import TimeBar from '@/components/ui/TimeBar';
+import PressureLevelsSelector from '@/components/ui/Popups/PressureLevelsSelector';
+import RegionInfoPanel from '@/components/ui/RegionInfoPanel';
 
 import { useAppState } from '@/context/HeaderContext';
 import { TemperatureUnit, RegionData, PressureLevel } from '@/types';
