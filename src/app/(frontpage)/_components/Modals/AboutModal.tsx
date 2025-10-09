@@ -16,14 +16,9 @@ import {
 interface AboutModalProps {
   isOpen: boolean; // Add this prop
   onClose: () => void;
-  onShowTutorial: () => void;
 }
 
-const AboutModal: React.FC<AboutModalProps> = ({
-  isOpen,
-  onClose,
-  onShowTutorial,
-}) => {
+const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
   return (
     <AnimatePresence>
       {isOpen && (
@@ -31,7 +26,7 @@ const AboutModal: React.FC<AboutModalProps> = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
           onClick={onClose}
         >
           <motion.div
@@ -39,7 +34,7 @@ const AboutModal: React.FC<AboutModalProps> = ({
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.9, opacity: 0, y: 20 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="relative max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-xl border border-gray-700/50 bg-gray-900/95 shadow-2xl backdrop-blur-lg"
+            className="relative max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-xl border shadow-2xl backdrop-blur-lg"
             onClick={(e) => e.stopPropagation()}
           >
             <div>
