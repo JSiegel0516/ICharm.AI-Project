@@ -1,15 +1,22 @@
-// app/api/chat/route.ts
 import { NextRequest } from 'next/server';
 import { retrieveRelevantContext, buildContextString } from '@/utils/ragRetriever';
+import { ChatDB } from '@/lib/db';
 
 const HF_MODEL =
   process.env.LLAMA_MODEL ?? 'meta-llama/Llama-3.1-8B-Instruct';
 const HF_API_KEY =
   process.env.HF_TOKEN ?? process.env.LLAMA_API_KEY ?? '';
+const TEST_USER_EMAIL =
+  process.env.TEST_CHAT_USER_EMAIL ?? 'test-user@icharm.local';
 
 type ChatMessage = {
   role: 'system' | 'user' | 'assistant';
   content: string;
+};
+
+type ChatRequestPayload = {
+  messages?: ChatMessage[];
+  sessionId?: string | null;
 };
 
 function isValidMessagesPayload(payload: unknown): payload is ChatMessage[] {
@@ -28,6 +35,28 @@ function isValidMessagesPayload(payload: unknown): payload is ChatMessage[] {
   );
 }
 
+function findLastUserMessage(messages: ChatMessage[]): ChatMessage | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === 'user') {
+      return messages[i];
+    }
+  }
+  return undefined;
+}
+
+function deriveSessionTitle(lastUserMessage?: ChatMessage): string | undefined {
+  if (!lastUserMessage?.content) {
+    return undefined;
+  }
+
+  const firstLine = lastUserMessage.content.split('\n')[0]?.trim() ?? '';
+  if (!firstLine) {
+    return undefined;
+  }
+
+  return firstLine.length > 80 ? `${firstLine.slice(0, 77)}…` : firstLine;
+}
+
 export const maxDuration = 120; // Allow up to 120 seconds
 export const dynamic = 'force-dynamic';
 
@@ -39,10 +68,17 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  console.log('Token loaded:', HF_API_KEY ? `${HF_API_KEY.slice(0, 4)}...${HF_API_KEY.slice(-4)}` : 'MISSING');
-  console.log('Using model:', HF_MODEL);
+  let body: ChatRequestPayload;
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json(
+      { error: 'Invalid JSON body' },
+      { status: 400 }
+    );
+  }
 
-  const { messages } = await req.json();
+  const { messages, sessionId: incomingSessionId } = body ?? {};
 
   if (!isValidMessagesPayload(messages)) {
     return Response.json(
@@ -51,10 +87,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const sanitizedSessionId =
+    typeof incomingSessionId === 'string' && incomingSessionId.trim()
+      ? incomingSessionId.trim()
+      : null;
+
   // === RAG ENHANCEMENT START ===
   // Get the latest user message
-  const lastUserMessage = messages[messages.length - 1];
-  const userQuery = lastUserMessage?.content || '';
+  const lastUserMessage = findLastUserMessage(messages);
+  const userQuery = lastUserMessage?.content ?? '';
 
   let contextSources: Array<{
     id: string;
@@ -64,32 +105,35 @@ export async function POST(req: NextRequest) {
   }> = [];
   let enhancedMessages = [...messages];
 
-  // Retrieve relevant context (tutorial, about, or general)
-  console.log('🔍 Analyzing query...');
-  
-  try {
-    const { results: relevantSections, contextType } = await retrieveRelevantContext(userQuery, 3);
-    
-    if (relevantSections.length > 0) {
-      console.log(`📚 Found ${relevantSections.length} relevant sections (${contextType})`);
-      
-      // Build context string
-      const contextString = buildContextString(relevantSections, contextType as 'tutorial' | 'about');
-      
-      // Store sources for response
-      contextSources = relevantSections.map(section => ({
-        id: section.id,
-        title: section.title,
-        category: section.category || contextType,
-        score: Math.round(section.score * 100) / 100
-      }));
-      
-      console.log('📖 Retrieved sources:', contextSources.map(s => s.title).join(', '));
-      
-      // Create appropriate system message based on context type
-      let systemPrompt = '';
-      if (contextType === 'about') {
-        systemPrompt = `You are an AI assistant for iCharm/4DVD, a climate visualization platform. Use the following context about the platform's history, development, and information to answer the user's question.
+  if (userQuery) {
+    console.log('🔍 Analyzing query...');
+
+    try {
+      const { results: relevantSections, contextType } = await retrieveRelevantContext(userQuery, 3);
+
+      if (relevantSections.length > 0) {
+        console.log(`📚 Found ${relevantSections.length} relevant sections (${contextType})`);
+
+        // Build context string
+        const contextString = buildContextString(
+          relevantSections,
+          contextType === 'general' ? 'tutorial' : (contextType as 'tutorial' | 'about')
+        );
+
+        // Store sources for response
+        contextSources = relevantSections.map(section => ({
+          id: section.id,
+          title: section.title,
+          category: section.category || contextType,
+          score: Math.round(section.score * 100) / 100
+        }));
+
+        console.log('📖 Retrieved sources:', contextSources.map(s => s.title).join(', '));
+
+        // Create appropriate system message based on context type
+        let systemPrompt = '';
+        if (contextType === 'about') {
+          systemPrompt = `You are an AI assistant for iCharm/4DVD, a climate visualization platform. Use the following context about the platform's history, development, and information to answer the user's question.
 
 ${contextString}
 
@@ -99,8 +143,8 @@ Instructions:
 - If asked about licensing or technical details, be precise
 - If the answer is not in the context, acknowledge that and offer general guidance
 - Use a professional, informative tone`;
-      } else {
-        systemPrompt = `You are an AI assistant for iCharm, a climate visualization platform. Use the following context from the tutorial to answer the user's question.
+        } else {
+          systemPrompt = `You are an AI assistant for iCharm, a climate visualization platform. Use the following context from the tutorial to answer the user's question.
 
 ${contextString}
 
@@ -110,26 +154,60 @@ Instructions:
 - Provide step-by-step guidance for how-to questions
 - If the user asks about features not covered in the context, acknowledge that and provide general guidance
 - Use a friendly, professional tone`;
+        }
+
+        const systemMessage: ChatMessage = {
+          role: 'system',
+          content: systemPrompt
+        };
+
+        // Insert system message at the beginning or update existing system message
+        const hasSystemMessage = messages[0]?.role === 'system';
+        if (hasSystemMessage) {
+          enhancedMessages = [systemMessage, ...messages.slice(1)];
+        } else {
+          enhancedMessages = [systemMessage, ...messages];
+        }
       }
-      
-      const systemMessage: ChatMessage = {
-        role: 'system',
-        content: systemPrompt
-      };
-      
-      // Insert system message at the beginning or update existing system message
-      const hasSystemMessage = messages[0]?.role === 'system';
-      if (hasSystemMessage) {
-        enhancedMessages = [systemMessage, ...messages.slice(1)];
-      } else {
-        enhancedMessages = [systemMessage, ...messages];
-      }
+    } catch (error) {
+      console.error('❌ RAG retrieval error:', error);
+      // Continue without RAG enhancement if it fails
     }
-  } catch (error) {
-    console.error('❌ RAG retrieval error:', error);
-    // Continue without RAG enhancement if it fails
   }
   // === RAG ENHANCEMENT END ===
+
+  let sessionId = sanitizedSessionId;
+  let testUserId: string | null = null;
+
+  if (lastUserMessage?.content) {
+    try {
+      const testUser = await ChatDB.getOrCreateUserByEmail(TEST_USER_EMAIL);
+      testUserId = testUser.id;
+
+      if (sessionId) {
+        const existing = await ChatDB.getSession(sessionId, testUser.id);
+        if (!existing) {
+          const created = await ChatDB.createSession(testUser.id, deriveSessionTitle(lastUserMessage));
+          sessionId = created.id;
+        }
+      } else {
+        const created = await ChatDB.createSession(testUser.id, deriveSessionTitle(lastUserMessage));
+        sessionId = created.id;
+      }
+
+      if (sessionId) {
+        try {
+          await ChatDB.addMessage(sessionId, 'user', lastUserMessage.content);
+        } catch (messageError) {
+          console.error('Failed to persist user message', messageError);
+        }
+      }
+    } catch (bootstrapError) {
+      console.error('Failed to bootstrap chat persistence', bootstrapError);
+    }
+  } else {
+    console.warn('No user message detected in payload; skipping persistence bootstrap.');
+  }
 
   try {
     // Use Hugging Face Inference Providers router
@@ -152,7 +230,7 @@ Instructions:
 
     const contentType = response.headers.get('content-type');
     let result;
-    
+
     if (contentType?.includes('application/json')) {
       result = await response.json();
     } else {
@@ -163,13 +241,14 @@ Instructions:
     if (!response.ok) {
       console.error('HF API error:', result);
       console.error('Status:', response.status);
-      
+
       // Handle specific errors
       if (result.error) {
         return Response.json(
           {
             error: 'LLM request failed',
             details: typeof result.error === 'string' ? result.error : JSON.stringify(result.error),
+            sessionId: sessionId ?? undefined,
           },
           { status: response.status }
         );
@@ -182,7 +261,7 @@ Instructions:
 
     if (!completionText) {
       return Response.json(
-        { error: 'Empty response from model' },
+        { error: 'Empty response from model', sessionId: sessionId ?? undefined },
         { status: 502 }
       );
     }
@@ -190,11 +269,25 @@ Instructions:
     console.log('✅ Success! Model response:', completionText);
     console.log('Provider used:', result.model);
 
+    if (sessionId && completionText) {
+      try {
+        await ChatDB.addMessage(
+          sessionId,
+          'assistant',
+          completionText,
+          contextSources.length > 0 ? contextSources : undefined
+        );
+      } catch (assistantStoreError) {
+        console.error('Failed to persist assistant message', assistantStoreError);
+      }
+    }
+
     // Return plain JSON with sources if available
     return Response.json(
-      { 
+      {
         content: completionText,
-        sources: contextSources.length > 0 ? contextSources : undefined // Include sources if RAG was used
+        sources: contextSources.length > 0 ? contextSources : undefined, // Include sources if RAG was used
+        sessionId: sessionId ?? undefined,
       },
       {
         headers: {
@@ -204,11 +297,12 @@ Instructions:
     );
   } catch (error) {
     console.error('HF chat error:', error);
-    
+
     return Response.json(
       {
         error: 'LLM request failed',
         details: (error as Error).message ?? 'Unknown error from Hugging Face',
+        sessionId: sessionId ?? undefined,
       },
       { status: 500 }
     );

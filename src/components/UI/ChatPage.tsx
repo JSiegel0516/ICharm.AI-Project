@@ -15,6 +15,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -75,6 +76,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
           },
           body: JSON.stringify({
             messages: conversationHistory,
+            sessionId,
           }),
           signal: controller.signal,
         });
@@ -104,6 +106,10 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
       // Parse JSON response directly
       const data = await response.json();
       console.log('Received data:', data); // Debug log
+
+      if (typeof data.sessionId === 'string') {
+        setSessionId(data.sessionId);
+      }
 
       const botResponse = data.content || '';
       console.log('Bot response:', botResponse); // Debug log
