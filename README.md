@@ -26,8 +26,34 @@ AI-powered climate data exploration combining interactive visualization, tutoria
    # Chat backend
    LLAMA_MODEL=meta-llama/Meta-Llama-3.1-8B-Instruct
    LLAMA_API_KEY=hf_xxxxxxx            # or set HF_TOKEN
+   POSTGRES_URL=postgres://icharm_user:icharm_dev_password@localhost:5432/icharm_chat
+   POSTGRES_URL_NON_POOLING=postgres://icharm_user:icharm_dev_password@localhost:5432/icharm_chat
    ```
    Add any other app-specific settings you need (API base URL, etc.).
+
+## Database (Docker)
+
+The PostgreSQL database boots in a Linux container so every developer gets the same schema, regardless of OS.
+
+1. (Optional) Override defaults before starting the container by exporting the following in your shell or a `.env` file alongside `docker-compose.yml`:
+   ```ini
+   ICHARM_DB_USER=icharm_user
+   ICHARM_DB_PASSWORD=icharm_dev_password
+   ICHARM_DB_NAME=icharm_chat
+   ICHARM_DB_PORT=5432
+   ```
+2. Start the database:
+   ```bash
+   docker compose up -d db
+   ```
+   On first run the container executes `docker/postgres/init/00-init-db.sh`, which creates extensions, tables, triggers, indexes, and a sample `test@example.com` user.
+3. Verify connectivity from Node:
+   ```bash
+   npx tsx src/components/Scripts/chat-db.ts
+   ```
+4. Update/confirm the `POSTGRES_URL` values in `.env.local` match the credentials you used in step 1. The defaults match the connection string shown above.
+
+Use `docker compose down` to stop the database or `docker compose down -v` to reset the data directory and re-run the initialization script.
 
 ## Development
 

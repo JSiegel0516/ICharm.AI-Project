@@ -1,0 +1,16 @@
+FROM node:20-bullseye
+
+WORKDIR /app
+
+# Install app dependencies (prod only to keep image small)
+COPY package*.json ./
+RUN npm install --omit=dev
+
+# Copy only assets needed for embedding generation
+COPY src/components/Scripts/embedTutorial.js ./src/components/Scripts/embedTutorial.js
+COPY src/data/tutorial ./src/data/tutorial
+
+# Default command runs the embedding script.
+# Mount the project directory when running the container so the generated
+# database is written back to the host filesystem.
+CMD ["node", "src/components/Scripts/embedTutorial.js"]
