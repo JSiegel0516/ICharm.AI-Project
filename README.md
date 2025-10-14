@@ -31,9 +31,15 @@ AI-powered climate data exploration combining interactive visualization, tutoria
    ```
    Add any other app-specific settings you need (API base URL, etc.).
 
+3. To generate embeddings, run:
+node src/components/Scripts/embedTutorial.js
+This will train the chatbot to gain information about the icharm website
+
 ## Database (Docker)
 
 The PostgreSQL database boots in a Linux container so every developer gets the same schema, regardless of OS.
+
+Install Docker before attempting to run the database
 
 1. (Optional) Override defaults before starting the container by exporting the following in your shell or a `.env` file alongside `docker-compose.yml`:
    ```ini
@@ -45,13 +51,28 @@ The PostgreSQL database boots in a Linux container so every developer gets the s
 2. Start the database:
    ```bash
    docker compose up -d db
+   docker compose down -v to clear and close container
    ```
    On first run the container executes `docker/postgres/init/00-init-db.sh`, which creates extensions, tables, triggers, indexes, and a sample `test@example.com` user.
-3. Verify connectivity from Node:
+
+   IMPORTANT: This may not work, if not run 
+   docker compose exec db bash /docker-entrypoint-initdb.d/00-init-db.sh
+   in project root to create correct table names in container
+
+
+3. Verify connectivity from Node: (run from root)
    ```bash
    npx tsx src/components/Scripts/chat-db.ts
    ```
-4. Update/confirm the `POSTGRES_URL` values in `.env.local` match the credentials you used in step 1. The defaults match the connection string shown above.
+
+4. Use 
+docker exec -it icharm-db psql -U icharm_user -d icharm_chat 
+to go into a psql terminal.
+Once in psql terminal, run:
+SELECT * FROM chat_messages ORDER BY created_at DESC LIMIT 10;
+to if database successfully initialized
+
+5. Update/confirm the `POSTGRES_URL` values in `.env.local` match the credentials you used in step 1. The defaults match the connection string shown above.
 
 Use `docker compose down` to stop the database or `docker compose down -v` to reset the data directory and re-run the initialization script.
 
