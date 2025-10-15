@@ -380,7 +380,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
             </div>
             <div>
               <h1 className="text-base font-semibold text-gray-200">
-                Climate AI Assistant
+                CharmBot
               </h1>
               <p className="text-xs text-gray-400">
                 Ask anything about datasets or analysis tools.
