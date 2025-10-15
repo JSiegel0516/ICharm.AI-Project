@@ -49,12 +49,25 @@ function deriveSessionTitle(lastUserMessage?: ChatMessage): string | undefined {
     return undefined;
   }
 
-  const firstLine = lastUserMessage.content.split('\n')[0]?.trim() ?? '';
+  const firstLine = lastUserMessage.content
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+
   if (!firstLine) {
     return undefined;
   }
 
-  return firstLine.length > 80 ? `${firstLine.slice(0, 77)}…` : firstLine;
+  const normalized = firstLine.replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return undefined;
+  }
+
+  const words = normalized.split(' ');
+  const maxWords = 8;
+  const title = words.slice(0, maxWords).join(' ');
+
+  return words.length > maxWords ? `${title}…` : title;
 }
 
 export const maxDuration = 120; // Allow up to 120 seconds
@@ -184,14 +197,18 @@ Instructions:
       const testUser = await ChatDB.getOrCreateUserByEmail(TEST_USER_EMAIL);
       testUserId = testUser.id;
 
+      const candidateTitle = deriveSessionTitle(lastUserMessage);
+
       if (sessionId) {
         const existing = await ChatDB.getSession(sessionId, testUser.id);
         if (!existing) {
-          const created = await ChatDB.createSession(testUser.id, deriveSessionTitle(lastUserMessage));
+          const created = await ChatDB.createSession(testUser.id, candidateTitle);
           sessionId = created.id;
+        } else if (!existing.title && candidateTitle) {
+          await ChatDB.updateSessionTitle(sessionId, testUser.id, candidateTitle);
         }
       } else {
-        const created = await ChatDB.createSession(testUser.id, deriveSessionTitle(lastUserMessage));
+        const created = await ChatDB.createSession(testUser.id, candidateTitle);
         sessionId = created.id;
       }
 
