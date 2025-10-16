@@ -3,11 +3,11 @@ import { retrieveRelevantContext, buildContextString } from '@/utils/ragRetrieve
 import { ChatDB } from '@/lib/db';
 
 const HF_MODEL =
-  process.env.LLAMA_MODEL ?? 'meta-llama/Llama-3.1-8B-Instruct';
-const HF_API_KEY =
-  process.env.HF_TOKEN ?? process.env.LLAMA_API_KEY ?? '';
+  process.env.LLAMA_MODEL ?? 'meta-llama/Meta-Llama-3-8B-Instruct';
 const TEST_USER_EMAIL =
   process.env.TEST_CHAT_USER_EMAIL ?? 'test-user@icharm.local';
+const LLM_SERVICE_URL =
+  (process.env.LLM_SERVICE_URL ?? 'http://localhost:8001').replace(/\/$/, '');
 
 type ChatMessage = {
   role: 'system' | 'user' | 'assistant';
@@ -74,13 +74,6 @@ export const maxDuration = 120; // Allow up to 120 seconds
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
-  if (!HF_API_KEY) {
-    return Response.json(
-      { error: 'Missing HF API key' },
-      { status: 500 }
-    );
-  }
-
   let body: ChatRequestPayload;
   try {
     body = await req.json();
@@ -227,64 +220,86 @@ Instructions:
   }
 
   try {
-    // Use Hugging Face Inference Providers router
-    const response = await fetch(
-      'https://router.huggingface.co/v1/chat/completions',
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${HF_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: HF_MODEL,
-          messages: enhancedMessages, // Use enhanced messages with RAG context
-          temperature: 0.6,
-          stream: false,
-        }),
-      }
-    );
+    const llmResponse = await fetch(`${LLM_SERVICE_URL}/v1/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: HF_MODEL,
+        messages: enhancedMessages, // Use enhanced messages with RAG context
+        temperature: 0.6,
+        stream: false,
+      }),
+    });
 
-    const contentType = response.headers.get('content-type');
-    let result;
+    const contentType = llmResponse.headers.get('content-type') ?? '';
+    let result: any;
 
-    if (contentType?.includes('application/json')) {
-      result = await response.json();
+    if (contentType.includes('application/json')) {
+      result = await llmResponse.json();
     } else {
-      const text = await response.text();
-      result = { error: text };
+      const text = await llmResponse.text();
+      result = { detail: text };
     }
 
-    if (!response.ok) {
-      console.error('HF API error:', result);
-      console.error('Status:', response.status);
-
-      // Handle specific errors
-      if (result.error) {
-        return Response.json(
-          {
-            error: 'LLM request failed',
-            details: typeof result.error === 'string' ? result.error : JSON.stringify(result.error),
-            sessionId: sessionId ?? undefined,
-          },
-          { status: response.status }
-        );
+    if (!llmResponse.ok) {
+      let detail: string;
+      if (typeof result?.detail === 'string') {
+        detail = result.detail;
+      } else if (result?.detail && typeof result.detail === 'object') {
+        const innerDetail = result.detail as Record<string, unknown>;
+        if (typeof innerDetail.error === 'string') {
+          const statusInfo = innerDetail.status ? ` (status ${innerDetail.status})` : '';
+          detail = `${innerDetail.error}${statusInfo}`;
+          if (typeof innerDetail.body === 'string' && innerDetail.body.trim()) {
+            detail += `: ${innerDetail.body.slice(0, 240)}${innerDetail.body.length > 240 ? '…' : ''}`;
+          }
+        } else {
+          detail = JSON.stringify(innerDetail);
+        }
+      } else if (result?.error) {
+        detail =
+          typeof result.error === 'string'
+            ? result.error
+            : JSON.stringify(result.error);
+      } else {
+        detail = 'LLM service error';
       }
 
-      throw new Error(result.error || 'Unknown error from Hugging Face');
+      console.error('LLM service error:', detail);
+
+      return Response.json(
+        {
+          error: 'LLM request failed',
+          details: detail,
+          sessionId: sessionId ?? undefined,
+        },
+        { status: llmResponse.status }
+      );
     }
 
-    const completionText = result.choices?.[0]?.message?.content || '';
+    const completionText =
+      typeof result?.content === 'string' ? result.content : '';
 
-    if (!completionText) {
+    if (!completionText.trim()) {
       return Response.json(
         { error: 'Empty response from model', sessionId: sessionId ?? undefined },
         { status: 502 }
       );
     }
 
-    console.log('✅ Success! Model response:', completionText);
-    console.log('Provider used:', result.model);
+    const providerModel =
+      typeof result?.model === 'string'
+        ? result.model
+        : typeof result?.raw?.model === 'string'
+          ? result.raw.model
+          : undefined;
+
+    console.log('[llm] Success! Model response:', completionText);
+    if (providerModel) {
+      console.log('[llm] Provider used:', providerModel);
+    }
 
     if (sessionId && completionText) {
       try {
@@ -299,12 +314,12 @@ Instructions:
       }
     }
 
-    // Return plain JSON with sources if available
     return Response.json(
       {
         content: completionText,
-        sources: contextSources.length > 0 ? contextSources : undefined, // Include sources if RAG was used
+        sources: contextSources.length > 0 ? contextSources : undefined,
         sessionId: sessionId ?? undefined,
+        model: providerModel,
       },
       {
         headers: {
@@ -313,12 +328,12 @@ Instructions:
       }
     );
   } catch (error) {
-    console.error('HF chat error:', error);
+    console.error('LLM service call failed:', error);
 
     return Response.json(
       {
         error: 'LLM request failed',
-        details: (error as Error).message ?? 'Unknown error from Hugging Face',
+        details: (error as Error).message ?? 'Unknown error from LLM service',
         sessionId: sessionId ?? undefined,
       },
       { status: 500 }

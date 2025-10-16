@@ -24,8 +24,9 @@ AI-powered climate data exploration combining interactive visualization, tutoria
 2. Create `.env.local` in the project root (same folder as `package.json`) and supply:
    ```ini
    # Chat backend
-   LLAMA_MODEL=meta-llama/Meta-Llama-3.1-8B-Instruct
+   LLAMA_MODEL=meta-llama/Meta-Llama-3-8B-Instruct
    LLAMA_API_KEY=hf_xxxxxxx            # or set HF_TOKEN
+   LLM_SERVICE_URL=http://localhost:8001
    POSTGRES_URL=postgres://icharm_user:icharm_dev_password@localhost:5432/icharm_chat
    POSTGRES_URL_NON_POOLING=postgres://icharm_user:icharm_dev_password@localhost:5432/icharm_chat
    ```
@@ -75,6 +76,18 @@ to if database successfully initialized
 5. Update/confirm the `POSTGRES_URL` values in `.env.local` match the credentials you used in step 1. The defaults match the connection string shown above.
 
 Use `docker compose down` to stop the database or `docker compose down -v` to reset the data directory and re-run the initialization script.
+
+## LLM Service (FastAPI)
+
+- The FastAPI microservice wraps Hugging Face chat completions and runs alongside Postgres via Docker Compose.
+- Configure the service with `HF_TOKEN`, `LLAMA_API_KEY`, `LLAMA_MODEL`, and `LLM_SERVICE_PORT` in `.env`. The Next.js API calls it through `LLM_SERVICE_URL`.
+- Start it with:
+  ```bash
+  docker compose up -d llm-service
+  ```
+  or launch both database and service together: `docker compose up -d db llm-service`.
+- Health check endpoint: <http://localhost:8001/health>. The chat endpoint lives at `/v1/chat`.
+- The Next.js backend stores conversations in Postgres as before; the FastAPI service is stateless and can reach the database container if you later need direct access (same Docker network).
 
 ## Development
 
