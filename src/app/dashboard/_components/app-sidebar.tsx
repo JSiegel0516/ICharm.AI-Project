@@ -49,7 +49,7 @@ const data = {
     },
     {
       title: 'Time Series',
-      url: '/timeseries',
+      url: '/dashboard/timeseries',
       icon: BarChartIcon,
     },
     {
