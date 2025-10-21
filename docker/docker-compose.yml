@@ -6,17 +6,17 @@ services:
     environment:
       POSTGRES_USER: ${ICHARM_DB_USER:-icharm_user}
       POSTGRES_PASSWORD: ${ICHARM_DB_PASSWORD:-icharm_dev_password}
-      POSTGRES_DB: ${ICHARM_DB_NAME:-icharm_chat}
+      POSTGRES_DB: ${ICHARM_DB_NAME:-icharm}
       POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=en_US.UTF-8
     ports:
       - "${ICHARM_DB_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro  # ✅ Relative to docker/
     healthcheck:
       test:
         - CMD-SHELL
-        - pg_isready -U "${ICHARM_DB_USER:-icharm_user}" -d "${ICHARM_DB_NAME:-icharm_chat}"
+        - pg_isready -U "${ICHARM_DB_USER:-icharm_user}" -d "${ICHARM_DB_NAME:-icharm}"
       interval: 5s
       timeout: 5s
       retries: 5
@@ -24,8 +24,8 @@ services:
 
   llm-service:
     build:
-      context: .
-      dockerfile: services/llm-service/Dockerfile
+      context: ..                                         # ✅ Go up to project root
+      dockerfile: services/llm-service/Dockerfile         # ✅ Then down to service
     container_name: icharm-llm-service
     restart: unless-stopped
     environment:
@@ -41,14 +41,14 @@ services:
 
   data-api:
     build:
-      context: .
-      dockerfile: services/data-api/Dockerfile
+      context: ..                                         # ✅ Go up to project root
+      dockerfile: services/data-api/Dockerfile            # ✅ Then down to service
     container_name: icharm-data-api
     restart: unless-stopped
     volumes:
-      - ./metadata.csv:/app/metadata.csv:ro
-      - ./metadata.csv:/app/data/metadata.csv:ro
-      - ./datasets:/app/datasets:ro
+      - ../metadata.csv:/app/metadata.csv:ro             # ✅ Relative paths
+      - ../metadata.csv:/app/data/metadata.csv:ro
+      - ../datasets:/app/datasets:ro
     ports:
       - "${DATA_API_PORT:-8002}:8000"
 

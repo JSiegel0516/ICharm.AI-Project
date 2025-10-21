@@ -15,7 +15,7 @@
     "copyCesiumAssets": "tsx src/components/Scripts/copyCesiumAssets.ts",
     "clean-cesium": "rimraf public/cesium",
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
-    "db:migrate": "tsx src/lib/db/migrate.ts",
+    "db:seed": "tsx src/lib/db/seed-metadata.ts",
     "db:studio": "drizzle-kit studio --config=drizzle.config.ts",
     "db:push": "drizzle-kit push --config=drizzle.config.ts"
   },

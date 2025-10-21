@@ -8,6 +8,27 @@
       "when": 1760642499233,
       "tag": "0000_curious_celestials",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1761083777098,
+      "tag": "0001_perpetual_warlock",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1761088504049,
+      "tag": "0002_eminent_silverclaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1761089078527,
+      "tag": "0003_hot_human_cannonball",
+      "breakpoints": true
     }
   ]
 }
