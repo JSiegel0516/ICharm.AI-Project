@@ -5,7 +5,7 @@ import React, {
   useContext,
   useState,
   useCallback,
-  useMemo,
+  useEffect,
 } from 'react';
 import type { Dataset, AppState, TemperatureUnit, RegionData } from '@/types';
 import { mockDatasets } from '@/utils/constants';
@@ -24,6 +24,7 @@ const useAppStateInternal = () => {
     showChat: false,
     showColorbar: true,
     showRegionInfo: false,
+    datasets: mockDatasets,
     currentDataset: mockDatasets[0],
     globePosition: {
       latitude: 0,
@@ -79,6 +80,78 @@ const useAppStateInternal = () => {
     setState((prev) => ({ ...prev, currentDataset: dataset }));
   }, []);
 
+  const fetchDatasets = useCallback(async (signal?: AbortSignal) => {
+    setState((prev) => ({ ...prev, isLoading: true, error: null }));
+    try {
+      const response = await fetch('/api/datasets', {
+        cache: 'no-store',
+        signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Dataset request failed with status ${response.status}`);
+      }
+
+      const payload = await response.json();
+      const datasets: Dataset[] = Array.isArray(payload.datasets)
+        ? payload.datasets
+        : [];
+
+      if (signal?.aborted) {
+        return false;
+      }
+
+      setState((prev) => {
+        if (!datasets.length) {
+          return {
+            ...prev,
+            datasets,
+            isLoading: false,
+            error: null,
+          };
+        }
+
+        const currentId = prev.currentDataset?.id;
+        const nextCurrent =
+          datasets.find((item) => item.id === currentId) ?? datasets[0];
+
+        return {
+          ...prev,
+          datasets,
+          currentDataset: nextCurrent,
+          isLoading: false,
+          error: null,
+        };
+      });
+      return true;
+    } catch (error) {
+      if (signal?.aborted) {
+        return false;
+      }
+      setState((prev) => ({
+        ...prev,
+        isLoading: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Failed to load datasets',
+      }));
+      return false;
+    }
+  }, []);
+
+  const refreshDatasets = useCallback(() => {
+    return fetchDatasets();
+  }, [fetchDatasets]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchDatasets(controller.signal);
+    return () => {
+      controller.abort();
+    };
+  }, [fetchDatasets]);
+
   return {
     ...state,
     selectedYear,
@@ -95,6 +168,7 @@ const useAppStateInternal = () => {
     setShowChat,
     toggleColorbar,
     setCurrentDataset,
+    refreshDatasets,
   };
 };
 
@@ -105,25 +179,8 @@ export const AppStateProvider = ({
 }) => {
   const appState = useAppStateInternal();
 
-  const value = useMemo(
-    () => appState,
-    [
-      appState.showSettings,
-      appState.showAbout,
-      appState.showTutorial,
-      appState.showChat,
-      appState.showColorbar,
-      appState.showRegionInfo,
-      appState.currentDataset,
-      appState.selectedYear,
-      appState.temperatureUnit,
-      appState.showRegionInfo,
-      appState.regionInfoData,
-    ]
-  );
-
   return (
-    <AppStateContext.Provider value={value}>
+    <AppStateContext.Provider value={appState}>
       {children}
     </AppStateContext.Provider>
   );

@@ -49,15 +49,16 @@ Install Docker before attempting to run the database
    ICHARM_DB_NAME=icharm_chat
    ICHARM_DB_PORT=5432
    ```
-2. Start the database:
+2. Start the database (and optional services):
    ```bash
-   docker compose up -d db
-   docker compose down -v to clear and close container
+   docker compose -f docker/docker-compose.yml --project-directory . up -d db data-api llm-service
+   docker compose -f docker/docker-compose.yml --project-directory . down -v
    ```
    On first run the container executes `docker/postgres/init/00-init-db.sh`, which creates extensions, tables, triggers, indexes, and a sample `test@example.com` user.
 
    IMPORTANT: This may not work, if not run 
    docker compose exec db bash /docker-entrypoint-initdb.d/00-init-db.sh
+   
    in project root to create correct table names in container
 
 
@@ -83,11 +84,22 @@ Use `docker compose down` to stop the database or `docker compose down -v` to re
 - Configure the service with `HF_TOKEN`, `LLAMA_API_KEY`, `LLAMA_MODEL`, and `LLM_SERVICE_PORT` in `.env`. The Next.js API calls it through `LLM_SERVICE_URL`.
 - Start it with:
   ```bash
-  docker compose up -d llm-service
+  docker compose -f docker/docker-compose.yml --project-directory . up -d llm-service
   ```
-  or launch both database and service together: `docker compose up -d db llm-service`.
+  or launch it together with the database and dataset API: `docker compose -f docker/docker-compose.yml --project-directory . up -d db data-api llm-service`.
 - Health check endpoint: <http://localhost:8001/health>. The chat endpoint lives at `/v1/chat`.
 - The Next.js backend stores conversations in Postgres as before; the FastAPI service is stateless and can reach the database container if you later need direct access (same Docker network).
+
+## Dataset API (FastAPI)
+
+- The data API lived under `services/data-api/app/` and provides dataset metadata plus time-series endpoints consumed by the Next.js app.
+- Configure `.env.local` with `DATA_SERVICE_URL` (defaults to <http://localhost:8002>) so the frontend hits the compose-exposed port.
+- Start (or restart) the service with:
+  ```bash
+  docker compose -f docker/docker-compose.yml --project-directory . up -d data-api
+  ```
+- The API listens on <http://localhost:8002>. When running inside the compose network, other containers can reach it at `http://icharm-data-api:8000`.
+- To run the service locally without Docker, change into `services/data-api` and execute `uvicorn app.iCharmFastAPI:app --reload`.
 
 ## Development
 

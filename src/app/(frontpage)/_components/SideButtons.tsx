@@ -19,6 +19,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Calendar } from '@/components/ui/calendar';
+import { useAppState } from '@/context/HeaderContext';
+import type { Dataset } from '@/types';
 
 interface SideButtonsProps {
   selectedDate: Date;
@@ -27,57 +29,18 @@ interface SideButtonsProps {
   onShowSidebarPanel: (panel: 'datasets' | 'history' | 'about' | null) => void;
 }
 
-interface Dataset {
-  id: string;
-  name: string;
-  description: string;
-  size: string;
-  lastUpdated: string;
-  category: string;
-}
+const formatDisplayDate = (value?: string | null) => {
+  if (!value) {
+    return 'Unknown';
+  }
 
-const DATASETS: Dataset[] = [
-  {
-    id: 'global-temp',
-    name: 'Global Temperature',
-    description: 'Global surface temperature data from 1880 to present',
-    size: '2.4 GB',
-    lastUpdated: '2024-01-15',
-    category: 'Climate',
-  },
-  {
-    id: 'co2-concentration',
-    name: 'CO₂ Concentration',
-    description: 'Atmospheric carbon dioxide measurements worldwide',
-    size: '1.1 GB',
-    lastUpdated: '2024-01-10',
-    category: 'Atmosphere',
-  },
-  {
-    id: 'sea-level',
-    name: 'Sea Level Rise',
-    description: 'Global mean sea level measurements from satellite altimetry',
-    size: '3.2 GB',
-    lastUpdated: '2024-01-08',
-    category: 'Oceans',
-  },
-  {
-    id: 'arctic-ice',
-    name: 'Arctic Sea Ice',
-    description: 'Daily Arctic sea ice extent and concentration',
-    size: '4.7 GB',
-    lastUpdated: '2024-01-12',
-    category: 'Cryosphere',
-  },
-  {
-    id: 'precipitation',
-    name: 'Global Precipitation',
-    description: 'Worldwide precipitation measurements and estimates',
-    size: '5.1 GB',
-    lastUpdated: '2024-01-05',
-    category: 'Hydrology',
-  },
-];
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().split('T')[0];
+  }
+
+  return value;
+};
 
 export function SideButtons({
   selectedDate,
@@ -85,11 +48,19 @@ export function SideButtons({
   onShowTutorial,
   onShowSidebarPanel,
 }: SideButtonsProps) {
+  const {
+    datasets,
+    currentDataset,
+    setCurrentDataset,
+    isLoading,
+    error,
+  } = useAppState();
+
   const [isExpanded, setIsExpanded] = useState(true);
   const [showCalendar, setShowCalendar] = useState(false);
   const [showDatasetCard, setShowDatasetCard] = useState(false);
   const [selectedDatasets, setSelectedDatasets] = useState<Set<string>>(
-    new Set()
+    () => (currentDataset ? new Set([currentDataset.id]) : new Set())
   );
 
   // Event Handlers
@@ -131,6 +102,10 @@ export function SideButtons({
 
   const toggleDatasetSelection = useCallback((datasetId: string) => {
     setSelectedDatasets((prev) => {
+      if (!datasets.some((dataset) => dataset.id === datasetId)) {
+        return prev;
+      }
+
       const newSelection = new Set(prev);
       if (newSelection.has(datasetId)) {
         newSelection.delete(datasetId);
@@ -139,12 +114,18 @@ export function SideButtons({
       }
       return newSelection;
     });
-  }, []);
+  }, [datasets]);
 
   const handleApplyDatasets = useCallback(() => {
-    console.log('Selected datasets:', Array.from(selectedDatasets));
+    const [firstSelection] = Array.from(selectedDatasets);
+    if (firstSelection) {
+      const dataset = datasets.find((item) => item.id === firstSelection);
+      if (dataset) {
+        setCurrentDataset(dataset);
+      }
+    }
     closeDatasetCard();
-  }, [selectedDatasets, closeDatasetCard]);
+  }, [selectedDatasets, datasets, setCurrentDataset, closeDatasetCard]);
 
   const handleDateSelect = useCallback(
     (date: Date | undefined) => {
@@ -163,6 +144,34 @@ export function SideButtons({
     },
     [selectedDate, onDateChange, closeCalendar]
   );
+
+  useEffect(() => {
+    if (!datasets.length) {
+      setSelectedDatasets(new Set());
+      return;
+    }
+
+    setSelectedDatasets((prev) => {
+      const validIds = Array.from(prev).filter((id) =>
+        datasets.some((dataset) => dataset.id === id)
+      );
+
+      if (currentDataset && !validIds.includes(currentDataset.id)) {
+        validIds.unshift(currentDataset.id);
+      }
+
+      if (!validIds.length) {
+        const fallback = currentDataset?.id ?? datasets[0].id;
+        return new Set([fallback]);
+      }
+
+      if (validIds.length === prev.size && validIds.every((id) => prev.has(id))) {
+        return prev;
+      }
+
+      return new Set(validIds);
+    });
+  }, [datasets, currentDataset]);
 
   // Button configurations
   const buttonConfigs = useMemo(
@@ -325,59 +334,92 @@ export function SideButtons({
                 </CardDescription>
               </CardHeader>
               <CardContent className="max-h-96 space-y-3 overflow-y-auto">
-                {DATASETS.map((dataset) => (
-                  <div
-                    key={dataset.id}
-                    className={`cursor-pointer rounded-lg border p-3 transition-all ${
-                      selectedDatasets.has(dataset.id)
-                        ? 'border-slate-300/50 bg-slate-300/20'
-                        : 'border-slate-600 bg-slate-700/50 hover:bg-slate-700/70'
-                    }`}
-                    onClick={() => toggleDatasetSelection(dataset.id)}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h3 className="text-sm font-medium text-white">
-                          {dataset.name}
-                        </h3>
-                        <p className="mt-1 text-xs text-slate-400">
-                          {dataset.description}
-                        </p>
-                        <div className="mt-2 flex items-center gap-3">
-                          <Badge variant="outline" className="text-xs">
-                            {dataset.category}
-                          </Badge>
-                          <span className="text-xs text-slate-500">
-                            {dataset.size}
-                          </span>
+                {isLoading && (
+                  <div className="rounded border border-slate-600 bg-slate-800/50 p-3 text-sm text-slate-300">
+                    Loading datasets...
+                  </div>
+                )}
+
+                {!isLoading && error && (
+                  <div className="rounded border border-rose-500/40 bg-rose-900/20 p-3 text-sm text-rose-200">
+                    Failed to load datasets: {error}
+                  </div>
+                )}
+
+                {!isLoading && !error && datasets.length === 0 && (
+                  <div className="rounded border border-slate-600 bg-slate-800/50 p-3 text-sm text-slate-300">
+                    No datasets available. Please try again later.
+                  </div>
+                )}
+
+                {datasets.map((dataset: Dataset) => {
+                  const isSelected = selectedDatasets.has(dataset.id);
+                  const category =
+                    dataset.backend?.datasetType ?? dataset.dataType;
+                  const resolution = dataset.backend?.spatialResolution ?? '';
+                  const lastUpdated = formatDisplayDate(
+                    dataset.backend?.endDate
+                  );
+
+                  return (
+                    <div
+                      key={dataset.id}
+                      className={`cursor-pointer rounded-lg border p-3 transition-all ${
+                        isSelected
+                          ? 'border-slate-300/50 bg-slate-300/20'
+                          : 'border-slate-600 bg-slate-700/50 hover:bg-slate-700/70'
+                      }`}
+                      onClick={() => toggleDatasetSelection(dataset.id)}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <h3 className="text-sm font-medium text-white">
+                            {dataset.name}
+                          </h3>
+                          <p className="mt-1 text-xs text-slate-400">
+                            {dataset.description}
+                          </p>
+                          <div className="mt-2 flex flex-wrap items-center gap-3">
+                            <Badge variant="outline" className="text-xs">
+                              {category}
+                            </Badge>
+                            {resolution && (
+                              <span className="text-xs text-slate-500">
+                                Resolution: {resolution}
+                              </span>
+                            )}
+                            <span className="text-xs text-slate-500">
+                              Updated: {lastUpdated}
+                            </span>
+                          </div>
+                        </div>
+                        <div
+                          className={`ml-2 flex h-4 w-4 items-center justify-center rounded border ${
+                            isSelected
+                              ? 'border-rose-500 bg-rose-500'
+                              : 'border-slate-400'
+                          }`}
+                        >
+                          {isSelected && (
+                            <svg
+                              className="h-3 w-3 text-white"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={3}
+                                d="M5 13l4 4L19 7"
+                              />
+                            </svg>
+                          )}
                         </div>
                       </div>
-                      <div
-                        className={`ml-2 flex h-4 w-4 items-center justify-center rounded border ${
-                          selectedDatasets.has(dataset.id)
-                            ? 'border-rose-500 bg-rose-500'
-                            : 'border-slate-400'
-                        }`}
-                      >
-                        {selectedDatasets.has(dataset.id) && (
-                          <svg
-                            className="h-3 w-3 text-white"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={3}
-                              d="M5 13l4 4L19 7"
-                            />
-                          </svg>
-                        )}
-                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </CardContent>
               <div className="flex gap-2 border-t border-slate-700 p-4">
                 <Button

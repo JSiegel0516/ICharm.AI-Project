@@ -1,26 +1,15 @@
 import { Dataset, PressureLevel } from '@/types';
+import { DEFAULT_COLOR_SCALES, cloneColorScale } from '@/lib/datasets';
 
 export const mockDatasets: Dataset[] = [
   {
     id: 'air-temp-monthly',
     name: 'Air Temperature | Monthly Mean',
     description: 'Global air temperature data with monthly averages',
-    units: '°C',
+    units: 'degC',
     dataType: 'temperature',
     temporalResolution: 'monthly',
-    colorScale: {
-      min: -30,
-      max: 30,
-      colors: [
-        '#2563eb',
-        '#06b6d4',
-        '#10b981',
-        '#fbbf24',
-        '#f59e0b',
-        '#ef4444',
-      ],
-      labels: ['-30', '-20', '-10', '0', '10', '20', '30'],
-    },
+    colorScale: cloneColorScale(DEFAULT_COLOR_SCALES.temperature),
   },
   {
     id: 'precipitation-monthly',
@@ -29,43 +18,19 @@ export const mockDatasets: Dataset[] = [
     units: 'mm',
     dataType: 'precipitation',
     temporalResolution: 'monthly',
-    colorScale: {
-      min: 0,
-      max: 500,
-      colors: [
-        '#f8fafc',
-        '#e2e8f0',
-        '#94a3b8',
-        '#475569',
-        '#1e293b',
-        '#0f172a',
-      ],
-      labels: ['0', '100', '200', '300', '400', '500'],
-    },
+    colorScale: cloneColorScale(DEFAULT_COLOR_SCALES.precipitation),
   },
   {
     id: 'sea-surface-temp',
     name: 'Sea Surface Temperature',
     description: 'Ocean surface temperature measurements',
-    units: '°C',
+    units: 'degC',
     dataType: 'temperature',
     temporalResolution: 'daily',
-    colorScale: {
-      min: -2,
-      max: 35,
-      colors: [
-        '#1e3a8a',
-        '#3b82f6',
-        '#06b6d4',
-        '#10b981',
-        '#fbbf24',
-        '#ef4444',
-        '#7c2d12',
-      ],
-      labels: ['-2', '5', '12', '19', '26', '33', '35'],
-    },
+    colorScale: cloneColorScale(DEFAULT_COLOR_SCALES.temperature),
   },
 ];
+
 // Predefined pressure levels based on standard atmospheric levels
 export const pressureLevels: PressureLevel[] = [
   { id: 'surface', value: 1000, label: 'Surface', unit: 'hPa' },
@@ -82,7 +47,7 @@ export const pressureLevels: PressureLevel[] = [
 
 // Altitude descriptions for different pressure levels
 export const altitudeDescriptions: { [key: string]: string } = {
-  'surface': '~Sea Level',
+  surface: '~Sea Level',
   '925': '~2,500 ft',
   '850': '~5,000 ft',
   '700': '~10,000 ft',
@@ -93,7 +58,6 @@ export const altitudeDescriptions: { [key: string]: string } = {
   '50': '~67,000 ft',
   '10': '~89,000 ft',
 };
-
 
 export const chatResponses = [
   'I can help you analyze temperature patterns across different regions. What specific area interests you?',
