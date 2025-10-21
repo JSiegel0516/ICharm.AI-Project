@@ -5,13 +5,13 @@ import { relations } from "drizzle-orm";
 // User Table
 // ---------------------------
 export const user = pgTable("users", {
-  id: text("id").primaryKey(), // use UUID in code
+  id: text("id").primaryKey(),
   name: text("name"),
   email: text("email").notNull().unique(),
-  emailVerified: boolean("email_verified").default(false).notNull(),
+  emailVerified: boolean("emailVerified").default(false).notNull(),
   image: text("image"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().$onUpdate(() => new Date()).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
 });
 
 // ---------------------------
@@ -19,18 +19,18 @@ export const user = pgTable("users", {
 // ---------------------------
 export const account = pgTable("accounts", {
   id: text("id").primaryKey(),
-  accountId: text("account_id").notNull(),
-  providerId: text("provider_id").notNull(),
-  userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
-  accessToken: text("access_token"),
-  refreshToken: text("refresh_token"),
-  idToken: text("id_token"),
-  accessTokenExpiresAt: timestamp("access_token_expires_at"),
-  refreshTokenExpiresAt: timestamp("refresh_token_expires_at"),
+  accountId: text("accountId").notNull(),
+  providerId: text("providerId").notNull(),
+  userId: text("userId").notNull().references(() => user.id, { onDelete: "cascade" }),
+  accessToken: text("accessToken"),
+  refreshToken: text("refreshToken"),
+  idToken: text("idToken"),
+  accessTokenExpiresAt: timestamp("accessTokenExpiresAt"),
+  refreshTokenExpiresAt: timestamp("refreshTokenExpiresAt"),
   scope: text("scope"),
   password: text("password"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().$onUpdate(() => new Date()).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
 });
 
 // ---------------------------
@@ -39,12 +39,12 @@ export const account = pgTable("accounts", {
 export const session = pgTable("sessions", {
   id: text("id").primaryKey(),
   token: text("token").notNull().unique(),
-  expiresAt: timestamp("expires_at").notNull(),
-  userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
-  ipAddress: text("ip_address"),
-  userAgent: text("user_agent"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().$onUpdate(() => new Date()).notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  userId: text("userId").notNull().references(() => user.id, { onDelete: "cascade" }),
+  ipAddress: text("ipAddress"),
+  userAgent: text("userAgent"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
 });
 
 // ---------------------------
@@ -54,9 +54,9 @@ export const verification = pgTable("verifications", {
   id: text("id").primaryKey(),
   identifier: text("identifier").notNull(),
   value: text("value").notNull(),
-  expiresAt: timestamp("expires_at").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().$onUpdate(() => new Date()).notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  createdAt: timestamp("createdAt").defaultNow(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()),
 });
 
 // ---------------------------
@@ -76,10 +76,38 @@ export const chatSession = pgTable("chat_sessions", {
 export const chatMessage = pgTable("chat_messages", {
   id: text("id").primaryKey(),
   sessionId: text("session_id").notNull().references(() => chatSession.id, { onDelete: "cascade" }),
-  role: text("role").notNull(), // enforce 'system' | 'user' | 'assistant' in TS
+  role: text("role").notNull(),
   content: text("content").notNull(),
   sources: jsonb("sources"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ---------------------------
+// Climate Datasets Table (matches metadata.csv EXACTLY)
+// Column order matches CSV: sourceName,datasetName,layerParameter,statistic,datasetType,levels,levelValues,levelUnits,Stored,inputFile,keyVariable,units,spatialResolution,engine,kerchunkPath,origLocation,startDate,endDate
+// ---------------------------
+export const climateDataset = pgTable("metadata", {
+  id: text("id").primaryKey(),
+  sourceName: text("sourceName").notNull(),
+  datasetName: text("datasetName").notNull(),
+  layerParameter: text("layerParameter").notNull(),
+  statistic: text("statistic").notNull(),
+  datasetType: text("datasetType").notNull(),
+  levels: text("levels").notNull(),
+  levelValues: text("levelValues"), // nullable - can be "None"
+  levelUnits: text("levelUnits"), // nullable - can be "None"
+  stored: text("Stored").notNull(), // "local" or "cloud"
+  inputFile: text("inputFile").notNull(),
+  keyVariable: text("keyVariable").notNull(),
+  units: text("units").notNull(),
+  spatialResolution: text("spatialResolution").notNull(),
+  engine: text("engine").notNull(),
+  kerchunkPath: text("kerchunkPath"), // nullable - can be "None"
+  origLocation: text("origLocation").notNull(),
+  startDate: text("startDate").notNull(), // stored as text: "1854/1/1"
+  endDate: text("endDate").notNull(), // stored as text: "9/1/2025" or "present"
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
 });
 
 // ---------------------------
@@ -103,4 +131,3 @@ export const sessionRelations = relations(session, ({ one }) => ({
 export const accountRelations = relations(account, ({ one }) => ({
   user: one(user, { fields: [account.userId], references: [user.id] }),
 }));
-
