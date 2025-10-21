@@ -1,8 +1,23 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { ChevronDown, X, MapPin } from 'lucide-react';
 import { RegionInfoPanelProps } from '@/types';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+} from 'recharts';
+
+type SeriesPoint = {
+  date: string;
+  value: number | null;
+};
 
 const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   show,
@@ -14,10 +29,13 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     precipitation: 0.9,
     temperature: 24.5,
     dataset: 'Global Precipitation Climatology Project',
+    unit: 'mm/day',
   },
   colorBarPosition = { x: 24, y: 300 },
   colorBarCollapsed = false,
   className = '',
+  currentDataset,
+  selectedDate,
 }) => {
   const getDefaultPosition = () => {
     if (typeof window !== 'undefined') {
@@ -32,6 +50,32 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [previousPosition, setPreviousPosition] = useState(getDefaultPosition);
   const panelRef = useRef<HTMLDivElement>(null);
+
+  const [timeseriesOpen, setTimeseriesOpen] = useState(false);
+  const [timeseriesLoading, setTimeseriesLoading] = useState(false);
+  const [timeseriesError, setTimeseriesError] = useState<string | null>(null);
+  const [timeseriesSeries, setTimeseriesSeries] = useState<SeriesPoint[]>([]);
+  const [timeseriesUnits, setTimeseriesUnits] = useState<string | null>(null);
+
+  const datasetUnit = regionData.unit ?? currentDataset?.units ?? 'units';
+
+  const datasetIdentifier =
+    currentDataset?.backend?.datasetName ??
+    currentDataset?.name ??
+    regionData.dataset ??
+    '';
+
+  const datasetStart = useMemo(() => {
+    if (!currentDataset?.backend?.startDate) return null;
+    const parsed = new Date(currentDataset.backend.startDate);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }, [currentDataset]);
+
+  const datasetEnd = useMemo(() => {
+    if (!currentDataset?.backend?.endDate) return null;
+    const parsed = new Date(currentDataset.backend.endDate);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }, [currentDataset]);
 
   useEffect(() => {
     if (show && typeof window !== 'undefined') {
@@ -68,26 +112,19 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     onClose();
   };
 
-  // FIX: Simplified collapse toggle
   const handleCollapseToggle = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
-    console.log('RegionPanel collapse clicked', { isDragging, isCollapsed });
-
     if (isDragging) {
-      console.log('Blocked: currently dragging');
       return;
     }
 
     setIsCollapsed((prev) => {
-      console.log('RegionPanel toggle: from', prev, 'to', !prev);
       if (prev) {
-        // Expanding
         setPosition(previousPosition);
         return false;
       } else {
-        // Collapsing
         setPreviousPosition(position);
         if (typeof window !== 'undefined') {
           setPosition({
@@ -128,8 +165,8 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       const maxY = window.innerHeight - panelHeight;
 
       setPosition({
-        x: Math.max(0, Math.min(newX, maxX)),
-        y: Math.max(0, Math.min(newY, maxY)),
+        x: Math.min(Math.max(0, newX), maxX),
+        y: Math.min(Math.max(0, newY), maxY),
       });
     };
 
@@ -139,7 +176,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       }
     };
 
-    if (isDragging && !isCollapsed) {
+    if (isDragging) {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     }
@@ -149,6 +186,81 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       document.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isDragging, dragStart, isCollapsed]);
+
+  const chartData = useMemo(() => {
+    return timeseriesSeries.map((entry) => ({
+      date: entry.date,
+      value:
+        entry.value != null && Number.isFinite(entry.value)
+          ? Number(entry.value.toFixed(2))
+          : null,
+    }));
+  }, [timeseriesSeries]);
+
+  const handleTimeseriesClick = async () => {
+    setTimeseriesOpen(true);
+
+    if (!datasetIdentifier.toLowerCase().includes('cmorph')) {
+      setTimeseriesError(
+        'Timeseries view is currently available for the CMORPH dataset only.'
+      );
+      setTimeseriesSeries([]);
+      setTimeseriesUnits(null);
+      return;
+    }
+
+    let targetDate =
+      selectedDate ??
+      datasetEnd ??
+      new Date();
+
+    if (datasetStart && targetDate < datasetStart) {
+      targetDate = datasetStart;
+    }
+    if (datasetEnd && targetDate > datasetEnd) {
+      targetDate = datasetEnd;
+    }
+
+    setTimeseriesLoading(true);
+    setTimeseriesError(null);
+
+    try {
+      const payload = {
+        dataset_name: datasetIdentifier,
+        year: targetDate.getFullYear(),
+        month: String(targetDate.getMonth() + 1).padStart(2, '0'),
+        lat: latitude,
+        lon: longitude,
+      };
+
+      const response = await fetch('/api/cdr/precip-timeseries', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result?.detail || result?.error || 'Request failed');
+      }
+
+      const series = Array.isArray(result?.primary?.series)
+        ? (result.primary.series as SeriesPoint[])
+        : [];
+      setTimeseriesSeries(series);
+      setTimeseriesUnits(result?.metadata?.units ?? datasetUnit);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to load timeseries';
+      setTimeseriesError(message);
+      setTimeseriesSeries([]);
+      setTimeseriesUnits(null);
+    } finally {
+      setTimeseriesLoading(false);
+    }
+  };
 
   if (!show) return null;
 
@@ -165,10 +277,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       {isCollapsed ? (
         <div
           className="cursor-pointer rounded-xl border border-gray-600/30 bg-gray-800/95 backdrop-blur-sm transition-all duration-200 hover:border-gray-500/50 hover:shadow-lg"
-          onClick={(e) => {
-            console.log('Collapsed RegionPanel div clicked');
-            handleCollapseToggle(e);
-          }}
+          onClick={handleCollapseToggle}
           style={{ transform: 'scale(1)' }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'scale(1.05)';
@@ -233,10 +342,12 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                 <div className="mb-1 font-mono text-2xl font-bold text-white">
                   {(regionData.precipitation ?? 0).toFixed(2)}{' '}
                   <span className="text-base font-normal text-gray-400">
-                    mm
+                    {datasetUnit}
                   </span>
                 </div>
-                <div className="text-sm text-gray-400">Precipitation</div>
+                <div className="text-sm text-gray-400">
+                  {regionData.name || datasetIdentifier || 'Precipitation'}
+                </div>
               </div>
             </div>
 
@@ -256,9 +367,90 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
             </div>
 
             <div className="pt-1">
-              <button className="w-full rounded-lg border border-gray-600/40 bg-gray-700/50 px-3 py-2 text-sm font-medium text-gray-200 transition-colors hover:border-gray-500/60 hover:bg-gray-600/50 hover:text-white">
+              <button
+                className="w-full rounded-lg border border-gray-600/40 bg-gray-700/50 px-3 py-2 text-sm font-medium text-gray-200 transition-colors hover:border-gray-500/60 hover:bg-gray-600/50 hover:text-white"
+                type="button"
+                onClick={handleTimeseriesClick}
+              >
                 Time Series
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {timeseriesOpen && (
+        <div
+          className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-black/70 px-4 py-6"
+          onClick={() => setTimeseriesOpen(false)}
+        >
+          <div
+            className="relative w-full max-w-3xl rounded-xl border border-gray-700 bg-gray-900/95 p-6 text-gray-200 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setTimeseriesOpen(false)}
+              className="absolute right-4 top-4 rounded-full border border-gray-600/40 p-1 text-gray-400 transition-colors hover:border-gray-500/60 hover:text-white"
+              title="Close"
+              type="button"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold text-white">
+                Daily Precipitation
+              </h2>
+              <p className="text-sm text-gray-400">
+                {latitude.toFixed(2)}°, {longitude.toFixed(2)}° ·{' '}
+                {selectedDate
+                  ? `${selectedDate.getFullYear()}-${String(
+                      selectedDate.getMonth() + 1
+                    ).padStart(2, '0')}`
+                  : 'Select a date'}
+              </p>
+            </div>
+
+            <div className="relative h-72 w-full overflow-hidden rounded-lg border border-gray-700/50 bg-gray-900/50">
+              {timeseriesLoading ? (
+                <div className="flex h-full w-full items-center justify-center text-sm text-gray-400">
+                  Loading timeseries...
+                </div>
+              ) : timeseriesError ? (
+                <div className="flex h-full w-full items-center justify-center text-sm text-red-400">
+                  {timeseriesError}
+                </div>
+              ) : chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis dataKey="date" stroke="#94a3b8" />
+                    <YAxis
+                      stroke="#94a3b8"
+                      label={{
+                        value: timeseriesUnits ?? datasetUnit,
+                        angle: -90,
+                        position: 'insideLeft',
+                        fill: '#94a3b8',
+                      }}
+                    />
+                    <Tooltip />
+                    <Legend />
+                    <Line
+                      type="monotone"
+                      dataKey="value"
+                      name="Precipitation"
+                      stroke="#38bdf8"
+                      strokeWidth={2}
+                      dot={false}
+                      connectNulls
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-sm text-gray-400">
+                  No timeseries data available.
+                </div>
+              )}
             </div>
           </div>
         </div>
