@@ -39,6 +39,19 @@ services:
       db:
         condition: service_started
 
+  data-api:
+    build:
+      context: .
+      dockerfile: services/data-api/Dockerfile
+    container_name: icharm-data-api
+    restart: unless-stopped
+    volumes:
+      - ./metadata.csv:/app/metadata.csv:ro
+      - ./metadata.csv:/app/data/metadata.csv:ro
+      - ./datasets:/app/datasets:ro
+    ports:
+      - "${DATA_API_PORT:-8002}:8000"
+
 volumes:
   postgres-data:
     driver: local

@@ -1,5 +1,26 @@
 import type { HTMLAttributes } from 'react';
 
+export interface DatasetBackendDetails {
+  sourceName: string | null;
+  datasetName: string;
+  layerParameter: string | null;
+  statistic: string | null;
+  datasetType: string | null;
+  levels: string | null;
+  levelValues: number[];
+  levelUnits: string | null;
+  stored: 'local' | 'cloud' | null;
+  inputFile: string | null;
+  keyVariable: string | null;
+  units: string | null;
+  spatialResolution: string | null;
+  engine: string | null;
+  kerchunkPath: string | null;
+  origLocation: string | null;
+  startDate: string | null;
+  endDate: string | null;
+}
+
 export interface Dataset {
   id: string;
   name: string;
@@ -8,6 +29,7 @@ export interface Dataset {
   colorScale: ColorScale;
   dataType: 'temperature' | 'precipitation' | 'wind' | 'pressure' | 'humidity';
   temporalResolution: 'hourly' | 'daily' | 'monthly' | 'yearly';
+  backend?: DatasetBackendDetails;
 }
 
 export interface ControlPanelProps {
@@ -94,6 +116,7 @@ export interface AppState {
     regionData: RegionData;
   };
   currentDataset: Dataset;
+  datasets: Dataset[];
   globePosition: GlobePosition;
   isLoading: boolean;
   error: string | null;
