@@ -92,6 +92,16 @@ Use `docker compose down` to stop the database or `docker compose down -v` to re
 
 ## Dataset API (FastAPI)
 
+- See [docs/iCharmFastAPI.md](docs/iCharmFastAPI.md) for internals, supported datasets, and CMORPH timeseries details.
+
+## CMORPH Timeseries Modal
+
+- Select the CMORPH dataset on the globe to enable the precipitation modal.
+- Click on the globe to open the region info panel; press **Time Series** to fetch daily values for the chosen month.
+- The modal queries `/api/cdr/precip-timeseries`, which proxies the backend `/cdr/precip_timeseries` endpoint.
+- Dates are clamped to the CMORPH coverage window (see dataset metadata).
+- Rebuild `data-api` after backend changes: `docker compose -f docker/docker-compose.yml --project-directory . up -d --build data-api`.
+
 - The data API lived under `services/data-api/app/` and provides dataset metadata plus time-series endpoints consumed by the Next.js app.
 - Configure `.env.local` with `DATA_SERVICE_URL` (defaults to <http://localhost:8002>) so the frontend hits the compose-exposed port.
 - Start (or restart) the service with:
