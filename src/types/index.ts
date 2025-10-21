@@ -87,10 +87,13 @@ export interface RegionInfoPanelProps {
     precipitation?: number;
     temperature?: number;
     dataset?: string;
+    unit?: string;
   };
   colorBarPosition?: { x: number; y: number };
   colorBarCollapsed?: boolean;
   className?: string;
+  currentDataset?: Dataset;
+  selectedDate?: Date;
 }
 
 export interface SettingsIconHandle {
@@ -176,6 +179,7 @@ export interface RegionData {
   precipitation: number;
   temperature: number;
   dataset: string;
+  unit?: string;
 }
 
 export interface GlobeRef {
@@ -246,10 +250,13 @@ export interface RegionInfoPanelProps {
     precipitation?: number;
     temperature?: number;
     dataset?: string;
+    unit?: string;
   };
   colorBarPosition?: { x: number; y: number };
   colorBarCollapsed?: boolean;
   className?: string;
+  currentDataset?: Dataset;
+  selectedDate?: Date;
 }
 
 export interface TutorialSection {

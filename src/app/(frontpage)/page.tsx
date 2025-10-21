@@ -75,15 +75,19 @@ export default function HomePage() {
         latitude,
         longitude,
         regionData: data || {
-          name: 'GPCP V2.3 Precipitation',
+          name: currentDataset?.name ?? 'GPCP V2.3 Precipitation',
           precipitation: Math.random() * 2,
           temperature: 15 + Math.random() * 20,
-          dataset: 'Global Precipitation Climatation Project',
+          dataset:
+            currentDataset?.backend?.datasetName ??
+            currentDataset?.name ??
+            'Global Precipitation Climatology Project',
+          unit: currentDataset?.units ?? 'units',
         },
       });
       setShowRegionInfo(true);
     },
-    []
+    [currentDataset]
   );
 
   const handleRegionInfoClose = useCallback(() => {
@@ -143,6 +147,8 @@ export default function HomePage() {
           regionData={regionInfoData.regionData}
           colorBarPosition={colorBarPosition}
           colorBarCollapsed={colorBarCollapsed}
+          currentDataset={currentDataset}
+          selectedDate={selectedDate}
         />
 
         {/* Bottom Controls */}

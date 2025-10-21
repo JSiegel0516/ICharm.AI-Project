@@ -1,5 +1,5 @@
-from typing import Optional
-from fastapi import FastAPI, Body
+from typing import Optional, Dict, Any
+from fastapi import FastAPI, Body, HTTPException
 import xarray as xr
 import pandas as pd
 import numpy as np
@@ -53,6 +53,112 @@ def choose_best_variable(ds: xr.Dataset, fallback: str = "precip") -> str:
         if any(k in name for k in ["wind", "speed"]):
             return v
     return filtered[0]
+
+def _get_metadata_row(dataset_name: str) -> pd.Series:
+    metadata = load_metadata(METADATA_PATH)
+    row = metadata[metadata['datasetName'] == dataset_name]
+    if row.empty:
+        raise ValueError(f"Dataset '{dataset_name}' not found in metadata.")
+    return row.iloc[0]
+
+def _extract_coord_value(point: xr.DataArray, candidates: list[str]) -> Optional[float]:
+    for key in candidates:
+        if key in point.coords:
+            value = point.coords[key].values
+            if isinstance(value, np.ndarray):
+                value = value.item()
+            return float(value)
+    for coord_name in point.coords:
+        lower = coord_name.lower()
+        for key in candidates:
+            if lower == key.lower():
+                value = point.coords[coord_name].values
+                if isinstance(value, np.ndarray):
+                    value = value.item()
+                return float(value)
+    return None
+
+def _cmorph_timeseries(row: pd.Series, year: int, month: int, lat: float, lon: float) -> Dict[str, Any]:
+    raw_base = str(row['inputFile']).rstrip('/')
+    if not raw_base:
+        raise ValueError("CMORPH dataset input path is missing.")
+
+    if raw_base.startswith('s3://'):
+        glob_base = raw_base[len('s3://') :]
+    else:
+        glob_base = raw_base
+
+    fs = s3fs.S3FileSystem(anon=True)
+    pattern = f"{glob_base}/{year:04d}/{int(month):02d}/*.nc"
+    file_urls = fs.glob(pattern)
+    if not file_urls:
+        raise FileNotFoundError(f"No CMORPH files found for {year}-{month:02d}.")
+
+    full_urls = [
+        url if url.startswith('s3://') else f"s3://{url}"
+        for url in file_urls
+    ]
+    open_files = [fs.open(url, mode='rb') for url in full_urls]
+    engine = row['engine'] if pd.notna(row['engine']) and row['engine'] != 'None' else 'h5netcdf'
+
+    ds = None
+    try:
+        ds = xr.open_mfdataset(
+            open_files,
+            engine=engine,
+            combine='by_coords',
+            parallel=False,
+            chunks={'time': 1}
+        )
+        var_name = (
+            row['keyVariable']
+            if pd.notna(row['keyVariable']) and row['keyVariable'] not in (None, 'None')
+            else choose_best_variable(ds)
+        )
+        da = ds[var_name]
+        point = da.sel(lat=lat, lon=lon, method="nearest")
+        point = point.load()
+
+        nearest_lat = _extract_coord_value(point, ['lat', 'latitude'])
+        nearest_lon = _extract_coord_value(point, ['lon', 'longitude'])
+
+        times = pd.to_datetime(point['time'].values)
+        values = point.values.astype(float)
+        series: list[Dict[str, Any]] = []
+
+        for t, value in zip(times, values):
+            date_str = pd.to_datetime(t).strftime("%Y-%m-%d")
+            series.append({
+                "date": date_str,
+                "value": float(value) if np.isfinite(value) else None,
+            })
+
+        units = da.attrs.get("units") or row.get("units") or "units"
+
+        return {
+            "year": year,
+            "month": month,
+            "series": series,
+            "metadata": {
+                "requestedLat": lat,
+                "requestedLon": lon,
+                "nearestLat": nearest_lat,
+                "nearestLon": nearest_lon,
+                "units": units,
+                "files": len(file_urls),
+            },
+        }
+    finally:
+        if ds is not None:
+            try:
+                ds.close()
+            except Exception:
+                pass
+        for handle in open_files:
+            try:
+                handle.close()
+            except Exception:
+                pass
 
 def load_dataset(
     metadata_path: str,
@@ -412,6 +518,56 @@ def get_seasonal_timeseries(
         .where(~df.isna(), None)
     )
     return df_clean.reset_index().to_dict(orient='records')
+
+@app.post("/cdr/precip_timeseries")
+def get_cdr_precip_timeseries(payload: Dict[str, Any] = Body(...)):
+    dataset_name = payload.get("dataset_name", "Precipitation - CMORPH CDR")
+    try:
+        year = int(payload["year"])
+        month = int(payload["month"])
+        lat = float(payload["lat"])
+        lon = float(payload["lon"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Missing or invalid parameters for CMORPH request") from exc
+
+    comparison_year = payload.get("comparison_year")
+    comparison_month = payload.get("comparison_month")
+
+    try:
+        row = _get_metadata_row(dataset_name)
+        primary = _cmorph_timeseries(row, year, month, lat, lon)
+        response_payload: Dict[str, Any] = {
+            "dataset": dataset_name,
+            "metadata": primary["metadata"],
+            "primary": {
+                "year": primary["year"],
+                "month": primary["month"],
+                "series": primary["series"],
+            },
+        }
+
+        if comparison_year and comparison_month:
+            try:
+                comp_year = int(comparison_year)
+                comp_month = int(comparison_month)
+                comparison = _cmorph_timeseries(row, comp_year, comp_month, lat, lon)
+                response_payload["comparison"] = {
+                    "year": comparison["year"],
+                    "month": comparison["month"],
+                    "series": comparison["series"],
+                }
+            except (ValueError, FileNotFoundError) as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        return response_payload
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to generate CMORPH timeseries: {exc}"
+        ) from exc
 
 if __name__ == "__main__":
     import uvicorn
