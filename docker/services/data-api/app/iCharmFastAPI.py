@@ -389,9 +389,16 @@ def _serialize_raster_array(
     if lat_values[0] > lat_values[-1]:
         lat_values = lat_values[::-1]
         data = data[::-1, :]
+    origin = "prime"
     if lon_values[0] > lon_values[-1]:
         lon_values = lon_values[::-1]
         data = data[:, ::-1]
+    if lon_values[-1] > 180 and lon_values[0] >= 0:
+        shifted = ((lon_values + 180.0) % 360.0) - 180.0
+        sort_idx = np.argsort(shifted)
+        lon_values = shifted[sort_idx]
+        data = data[:, sort_idx]
+        origin = "prime_shifted"
 
     finite_mask = np.isfinite(data)
     data_min = float(data[finite_mask].min()) if finite_mask.any() else None
@@ -428,6 +435,7 @@ def _serialize_raster_array(
             "south": float(np.min(lat_values)),
             "east": float(np.max(lon_values)),
             "north": float(np.max(lat_values)),
+            "origin": origin,
         },
     }
 

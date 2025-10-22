@@ -27,6 +27,7 @@ interface RasterApiResponse {
     south: number;
     east: number;
     north: number;
+    origin?: string;
   };
   supportsRaster?: boolean;
   metadata?: Record<string, unknown>;
@@ -47,6 +48,7 @@ export interface RasterLayerData {
   imageUrl: string;
   rectangle: RasterApiResponse['rectangle'];
   sampleValue: (lat: number, lon: number) => number | null;
+  origin: 'prime' | 'prime_shifted';
 }
 
 interface UseRasterLayerOptions {
@@ -153,24 +155,30 @@ function createCanvasFromData(
       ? rangeMax - rangeMin
       : null;
 
-  for (let i = 0; i < data.length; i += 1) {
-    const value = data[i];
-    const offset = i * 4;
-    if (!Number.isFinite(value) || denominator === null) {
-      pixels[offset] = 0;
-      pixels[offset + 1] = 0;
-      pixels[offset + 2] = 0;
-      pixels[offset + 3] = 0;
-      continue;
-    }
+  for (let row = 0; row < height; row += 1) {
+    const sourceRow = row;
+    const targetRow = height - 1 - row;
+    for (let col = 0; col < width; col += 1) {
+      const srcIndex = sourceRow * width + col;
+      const destIndex = (targetRow * width + col) * 4;
+      const value = data[srcIndex];
 
-    const normalized = clamp((value - (rangeMin as number)) / denominator, 0, 1);
-    const lutIndex = Math.min(lutLength - 1, Math.round(normalized * (lutLength - 1)));
-    const base = lutIndex * 4;
-    pixels[offset] = lut[base];
-    pixels[offset + 1] = lut[base + 1];
-    pixels[offset + 2] = lut[base + 2];
-    pixels[offset + 3] = lut[base + 3];
+      if (!Number.isFinite(value) || denominator === null) {
+        pixels[destIndex] = 0;
+        pixels[destIndex + 1] = 0;
+        pixels[destIndex + 2] = 0;
+        pixels[destIndex + 3] = 0;
+        continue;
+      }
+
+      const normalized = clamp((value - (rangeMin as number)) / denominator, 0, 1);
+      const lutIndex = Math.min(lutLength - 1, Math.round(normalized * (lutLength - 1)));
+      const base = lutIndex * 4;
+      pixels[destIndex] = lut[base];
+      pixels[destIndex + 1] = lut[base + 1];
+      pixels[destIndex + 2] = lut[base + 2];
+      pixels[destIndex + 3] = lut[base + 3];
+    }
   }
 
   context.putImageData(imageData, 0, 0);
@@ -295,6 +303,7 @@ export function useRasterLayer({ dataset, date, level }: UseRasterLayerOptions):
         );
 
         const sampled = createSampler(payload.lat, payload.lon, values, width, height);
+        const origin = payload.rectangle?.origin === 'prime_shifted' ? 'prime_shifted' : 'prime';
 
         setState({
           loading: false,
@@ -314,6 +323,7 @@ export function useRasterLayer({ dataset, date, level }: UseRasterLayerOptions):
             imageUrl,
             rectangle: payload.rectangle,
             sampleValue: sampled,
+            origin,
           },
         });
       })
