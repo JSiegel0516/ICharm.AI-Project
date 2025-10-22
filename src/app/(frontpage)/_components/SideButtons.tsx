@@ -1,6 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SettingsIcon } from '@/components/ui/settings';
 import { FileTextIcon } from '@/components/ui/file-text';
@@ -57,6 +63,10 @@ export function SideButtons({
   const [selectedDatasets, setSelectedDatasets] = useState<Set<string>>(() =>
     currentDataset ? new Set([currentDataset.id]) : new Set()
   );
+
+  // Refs for click-outside detection
+  const calendarRef = useRef<HTMLDivElement>(null);
+  const datasetCardRef = useRef<HTMLDivElement>(null);
 
   // Event Handlers
   const toggleMenu = useCallback(() => setIsExpanded((prev) => !prev), []);
@@ -142,6 +152,31 @@ export function SideButtons({
     },
     [selectedDate, onDateChange, closeCalendar]
   );
+
+  // Click-outside handler
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        calendarRef.current &&
+        !calendarRef.current.contains(event.target as Node)
+      ) {
+        closeCalendar();
+      }
+      if (
+        datasetCardRef.current &&
+        !datasetCardRef.current.contains(event.target as Node)
+      ) {
+        closeDatasetCard();
+      }
+    };
+
+    if (showCalendar || showDatasetCard) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [showCalendar, showDatasetCard, closeCalendar, closeDatasetCard]);
 
   useEffect(() => {
     if (!datasets.length) {
@@ -284,6 +319,7 @@ export function SideButtons({
       <AnimatePresence>
         {showCalendar && (
           <motion.div
+            ref={calendarRef}
             initial={{ x: -100, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -100, opacity: 0 }}
@@ -302,7 +338,6 @@ export function SideButtons({
                   selectedDate.getDate()
                 );
                 onDateChange(newDate);
-                closeCalendar();
               }}
               // Add date range restrictions
               disabled={(date) => {
@@ -324,6 +359,7 @@ export function SideButtons({
       <AnimatePresence>
         {showDatasetCard && (
           <motion.div
+            ref={datasetCardRef}
             initial={{ x: -100, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -100, opacity: 0 }}
