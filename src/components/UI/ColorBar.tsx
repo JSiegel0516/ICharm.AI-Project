@@ -253,7 +253,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
       ) : (
         <div
           id="temperature"
-          className="pointer-events-auto rounded-xl border border-gray-700/30 bg-gray-800/60 px-6 py-6 text-blue-100 backdrop-blur-sm"
+          className="pointer-events-auto rounded-xl border border-gray-700/30 bg-neutral-800/60 px-6 py-6 text-blue-100 backdrop-blur-sm"
         >
           <div className="-mt-2 mb-2 flex h-4 w-full items-center justify-between">
             <button
