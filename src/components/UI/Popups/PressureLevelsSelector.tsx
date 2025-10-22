@@ -73,8 +73,8 @@ const PressureLevelsSelector: React.FC<PressureLevelsSelectorProps> = ({
         onClick={() => setIsOpen(!isOpen)}
         className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-all duration-200 hover:scale-105 focus:outline-none ${
           isOpen
-            ? 'border-white/30 bg-slate-700 text-white'
-            : 'border-gray-500/30 bg-slate-800 text-gray-400 hover:border-white/20 hover:bg-slate-700 hover:text-white'
+            ? 'border-white/30 bg-neutral-700 text-white'
+            : 'border-gray-500/30 bg-neutral-800 text-gray-400 hover:border-white/20 hover:bg-neutral-700 hover:text-white'
         }`}
         title="Select Pressure Level"
         type="button"
@@ -93,7 +93,7 @@ const PressureLevelsSelector: React.FC<PressureLevelsSelectorProps> = ({
       {isOpen && (
         <div
           ref={dropdownRef}
-          className="absolute bottom-full right-0 z-50 mb-2 w-72 rounded-xl border border-white/20 bg-gray-800/95 p-4 shadow-2xl backdrop-blur-md"
+          className="absolute right-0 bottom-full z-50 mb-2 w-72 rounded-xl border border-white/20 bg-neutral-800/95 p-4 shadow-2xl backdrop-blur-md"
           style={{
             transform: 'translateY(-8px)',
           }}
@@ -112,7 +112,7 @@ const PressureLevelsSelector: React.FC<PressureLevelsSelectorProps> = ({
               placeholder="Search levels..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder-white/50 focus:border-white/40 focus:outline-none focus:ring-2 focus:ring-white/20"
+              className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder-white/50 focus:border-white/40 focus:ring-2 focus:ring-white/20 focus:outline-none"
             />
           </div>
 
