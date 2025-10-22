@@ -30,3 +30,4 @@ export const signInSocial = async (provider: SocialProvider) => {
 // Optional: if you want explicit aliases for readability
 export const signInGithub = () => signInSocial("github")
 export const signInGoogle = () => signInSocial("google")
+

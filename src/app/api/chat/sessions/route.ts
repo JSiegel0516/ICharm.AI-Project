@@ -15,12 +15,13 @@ function normalizeSession(session: ChatSession): NormalizedSession {
   return {
     id: session.id,
     title: session.title ?? null,
-    createdAt: session.created_at instanceof Date
-      ? session.created_at.toISOString()
-      : new Date(session.created_at).toISOString(),
-    updatedAt: session.updated_at instanceof Date
-      ? session.updated_at.toISOString()
-      : new Date(session.updated_at).toISOString(),
+    // Drizzle returns camelCase fields
+    createdAt: session.createdAt instanceof Date
+      ? session.createdAt.toISOString()
+      : new Date(session.createdAt).toISOString(),
+    updatedAt: session.updatedAt instanceof Date
+      ? session.updatedAt.toISOString()
+      : new Date(session.updatedAt).toISOString(),
   };
 }
 
@@ -28,7 +29,6 @@ export async function GET() {
   try {
     const user = await ChatDB.getOrCreateUserByEmail(TEST_USER_EMAIL);
     const sessions = await ChatDB.getUserSessions(user.id);
-
     return NextResponse.json({
       sessions: sessions.map(normalizeSession),
     });
@@ -44,7 +44,6 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const user = await ChatDB.getOrCreateUserByEmail(TEST_USER_EMAIL);
-
     let payload: { title?: string } = {};
     try {
       payload = await request.json();
