@@ -48,19 +48,14 @@ export function SideButtons({
   onShowTutorial,
   onShowSidebarPanel,
 }: SideButtonsProps) {
-  const {
-    datasets,
-    currentDataset,
-    setCurrentDataset,
-    isLoading,
-    error,
-  } = useAppState();
+  const { datasets, currentDataset, setCurrentDataset, isLoading, error } =
+    useAppState();
 
   const [isExpanded, setIsExpanded] = useState(true);
   const [showCalendar, setShowCalendar] = useState(false);
   const [showDatasetCard, setShowDatasetCard] = useState(false);
-  const [selectedDatasets, setSelectedDatasets] = useState<Set<string>>(
-    () => (currentDataset ? new Set([currentDataset.id]) : new Set())
+  const [selectedDatasets, setSelectedDatasets] = useState<Set<string>>(() =>
+    currentDataset ? new Set([currentDataset.id]) : new Set()
   );
 
   // Event Handlers
@@ -100,21 +95,24 @@ export function SideButtons({
     onShowSidebarPanel(null);
   }, [onShowSidebarPanel]);
 
-  const toggleDatasetSelection = useCallback((datasetId: string) => {
-    setSelectedDatasets((prev) => {
-      if (!datasets.some((dataset) => dataset.id === datasetId)) {
-        return prev;
-      }
+  const toggleDatasetSelection = useCallback(
+    (datasetId: string) => {
+      setSelectedDatasets((prev) => {
+        if (!datasets.some((dataset) => dataset.id === datasetId)) {
+          return prev;
+        }
 
-      const newSelection = new Set(prev);
-      if (newSelection.has(datasetId)) {
-        newSelection.delete(datasetId);
-      } else {
-        newSelection.add(datasetId);
-      }
-      return newSelection;
-    });
-  }, [datasets]);
+        const newSelection = new Set(prev);
+        if (newSelection.has(datasetId)) {
+          newSelection.delete(datasetId);
+        } else {
+          newSelection.add(datasetId);
+        }
+        return newSelection;
+      });
+    },
+    [datasets]
+  );
 
   const handleApplyDatasets = useCallback(() => {
     const [firstSelection] = Array.from(selectedDatasets);
@@ -165,7 +163,10 @@ export function SideButtons({
         return new Set([fallback]);
       }
 
-      if (validIds.length === prev.size && validIds.every((id) => prev.has(id))) {
+      if (
+        validIds.length === prev.size &&
+        validIds.every((id) => prev.has(id))
+      ) {
         return prev;
       }
 
@@ -295,7 +296,6 @@ export function SideButtons({
               onSelect={handleDateSelect}
               month={selectedDate}
               onMonthChange={(newMonth) => {
-                // When year/month dropdown changes, update the date to the first of that month
                 const newDate = new Date(
                   newMonth.getFullYear(),
                   newMonth.getMonth(),
@@ -304,6 +304,15 @@ export function SideButtons({
                 onDateChange(newDate);
                 closeCalendar();
               }}
+              // Add date range restrictions
+              disabled={(date) => {
+                if (!currentDataset) return false;
+                const start = currentDataset.startDate;
+                const end = currentDataset.endDate;
+                return date < start || date > end;
+              }}
+              fromDate={currentDataset?.startDate}
+              toDate={currentDataset?.endDate}
               className="rounded-md border shadow-sm lg:h-[300px] lg:w-[250px]"
               captionLayout="dropdown"
             />
