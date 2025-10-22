@@ -1,48 +1,50 @@
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+import * as fs from "fs";
+import { randomUUID } from "crypto";
 import { db } from "./index";
 import { climateDataset } from "./schema";
-import { randomUUID } from "crypto";
-import * as fs from "fs";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 async function seedDatasets() {
   console.log("🌱 Reading metadata.csv...");
 
-  // Read the CSV file
-  const csvContent = fs.readFileSync("./metadata.csv", "utf-8");
-  
-  // Split into lines and get headers
-  const lines = csvContent.trim().split('\n');
-  const headers = lines[0].split(',').map(h => h.trim());
-  
+  // Absolute path to the CSV
+  const csvPath = join(__dirname, "metadata.csv");
+  const csvContent = fs.readFileSync(csvPath, "utf-8");
+
+  const lines = csvContent.trim().split("\n");
+  const headers = lines[0].split(",").map(h => h.trim());
+
   console.log(`📊 Found ${lines.length - 1} datasets to import`);
 
-  // Parse each data row
   const datasets = lines.slice(1).map(line => {
-    // Simple CSV parsing (handles quoted fields)
     const values: string[] = [];
-    let current = '';
+    let current = "";
     let inQuotes = false;
-    
+
+    // Manual CSV parsing to handle quoted commas
     for (let i = 0; i < line.length; i++) {
       const char = line[i];
-      
       if (char === '"') {
         inQuotes = !inQuotes;
-      } else if (char === ',' && !inQuotes) {
+      } else if (char === "," && !inQuotes) {
         values.push(current.trim());
-        current = '';
+        current = "";
       } else {
         current += char;
       }
     }
-    values.push(current.trim()); // Add last value
-    
-    // Create object from headers and values
-    const row: any = {};
-    headers.forEach((header, index) => {
-      row[header] = values[index] || '';
+    values.push(current.trim());
+
+    const row: Record<string, string> = {};
+    headers.forEach((header, i) => {
+      row[header] = values[i] || "";
     });
-    
-    // Transform to match schema
+
+    // Map CSV columns to your schema exactly
     return {
       id: randomUUID(),
       sourceName: row.sourceName,
@@ -53,7 +55,7 @@ async function seedDatasets() {
       levels: row.levels,
       levelValues: row.levelValues === "None" ? null : row.levelValues,
       levelUnits: row.levelUnits === "None" ? null : row.levelUnits,
-      stored: row.Stored, // Note: Capital S in CSV
+      Stored: row.Stored, // Capital S to match CSV header
       inputFile: row.inputFile,
       keyVariable: row.keyVariable,
       units: row.units,
@@ -63,16 +65,17 @@ async function seedDatasets() {
       origLocation: row.origLocation,
       startDate: row.startDate,
       endDate: row.endDate,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
   });
 
   try {
     console.log("💾 Inserting datasets into database...");
     await db.insert(climateDataset).values(datasets);
-    console.log(`✅ Successfully seeded ${datasets.length} climate datasets`);
+    console.log(`✅ Successfully seeded ${datasets.length} datasets`);
   } catch (error) {
     console.error("❌ Error seeding datasets:", error);
-    throw error;
   }
 
   process.exit(0);
