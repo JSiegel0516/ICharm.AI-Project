@@ -96,7 +96,7 @@ export const climateDataset = pgTable("metadata", {
   levels: text("levels").notNull(),
   levelValues: text("levelValues"), // nullable - can be "None"
   levelUnits: text("levelUnits"), // nullable - can be "None"
-  stored: text("Stored").notNull(), // "local" or "cloud"
+  Stored: text("Stored").notNull(), // "local" or "cloud" (capital S to match CSV)
   inputFile: text("inputFile").notNull(),
   keyVariable: text("keyVariable").notNull(),
   units: text("units").notNull(),
