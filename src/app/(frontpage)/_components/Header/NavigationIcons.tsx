@@ -117,7 +117,7 @@ const NavigationIcons: React.FC = () => {
           id="time-series-button"
         >
           <Link
-            href="/timeseries"
+            href="/dashboard/timeseries"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center justify-center"

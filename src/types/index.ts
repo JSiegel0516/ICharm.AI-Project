@@ -19,6 +19,12 @@ export interface DatasetBackendDetails {
   origLocation: string | null;
   startDate: string | null;
   endDate: string | null;
+  supportsRaster?: boolean;
+  colorMap?: string | null;
+  valueRange?: {
+    min?: number | null;
+    max?: number | null;
+  };
 }
 
 export interface Dataset {
@@ -30,6 +36,7 @@ export interface Dataset {
   dataType: 'temperature' | 'precipitation' | 'wind' | 'pressure' | 'humidity';
   temporalResolution: 'hourly' | 'daily' | 'monthly' | 'yearly';
   backend?: DatasetBackendDetails;
+  raster?: DatasetRasterConfig;
 }
 
 export interface ControlPanelProps {
@@ -41,6 +48,15 @@ export interface ColorScale {
   max: number;
   colors: string[];
   labels: string[];
+}
+
+export interface DatasetRasterConfig {
+  supportsRaster: boolean;
+  colorMap?: string | null;
+  valueRange?: {
+    min?: number | null;
+    max?: number | null;
+  };
 }
 
 export interface ChatMessage {

@@ -10,6 +10,7 @@ export const mockDatasets: Dataset[] = [
     dataType: 'temperature',
     temporalResolution: 'monthly',
     colorScale: cloneColorScale(DEFAULT_COLOR_SCALES.temperature),
+    raster: { supportsRaster: false },
   },
   {
     id: 'precipitation-monthly',
@@ -19,6 +20,7 @@ export const mockDatasets: Dataset[] = [
     dataType: 'precipitation',
     temporalResolution: 'monthly',
     colorScale: cloneColorScale(DEFAULT_COLOR_SCALES.precipitation),
+    raster: { supportsRaster: false },
   },
   {
     id: 'sea-surface-temp',
@@ -28,6 +30,7 @@ export const mockDatasets: Dataset[] = [
     dataType: 'temperature',
     temporalResolution: 'daily',
     colorScale: cloneColorScale(DEFAULT_COLOR_SCALES.temperature),
+    raster: { supportsRaster: false },
   },
 ];
 

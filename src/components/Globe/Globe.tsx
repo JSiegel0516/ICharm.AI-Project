@@ -7,20 +7,14 @@ import React, {
   useImperativeHandle,
   forwardRef,
 } from 'react';
-
-// Type definitions
-interface RegionData {
-  name: string;
-  precipitation: number;
-  temperature: number;
-  dataset: string;
-}
+import type { Dataset, RegionData } from '@/types';
+import { useRasterLayer } from '@/hooks/useRasterLayer';
+import type { RasterLayerData } from '@/hooks/useRasterLayer';
 
 interface GlobeProps {
-  currentDataset?: {
-    name: string;
-    description?: string;
-  };
+  currentDataset?: Dataset;
+  selectedDate?: Date;
+  selectedLevel?: number | null;
   onRegionClick?: (
     latitude: number,
     longitude: number,
@@ -223,13 +217,22 @@ const addGeographicBoundaries = (
 };
 
 const Globe = forwardRef<GlobeRef, GlobeProps>(
-  ({ currentDataset, onRegionClick }, ref) => {
+  ({ currentDataset, onRegionClick, selectedDate, selectedLevel }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const viewerRef = useRef<any>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const currentMarkerRef = useRef<any>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
+
+    const [cesiumInstance, setCesiumInstance] = useState<any>(null);
+    const rasterLayerRef = useRef<any>(null);
+    const rasterDataRef = useRef<RasterLayerData | undefined>(undefined);
+    const rasterState = useRasterLayer({
+      dataset: currentDataset,
+      date: selectedDate,
+      level: selectedLevel ?? null,
+    });
 
     const clearMarker = () => {
       if (
@@ -349,6 +352,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
           console.log('Loading Cesium from CDN...');
           const Cesium = await loadCesiumFromCDN();
+        setCesiumInstance(Cesium);
 
           console.log('Creating self-hosted Cesium viewer...');
 
@@ -411,11 +415,14 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
                 addClickMarker(Cesium, latitude, longitude);
 
                 if (onRegionClick) {
+                  const rasterValue = rasterDataRef.current?.sampleValue(latitude, longitude);
+                  const units = rasterDataRef.current?.units ?? currentDataset?.units ?? 'units';
                   const regionData: RegionData = {
                     name: `${latitude.toFixed(2)}°, ${longitude.toFixed(2)}°`,
-                    precipitation: Math.random() * 100,
+                    precipitation: rasterValue ?? Math.random() * 100,
                     temperature: -20 + Math.random() * 60,
                     dataset: currentDataset?.name || 'Sample Dataset',
+                    unit: units,
                   };
 
                   onRegionClick(latitude, longitude, regionData);
@@ -485,12 +492,71 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     useEffect(() => {
       return () => {
         if (viewerRef.current && !viewerRef.current.isDestroyed()) {
+          if (rasterLayerRef.current) {
+            try {
+              viewerRef.current.scene.imageryLayers.remove(rasterLayerRef.current, true);
+            } catch (err) {
+              console.warn('Failed to remove raster layer during cleanup', err);
+            }
+            rasterLayerRef.current = null;
+          }
           clearMarker();
           viewerRef.current.destroy();
           viewerRef.current = null;
         }
       };
     }, []);
+
+    useEffect(() => {
+      if (rasterState.error) {
+        console.warn('Raster pipeline error', rasterState.error);
+      }
+    }, [rasterState.error]);
+
+    useEffect(() => {
+      if (!viewerRef.current || !cesiumInstance) {
+        return;
+      }
+
+      const viewer = viewerRef.current;
+
+      if (rasterLayerRef.current) {
+        try {
+          viewer.scene.imageryLayers.remove(rasterLayerRef.current, true);
+        } catch (err) {
+          console.warn('Failed to remove raster layer', err);
+        }
+        rasterLayerRef.current = null;
+      }
+
+      if (!rasterState.data) {
+        return;
+      }
+
+      const provider = new cesiumInstance.SingleTileImageryProvider({
+        url: rasterState.data.imageUrl,
+        rectangle: cesiumInstance.Rectangle.fromDegrees(
+          rasterState.data.rectangle.west,
+          rasterState.data.rectangle.south,
+          rasterState.data.rectangle.east,
+          rasterState.data.rectangle.north
+        ),
+      });
+
+      const layer = viewer.scene.imageryLayers.addImageryProvider(provider);
+      layer.alpha = 0.9;
+      rasterLayerRef.current = layer;
+
+      return () => {
+        if (viewer && !viewer.isDestroyed() && layer) {
+          viewer.scene.imageryLayers.remove(layer, true);
+        }
+      };
+    }, [cesiumInstance, rasterState.data]);
+
+    useEffect(() => {
+      rasterDataRef.current = rasterState.data;
+    }, [rasterState.data]);
 
     if (error) {
       return (

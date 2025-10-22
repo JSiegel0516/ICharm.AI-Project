@@ -19,6 +19,8 @@ const ColorBar: React.FC<ColorBarProps> = ({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [previousPosition, setPreviousPosition] = useState({ x: 24, y: 24 });
   const colorBarRef = useRef<HTMLDivElement>(null);
+  const isTemperature = dataset.dataType === 'temperature';
+
 
   const celsiusToFahrenheit = (celsius: number) => {
     return Math.round((celsius * 9) / 5 + 32);
@@ -38,7 +40,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
   const numericLabels = getNumericLabels();
 
   const getDisplayLabels = () => {
-    if (unit === 'fahrenheit') {
+    if (isTemperature && unit === 'fahrenheit') {
       return numericLabels.map((celsius) =>
         celsiusToFahrenheit(celsius).toString()
       );
@@ -47,11 +49,14 @@ const ColorBar: React.FC<ColorBarProps> = ({
   };
 
   const getUnitSymbol = () => {
-    return unit === 'celsius' ? '°C' : '°F';
+    if (isTemperature) {
+      return unit === 'celsius' ? '°C' : '°F';
+    }
+    return dataset.units ?? 'units';
   };
 
   const handleUnitChange = (newUnit: TemperatureUnit) => {
-    if (onUnitChange) {
+    if (isTemperature && onUnitChange) {
       onUnitChange(newUnit);
     }
     setShowDropdown(false);
@@ -288,42 +293,46 @@ const ColorBar: React.FC<ColorBarProps> = ({
           </div>
 
           <div className="relative mb-12 mt-2">
-            <button
-              onClick={handleDropdownToggle}
-              className="flex w-full items-center justify-between text-sm font-medium text-blue-200 transition-colors hover:text-white focus:outline-none"
-              type="button"
-            >
-              <span>Unit of measurement</span>
-              <ChevronDown
-                className={`h-4 w-4 transition-transform ${showDropdown ? 'rotate-180' : ''}`}
-              />
-            </button>
+            {isTemperature && (
+              <>
+                <button
+                  onClick={handleDropdownToggle}
+                  className="flex w-full items-center justify-between text-sm font-medium text-blue-200 transition-colors hover:text-white focus:outline-none"
+                  type="button"
+                >
+                  <span>Unit of measurement</span>
+                  <ChevronDown
+                    className={`h-4 w-4 transition-transform ${showDropdown ? 'rotate-180' : ''}`}
+                  />
+                </button>
 
-            {showDropdown && !isDragging && (
-              <div className="absolute left-0 top-8 z-50 w-full rounded-md border border-gray-200 bg-white py-1 shadow-lg">
-                <button
-                  onClick={() => handleUnitChange('celsius')}
-                  className={`w-full px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 focus:outline-none ${
-                    unit === 'celsius'
-                      ? 'bg-blue-50 text-blue-600'
-                      : 'text-gray-700'
-                  }`}
-                  type="button"
-                >
-                  Celsius (°C)
-                </button>
-                <button
-                  onClick={() => handleUnitChange('fahrenheit')}
-                  className={`w-full px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 focus:outline-none ${
-                    unit === 'fahrenheit'
-                      ? 'bg-blue-50 text-blue-600'
-                      : 'text-gray-700'
-                  }`}
-                  type="button"
-                >
-                  Fahrenheit (°F)
-                </button>
-              </div>
+                {showDropdown && !isDragging && (
+                  <div className="absolute left-0 top-8 z-50 w-full rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+                    <button
+                      onClick={() => handleUnitChange('celsius')}
+                      className={`w-full px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 focus:outline-none ${
+                        unit === 'celsius'
+                          ? 'bg-blue-50 text-blue-600'
+                          : 'text-gray-700'
+                      }`}
+                      type="button"
+                    >
+                      Celsius (°C)
+                    </button>
+                    <button
+                      onClick={() => handleUnitChange('fahrenheit')}
+                      className={`w-full px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 focus:outline-none ${
+                        unit === 'fahrenheit'
+                          ? 'bg-blue-50 text-blue-600'
+                          : 'text-gray-700'
+                      }`}
+                      type="button"
+                    >
+                      Fahrenheit (°F)
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
 

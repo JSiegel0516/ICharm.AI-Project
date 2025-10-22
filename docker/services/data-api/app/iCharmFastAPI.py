@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 from fastapi import FastAPI, Body, HTTPException
 import xarray as xr
 import pandas as pd
@@ -8,6 +8,7 @@ from scipy.stats import skew, kurtosis
 import s3fs
 from datetime import datetime
 import fsspec
+import base64
 
 app = FastAPI()
 
@@ -178,6 +179,8 @@ def load_dataset(
     engine = row['engine'] if pd.notna(row['engine']) and row['engine'] != 'None' else None
     key_var = row['keyVariable']
     kerchunk_path = row['kerchunkPath'] if pd.notna(row['kerchunkPath']) and row['kerchunkPath'] != 'None' else None
+    storage_options = {"anon": True}
+
     if stored == 'local':
         path = input_file
         if engine == 'zarr':
@@ -195,13 +198,14 @@ def load_dataset(
         if day is not None:
             format_dict['day'] = f"{day:02d}"
         has_template = any(p in input_file for p in ['{year', '{month', '{day'])
+
         if kerchunk_path is not None:
             mapper = fsspec.get_mapper(
                 "reference://",
                 fo=kerchunk_path,
                 target_protocol="file",
                 remote_protocol="s3",
-                remote_options={"anon": True}
+                remote_options=storage_options
             )
             ds = xr.open_zarr(mapper, consolidated=False)
         elif has_template:
@@ -210,35 +214,56 @@ def load_dataset(
             if '{day' in input_file and day is None:
                 from calendar import monthrange
                 _, num_days = monthrange(year, month)
-                das = []
+                datasets: list[xr.Dataset] = []
+                open_file_refs: list[Any] = []
                 for d in range(1, num_days + 1):
                     fd = format_dict.copy()
                     fd['day'] = f"{d:02d}"
                     file_path = input_file.format(**fd)
-                    ds_d = xr.open_dataset(
-                        file_path,
-                        engine=engine,
-                        backend_kwargs={"storage_options": {"anon": True}}
-                    )
-                    das.append(ds_d)
-                ds = xr.concat(das, dim='time')
+                    if engine == 'h5netcdf':
+                        open_file = fsspec.open(file_path, mode='rb', **storage_options)
+                        datasets.append(xr.open_dataset(open_file.open(), engine=engine))
+                        open_file_refs.append(open_file)
+                    else:
+                        open_kwargs: dict[str, Any] = {}
+                        if engine:
+                            open_kwargs['engine'] = engine
+                        open_kwargs['backend_kwargs'] = {'storage_options': storage_options}
+                        datasets.append(xr.open_dataset(file_path, **open_kwargs))
+                ds = xr.concat(datasets, dim='time')
+                if open_file_refs:
+                    ds.attrs['_file_obj'] = open_file_refs
             else:
                 file_path = input_file.format(**format_dict)
-                ds = xr.open_dataset(
-                    file_path,
-                    engine=engine,
-                    backend_kwargs={"storage_options": {"anon": True}}
-                )
+                if engine == 'h5netcdf':
+                    open_file = fsspec.open(file_path, mode='rb', **storage_options)
+                    ds = xr.open_dataset(open_file.open(), engine=engine)
+                    ds.attrs['_file_obj'] = open_file
+                else:
+                    open_kwargs: dict[str, Any] = {}
+                    if engine:
+                        open_kwargs['engine'] = engine
+                    open_kwargs['backend_kwargs'] = {'storage_options': storage_options}
+                    ds = xr.open_dataset(
+                        file_path,
+                        **open_kwargs
+                    )
         else:
             file_path = input_file
             if file_path.endswith('.nc'):
-                ds = xr.open_dataset(
-                    file_path,
-                    engine=engine,
-                    decode_times=True,
-                    use_cftime=True,
-                    backend_kwargs={"storage_options": {"anon": True}}
-                )
+                if engine == 'h5netcdf':
+                    open_file = fsspec.open(file_path, mode='rb', **storage_options)
+                    ds = xr.open_dataset(open_file.open(), engine=engine)
+                    ds.attrs['_file_obj'] = open_file
+                else:
+                    open_kwargs: dict[str, Any] = {'decode_times': True, 'use_cftime': True}
+                    if engine:
+                        open_kwargs['engine'] = engine
+                    open_kwargs['backend_kwargs'] = {'storage_options': storage_options}
+                    ds = xr.open_dataset(
+                        file_path,
+                        **open_kwargs
+                    )
             else:
                 if year is None or month is None:
                     raise ValueError(f"Year and month required for dataset '{dataset_name}'")
@@ -248,14 +273,25 @@ def load_dataset(
                 if not file_urls:
                     raise FileNotFoundError(f"No files found for {year}-{month:02d} in '{dataset_name}'")
                 full_urls = [f"s3://{u}" for u in file_urls]
-                ds = xr.open_mfdataset(
-                    full_urls,
-                    engine=engine,
-                    combine="by_coords",
-                    parallel=True,
-                    chunks={"time": 1},
-                    backend_kwargs={"storage_options": {"anon": True}}
-                )
+                if engine == 'h5netcdf':
+                    open_files = fsspec.open_files(full_urls, mode='rb', **storage_options)
+                    ds = xr.open_mfdataset(
+                        [open_file.open() for open_file in open_files],
+                        engine=engine,
+                        combine="by_coords",
+                        parallel=True,
+                        chunks={'time': 1},
+                    )
+                    ds.attrs['_file_obj'] = open_files
+                else:
+                    mfd_kwargs: dict[str, Any] = {'combine': 'by_coords', 'parallel': True, 'chunks': {'time': 1}}
+                    if engine:
+                        mfd_kwargs['engine'] = engine
+                    mfd_kwargs['backend_kwargs'] = {'storage_options': storage_options}
+                    ds = xr.open_mfdataset(
+                        full_urls,
+                        **mfd_kwargs
+                    )
     if variable and variable in ds.data_vars:
         da = ds[variable]
     else:
@@ -281,6 +317,137 @@ def select_time_safe(da, date_str: str):
     except Exception as e:
         print("Fallback to first timestep due to:", e)
         return da.isel(time=0)
+
+
+def _bool_from_metadata(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"true", "1", "yes", "y"}
+
+def _maybe_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    if np.isnan(result):
+        return None
+    return result
+
+def _find_coord_name(da: xr.DataArray, candidates: List[str]) -> Optional[str]:
+    lowered = [c.lower() for c in candidates]
+    for name in da.coords:
+        if name.lower() in lowered:
+            return name
+    for name in da.dims:
+        if name.lower() in lowered:
+            return name
+    return None
+
+def _transpose_to_lat_lon(da: xr.DataArray) -> Tuple[xr.DataArray, str, str]:
+    lat_dim = next((dim for dim in da.dims if dim.lower() in {"lat", "latitude", "y"}), None)
+    lon_dim = next((dim for dim in da.dims if dim.lower() in {"lon", "longitude", "x"}), None)
+
+    if lat_dim is None:
+        lat_dim = _find_coord_name(da, ["lat", "latitude", "y"])
+    if lon_dim is None:
+        lon_dim = _find_coord_name(da, ["lon", "longitude", "x"])
+
+    if lat_dim is None or lon_dim is None:
+        raise ValueError("Unable to identify latitude/longitude coordinates in dataset.")
+    if lat_dim == lon_dim:
+        raise ValueError("Latitude and longitude dimensions appear to overlap.")
+
+    if list(da.dims) != [lat_dim, lon_dim]:
+        da = da.transpose(lat_dim, lon_dim)
+    return da, lat_dim, lon_dim
+
+def _serialize_raster_array(
+    da: xr.DataArray,
+    row: pd.Series,
+    dataset_name: str,
+) -> Dict[str, Any]:
+    array = da.squeeze()
+    if array.ndim > 2:
+        raise ValueError("Raster slice is not 2-dimensional after selecting time and level.")
+
+    array, lat_dim, lon_dim = _transpose_to_lat_lon(array)
+
+    lat_coord_name = _find_coord_name(array, ["lat", "latitude", "y"]) or lat_dim
+    lon_coord_name = _find_coord_name(array, ["lon", "longitude", "x"]) or lon_dim
+
+    lat_values = np.asarray(array.coords[lat_coord_name].values, dtype=np.float64)
+    lon_values = np.asarray(array.coords[lon_coord_name].values, dtype=np.float64)
+    data = np.asarray(array.values, dtype=np.float32)
+
+    if data.ndim != 2:
+        raise ValueError("Raster slice is not 2-dimensional after selection.")
+
+    if lat_values[0] > lat_values[-1]:
+        lat_values = lat_values[::-1]
+        data = data[::-1, :]
+    if lon_values[0] > lon_values[-1]:
+        lon_values = lon_values[::-1]
+        data = data[:, ::-1]
+
+    finite_mask = np.isfinite(data)
+    data_min = float(data[finite_mask].min()) if finite_mask.any() else None
+    data_max = float(data[finite_mask].max()) if finite_mask.any() else None
+
+    encoded = base64.b64encode(data.tobytes()).decode("ascii")
+
+    meta_min = _maybe_float(row.get("valueMin"))
+    meta_max = _maybe_float(row.get("valueMax"))
+
+    units = (
+        array.attrs.get("units")
+        or row.get("units")
+        or row.get("unit")
+        or "units"
+    )
+
+    return {
+        "dataset": dataset_name,
+        "shape": [int(data.shape[0]), int(data.shape[1])],
+        "lat": lat_values.astype(float).tolist(),
+        "lon": lon_values.astype(float).tolist(),
+        "values": encoded,
+        "dataEncoding": {"format": "base64", "dtype": "float32"},
+        "valueRange": {
+            "min": meta_min if meta_min is not None else data_min,
+            "max": meta_max if meta_max is not None else data_max,
+        },
+        "actualRange": {"min": data_min, "max": data_max},
+        "units": units,
+        "colorMap": row.get("colorMap") if isinstance(row.get("colorMap"), str) and row.get("colorMap") else None,
+        "rectangle": {
+            "west": float(np.min(lon_values)),
+            "south": float(np.min(lat_values)),
+            "east": float(np.max(lon_values)),
+            "north": float(np.max(lat_values)),
+        },
+    }
+
+
+def _coerce_json_value(value: Any) -> Any:
+    if isinstance(value, float):
+        if not np.isfinite(value):
+            return None
+        return float(value)
+    if isinstance(value, (np.floating,)):
+        if not np.isfinite(float(value)):
+            return None
+        return float(value)
+    if isinstance(value, str):
+        return value.replace('°', 'deg').replace('�', '')
+    if pd.isna(value):
+        return None
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    return value
 
 def compute_point_statistics(
     da: xr.DataArray,
@@ -415,12 +582,104 @@ def compute_seasonal_timeseries(
 @app.get("/datasets")
 def get_datasets():
     metadata = load_metadata(METADATA_PATH)
-    cleaned = (
-        metadata
-        .replace([np.inf, -np.inf], np.nan)
-        .where(~metadata.isna(), None)
-    )
-    return cleaned.to_dict(orient='records')
+    cleaned = metadata.replace([np.inf, -np.inf], np.nan)
+    records = cleaned.to_dict(orient='records')
+    sanitized: list[dict[str, Any]] = []
+    for record in records:
+        sanitized.append({key: _coerce_json_value(value) for key, value in record.items()})
+    return sanitized
+
+@app.post("/datasets/raster")
+def get_dataset_raster(payload: Dict[str, Any] = Body(...)):
+    dataset_name = payload.get("dataset_name") or payload.get("datasetName")
+    if not dataset_name:
+        raise HTTPException(status_code=400, detail="dataset_name is required")
+
+    try:
+        row = _get_metadata_row(dataset_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    if not _bool_from_metadata(row.get("supportsRaster")):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Dataset '{dataset_name}' does not expose raster data.",
+        )
+
+    variable = payload.get("variable")
+    year = payload.get("year")
+    month = payload.get("month")
+    day = payload.get("day")
+    level = payload.get("level")
+    date_str = payload.get("date")
+
+    try:
+        da = load_dataset(
+            METADATA_PATH,
+            dataset_name,
+            variable=variable,
+            year=year,
+            month=month,
+            day=day,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to load dataset: {exc}") from exc
+
+    selected_time = None
+    if "time" in da.dims:
+        target_date = None
+        if date_str:
+            target_date = date_str
+        elif year is not None:
+            y = int(year)
+            m = int(month) if month is not None else 1
+            d = int(day) if day is not None else 1
+            target_date = f"{y:04d}-{m:02d}-{d:02d}"
+        if target_date:
+            da = select_time_safe(da, target_date)
+        else:
+            da = da.isel(time=0)
+        times = iso_times_from_coord(da["time"])
+        if times:
+            selected_time = times[0]
+        da = da.squeeze(drop=True)
+
+    selected_level = None
+    if is_multilevel(da):
+        if level is not None:
+            da = da.sel(level=level, method="nearest")
+        else:
+            da = da.isel(level=0)
+        if "level" in da.coords:
+            selected_level = float(np.asarray(da["level"].values).item())
+        elif "plev" in da.coords:
+            selected_level = float(np.asarray(da["plev"].values).item())
+        da = da.squeeze(drop=True)
+
+    try:
+        raster_payload = _serialize_raster_array(da, row, dataset_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    raster_payload["supportsRaster"] = True
+    raster_payload["metadata"] = {
+        "requested": {
+            "year": year,
+            "month": month,
+            "day": day,
+            "date": date_str,
+            "level": level,
+        },
+        "selection": {
+            "time": selected_time,
+            "level": selected_level,
+        },
+        "units": raster_payload.get("units"),
+    }
+    return raster_payload
+
 
 @app.post("/point_timeseries")
 def get_point_timeseries(

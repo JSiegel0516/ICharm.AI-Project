@@ -102,6 +102,8 @@ export default function HomePage() {
         ref={globeRef}
         currentDataset={currentDataset}
         onRegionClick={handleRegionClick}
+        selectedDate={selectedDate}
+        selectedLevel={selectedPressureLevel?.value ?? null}
       />
     ),
     [currentDataset, handleRegionClick]

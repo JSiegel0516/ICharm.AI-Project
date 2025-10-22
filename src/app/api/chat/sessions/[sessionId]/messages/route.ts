@@ -19,6 +19,21 @@ type NormalizedMessage = {
   createdAt: string;
 };
 
+function toISOStringSafe(value: unknown): string {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (typeof value === 'string' || typeof value === 'number') {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toISOString();
+    }
+  }
+
+  return new Date().toISOString();
+}
+
 function normalizeMessage(message: ChatMessage): NormalizedMessage {
   return {
     id: message.id,
@@ -26,9 +41,7 @@ function normalizeMessage(message: ChatMessage): NormalizedMessage {
     role: message.role,
     content: message.content,
     sources: message.sources ?? undefined,
-    createdAt: message.created_at instanceof Date
-      ? message.created_at.toISOString()
-      : new Date(message.created_at).toISOString(),
+    createdAt: toISOStringSafe(message.created_at),
   };
 }
 

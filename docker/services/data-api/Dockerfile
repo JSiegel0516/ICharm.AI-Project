@@ -13,11 +13,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN mkdir -p /app/data /app/datasets
 
-COPY services/data-api/requirements.txt requirements.txt
+COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-COPY services/data-api/app ./app
+
+
+COPY app ./app
 
 EXPOSE 8000
 
