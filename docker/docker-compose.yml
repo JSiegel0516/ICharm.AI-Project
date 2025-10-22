@@ -12,7 +12,7 @@ services:
       - "${ICHARM_DB_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./postgres/init:/docker-entrypoint-initdb.d:ro  # ✅ Relative to docker/
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test:
         - CMD-SHELL
@@ -24,8 +24,8 @@ services:
 
   llm-service:
     build:
-      context: ..                                         # ✅ Go up to project root
-      dockerfile: services/llm-service/Dockerfile         # ✅ Then down to service
+      context: ./services/llm-service      # ✅ Now relative to docker-compose.yml
+      dockerfile: Dockerfile               # ✅ Dockerfile is inside the service folder
     container_name: icharm-llm-service
     restart: unless-stopped
     environment:
@@ -41,14 +41,13 @@ services:
 
   data-api:
     build:
-      context: ..                                         # ✅ Go up to project root
-      dockerfile: services/data-api/Dockerfile            # ✅ Then down to service
+      context: ./services/data-api           # ✅ Now relative to docker-compose.yml
+      dockerfile: Dockerfile                 # ✅ Dockerfile is inside the service folder
     container_name: icharm-data-api
     restart: unless-stopped
     volumes:
-      - ../metadata.csv:/app/metadata.csv:ro             # ✅ Relative paths
-      - ../metadata.csv:/app/data/metadata.csv:ro
-      - ../datasets:/app/datasets:ro
+      - ./metadata.csv:/app/metadata.csv:ro       # ✅ CSV in same folder as docker-compose
+      - ./datasets:/app/datasets:ro
     ports:
       - "${DATA_API_PORT:-8002}:8000"
 
