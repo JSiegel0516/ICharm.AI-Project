@@ -35,17 +35,17 @@ interface SideButtonsProps {
   onShowSidebarPanel: (panel: 'datasets' | 'history' | 'about' | null) => void;
 }
 
-const formatDisplayDate = (value?: string | null) => {
+const formatDisplayDate = (value?: string | null | Date) => {
   if (!value) {
     return 'Unknown';
   }
 
-  const parsed = new Date(value);
+  const parsed = value instanceof Date ? value : new Date(value);
   if (!Number.isNaN(parsed.getTime())) {
     return parsed.toISOString().split('T')[0];
   }
 
-  return value;
+  return String(value);
 };
 
 export function SideButtons({
@@ -63,10 +63,25 @@ export function SideButtons({
   const [selectedDatasets, setSelectedDatasets] = useState<Set<string>>(() =>
     currentDataset ? new Set([currentDataset.id]) : new Set()
   );
+  const [calendarMonth, setCalendarMonth] = useState(selectedDate);
 
   // Refs for click-outside detection
   const calendarRef = useRef<HTMLDivElement>(null);
   const datasetCardRef = useRef<HTMLDivElement>(null);
+
+  // Get date range from current dataset
+  const dateRange = useMemo(() => {
+    if (!currentDataset) {
+      return {
+        minDate: new Date(1979, 0, 1),
+        maxDate: new Date(),
+      };
+    }
+    return {
+      minDate: currentDataset.startDate,
+      maxDate: currentDataset.endDate,
+    };
+  }, [currentDataset]);
 
   // Event Handlers
   const toggleMenu = useCallback(() => setIsExpanded((prev) => !prev), []);
@@ -94,7 +109,8 @@ export function SideButtons({
 
   const handleCalendarClick = useCallback(() => {
     setShowCalendar(true);
-  }, []);
+    setCalendarMonth(selectedDate);
+  }, [selectedDate]);
 
   const closeCalendar = useCallback(() => {
     setShowCalendar(false);
@@ -130,18 +146,45 @@ export function SideButtons({
       const dataset = datasets.find((item) => item.id === firstSelection);
       if (dataset) {
         setCurrentDataset(dataset);
+
+        // Clamp selected date to new dataset's range
+        let newDate = selectedDate;
+        if (selectedDate < dataset.startDate) {
+          newDate = dataset.startDate;
+        } else if (selectedDate > dataset.endDate) {
+          newDate = dataset.endDate;
+        }
+
+        if (newDate !== selectedDate) {
+          onDateChange(newDate);
+        }
       }
     }
     closeDatasetCard();
-  }, [selectedDatasets, datasets, setCurrentDataset, closeDatasetCard]);
+  }, [
+    selectedDatasets,
+    datasets,
+    setCurrentDataset,
+    closeDatasetCard,
+    selectedDate,
+    onDateChange,
+  ]);
 
   const handleDateSelect = useCallback(
     (date: Date | undefined) => {
       if (date) {
+        // Clamp date to valid range
+        let clampedDate = date;
+        if (date < dateRange.minDate) {
+          clampedDate = dateRange.minDate;
+        } else if (date > dateRange.maxDate) {
+          clampedDate = dateRange.maxDate;
+        }
+
         const newDate = new Date(
-          date.getFullYear(),
-          date.getMonth(),
-          date.getDate(),
+          clampedDate.getFullYear(),
+          clampedDate.getMonth(),
+          clampedDate.getDate(),
           selectedDate.getHours(),
           selectedDate.getMinutes(),
           selectedDate.getSeconds()
@@ -150,8 +193,12 @@ export function SideButtons({
         closeCalendar();
       }
     },
-    [selectedDate, onDateChange, closeCalendar]
+    [selectedDate, onDateChange, closeCalendar, dateRange]
   );
+
+  const handleMonthChange = useCallback((newMonth: Date) => {
+    setCalendarMonth(newMonth);
+  }, []);
 
   // Click-outside handler
   useEffect(() => {
@@ -177,6 +224,13 @@ export function SideButtons({
       };
     }
   }, [showCalendar, showDatasetCard, closeCalendar, closeDatasetCard]);
+
+  // Sync calendar month with selected date when calendar opens
+  useEffect(() => {
+    if (showCalendar) {
+      setCalendarMonth(selectedDate);
+    }
+  }, [showCalendar, selectedDate]);
 
   useEffect(() => {
     if (!datasets.length) {
@@ -354,7 +408,6 @@ export function SideButtons({
           </motion.div>
         )}
       </AnimatePresence>
-
       {/* Dataset Selection Card */}
       <AnimatePresence>
         {showDatasetCard && (
@@ -380,7 +433,7 @@ export function SideButtons({
               </CardHeader>
               <CardContent className="max-h-96 space-y-3 overflow-y-auto">
                 {isLoading && (
-                  <div className="rounded border border-slate-600 bg-slate-800/50 p-3 text-sm text-slate-300">
+                  <div className="rounded border border-neutral-600 bg-neutral-800/50 p-3 text-sm text-slate-300">
                     Loading datasets...
                   </div>
                 )}
@@ -411,8 +464,8 @@ export function SideButtons({
                       key={dataset.id}
                       className={`cursor-pointer rounded-lg border p-3 transition-all ${
                         isSelected
-                          ? 'border-slate-300/50 bg-slate-300/20'
-                          : 'border-slate-600 bg-slate-700/50 hover:bg-slate-700/70'
+                          ? 'border-neutral-300/50 bg-neutral-300/20'
+                          : 'border-neutral-600 bg-neutral-700/50 hover:bg-neutral-700/70'
                       }`}
                       onClick={() => toggleDatasetSelection(dataset.id)}
                     >
