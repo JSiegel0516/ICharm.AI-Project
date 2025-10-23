@@ -213,13 +213,14 @@ def _extend_latitude_coverage(
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Extend latitude coverage to include poles by adding extra rows
+    NOTE: Extended polar rows are marked as INVALID in the mask to remain transparent
     """
     lat_min = lat_values.min()
     lat_max = lat_values.max()
     
     # Check if we need to extend to poles
-    needs_south_pole = lat_min > -90
-    needs_north_pole = lat_max < 90
+    needs_south_pole = lat_min > -89  # Leave 1 degree buffer
+    needs_north_pole = lat_max < 89   # Leave 1 degree buffer
     
     if not needs_south_pole and not needs_north_pole:
         return data, mask, lat_values
@@ -230,35 +231,32 @@ def _extend_latitude_coverage(
     extended_mask = []
     extended_lat = []
     
-    # Add south pole rows if needed
+    # Add south pole rows if needed - but mark as INVALID
     if needs_south_pole:
-        # Find first valid row
-        valid_rows = np.where(mask.any(axis=1))[0]
-        if valid_rows.size > 0:
-            first_valid_row = valid_rows[0]
-            # Add 10 rows at south pole with first valid data
-            for i in range(10):
-                lat_val = -90 + i * (lat_min + 90) / 10
-                extended_lat.append(lat_val)
-                extended_data.append(data[first_valid_row, :])
-                extended_mask.append(mask[first_valid_row, :])
+        # Add 10 transparent rows at south pole
+        for i in range(10):
+            lat_val = -90 + i * (lat_min + 90) / 10
+            extended_lat.append(lat_val)
+            # Use zeros for data, False for mask (will be transparent)
+            extended_data.append(np.zeros(data.shape[1], dtype=data.dtype))
+            extended_mask.append(np.zeros(data.shape[1], dtype=bool))
     
     # Add original data
     extended_lat.extend(lat_values.tolist())
     extended_data.extend([data[i, :] for i in range(data.shape[0])])
     extended_mask.extend([mask[i, :] for i in range(mask.shape[0])])
     
-    # Add north pole rows if needed
+    # Add north pole rows if needed - but mark as INVALID
     if needs_north_pole:
-        valid_rows = np.where(mask.any(axis=1))[0]
-        if valid_rows.size > 0:
-            last_valid_row = valid_rows[-1]
-            # Add 10 rows at north pole with last valid data
-            for i in range(1, 11):
-                lat_val = lat_max + i * (90 - lat_max) / 10
-                extended_lat.append(lat_val)
-                extended_data.append(data[last_valid_row, :])
-                extended_mask.append(mask[last_valid_row, :])
+        # Add 10 transparent rows at north pole
+        for i in range(1, 11):
+            lat_val = lat_max + i * (90 - lat_max) / 10
+            extended_lat.append(lat_val)
+            # Use zeros for data, False for mask (will be transparent)
+            extended_data.append(np.zeros(data.shape[1], dtype=data.dtype))
+            extended_mask.append(np.zeros(data.shape[1], dtype=bool))
+    
+    print(f"[RasterViz] Added transparent polar extension rows (not filled with data)")
     
     return (
         np.array(extended_data, dtype=data.dtype),
@@ -336,6 +334,13 @@ def _generate_textures(
     
     print(f"[RasterViz] Value range for color mapping: {vmin} to {vmax}")
     print(f"[RasterViz] Actual data range: {computed_min} to {computed_max}")
+    print(f"[RasterViz] Palette size: {len(palette)}")
+    
+    # Show what the palette looks like at key points
+    if len(palette) > 0:
+        print(f"[RasterViz] Palette color at index 0 (min): {palette[0]}")
+        print(f"[RasterViz] Palette color at index {len(palette)//2} (mid): {palette[len(palette)//2]}")
+        print(f"[RasterViz] Palette color at index {len(palette)-1} (max): {palette[-1]}")
     
     if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
         vmin = computed_min if np.isfinite(computed_min) else 0.0
@@ -344,28 +349,38 @@ def _generate_textures(
             vmax = vmin + 1.0
 
     # Vectorized color mapping for better accuracy
-    # Create normalized values for ALL pixels (will mask later)
-    norm = np.clip((upsampled - vmin) / max(vmax - vmin, 1e-9), 0.0, 1.0)
+    # Initialize RGBA with transparent pixels
+    rgba = np.zeros(upsampled.shape + (4,), dtype=np.uint8)
     
-    # Map to palette indices using float precision then convert
-    palette_indices = (norm * (len(palette) - 1)).astype(np.int32)
-    palette_indices = np.clip(palette_indices, 0, len(palette) - 1)
+    # Only process valid data points
+    valid_mask = mask_result & np.isfinite(upsampled)
     
-    # Apply palette to get RGBA
-    rgba = palette[palette_indices]
+    if valid_mask.any():
+        # Get valid data values
+        valid_values = upsampled[valid_mask]
+        
+        # Normalize only valid values
+        norm_values = np.clip((valid_values - vmin) / max(vmax - vmin, 1e-9), 0.0, 1.0)
+        
+        # Map to palette indices
+        palette_indices = (norm_values * (len(palette) - 1)).astype(np.int32)
+        palette_indices = np.clip(palette_indices, 0, len(palette) - 1)
+        
+        # Apply palette only to valid pixels
+        rgba[valid_mask] = palette[palette_indices]
     
-    # Set non-data areas to transparent
-    rgba[~mask_result] = [0, 0, 0, 0]
+    # Explicitly ensure all invalid areas are fully transparent
+    rgba[~valid_mask] = [0, 0, 0, 0]
 
     # Verify a few samples
-    valid_points = np.where(mask_result)
+    valid_points = np.where(valid_mask)
     if len(valid_points[0]) > 0:
         print(f"[RasterViz] Color mapping verification (first 5 valid points):")
         for i in range(min(5, len(valid_points[0]))):
             row, col = valid_points[0][i], valid_points[1][i]
             value = upsampled[row, col]
-            norm_val = norm[row, col]
-            idx = palette_indices[row, col]
+            norm_val = (value - vmin) / max(vmax - vmin, 1e-9)
+            idx = int(np.clip(norm_val * (len(palette) - 1), 0, len(palette) - 1))
             print(f"  Value: {value:.3f} -> Norm: {norm_val:.3f} -> Idx: {idx} -> RGBA: {rgba[row, col]}")
 
     texture_upscale = float(upsampled.shape[1] / max(data.shape[1], 1))
@@ -378,17 +393,51 @@ def _generate_textures(
 
     # Generate SINGLE texture to avoid seams
     print("[RasterViz] Generating single seamless texture")
-    textures.append({
-        "imageUrl": _encode_png(rgba),
-        "rectangle": {
-            "west": float(lon_values[0]),
-            "south": south,
-            "east": float(lon_values[-1]),
-            "north": north,
-        },
-    })
-
-    print(f"[RasterViz] Generated {len(textures)} seamless texture with pole-to-pole coverage")
+    
+    # Check if this is a global dataset (spans ~360 degrees longitude)
+    lon_range = lon_values[-1] - lon_values[0]
+    lon_step = lon_values[1] - lon_values[0] if len(lon_values) > 1 else 1.0
+    is_global = lon_range > 350  # Nearly full globe coverage
+    
+    print(f"[RasterViz] Longitude range: {lon_range:.2f} degrees, step: {lon_step:.2f}")
+    print(f"[RasterViz] Is global dataset: {is_global}")
+    
+    if is_global:
+        # For global datasets, we need to handle the wrap-around at 180°/-180°
+        # Check if data already wraps (last column ~= first column)
+        # If not, we may need to add overlap or adjust the rectangle
+        
+        # Simply extend the rectangle bounds slightly to ensure no gaps
+        west = float(lon_values[0])
+        east = float(lon_values[-1]) + lon_step * 0.1  # Tiny overlap
+        
+        # Clamp to valid range
+        if east > 180:
+            east = 180.0
+        
+        print(f"[RasterViz] Adjusted longitude bounds: [{west}, {east}]")
+        
+        textures.append({
+            "imageUrl": _encode_png(rgba),
+            "rectangle": {
+                "west": west,
+                "south": south,
+                "east": east,
+                "north": north,
+            },
+        })
+    else:
+        textures.append({
+            "imageUrl": _encode_png(rgba),
+            "rectangle": {
+                "west": float(lon_values[0]),
+                "south": south,
+                "east": float(lon_values[-1]),
+                "north": north,
+            },
+        })
+    
+    print(f"[RasterViz] Generated {len(textures)} seamless texture(s)")
     return textures, texture_upscale
 
 
