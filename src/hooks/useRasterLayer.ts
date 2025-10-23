@@ -33,6 +33,16 @@ interface RasterApiResponse {
   metadata?: Record<string, unknown>;
 }
 
+export interface RasterTextureLayer {
+  imageUrl: string;
+  rectangle: {
+    west: number;
+    south: number;
+    east: number;
+    north: number;
+  };
+}
+
 export interface RasterLayerData {
   datasetName: string;
   width: number;
@@ -44,9 +54,7 @@ export interface RasterLayerData {
   max: number | null;
   units: string;
   colorMap?: string | null;
-  canvas: HTMLCanvasElement;
-  imageUrl: string;
-  rectangle: RasterApiResponse['rectangle'];
+  textures: RasterTextureLayer[];
   sampleValue: (lat: number, lon: number) => number | null;
   origin: 'prime' | 'prime_shifted';
 }
@@ -127,24 +135,15 @@ function clampIndex(index: number, length: number): number {
   return Math.max(0, Math.min(length - 1, index));
 }
 
-function createCanvasFromData(
+function buildImageData(
   width: number,
   height: number,
   data: Float32Array,
   min: number | null,
   max: number | null,
   colorMapName?: string | null,
-): { canvas: HTMLCanvasElement; imageUrl: string } {
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext('2d');
-  if (!context) {
-    throw new Error('Unable to acquire 2D context for raster rendering.');
-  }
-
-  const imageData = context.createImageData(width, height);
-  const pixels = imageData.data;
+): ImageData {
+  const pixels = new Uint8ClampedArray(width * height * 4);
   const lut = getColormap(colorMapName);
   const lutLength = lut.length / 4;
 
@@ -181,9 +180,25 @@ function createCanvasFromData(
     }
   }
 
-  context.putImageData(imageData, 0, 0);
-  const imageUrl = canvas.toDataURL('image/png');
-  return { canvas, imageUrl };
+  return new ImageData(pixels, width, height);
+}
+
+function createTextureSlice(
+  source: ImageData,
+  startColumn: number,
+  endColumn: number,
+): { imageUrl: string; width: number; height: number } {
+  const sliceWidth = endColumn - startColumn;
+  const canvas = document.createElement('canvas');
+  canvas.width = sliceWidth;
+  canvas.height = source.height;
+  const context = canvas.getContext('2d');
+  if (!context) {
+    throw new Error('Unable to acquire 2D context for raster rendering.');
+  }
+  context.imageSmoothingEnabled = false;
+  context.putImageData(source, -startColumn, 0);
+  return { imageUrl: canvas.toDataURL('image/png'), width: sliceWidth, height: source.height };
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -293,7 +308,7 @@ export function useRasterLayer({ dataset, date, level }: UseRasterLayerOptions):
         const min = payload.valueRange?.min ?? payload.actualRange?.min ?? null;
         const max = payload.valueRange?.max ?? payload.actualRange?.max ?? null;
 
-        const { canvas, imageUrl } = createCanvasFromData(
+        const imageData = buildImageData(
           width,
           height,
           values,
@@ -304,6 +319,40 @@ export function useRasterLayer({ dataset, date, level }: UseRasterLayerOptions):
 
         const sampled = createSampler(payload.lat, payload.lon, values, width, height);
         const origin = payload.rectangle?.origin === 'prime_shifted' ? 'prime_shifted' : 'prime';
+
+        const south = payload.rectangle?.south ?? Math.min(...payload.lat);
+        const north = payload.rectangle?.north ?? Math.max(...payload.lat);
+        const textures: RasterTextureLayer[] = [];
+
+        const addTexture = (startCol: number, endCol: number, west: number, east: number) => {
+          const slice = createTextureSlice(imageData, startCol, endCol);
+          textures.push({
+            imageUrl: slice.imageUrl,
+            rectangle: {
+              west,
+              east,
+              south,
+              north,
+            },
+          });
+        };
+
+        if (origin === 'prime_shifted') {
+          const splitIndex = payload.lon.findIndex((lonValue) => lonValue >= 0);
+          if (splitIndex > 0 && splitIndex < width) {
+            addTexture(0, splitIndex, payload.lon[0], payload.lon[splitIndex - 1]);
+            addTexture(splitIndex, width, payload.lon[splitIndex], payload.lon[payload.lon.length - 1]);
+          } else {
+            addTexture(0, width, payload.rectangle?.west ?? payload.lon[0], payload.rectangle?.east ?? payload.lon[payload.lon.length - 1]);
+          }
+        } else {
+          addTexture(
+            0,
+            width,
+            payload.rectangle?.west ?? payload.lon[0],
+            payload.rectangle?.east ?? payload.lon[payload.lon.length - 1],
+          );
+        }
 
         setState({
           loading: false,
@@ -319,9 +368,7 @@ export function useRasterLayer({ dataset, date, level }: UseRasterLayerOptions):
             max,
             units: payload.units ?? dataset.units,
             colorMap: payload.colorMap ?? dataset.backend?.colorMap ?? null,
-            canvas,
-            imageUrl,
-            rectangle: payload.rectangle,
+            textures,
             sampleValue: sampled,
             origin,
           },

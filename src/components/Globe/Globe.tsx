@@ -105,19 +105,24 @@ const addGeographicBoundaries = (
     console.log(`Processing ${name}, type: ${data.type}`);
 
     if (data.type === 'FeatureCollection' && data.features) {
-      let color = Cesium.Color.BLACK.withAlpha(1.0);
+      let color = Cesium.Color.fromCssColorString('#f8fafc').withAlpha(0.8);
       let width = 2;
 
       if (name.includes('coastline')) {
         width = 3;
+        color = Cesium.Color.fromCssColorString('#e2e8f0').withAlpha(0.85);
       } else if (name.includes('geographic_lines')) {
         width = 2;
+        color = Cesium.Color.fromCssColorString('#94a3b8').withAlpha(0.6);
       } else if (name.includes('lakes')) {
         width = 2;
+        color = Cesium.Color.fromCssColorString('#cbd5f5').withAlpha(0.7);
       } else if (name.includes('rivers')) {
         width = 2;
+        color = Cesium.Color.fromCssColorString('#94a3b8').withAlpha(0.55);
       } else if (name.includes('time_zones')) {
         width = 1.5;
+        color = Cesium.Color.fromCssColorString('#64748b').withAlpha(0.5);
       }
 
       data.features.forEach((feature: any) => {
@@ -226,7 +231,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     const [cesiumInstance, setCesiumInstance] = useState<any>(null);
-    const rasterLayerRef = useRef<any>(null);
+    const rasterLayerRef = useRef<any[]>([]);
     const rasterDataRef = useRef<RasterLayerData | undefined>(undefined);
     const rasterState = useRasterLayer({
       dataset: currentDataset,
@@ -371,13 +376,43 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             imageryProvider: false,
           });
 
-          const usgsProvider = new Cesium.ArcGisMapServerImageryProvider({
-            url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer',
-            credit: 'USGS National Map',
-          });
-          viewer.imageryLayers.addImageryProvider(usgsProvider);
+          const oceanMaterial = new Cesium.Material({
+            fabric: {
+              type: 'ICharmOcean',
+              uniforms: {
+                deepColor: Cesium.Color.fromCssColorString('#063a6b'),
+                polarColor: Cesium.Color.fromCssColorString('#4a90e2'),
+                horizonColor: Cesium.Color.fromCssColorString('#2c65c8'),
+                horizonIntensity: 0.35,
+              },
+              source: `
+              czm_material czm_getMaterial(czm_materialInput input)
+              {
+                czm_material material = czm_getDefaultMaterial(input);
+                vec3 normal = normalize(input.normalEC);
 
+                float lat = abs(input.st.t - 0.5) * 2.0;
+                lat = clamp(lat, 0.0, 1.0);
+                vec3 base = mix(deepColor.rgb, polarColor.rgb, smoothstep(0.0, 1.0, lat));
+
+                vec3 viewDir = normalize(-input.positionToEyeEC);
+                float fresnel = pow(1.0 - clamp(dot(normal, viewDir), 0.0, 1.0), 2.0);
+                vec3 color = mix(base, horizonColor.rgb, fresnel * horizonIntensity);
+                color = clamp(color, 0.0, 1.0);
+
+                material.diffuse = color;
+                material.emission = color * 0.04;
+                material.alpha = 1.0;
+                return material;
+              }
+            `,
+            },
+          });
+
+          viewer.scene.globe.material = oceanMaterial;
           viewer.scene.globe.enableLighting = false;
+          viewer.scene.globe.dynamicAtmosphereLighting = false;
+          viewer.scene.globe.dynamicAtmosphereLightingFromSun = false;
           viewer.scene.globe.showGroundAtmosphere = true;
           viewer.scene.backgroundColor = Cesium.Color.TRANSPARENT;
           viewer.scene.skyBox.show = true;
@@ -492,13 +527,15 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     useEffect(() => {
       return () => {
         if (viewerRef.current && !viewerRef.current.isDestroyed()) {
-          if (rasterLayerRef.current) {
-            try {
-              viewerRef.current.scene.imageryLayers.remove(rasterLayerRef.current, true);
-            } catch (err) {
-              console.warn('Failed to remove raster layer during cleanup', err);
-            }
-            rasterLayerRef.current = null;
+          if (rasterLayerRef.current.length) {
+            rasterLayerRef.current.forEach((layer) => {
+              try {
+                viewerRef.current.scene.imageryLayers.remove(layer, true);
+              } catch (err) {
+                console.warn('Failed to remove raster layer during cleanup', err);
+              }
+            });
+            rasterLayerRef.current = [];
           }
           clearMarker();
           viewerRef.current.destroy();
@@ -520,36 +557,48 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
       const viewer = viewerRef.current;
 
-      if (rasterLayerRef.current) {
-        try {
-          viewer.scene.imageryLayers.remove(rasterLayerRef.current, true);
-        } catch (err) {
-          console.warn('Failed to remove raster layer', err);
-        }
-        rasterLayerRef.current = null;
+      if (rasterLayerRef.current.length) {
+        rasterLayerRef.current.forEach((layer) => {
+          try {
+            viewer.scene.imageryLayers.remove(layer, true);
+          } catch (err) {
+            console.warn('Failed to remove raster layer', err);
+          }
+        });
+        rasterLayerRef.current = [];
       }
 
       if (!rasterState.data) {
         return;
       }
 
-      const provider = new cesiumInstance.SingleTileImageryProvider({
-        url: rasterState.data.imageUrl,
-        rectangle: cesiumInstance.Rectangle.fromDegrees(
-          rasterState.data.rectangle.west,
-          rasterState.data.rectangle.south,
-          rasterState.data.rectangle.east,
-          rasterState.data.rectangle.north
-        ),
-      });
+      const newLayers: any[] = [];
+      rasterState.data.textures.forEach((texture) => {
+        const provider = new cesiumInstance.SingleTileImageryProvider({
+          url: texture.imageUrl,
+          rectangle: cesiumInstance.Rectangle.fromDegrees(
+            texture.rectangle.west,
+            texture.rectangle.south,
+            texture.rectangle.east,
+            texture.rectangle.north
+          ),
+        });
 
-      const layer = viewer.scene.imageryLayers.addImageryProvider(provider);
-      layer.alpha = 0.9;
-      rasterLayerRef.current = layer;
+        const layer = viewer.scene.imageryLayers.addImageryProvider(provider);
+        layer.alpha = 0.9;
+        newLayers.push(layer);
+      });
+      rasterLayerRef.current = newLayers;
 
       return () => {
-        if (viewer && !viewer.isDestroyed() && layer) {
-          viewer.scene.imageryLayers.remove(layer, true);
+        if (viewer && !viewer.isDestroyed()) {
+          newLayers.forEach((layer) => {
+            try {
+              viewer.scene.imageryLayers.remove(layer, true);
+            } catch (err) {
+              console.warn('Failed to remove raster texture layer', err);
+            }
+          });
         }
       };
     }, [cesiumInstance, rasterState.data]);
