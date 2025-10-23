@@ -53,16 +53,15 @@ Install Docker before attempting to run the database
    ```
 2. Start the database (and optional services):
 
-   ```
-   docker compose -f docker/docker-compose.yml up -d
+   ```bash
+   docker compose -f docker/docker-compose.yml --project-directory . up -d db data-api llm-service
+   docker compose -f docker/docker-compose.yml --project-directory . down -v
    ```
 
-   After this, run
+   On first run the container executes `docker/postgres/init/00-init-db.sh`, which creates extensions, tables, triggers, indexes, and a sample `test@example.com` user.
 
-   ```
-   npx drizzle-kit generate && npx drizzle-kit migrate
-   npm run db:seed
-   ```
+   IMPORTANT: This may not work, if not run
+   docker compose exec db bash /docker-entrypoint-initdb.d/00-init-db.sh
 
    in project root to create correct table names in container and seed the metadata table
 
