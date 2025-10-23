@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Dataset } from '@/types';
-import { getColormap } from '@/lib/colormaps';
 
 interface RasterApiResponse {
   dataset: string;
   shape: [number, number];
   lat: number[];
   lon: number[];
-  values: string;
+  values?: string;
   dataEncoding: {
     format: string;
     dtype: string;
@@ -31,6 +30,8 @@ interface RasterApiResponse {
   };
   supportsRaster?: boolean;
   metadata?: Record<string, unknown>;
+  textures?: RasterTextureLayer[];
+  textureScale?: number | null;
 }
 
 export interface RasterTextureLayer {
@@ -55,6 +56,7 @@ export interface RasterLayerData {
   units: string;
   colorMap?: string | null;
   textures: RasterTextureLayer[];
+  textureScale?: number;
   sampleValue: (lat: number, lon: number) => number | null;
   origin: 'prime' | 'prime_shifted';
 }
@@ -135,121 +137,6 @@ function clampIndex(index: number, length: number): number {
   return Math.max(0, Math.min(length - 1, index));
 }
 
-function buildImageData(
-  width: number,
-  height: number,
-  data: Float32Array,
-  min: number | null,
-  max: number | null,
-  colorMapName?: string | null,
-): ImageData {
-  const pixels = new Uint8ClampedArray(width * height * 4);
-  const lut = getColormap(colorMapName);
-  const lutLength = lut.length / 4;
-
-  // Better range calculation - compute from actual data if not provided
-  let rangeMin = Number.isFinite(min ?? NaN) ? (min as number) : null;
-  let rangeMax = Number.isFinite(max ?? NaN) ? (max as number) : null;
-  
-  if (rangeMin === null || rangeMax === null) {
-    let dataMin = Infinity;
-    let dataMax = -Infinity;
-    for (let i = 0; i < data.length; i++) {
-      if (Number.isFinite(data[i])) {
-        dataMin = Math.min(dataMin, data[i]);
-        dataMax = Math.max(dataMax, data[i]);
-      }
-    }
-    rangeMin = rangeMin ?? dataMin;
-    rangeMax = rangeMax ?? dataMax;
-    console.log('Computed data range:', { rangeMin, rangeMax });
-  }
-
-  const denominator = rangeMax !== rangeMin ? rangeMax - rangeMin : null;
-
-  for (let row = 0; row < height; row += 1) {
-    const sourceRow = row;
-    // Flip vertically for correct orientation
-    const targetRow = height - 1 - row;
-    
-    for (let col = 0; col < width; col += 1) {
-      const srcIndex = sourceRow * width + col;
-      const destIndex = (targetRow * width + col) * 4;
-      const value = data[srcIndex];
-
-      // Handle invalid/missing data with transparent pixels
-      if (!Number.isFinite(value)) {
-        pixels[destIndex] = 0;     // R
-        pixels[destIndex + 1] = 0; // G
-        pixels[destIndex + 2] = 0; // B
-        pixels[destIndex + 3] = 0; // A - fully transparent
-        continue;
-      }
-
-      // Handle edge case where all values are the same
-      if (denominator === null || denominator === 0) {
-        // Use middle of colormap
-        const lutIndex = Math.floor(lutLength / 2);
-        const base = lutIndex * 4;
-        pixels[destIndex] = lut[base];
-        pixels[destIndex + 1] = lut[base + 1];
-        pixels[destIndex + 2] = lut[base + 2];
-        pixels[destIndex + 3] = 255; // Fully opaque
-        continue;
-      }
-
-      const normalized = clamp((value - rangeMin) / denominator, 0, 1);
-      const lutIndex = Math.min(lutLength - 1, Math.floor(normalized * (lutLength - 1)));
-      const base = lutIndex * 4;
-      
-      pixels[destIndex] = lut[base];
-      pixels[destIndex + 1] = lut[base + 1];
-      pixels[destIndex + 2] = lut[base + 2];
-      pixels[destIndex + 3] = lut[base + 3] || 255; // Ensure opacity
-    }
-  }
-
-  return new ImageData(pixels, width, height);
-}
-
-function createTextureSlice(
-  source: ImageData,
-  startColumn: number,
-  endColumn: number,
-): { imageUrl: string; width: number; height: number } {
-  const sliceWidth = endColumn - startColumn;
-  const canvas = document.createElement('canvas');
-  canvas.width = sliceWidth;
-  canvas.height = source.height;
-  
-  const context = canvas.getContext('2d', { 
-    alpha: true,
-    willReadFrequently: false 
-  });
-  
-  if (!context) {
-    throw new Error('Unable to acquire 2D context for raster rendering.');
-  }
-  
-  // Critical: disable smoothing to prevent interpolation artifacts
-  context.imageSmoothingEnabled = false;
-  
-  // Extract the slice from the source image
-  context.putImageData(source, -startColumn, 0);
-  
-  console.log(`Created texture slice: cols ${startColumn}-${endColumn}, size ${sliceWidth}x${source.height}`);
-  
-  return { 
-    imageUrl: canvas.toDataURL('image/png'), 
-    width: sliceWidth, 
-    height: source.height 
-  };
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
 function parseDatasetDate(raw?: string | null): Date | null {
   if (!raw) {
     return null;
@@ -282,7 +169,15 @@ export function useRasterLayer({ dataset, date, level }: UseRasterLayerOptions):
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    console.log('[useRasterLayer] Effect triggered with:', {
+      datasetName: dataset?.name,
+      supportsRaster: dataset?.backend?.supportsRaster,
+      date: date?.toISOString(),
+      level,
+    });
+
     if (!dataset?.backend?.supportsRaster) {
+      console.log('[useRasterLayer] Dataset does not support raster, skipping');
       setState({ loading: false, error: null, data: undefined });
       return () => undefined;
     }
@@ -294,6 +189,11 @@ export function useRasterLayer({ dataset, date, level }: UseRasterLayerOptions):
     const backendName = dataset.backend?.datasetName ?? dataset.name;
     const startBound = parseDatasetDate(dataset.backend?.startDate ?? null);
     const endBound = parseDatasetDate(dataset.backend?.endDate ?? null);
+
+    console.log('[useRasterLayer] Date bounds:', {
+      startBound: startBound?.toISOString(),
+      endBound: endBound?.toISOString(),
+    });
 
     let targetDate: Date | null = null;
     if (date instanceof Date && !Number.isNaN(date.getTime())) {
@@ -308,6 +208,8 @@ export function useRasterLayer({ dataset, date, level }: UseRasterLayerOptions):
     if (targetDate && endBound && targetDate > endBound) {
       targetDate = endBound;
     }
+
+    console.log('[useRasterLayer] Target date:', targetDate?.toISOString());
 
     const body: Record<string, unknown> = {
       dataset_name: backendName,
@@ -327,6 +229,8 @@ export function useRasterLayer({ dataset, date, level }: UseRasterLayerOptions):
       body.variable = dataset.backend.keyVariable;
     }
 
+    console.log('[useRasterLayer] Fetching with body:', body);
+
     setState((prev) => ({ ...prev, loading: true, error: null }));
 
     fetch('/api/raster', {
@@ -336,130 +240,116 @@ export function useRasterLayer({ dataset, date, level }: UseRasterLayerOptions):
       signal: controller.signal,
     })
       .then(async (response) => {
+        console.log('[useRasterLayer] Response status:', response.status);
         if (!response.ok) {
           const message = await response.text();
+          console.error('[useRasterLayer] Response error:', message);
           throw new Error(message || `Raster request failed with ${response.status}`);
         }
         return response.json() as Promise<RasterApiResponse>;
       })
       .then((payload) => {
-        const [height, width] = payload.shape;
-        const values = decodeBase64ToFloat32(payload.values);
+        console.log('[useRasterLayer] Received payload:', {
+          dataset: payload.dataset,
+          shape: payload.shape,
+          hasValues: Boolean(payload.values),
+          hasTextures: Boolean(payload.textures),
+          textureCount: payload.textures?.length || 0,
+          units: payload.units,
+          valueRange: payload.valueRange,
+        });
 
-        if (values.length !== width * height) {
+        const [height, width] = payload.shape;
+        const decodedValues =
+          typeof payload.values === 'string' && payload.values.length > 0
+            ? decodeBase64ToFloat32(payload.values)
+            : new Float32Array(0);
+
+        if (decodedValues.length && decodedValues.length !== width * height) {
           throw new Error('Raster payload size mismatch.');
         }
 
         const min = payload.valueRange?.min ?? payload.actualRange?.min ?? null;
         const max = payload.valueRange?.max ?? payload.actualRange?.max ?? null;
-
-        const imageData = buildImageData(
-          width,
-          height,
-          values,
-          min,
-          max,
-          payload.colorMap ?? dataset.backend?.colorMap ?? null,
-        );
-
-        const sampled = createSampler(payload.lat, payload.lon, values, width, height);
         const origin = payload.rectangle?.origin === 'prime_shifted' ? 'prime_shifted' : 'prime';
 
         const south = payload.rectangle?.south ?? Math.min(...payload.lat);
         const north = payload.rectangle?.north ?? Math.max(...payload.lat);
-        const textures: RasterTextureLayer[] = [];
+        const westDefault = payload.rectangle?.west ?? payload.lon[0];
+        const eastDefault = payload.rectangle?.east ?? payload.lon[payload.lon.length - 1];
 
-        const addTexture = (startCol: number, endCol: number, west: number, east: number) => {
-          const slice = createTextureSlice(imageData, startCol, endCol);
-          textures.push({
-            imageUrl: slice.imageUrl,
-            rectangle: {
-              west,
-              east,
-              south,
-              north,
-            },
+        const textures: RasterTextureLayer[] = Array.isArray(payload.textures)
+          ? payload.textures
+              .filter(
+                (texture): texture is RasterTextureLayer =>
+                  Boolean(texture) && typeof texture.imageUrl === 'string',
+              )
+              .map((texture) => ({
+                imageUrl: texture.imageUrl,
+                rectangle: {
+                  west: texture.rectangle?.west ?? westDefault,
+                  east: texture.rectangle?.east ?? eastDefault,
+                  south: texture.rectangle?.south ?? south,
+                  north: texture.rectangle?.north ?? north,
+                },
+              }))
+          : [];
+
+        console.log('[useRasterLayer] Processed textures:', textures.length);
+        textures.forEach((tex, i) => {
+          console.log(`[useRasterLayer] Texture ${i}:`, {
+            rectangle: tex.rectangle,
+            imageUrlLength: tex.imageUrl.length,
+            imageUrlStart: tex.imageUrl.substring(0, 30),
           });
-        };
+        });
 
-        // Improved texture splitting logic
-        if (origin === 'prime_shifted') {
-          // Find where longitude crosses from negative to positive (or 180 to -180 boundary)
-          const splitIndex = payload.lon.findIndex((lonValue) => lonValue >= 0);
-          
-          if (splitIndex > 0 && splitIndex < width) {
-            // Left slice: negative longitudes (maps to 180-360 range)
-            const westLeft = payload.lon[0];
-            const eastLeft = payload.lon[splitIndex - 1];
-            
-            // Right slice: positive longitudes (maps to 0-180 range)  
-            const westRight = payload.lon[splitIndex];
-            const eastRight = payload.lon[payload.lon.length - 1];
-            
-            console.log('Split textures:', {
-              left: { west: westLeft, east: eastLeft, cols: `0-${splitIndex}` },
-              right: { west: westRight, east: eastRight, cols: `${splitIndex}-${width}` }
-            });
-            
-            // Add left slice (rendered on right side of globe: 180-360)
-            addTexture(0, splitIndex, westLeft, eastLeft);
-            
-            // Add right slice (rendered on left side of globe: 0-180)
-            addTexture(splitIndex, width, westRight, eastRight);
-          } else {
-            // Fallback: no split needed
-            addTexture(
-              0,
-              width,
-              payload.rectangle?.west ?? payload.lon[0],
-              payload.rectangle?.east ?? payload.lon[payload.lon.length - 1]
-            );
-          }
-        } else {
-          // Normal prime meridian origin
-          addTexture(
-            0,
-            width,
-            payload.rectangle?.west ?? payload.lon[0],
-            payload.rectangle?.east ?? payload.lon[payload.lon.length - 1]
-          );
+        if (textures.length === 0) {
+          console.warn('[useRasterLayer] Raster payload did not include pre-rendered textures.');
         }
 
-        // Debug logging
-        console.log('Raster data summary:', {
-          shape: [height, width],
-          latRange: [Math.min(...payload.lat), Math.max(...payload.lat)],
-          lonRange: [Math.min(...payload.lon), Math.max(...payload.lon)],
-          valueRange: { min, max },
+        const sampler =
+          decodedValues.length === width * height
+            ? createSampler(payload.lat, payload.lon, decodedValues, width, height)
+            : () => null;
+
+        const rasterData: RasterLayerData = {
+          datasetName: payload.dataset,
+          width,
+          height,
+          lat: payload.lat,
+          lon: payload.lon,
+          values: decodedValues,
+          min,
+          max,
+          units: payload.units ?? dataset.units,
+          colorMap: payload.colorMap ?? dataset.backend?.colorMap ?? null,
+          textures,
+          textureScale: payload.textureScale ?? undefined,
+          sampleValue: sampler,
           origin,
-          textureCount: textures.length,
-          textures: textures.map(t => t.rectangle)
+        };
+
+        console.log('[useRasterLayer] Setting state with data:', {
+          datasetName: rasterData.datasetName,
+          textureCount: rasterData.textures.length,
+          units: rasterData.units,
+          min: rasterData.min,
+          max: rasterData.max,
         });
 
         setState({
           loading: false,
           error: null,
-          data: {
-            datasetName: payload.dataset,
-            width,
-            height,
-            lat: payload.lat,
-            lon: payload.lon,
-            values,
-            min,
-            max,
-            units: payload.units ?? dataset.units,
-            colorMap: payload.colorMap ?? dataset.backend?.colorMap ?? null,
-            textures,
-            sampleValue: sampled,
-            origin,
-          },
+          data: rasterData,
         });
       })
       .catch((error) => {
         if (controller.signal.aborted) {
+          console.log('[useRasterLayer] Request aborted');
           return;
         }
+        console.error('[useRasterLayer] Error:', error);
         setState({
           loading: false,
           error: error instanceof Error ? error.message : String(error),

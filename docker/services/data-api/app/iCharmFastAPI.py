@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any
 from fastapi import FastAPI, Body, HTTPException
 import xarray as xr
 import pandas as pd
@@ -8,7 +8,7 @@ from scipy.stats import skew, kurtosis
 import s3fs
 from datetime import datetime
 import fsspec
-import base64
+from .raster_visualization import serialize_raster_array
 
 app = FastAPI()
 
@@ -326,119 +326,6 @@ def _bool_from_metadata(value: Any) -> bool:
         return False
     return str(value).strip().lower() in {"true", "1", "yes", "y"}
 
-def _maybe_float(value: Any) -> Optional[float]:
-    if value is None:
-        return None
-    try:
-        result = float(value)
-    except (TypeError, ValueError):
-        return None
-    if np.isnan(result):
-        return None
-    return result
-
-def _find_coord_name(da: xr.DataArray, candidates: List[str]) -> Optional[str]:
-    lowered = [c.lower() for c in candidates]
-    for name in da.coords:
-        if name.lower() in lowered:
-            return name
-    for name in da.dims:
-        if name.lower() in lowered:
-            return name
-    return None
-
-def _transpose_to_lat_lon(da: xr.DataArray) -> Tuple[xr.DataArray, str, str]:
-    lat_dim = next((dim for dim in da.dims if dim.lower() in {"lat", "latitude", "y"}), None)
-    lon_dim = next((dim for dim in da.dims if dim.lower() in {"lon", "longitude", "x"}), None)
-
-    if lat_dim is None:
-        lat_dim = _find_coord_name(da, ["lat", "latitude", "y"])
-    if lon_dim is None:
-        lon_dim = _find_coord_name(da, ["lon", "longitude", "x"])
-
-    if lat_dim is None or lon_dim is None:
-        raise ValueError("Unable to identify latitude/longitude coordinates in dataset.")
-    if lat_dim == lon_dim:
-        raise ValueError("Latitude and longitude dimensions appear to overlap.")
-
-    if list(da.dims) != [lat_dim, lon_dim]:
-        da = da.transpose(lat_dim, lon_dim)
-    return da, lat_dim, lon_dim
-
-def _serialize_raster_array(
-    da: xr.DataArray,
-    row: pd.Series,
-    dataset_name: str,
-) -> Dict[str, Any]:
-    array = da.squeeze()
-    if array.ndim > 2:
-        raise ValueError("Raster slice is not 2-dimensional after selecting time and level.")
-
-    array, lat_dim, lon_dim = _transpose_to_lat_lon(array)
-
-    lat_coord_name = _find_coord_name(array, ["lat", "latitude", "y"]) or lat_dim
-    lon_coord_name = _find_coord_name(array, ["lon", "longitude", "x"]) or lon_dim
-
-    lat_values = np.asarray(array.coords[lat_coord_name].values, dtype=np.float64)
-    lon_values = np.asarray(array.coords[lon_coord_name].values, dtype=np.float64)
-    data = np.asarray(array.values, dtype=np.float32)
-
-    if data.ndim != 2:
-        raise ValueError("Raster slice is not 2-dimensional after selection.")
-
-    if lat_values[0] > lat_values[-1]:
-        lat_values = lat_values[::-1]
-        data = data[::-1, :]
-    origin = "prime"
-    if lon_values[0] > lon_values[-1]:
-        lon_values = lon_values[::-1]
-        data = data[:, ::-1]
-    if lon_values[-1] > 180 and lon_values[0] >= 0:
-        shifted = ((lon_values + 180.0) % 360.0) - 180.0
-        sort_idx = np.argsort(shifted)
-        lon_values = shifted[sort_idx]
-        data = data[:, sort_idx]
-        origin = "prime_shifted"
-
-    finite_mask = np.isfinite(data)
-    data_min = float(data[finite_mask].min()) if finite_mask.any() else None
-    data_max = float(data[finite_mask].max()) if finite_mask.any() else None
-
-    encoded = base64.b64encode(data.tobytes()).decode("ascii")
-
-    meta_min = _maybe_float(row.get("valueMin"))
-    meta_max = _maybe_float(row.get("valueMax"))
-
-    units = (
-        array.attrs.get("units")
-        or row.get("units")
-        or row.get("unit")
-        or "units"
-    )
-
-    return {
-        "dataset": dataset_name,
-        "shape": [int(data.shape[0]), int(data.shape[1])],
-        "lat": lat_values.astype(float).tolist(),
-        "lon": lon_values.astype(float).tolist(),
-        "values": encoded,
-        "dataEncoding": {"format": "base64", "dtype": "float32"},
-        "valueRange": {
-            "min": meta_min if meta_min is not None else data_min,
-            "max": meta_max if meta_max is not None else data_max,
-        },
-        "actualRange": {"min": data_min, "max": data_max},
-        "units": units,
-        "colorMap": row.get("colorMap") if isinstance(row.get("colorMap"), str) and row.get("colorMap") else None,
-        "rectangle": {
-            "west": float(np.min(lon_values)),
-            "south": float(np.min(lat_values)),
-            "east": float(np.max(lon_values)),
-            "north": float(np.max(lat_values)),
-            "origin": origin,
-        },
-    }
-
 
 def _coerce_json_value(value: Any) -> Any:
     if isinstance(value, float):
@@ -603,6 +490,9 @@ def get_dataset_raster(payload: Dict[str, Any] = Body(...)):
     if not dataset_name:
         raise HTTPException(status_code=400, detail="dataset_name is required")
 
+    print(f"[Raster API] Processing request for dataset: {dataset_name}")
+    print(f"[Raster API] Payload: {payload}")
+
     try:
         row = _get_metadata_row(dataset_name)
     except ValueError as exc:
@@ -621,6 +511,8 @@ def get_dataset_raster(payload: Dict[str, Any] = Body(...)):
     level = payload.get("level")
     date_str = payload.get("date")
 
+    print(f"[Raster API] Parameters: year={year}, month={month}, day={day}, level={level}")
+
     try:
         da = load_dataset(
             METADATA_PATH,
@@ -630,9 +522,11 @@ def get_dataset_raster(payload: Dict[str, Any] = Body(...)):
             month=month,
             day=day,
         )
+        print(f"[Raster API] Loaded dataset, shape: {da.shape}, dims: {da.dims}")
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
+        print(f"[Raster API] Error loading dataset: {exc}")
         raise HTTPException(status_code=500, detail=f"Failed to load dataset: {exc}") from exc
 
     selected_time = None
@@ -666,10 +560,18 @@ def get_dataset_raster(payload: Dict[str, Any] = Body(...)):
             selected_level = float(np.asarray(da["plev"].values).item())
         da = da.squeeze(drop=True)
 
+    print(f"[Raster API] After selection, shape: {da.shape}, dims: {da.dims}")
+
     try:
-        raster_payload = _serialize_raster_array(da, row, dataset_name)
+        print(f"[Raster API] Calling serialize_raster_array...")
+        raster_payload = serialize_raster_array(da, row, dataset_name)
+        print(f"[Raster API] Serialization complete. Texture count: {len(raster_payload.get('textures', []))}")
     except ValueError as exc:
+        print(f"[Raster API] Serialization error: {exc}")
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        print(f"[Raster API] Unexpected serialization error: {exc}")
+        raise HTTPException(status_code=500, detail=f"Serialization failed: {exc}") from exc
 
     raster_payload["supportsRaster"] = True
     raster_payload["metadata"] = {
@@ -686,6 +588,8 @@ def get_dataset_raster(payload: Dict[str, Any] = Body(...)):
         },
         "units": raster_payload.get("units"),
     }
+    
+    print(f"[Raster API] Returning payload with {len(raster_payload.get('textures', []))} textures")
     return raster_payload
 
 

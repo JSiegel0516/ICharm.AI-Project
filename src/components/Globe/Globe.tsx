@@ -578,45 +578,60 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         rasterLayerRef.current = [];
       }
 
-      if (!rasterState.data) {
+      if (!rasterState.data || !rasterState.data.textures || rasterState.data.textures.length === 0) {
+        console.log('No raster data or textures to display');
         return;
       }
 
       console.log('Adding raster textures:', rasterState.data.textures.length);
+      console.log('Raster data units:', rasterState.data.units);
+      console.log('Raster data range:', rasterState.data.min, 'to', rasterState.data.max);
       
       const newLayers: any[] = [];
       rasterState.data.textures.forEach((texture, index) => {
-        console.log(`Texture ${index}:`, texture.rectangle);
-        
-        const provider = new cesiumInstance.SingleTileImageryProvider({
-          url: texture.imageUrl,
-          rectangle: cesiumInstance.Rectangle.fromDegrees(
-            texture.rectangle.west,
-            texture.rectangle.south,
-            texture.rectangle.east,
-            texture.rectangle.north
-          ),
+        console.log(`Texture ${index}:`, {
+          rectangle: texture.rectangle,
+          imageUrlLength: texture.imageUrl?.length || 0,
+          imageUrlPrefix: texture.imageUrl?.substring(0, 50)
         });
+        
+        try {
+          const provider = new cesiumInstance.SingleTileImageryProvider({
+            url: texture.imageUrl,
+            rectangle: cesiumInstance.Rectangle.fromDegrees(
+              texture.rectangle.west,
+              texture.rectangle.south,
+              texture.rectangle.east,
+              texture.rectangle.north
+            ),
+          });
 
-        const layer = viewer.scene.imageryLayers.addImageryProvider(provider);
-        
-        // Critical rendering settings to prevent blending artifacts
-        layer.alpha = 1.0; // Full opacity
-        layer.brightness = 1.0;
-        layer.contrast = 1.0;
-        layer.hue = 0.0;
-        layer.saturation = 1.0;
-        layer.gamma = 1.0;
-        
-        // Disable texture filtering to prevent interpolation artifacts
-        layer.minificationFilter = cesiumInstance.TextureMinificationFilter.NEAREST;
-        layer.magnificationFilter = cesiumInstance.TextureMagnificationFilter.NEAREST;
-        
-        newLayers.push(layer);
+          const layer = viewer.scene.imageryLayers.addImageryProvider(provider);
+          
+          // Optimized rendering settings
+          layer.alpha = 0.85; // Slightly transparent to see boundaries beneath
+          layer.brightness = 1.0;
+          layer.contrast = 1.0;
+          layer.hue = 0.0;
+          layer.saturation = 1.0;
+          layer.gamma = 1.0;
+          
+          // Use linear filtering for smoother appearance
+          layer.minificationFilter = cesiumInstance.TextureMinificationFilter.LINEAR;
+          layer.magnificationFilter = cesiumInstance.TextureMagnificationFilter.LINEAR;
+          
+          newLayers.push(layer);
+          console.log(`Successfully added texture layer ${index}`);
+        } catch (err) {
+          console.error(`Failed to add texture ${index}:`, err);
+        }
       });
       
       rasterLayerRef.current = newLayers;
-      console.log(`Added ${newLayers.length} raster layers to globe`);
+      console.log(`Successfully added ${newLayers.length} raster layers to globe`);
+      
+      // Force a render update
+      viewer.scene.requestRender();
 
       return () => {
         if (viewer && !viewer.isDestroyed()) {
