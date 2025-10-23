@@ -236,9 +236,9 @@ def _extend_latitude_coverage(
         valid_rows = np.where(mask.any(axis=1))[0]
         if valid_rows.size > 0:
             first_valid_row = valid_rows[0]
-            # Add 5 rows at south pole with first valid data
-            for i in range(5):
-                lat_val = -90 + i * (lat_min + 90) / 5
+            # Add 10 rows at south pole with first valid data
+            for i in range(10):
+                lat_val = -90 + i * (lat_min + 90) / 10
                 extended_lat.append(lat_val)
                 extended_data.append(data[first_valid_row, :])
                 extended_mask.append(mask[first_valid_row, :])
@@ -253,9 +253,9 @@ def _extend_latitude_coverage(
         valid_rows = np.where(mask.any(axis=1))[0]
         if valid_rows.size > 0:
             last_valid_row = valid_rows[-1]
-            # Add 5 rows at north pole with last valid data
-            for i in range(1, 6):
-                lat_val = lat_max + i * (90 - lat_max) / 5
+            # Add 10 rows at north pole with last valid data
+            for i in range(1, 11):
+                lat_val = lat_max + i * (90 - lat_max) / 10
                 extended_lat.append(lat_val)
                 extended_data.append(data[last_valid_row, :])
                 extended_mask.append(mask[last_valid_row, :])
@@ -343,36 +343,30 @@ def _generate_textures(
         if vmin == vmax:
             vmax = vmin + 1.0
 
-    # Create RGBA array directly without normalization artifacts
-    rgba = np.zeros(upsampled.shape + (4,), dtype=np.uint8)
+    # Vectorized color mapping for better accuracy
+    # Create normalized values for ALL pixels (will mask later)
+    norm = np.clip((upsampled - vmin) / max(vmax - vmin, 1e-9), 0.0, 1.0)
     
-    # Only process valid data points
-    valid_points = np.where(mask_result)
-    for i in range(len(valid_points[0])):
-        row = valid_points[0][i]
-        col = valid_points[1][i]
-        value = upsampled[row, col]
-        
-        # Normalize to [0, 1]
-        normalized = (value - vmin) / (vmax - vmin)
-        normalized = max(0.0, min(1.0, normalized))
-        
-        # Map to palette index
-        palette_idx = int(normalized * (len(palette) - 1))
-        palette_idx = max(0, min(len(palette) - 1, palette_idx))
-        
-        # Assign color
-        rgba[row, col] = palette[palette_idx]
+    # Map to palette indices using float precision then convert
+    palette_indices = (norm * (len(palette) - 1)).astype(np.int32)
+    palette_indices = np.clip(palette_indices, 0, len(palette) - 1)
+    
+    # Apply palette to get RGBA
+    rgba = palette[palette_indices]
+    
+    # Set non-data areas to transparent
+    rgba[~mask_result] = [0, 0, 0, 0]
 
     # Verify a few samples
+    valid_points = np.where(mask_result)
     if len(valid_points[0]) > 0:
         print(f"[RasterViz] Color mapping verification (first 5 valid points):")
         for i in range(min(5, len(valid_points[0]))):
             row, col = valid_points[0][i], valid_points[1][i]
             value = upsampled[row, col]
-            norm = (value - vmin) / (vmax - vmin)
-            idx = int(norm * (len(palette) - 1))
-            print(f"  Value: {value:.3f} -> Norm: {norm:.3f} -> Idx: {idx} -> RGBA: {rgba[row, col]}")
+            norm_val = norm[row, col]
+            idx = palette_indices[row, col]
+            print(f"  Value: {value:.3f} -> Norm: {norm_val:.3f} -> Idx: {idx} -> RGBA: {rgba[row, col]}")
 
     texture_upscale = float(upsampled.shape[1] / max(data.shape[1], 1))
     
@@ -382,36 +376,19 @@ def _generate_textures(
 
     textures: List[Dict[str, Any]] = []
 
-    def add_texture(col_start: int, col_end: int, west: float, east: float) -> None:
-        scaled_start = int(round(col_start * texture_upscale))
-        scaled_end = int(round(col_end * texture_upscale))
-        if scaled_end <= scaled_start:
-            return
-        slice_rgba = rgba[:, scaled_start:scaled_end, :]
-        textures.append(
-            {
-                "imageUrl": _encode_png(slice_rgba),
-                "rectangle": {
-                    "west": float(west),
-                    "south": south,
-                    "east": float(east),
-                    "north": north,
-                },
-            }
-        )
+    # Generate SINGLE texture to avoid seams
+    print("[RasterViz] Generating single seamless texture")
+    textures.append({
+        "imageUrl": _encode_png(rgba),
+        "rectangle": {
+            "west": float(lon_values[0]),
+            "south": south,
+            "east": float(lon_values[-1]),
+            "north": north,
+        },
+    })
 
-    total_cols = data.shape[1]
-    if origin == "prime_shifted":
-        split_index = int(np.searchsorted(lon_values, 0.0))
-        if 0 < split_index < total_cols:
-            add_texture(0, split_index, lon_values[0], lon_values[split_index - 1])
-            add_texture(split_index, total_cols, lon_values[split_index], lon_values[-1])
-        else:
-            add_texture(0, total_cols, lon_values[0], lon_values[-1])
-    else:
-        add_texture(0, total_cols, lon_values[0], lon_values[-1])
-
-    print(f"[RasterViz] Generated {len(textures)} texture(s) with pole-to-pole coverage")
+    print(f"[RasterViz] Generated {len(textures)} seamless texture with pole-to-pole coverage")
     return textures, texture_upscale
 
 
@@ -490,9 +467,9 @@ def serialize_raster_array(
         "colorMap": row.get("colorMap") if isinstance(row.get("colorMap"), str) and row.get("colorMap") else None,
         "rectangle": {
             "west": float(np.min(lon_values)),
-            "south": -90.0,  # Force full pole coverage
+            "south": -90.0,
             "east": float(np.max(lon_values)),
-            "north": 90.0,   # Force full pole coverage
+            "north": 90.0,
             "origin": origin,
         },
         "textures": textures,
