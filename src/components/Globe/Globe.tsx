@@ -624,7 +624,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           const layer = viewer.scene.imageryLayers.addImageryProvider(provider);
           
           // CRITICAL: DO NOT modify colors - preserve exact Python-generated RGBA values
-          layer.alpha = 1.0;           // Full opacity
+          layer.alpha = 0.65;           // Adjustable opacity (0.0-1.0) - allows base layer to show through
           layer.brightness = 1.0;      // No brightness adjustment
           layer.contrast = 1.0;        // No contrast adjustment
           layer.hue = 0.0;             // No hue shift
