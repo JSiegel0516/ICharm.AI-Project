@@ -48,20 +48,20 @@ Install Docker before attempting to run the database
    ```ini
    ICHARM_DB_USER=icharm_user
    ICHARM_DB_PASSWORD=icharm_dev_password
-   ICHARM_DB_NAME=icharm_chat
+   ICHARM_DB_NAME=icharm
    ICHARM_DB_PORT=5432
    ```
 2. Start the database (and optional services):
 
-   ```bash
-   docker compose -f docker/docker-compose.yml --project-directory . up -d db data-api llm-service
-   docker compose -f docker/docker-compose.yml --project-directory . down -v
+   ```
+   docker compose -f docker/docker-compose.yml up -d
    ```
 
-   On first run the container executes `docker/postgres/init/00-init-db.sh`, which creates extensions, tables, triggers, indexes, and a sample `test@example.com` user.
+   After this, run
 
-   IMPORTANT: This may not work, if not run
-   docker compose exec db bash /docker-entrypoint-initdb.d/00-init-db.sh
+   ```
+   npx drizzle-kit generate && npx drizzle-kit migrate
+   ```
 
    in project root to create correct table names in container
 
@@ -72,7 +72,7 @@ Install Docker before attempting to run the database
    ```
 
 4. Use
-   docker exec -it icharm-db psql -U icharm_user -d icharm_chat
+   docker exec -it icharm-db psql -U icharm_user -d icharm
    to go into a psql terminal.
    Once in psql terminal, run:
    SELECT \* FROM chat_messages ORDER BY created_at DESC LIMIT 10;
@@ -156,7 +156,7 @@ Re-run the script whenever the tutorial copy changes.
 ## Important Packages
 
 Cesium.js - globe implementation
-Chart.js - timeseries chart visualization
+shadcn & recharts - ui components and timeseries chart visualization
 Driver.js - animated tutorial tour (React Joyride dependencies not updated for React19)
 pqoqubbw - animated icons
 llama - open source llm for chatbot
