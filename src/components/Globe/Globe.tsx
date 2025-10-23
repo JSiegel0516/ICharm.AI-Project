@@ -427,6 +427,21 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           viewer.scene.sun.show = true;
           viewer.scene.moon.show = true;
 
+          try {
+            const satelliteProvider = new Cesium.ArcGisMapServerImageryProvider({
+              url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer',
+            });
+
+            const baseLayer = viewer.scene.imageryLayers.addImageryProvider(satelliteProvider);
+            baseLayer.alpha = 1.0;
+            baseLayer.brightness = 1.0;
+            baseLayer.contrast = 1.0;
+            viewer.scene.imageryLayers.lowerToBottom(baseLayer);
+            console.log('Satellite base layer added');
+          } catch (layerError) {
+            console.error('Failed to load satellite base layer', layerError);
+          }
+
           viewer.canvas.style.width = '100%';
           viewer.canvas.style.height = '100%';
 
@@ -619,6 +634,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           // Use linear filtering for smoother appearance
           layer.minificationFilter = cesiumInstance.TextureMinificationFilter.LINEAR;
           layer.magnificationFilter = cesiumInstance.TextureMagnificationFilter.LINEAR;
+
+          viewer.scene.imageryLayers.raiseToTop(layer);
           
           newLayers.push(layer);
           console.log(`Successfully added texture layer ${index}`);
