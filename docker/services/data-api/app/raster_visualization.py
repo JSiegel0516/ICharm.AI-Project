@@ -11,7 +11,7 @@ import pandas as pd
 import xarray as xr
 from matplotlib import cm
 from PIL import Image
-from scipy.ndimage import gaussian_filter, zoom
+from scipy.ndimage import zoom
 
 PALETTE_RESOLUTION = 256
 _COLOR_MAP_CACHE: Dict[str, np.ndarray] = {}
@@ -39,6 +39,9 @@ def _find_color_maps_file() -> Optional[Path]:
         secondary = parent / "data" / "colorMaps.json"
         if secondary.is_file():
             return secondary
+        direct = parent / "colorMaps.json"
+        if direct.is_file():
+            return direct
     return None
 
 
@@ -137,12 +140,15 @@ def _ensure_color_maps_loaded() -> None:
 
     color_map_path = _find_color_maps_file()
     if not color_map_path:
+        print("[RasterViz] Color map file not found, using fallback")
         return
 
     try:
         with color_map_path.open("r", encoding="utf-8") as handle:
             raw_maps = json.load(handle)
-    except Exception:
+        print(f"[RasterViz] Loaded {len(raw_maps)} color maps from {color_map_path}")
+    except Exception as e:
+        print(f"[RasterViz] Failed to load color maps: {e}")
         return
 
     for entry in raw_maps:
@@ -152,12 +158,15 @@ def _ensure_color_maps_loaded() -> None:
         palette = _build_palette(entry, PALETTE_RESOLUTION)
         if palette is not None:
             _COLOR_MAP_CACHE[name] = palette
+            print(f"[RasterViz] Loaded color map: {name}")
 
 
 def _get_color_palette(name: Optional[str]) -> np.ndarray:
     _ensure_color_maps_loaded()
     if name and isinstance(name, str) and name in _COLOR_MAP_CACHE:
+        print(f"[RasterViz] Using color map: {name}")
         return _COLOR_MAP_CACHE[name]
+    print(f"[RasterViz] Color map '{name}' not found, using fallback")
     return _COLOR_MAP_CACHE.get("__fallback__")
 
 
@@ -197,50 +206,73 @@ def _transpose_to_lat_lon(da: xr.DataArray) -> Tuple[xr.DataArray, str, str]:
     return da, lat_dim, lon_dim
 
 
-def _smooth_and_upsample(
+def _extend_latitude_coverage(
     data: np.ndarray,
     mask: np.ndarray,
-    upscale_factor: int = 2,
-    sigma: float = 1.0,
-) -> Tuple[np.ndarray, np.ndarray]:
-    if not mask.any():
-        zeros = np.zeros(
-            (
-                max(int(data.shape[0] * upscale_factor), 1),
-                max(int(data.shape[1] * upscale_factor), 1),
-            ),
-            dtype=np.float32,
-        )
-        return zeros, np.zeros_like(zeros, dtype=bool)
-
-    filled = np.where(mask, data, np.nan)
-    mean_value = float(np.nanmean(filled)) if np.isfinite(filled).any() else 0.0
-    filled = np.where(mask, filled, mean_value)
-
-    smoothed = gaussian_filter(filled, sigma=sigma, mode="nearest")
-    mask_smoothed = gaussian_filter(mask.astype(np.float32), sigma=sigma, mode="nearest")
-
-    if upscale_factor > 1:
-        smoothed = zoom(smoothed, zoom=upscale_factor, order=3)
-        mask_smoothed = zoom(mask_smoothed, zoom=upscale_factor, order=1)
-
-    mask_result = mask_smoothed > 0.05
-    return smoothed.astype(np.float32), mask_result
+    lat_values: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Extend latitude coverage to include poles by adding extra rows
+    """
+    lat_min = lat_values.min()
+    lat_max = lat_values.max()
+    
+    # Check if we need to extend to poles
+    needs_south_pole = lat_min > -90
+    needs_north_pole = lat_max < 90
+    
+    if not needs_south_pole and not needs_north_pole:
+        return data, mask, lat_values
+    
+    print(f"[RasterViz] Extending latitude coverage from [{lat_min}, {lat_max}] to [-90, 90]")
+    
+    extended_data = []
+    extended_mask = []
+    extended_lat = []
+    
+    # Add south pole rows if needed
+    if needs_south_pole:
+        # Find first valid row
+        valid_rows = np.where(mask.any(axis=1))[0]
+        if valid_rows.size > 0:
+            first_valid_row = valid_rows[0]
+            # Add 5 rows at south pole with first valid data
+            for i in range(5):
+                lat_val = -90 + i * (lat_min + 90) / 5
+                extended_lat.append(lat_val)
+                extended_data.append(data[first_valid_row, :])
+                extended_mask.append(mask[first_valid_row, :])
+    
+    # Add original data
+    extended_lat.extend(lat_values.tolist())
+    extended_data.extend([data[i, :] for i in range(data.shape[0])])
+    extended_mask.extend([mask[i, :] for i in range(mask.shape[0])])
+    
+    # Add north pole rows if needed
+    if needs_north_pole:
+        valid_rows = np.where(mask.any(axis=1))[0]
+        if valid_rows.size > 0:
+            last_valid_row = valid_rows[-1]
+            # Add 5 rows at north pole with last valid data
+            for i in range(1, 6):
+                lat_val = lat_max + i * (90 - lat_max) / 5
+                extended_lat.append(lat_val)
+                extended_data.append(data[last_valid_row, :])
+                extended_mask.append(mask[last_valid_row, :])
+    
+    return (
+        np.array(extended_data, dtype=data.dtype),
+        np.array(extended_mask, dtype=mask.dtype),
+        np.array(extended_lat, dtype=lat_values.dtype)
+    )
 
 
 def _encode_png(rgba: np.ndarray) -> str:
     image = Image.fromarray(rgba, mode="RGBA")
     buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
+    image.save(buffer, format="PNG", compress_level=6)
     encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
     return f"data:image/png;base64,{encoded}"
-
-
-def _create_alpha(mask: np.ndarray) -> np.ndarray:
-    softened = gaussian_filter(mask.astype(np.float32), sigma=1.2)
-    softened = np.clip(softened, 0.0, 1.0)
-    softened[~mask] = 0.0
-    return softened
 
 
 def _generate_textures(
@@ -257,51 +289,102 @@ def _generate_textures(
     if palette is None or len(palette) == 0:
         palette = _matplotlib_palette(_COLOR_MAP_FALLBACK, PALETTE_RESOLUTION)
 
-    smoothed, mask_smoothed = _smooth_and_upsample(data, mask, upscale_factor=2, sigma=1.0)
+    print(f"[RasterViz] Original data shape: {data.shape}")
+    print(f"[RasterViz] Latitude range: [{lat_values.min():.2f}, {lat_values.max():.2f}]")
+    print(f"[RasterViz] Valid data points: {mask.sum()} / {mask.size}")
 
-    if not mask_smoothed.any():
-        empty = np.zeros(smoothed.shape + (4,), dtype=np.uint8)
+    # Extend to poles BEFORE processing
+    extended_data, extended_mask, extended_lat = _extend_latitude_coverage(data, mask, lat_values)
+    
+    print(f"[RasterViz] After pole extension shape: {extended_data.shape}")
+    print(f"[RasterViz] Extended latitude range: [{extended_lat.min():.2f}, {extended_lat.max():.2f}]")
+
+    # Simple upsampling with nearest neighbor - no smoothing at all
+    upscale_factor = 2
+    if upscale_factor > 1:
+        upsampled = zoom(extended_data, zoom=upscale_factor, order=0)
+        mask_upscaled = zoom(extended_mask.astype(np.float32), zoom=upscale_factor, order=0)
+        mask_result = mask_upscaled > 0.5
+    else:
+        upsampled = extended_data
+        mask_result = extended_mask
+    
+    print(f"[RasterViz] After upsampling shape: {upsampled.shape}")
+    print(f"[RasterViz] Valid points after upsampling: {mask_result.sum()} / {mask_result.size}")
+
+    if not mask_result.any():
+        empty = np.zeros(upsampled.shape + (4,), dtype=np.uint8)
         textures = [
             {
                 "imageUrl": _encode_png(empty),
                 "rectangle": {
                     "west": float(np.min(lon_values)),
-                    "south": float(np.min(lat_values)),
+                    "south": -90.0,
                     "east": float(np.max(lon_values)),
-                    "north": float(np.max(lat_values)),
+                    "north": 90.0,
                 },
             }
         ]
-        return textures, float(smoothed.shape[1] / max(data.shape[1], 1))
+        return textures, float(upsampled.shape[1] / max(data.shape[1], 1))
 
-    finite_values = smoothed[mask_smoothed]
+    finite_values = upsampled[mask_result]
     computed_min = float(np.nanmin(finite_values)) if finite_values.size > 0 else 0.0
     computed_max = float(np.nanmax(finite_values)) if finite_values.size > 0 else 1.0
 
     vmin = min_value if min_value is not None else computed_min
     vmax = max_value if max_value is not None else computed_max
+    
+    print(f"[RasterViz] Value range for color mapping: {vmin} to {vmax}")
+    print(f"[RasterViz] Actual data range: {computed_min} to {computed_max}")
+    
     if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
         vmin = computed_min if np.isfinite(computed_min) else 0.0
         vmax = computed_max if np.isfinite(computed_max) else vmin + 1.0
         if vmin == vmax:
             vmax = vmin + 1.0
 
-    norm = np.clip((smoothed - vmin) / max(vmax - vmin, 1e-6), 0.0, 1.0)
-    indices = np.rint(norm * (len(palette) - 1)).astype(np.int32)
-    rgba = palette[indices].astype(np.uint8)
-    alpha = _create_alpha(mask_smoothed)
-    base_alpha = rgba[..., 3].astype(np.float32) / 255.0
-    rgba[..., 3] = np.clip(alpha * base_alpha * 255.0, 0.0, 255.0).astype(np.uint8)
+    # Create RGBA array directly without normalization artifacts
+    rgba = np.zeros(upsampled.shape + (4,), dtype=np.uint8)
+    
+    # Only process valid data points
+    valid_points = np.where(mask_result)
+    for i in range(len(valid_points[0])):
+        row = valid_points[0][i]
+        col = valid_points[1][i]
+        value = upsampled[row, col]
+        
+        # Normalize to [0, 1]
+        normalized = (value - vmin) / (vmax - vmin)
+        normalized = max(0.0, min(1.0, normalized))
+        
+        # Map to palette index
+        palette_idx = int(normalized * (len(palette) - 1))
+        palette_idx = max(0, min(len(palette) - 1, palette_idx))
+        
+        # Assign color
+        rgba[row, col] = palette[palette_idx]
 
-    upscale_factor = float(smoothed.shape[1] / max(data.shape[1], 1))
-    south = float(np.min(lat_values))
-    north = float(np.max(lat_values))
+    # Verify a few samples
+    if len(valid_points[0]) > 0:
+        print(f"[RasterViz] Color mapping verification (first 5 valid points):")
+        for i in range(min(5, len(valid_points[0]))):
+            row, col = valid_points[0][i], valid_points[1][i]
+            value = upsampled[row, col]
+            norm = (value - vmin) / (vmax - vmin)
+            idx = int(norm * (len(palette) - 1))
+            print(f"  Value: {value:.3f} -> Norm: {norm:.3f} -> Idx: {idx} -> RGBA: {rgba[row, col]}")
+
+    texture_upscale = float(upsampled.shape[1] / max(data.shape[1], 1))
+    
+    # Use extended latitude range
+    south = -90.0
+    north = 90.0
 
     textures: List[Dict[str, Any]] = []
 
     def add_texture(col_start: int, col_end: int, west: float, east: float) -> None:
-        scaled_start = int(round(col_start * upscale_factor))
-        scaled_end = int(round(col_end * upscale_factor))
+        scaled_start = int(round(col_start * texture_upscale))
+        scaled_end = int(round(col_end * texture_upscale))
         if scaled_end <= scaled_start:
             return
         slice_rgba = rgba[:, scaled_start:scaled_end, :]
@@ -328,7 +411,8 @@ def _generate_textures(
     else:
         add_texture(0, total_cols, lon_values[0], lon_values[-1])
 
-    return textures, upscale_factor
+    print(f"[RasterViz] Generated {len(textures)} texture(s) with pole-to-pole coverage")
+    return textures, texture_upscale
 
 
 def serialize_raster_array(
@@ -336,6 +420,8 @@ def serialize_raster_array(
     row: pd.Series,
     dataset_name: str,
 ) -> Dict[str, Any]:
+    print(f"[RasterViz] Serializing raster for dataset: {dataset_name}")
+    
     array = da.squeeze()
     if array.ndim > 2:
         raise ValueError("Raster slice is not 2-dimensional after selecting time and level.")
@@ -404,9 +490,9 @@ def serialize_raster_array(
         "colorMap": row.get("colorMap") if isinstance(row.get("colorMap"), str) and row.get("colorMap") else None,
         "rectangle": {
             "west": float(np.min(lon_values)),
-            "south": float(np.min(lat_values)),
+            "south": -90.0,  # Force full pole coverage
             "east": float(np.max(lon_values)),
-            "north": float(np.max(lat_values)),
+            "north": 90.0,   # Force full pole coverage
             "origin": origin,
         },
         "textures": textures,

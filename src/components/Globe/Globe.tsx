@@ -573,7 +573,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       }
     }, [rasterState.error]);
 
-    // Updated raster texture rendering with improved settings
+    // Updated raster texture rendering - CRITICAL: preserve Python-generated colors exactly
     useEffect(() => {
       if (!viewerRef.current || !cesiumInstance) {
         return;
@@ -623,22 +623,22 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
           const layer = viewer.scene.imageryLayers.addImageryProvider(provider);
           
-          // Optimized rendering settings
-          layer.alpha = 0.85; // Slightly transparent to see boundaries beneath
-          layer.brightness = 1.0;
-          layer.contrast = 1.0;
-          layer.hue = 0.0;
-          layer.saturation = 1.0;
-          layer.gamma = 1.0;
+          // CRITICAL: DO NOT modify colors - preserve exact Python-generated RGBA values
+          layer.alpha = 1.0;           // Full opacity
+          layer.brightness = 1.0;      // No brightness adjustment
+          layer.contrast = 1.0;        // No contrast adjustment
+          layer.hue = 0.0;             // No hue shift
+          layer.saturation = 1.0;      // No saturation adjustment
+          layer.gamma = 1.0;           // No gamma correction
           
-          // Use linear filtering for smoother appearance
-          layer.minificationFilter = cesiumInstance.TextureMinificationFilter.LINEAR;
-          layer.magnificationFilter = cesiumInstance.TextureMagnificationFilter.LINEAR;
+          // Use NEAREST filtering to preserve exact pixel colors without interpolation
+          layer.minificationFilter = cesiumInstance.TextureMinificationFilter.NEAREST;
+          layer.magnificationFilter = cesiumInstance.TextureMagnificationFilter.NEAREST;
 
           viewer.scene.imageryLayers.raiseToTop(layer);
           
           newLayers.push(layer);
-          console.log(`Successfully added texture layer ${index}`);
+          console.log(`Successfully added texture layer ${index} with NEAREST filtering`);
         } catch (err) {
           console.error(`Failed to add texture ${index}:`, err);
         }
