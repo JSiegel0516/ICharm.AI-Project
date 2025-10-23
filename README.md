@@ -60,9 +60,12 @@ Install Docker before attempting to run the database
 
    On first run the container executes `docker/postgres/init/00-init-db.sh`, which creates extensions, tables, triggers, indexes, and a sample `test@example.com` user.
 
-   IMPORTANT: This may not work, if not run
-   docker compose exec db bash /docker-entrypoint-initdb.d/00-init-db.sh
+   ```
+   npx drizzle-kit generate && npx drizzle-kit migrate
+   npm run db:seed
+   ```
 
+   in project root to create correct table names in container and seed the metadata table
    in project root to create correct table names in container and seed the metadata table
 
 3. Verify connectivity from Node: (run from root)
