@@ -147,36 +147,65 @@ function buildImageData(
   const lut = getColormap(colorMapName);
   const lutLength = lut.length / 4;
 
-  const rangeMin = Number.isFinite(min ?? NaN) ? (min as number) : null;
-  const rangeMax = Number.isFinite(max ?? NaN) ? (max as number) : null;
-  const denominator =
-    rangeMin !== null && rangeMax !== null && rangeMax !== rangeMin
-      ? rangeMax - rangeMin
-      : null;
+  // Better range calculation - compute from actual data if not provided
+  let rangeMin = Number.isFinite(min ?? NaN) ? (min as number) : null;
+  let rangeMax = Number.isFinite(max ?? NaN) ? (max as number) : null;
+  
+  if (rangeMin === null || rangeMax === null) {
+    let dataMin = Infinity;
+    let dataMax = -Infinity;
+    for (let i = 0; i < data.length; i++) {
+      if (Number.isFinite(data[i])) {
+        dataMin = Math.min(dataMin, data[i]);
+        dataMax = Math.max(dataMax, data[i]);
+      }
+    }
+    rangeMin = rangeMin ?? dataMin;
+    rangeMax = rangeMax ?? dataMax;
+    console.log('Computed data range:', { rangeMin, rangeMax });
+  }
+
+  const denominator = rangeMax !== rangeMin ? rangeMax - rangeMin : null;
 
   for (let row = 0; row < height; row += 1) {
     const sourceRow = row;
+    // Flip vertically for correct orientation
     const targetRow = height - 1 - row;
+    
     for (let col = 0; col < width; col += 1) {
       const srcIndex = sourceRow * width + col;
       const destIndex = (targetRow * width + col) * 4;
       const value = data[srcIndex];
 
-      if (!Number.isFinite(value) || denominator === null) {
-        pixels[destIndex] = 0;
-        pixels[destIndex + 1] = 0;
-        pixels[destIndex + 2] = 0;
-        pixels[destIndex + 3] = 0;
+      // Handle invalid/missing data with transparent pixels
+      if (!Number.isFinite(value)) {
+        pixels[destIndex] = 0;     // R
+        pixels[destIndex + 1] = 0; // G
+        pixels[destIndex + 2] = 0; // B
+        pixels[destIndex + 3] = 0; // A - fully transparent
         continue;
       }
 
-      const normalized = clamp((value - (rangeMin as number)) / denominator, 0, 1);
-      const lutIndex = Math.min(lutLength - 1, Math.round(normalized * (lutLength - 1)));
+      // Handle edge case where all values are the same
+      if (denominator === null || denominator === 0) {
+        // Use middle of colormap
+        const lutIndex = Math.floor(lutLength / 2);
+        const base = lutIndex * 4;
+        pixels[destIndex] = lut[base];
+        pixels[destIndex + 1] = lut[base + 1];
+        pixels[destIndex + 2] = lut[base + 2];
+        pixels[destIndex + 3] = 255; // Fully opaque
+        continue;
+      }
+
+      const normalized = clamp((value - rangeMin) / denominator, 0, 1);
+      const lutIndex = Math.min(lutLength - 1, Math.floor(normalized * (lutLength - 1)));
       const base = lutIndex * 4;
+      
       pixels[destIndex] = lut[base];
       pixels[destIndex + 1] = lut[base + 1];
       pixels[destIndex + 2] = lut[base + 2];
-      pixels[destIndex + 3] = lut[base + 3];
+      pixels[destIndex + 3] = lut[base + 3] || 255; // Ensure opacity
     }
   }
 
@@ -192,13 +221,29 @@ function createTextureSlice(
   const canvas = document.createElement('canvas');
   canvas.width = sliceWidth;
   canvas.height = source.height;
-  const context = canvas.getContext('2d');
+  
+  const context = canvas.getContext('2d', { 
+    alpha: true,
+    willReadFrequently: false 
+  });
+  
   if (!context) {
     throw new Error('Unable to acquire 2D context for raster rendering.');
   }
+  
+  // Critical: disable smoothing to prevent interpolation artifacts
   context.imageSmoothingEnabled = false;
+  
+  // Extract the slice from the source image
   context.putImageData(source, -startColumn, 0);
-  return { imageUrl: canvas.toDataURL('image/png'), width: sliceWidth, height: source.height };
+  
+  console.log(`Created texture slice: cols ${startColumn}-${endColumn}, size ${sliceWidth}x${source.height}`);
+  
+  return { 
+    imageUrl: canvas.toDataURL('image/png'), 
+    width: sliceWidth, 
+    height: source.height 
+  };
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -337,22 +382,59 @@ export function useRasterLayer({ dataset, date, level }: UseRasterLayerOptions):
           });
         };
 
+        // Improved texture splitting logic
         if (origin === 'prime_shifted') {
+          // Find where longitude crosses from negative to positive (or 180 to -180 boundary)
           const splitIndex = payload.lon.findIndex((lonValue) => lonValue >= 0);
+          
           if (splitIndex > 0 && splitIndex < width) {
-            addTexture(0, splitIndex, payload.lon[0], payload.lon[splitIndex - 1]);
-            addTexture(splitIndex, width, payload.lon[splitIndex], payload.lon[payload.lon.length - 1]);
+            // Left slice: negative longitudes (maps to 180-360 range)
+            const westLeft = payload.lon[0];
+            const eastLeft = payload.lon[splitIndex - 1];
+            
+            // Right slice: positive longitudes (maps to 0-180 range)  
+            const westRight = payload.lon[splitIndex];
+            const eastRight = payload.lon[payload.lon.length - 1];
+            
+            console.log('Split textures:', {
+              left: { west: westLeft, east: eastLeft, cols: `0-${splitIndex}` },
+              right: { west: westRight, east: eastRight, cols: `${splitIndex}-${width}` }
+            });
+            
+            // Add left slice (rendered on right side of globe: 180-360)
+            addTexture(0, splitIndex, westLeft, eastLeft);
+            
+            // Add right slice (rendered on left side of globe: 0-180)
+            addTexture(splitIndex, width, westRight, eastRight);
           } else {
-            addTexture(0, width, payload.rectangle?.west ?? payload.lon[0], payload.rectangle?.east ?? payload.lon[payload.lon.length - 1]);
+            // Fallback: no split needed
+            addTexture(
+              0,
+              width,
+              payload.rectangle?.west ?? payload.lon[0],
+              payload.rectangle?.east ?? payload.lon[payload.lon.length - 1]
+            );
           }
         } else {
+          // Normal prime meridian origin
           addTexture(
             0,
             width,
             payload.rectangle?.west ?? payload.lon[0],
-            payload.rectangle?.east ?? payload.lon[payload.lon.length - 1],
+            payload.rectangle?.east ?? payload.lon[payload.lon.length - 1]
           );
         }
+
+        // Debug logging
+        console.log('Raster data summary:', {
+          shape: [height, width],
+          latRange: [Math.min(...payload.lat), Math.max(...payload.lat)],
+          lonRange: [Math.min(...payload.lon), Math.max(...payload.lon)],
+          valueRange: { min, max },
+          origin,
+          textureCount: textures.length,
+          textures: textures.map(t => t.rectangle)
+        });
 
         setState({
           loading: false,

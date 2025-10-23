@@ -357,7 +357,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
           console.log('Loading Cesium from CDN...');
           const Cesium = await loadCesiumFromCDN();
-        setCesiumInstance(Cesium);
+          setCesiumInstance(Cesium);
 
           console.log('Creating self-hosted Cesium viewer...');
 
@@ -381,27 +381,34 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
               type: 'ICharmOcean',
               uniforms: {
                 deepColor: Cesium.Color.fromCssColorString('#063a6b'),
-                polarColor: Cesium.Color.fromCssColorString('#4a90e2'),
-                horizonColor: Cesium.Color.fromCssColorString('#2c65c8'),
-                horizonIntensity: 0.35,
+                polarColor: Cesium.Color.fromCssColorString('#0f4f7d'),
+                horizonColor: Cesium.Color.fromCssColorString('#0d658f'),
+                horizonIntensity: 0.15,
+                polarBlendStart: 0.65,
+                polarBlendEnd: 0.95,
+                horizonExponent: 3.0,
+                emissionStrength: 0.02,
               },
               source: `
               czm_material czm_getMaterial(czm_materialInput input)
               {
                 czm_material material = czm_getDefaultMaterial(input);
-                vec3 normal = normalize(input.normalEC);
-
-                float lat = abs(input.st.t - 0.5) * 2.0;
-                lat = clamp(lat, 0.0, 1.0);
-                vec3 base = mix(deepColor.rgb, polarColor.rgb, smoothstep(0.0, 1.0, lat));
-
+                vec3 normalEC = normalize(input.normalEC);
                 vec3 viewDir = normalize(-input.positionToEyeEC);
-                float fresnel = pow(1.0 - clamp(dot(normal, viewDir), 0.0, 1.0), 2.0);
-                vec3 color = mix(base, horizonColor.rgb, fresnel * horizonIntensity);
+
+                float polarBlend = smoothstep(
+                  polarBlendStart,
+                  polarBlendEnd,
+                  clamp(abs(input.st.t - 0.5) * 2.0, 0.0, 1.0)
+                );
+                vec3 base = mix(deepColor.rgb, polarColor.rgb, polarBlend);
+
+                float rim = pow(1.0 - clamp(dot(normalEC, viewDir), 0.0, 1.0), horizonExponent);
+                vec3 color = mix(base, horizonColor.rgb, rim * horizonIntensity);
                 color = clamp(color, 0.0, 1.0);
 
                 material.diffuse = color;
-                material.emission = color * 0.04;
+                material.emission = color * emissionStrength;
                 material.alpha = 1.0;
                 return material;
               }
@@ -410,6 +417,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           });
 
           viewer.scene.globe.material = oceanMaterial;
+          viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#061e34');
           viewer.scene.globe.enableLighting = false;
           viewer.scene.globe.dynamicAtmosphereLighting = false;
           viewer.scene.globe.dynamicAtmosphereLightingFromSun = false;
@@ -550,6 +558,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       }
     }, [rasterState.error]);
 
+    // Updated raster texture rendering with improved settings
     useEffect(() => {
       if (!viewerRef.current || !cesiumInstance) {
         return;
@@ -557,6 +566,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
       const viewer = viewerRef.current;
 
+      // Remove old layers
       if (rasterLayerRef.current.length) {
         rasterLayerRef.current.forEach((layer) => {
           try {
@@ -572,8 +582,12 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
 
+      console.log('Adding raster textures:', rasterState.data.textures.length);
+      
       const newLayers: any[] = [];
-      rasterState.data.textures.forEach((texture) => {
+      rasterState.data.textures.forEach((texture, index) => {
+        console.log(`Texture ${index}:`, texture.rectangle);
+        
         const provider = new cesiumInstance.SingleTileImageryProvider({
           url: texture.imageUrl,
           rectangle: cesiumInstance.Rectangle.fromDegrees(
@@ -585,10 +599,24 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         });
 
         const layer = viewer.scene.imageryLayers.addImageryProvider(provider);
-        layer.alpha = 0.9;
+        
+        // Critical rendering settings to prevent blending artifacts
+        layer.alpha = 1.0; // Full opacity
+        layer.brightness = 1.0;
+        layer.contrast = 1.0;
+        layer.hue = 0.0;
+        layer.saturation = 1.0;
+        layer.gamma = 1.0;
+        
+        // Disable texture filtering to prevent interpolation artifacts
+        layer.minificationFilter = cesiumInstance.TextureMinificationFilter.NEAREST;
+        layer.magnificationFilter = cesiumInstance.TextureMagnificationFilter.NEAREST;
+        
         newLayers.push(layer);
       });
+      
       rasterLayerRef.current = newLayers;
+      console.log(`Added ${newLayers.length} raster layers to globe`);
 
       return () => {
         if (viewer && !viewer.isDestroyed()) {
