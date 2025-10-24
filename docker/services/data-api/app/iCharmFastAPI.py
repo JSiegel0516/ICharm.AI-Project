@@ -237,10 +237,13 @@ def load_dataset(
     if stored != 'local':
         input_file = str(input_file)
         is_http_source = input_file.startswith("http://") or input_file.startswith("https://")
-        if not is_http_source and not input_file.startswith('s3://'):
-            input_file = 's3://' + input_file
         if is_http_source:
-            storage_options = {}
+            cache_dir = Path("/tmp/xr_cache")
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            input_file = f"simplecache::{input_file}"
+            storage_options = {"simplecache": {"cache_storage": str(cache_dir)}}
+        elif not input_file.startswith('s3://'):
+            input_file = 's3://' + input_file
     if stored == 'local':
         path = input_file
         if engine == 'zarr':
