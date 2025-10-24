@@ -128,13 +128,14 @@ export function SideButtons({
           return prev;
         }
 
-        const newSelection = new Set(prev);
-        if (newSelection.has(datasetId)) {
-          newSelection.delete(datasetId);
+        // Only allow selecting one dataset at a time
+        if (prev.has(datasetId)) {
+          // If clicking the already selected dataset, deselect it
+          return new Set();
         } else {
-          newSelection.add(datasetId);
+          // Replace the current selection with the new one
+          return new Set([datasetId]);
         }
-        return newSelection;
       });
     },
     [datasets]
@@ -328,7 +329,7 @@ export function SideButtons({
             initial={{ x: 0 }}
             exit={{ x: -100, opacity: 0 }}
             transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="z-9999 pointer-events-auto fixed left-4 top-0 flex h-screen flex-col items-center justify-center gap-2"
+            className="pointer-events-auto fixed top-0 left-4 z-9999 flex h-screen flex-col items-center justify-center gap-2"
           >
             {/* Dynamic Buttons */}
             {buttonConfigs.map(({ id, icon, label, onClick, delay }) => (
@@ -378,7 +379,7 @@ export function SideButtons({
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -100, opacity: 0 }}
             transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="z-9999 pointer-events-auto fixed left-4 top-1/2 w-80 -translate-y-1/2"
+            className="pointer-events-auto fixed top-1/2 left-4 z-9999 w-80 -translate-y-1/2"
           >
             <Calendar
               mode="single"
@@ -417,18 +418,18 @@ export function SideButtons({
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -100, opacity: 0 }}
             transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="z-9999 pointer-events-auto fixed left-4 top-1/2 w-96 -translate-y-1/2"
+            className="pointer-events-auto fixed top-1/2 left-4 z-9999 w-96 -translate-y-1/2"
           >
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center justify-between text-lg">
-                  <span>Select Datasets</span>
+                  <span>Select Dataset</span>
                   <Badge variant="secondary">
                     {selectedDatasets.size} selected
                   </Badge>
                 </CardTitle>
                 <CardDescription>
-                  Choose datasets to visualize on the globe
+                  Choose a dataset to visualize on the globe
                 </CardDescription>
               </CardHeader>
               <CardContent className="max-h-96 space-y-3 overflow-y-auto">
