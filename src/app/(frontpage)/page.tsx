@@ -75,6 +75,7 @@ export default function HomePage() {
         latitude,
         longitude,
         regionData: data || {
+<<<<<<< HEAD
           name: currentDataset?.name ?? 'GPCP V2.3 Precipitation',
           precipitation: Math.random() * 2,
           temperature: 15 + Math.random() * 20,
@@ -83,11 +84,21 @@ export default function HomePage() {
             currentDataset?.name ??
             'Global Precipitation Climatology Project',
           unit: currentDataset?.units ?? 'units',
+=======
+          name: 'GPCP V2.3 Precipitation',
+          precipitation: Math.random() * 2,
+          temperature: 15 + Math.random() * 20,
+          dataset: 'Global Precipitation Climatation Project',
+>>>>>>> 98c53d7de7a9f549bb931b053e791346d012c3c5
         },
       });
       setShowRegionInfo(true);
     },
+<<<<<<< HEAD
     [currentDataset]
+=======
+    []
+>>>>>>> 98c53d7de7a9f549bb931b053e791346d012c3c5
   );
 
   const handleRegionInfoClose = useCallback(() => {
@@ -149,8 +160,11 @@ export default function HomePage() {
           regionData={regionInfoData.regionData}
           colorBarPosition={colorBarPosition}
           colorBarCollapsed={colorBarCollapsed}
+<<<<<<< HEAD
           currentDataset={currentDataset}
           selectedDate={selectedDate}
+=======
+>>>>>>> 98c53d7de7a9f549bb931b053e791346d012c3c5
         />
 
         {/* Bottom Controls */}

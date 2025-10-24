@@ -1,6 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SettingsIcon } from '@/components/ui/settings';
 import { FileTextIcon } from '@/components/ui/file-text';
@@ -29,17 +35,17 @@ interface SideButtonsProps {
   onShowSidebarPanel: (panel: 'datasets' | 'history' | 'about' | null) => void;
 }
 
-const formatDisplayDate = (value?: string | null) => {
+const formatDisplayDate = (value?: string | null | Date) => {
   if (!value) {
     return 'Unknown';
   }
 
-  const parsed = new Date(value);
+  const parsed = value instanceof Date ? value : new Date(value);
   if (!Number.isNaN(parsed.getTime())) {
     return parsed.toISOString().split('T')[0];
   }
 
-  return value;
+  return String(value);
 };
 
 export function SideButtons({
@@ -48,20 +54,34 @@ export function SideButtons({
   onShowTutorial,
   onShowSidebarPanel,
 }: SideButtonsProps) {
-  const {
-    datasets,
-    currentDataset,
-    setCurrentDataset,
-    isLoading,
-    error,
-  } = useAppState();
+  const { datasets, currentDataset, setCurrentDataset, isLoading, error } =
+    useAppState();
 
   const [isExpanded, setIsExpanded] = useState(true);
   const [showCalendar, setShowCalendar] = useState(false);
   const [showDatasetCard, setShowDatasetCard] = useState(false);
-  const [selectedDatasets, setSelectedDatasets] = useState<Set<string>>(
-    () => (currentDataset ? new Set([currentDataset.id]) : new Set())
+  const [selectedDatasets, setSelectedDatasets] = useState<Set<string>>(() =>
+    currentDataset ? new Set([currentDataset.id]) : new Set()
   );
+  const [calendarMonth, setCalendarMonth] = useState(selectedDate);
+
+  // Refs for click-outside detection
+  const calendarRef = useRef<HTMLDivElement>(null);
+  const datasetCardRef = useRef<HTMLDivElement>(null);
+
+  // Get date range from current dataset
+  const dateRange = useMemo(() => {
+    if (!currentDataset) {
+      return {
+        minDate: new Date(1979, 0, 1),
+        maxDate: new Date(),
+      };
+    }
+    return {
+      minDate: currentDataset.startDate,
+      maxDate: currentDataset.endDate,
+    };
+  }, [currentDataset]);
 
   // Event Handlers
   const toggleMenu = useCallback(() => setIsExpanded((prev) => !prev), []);
@@ -89,7 +109,8 @@ export function SideButtons({
 
   const handleCalendarClick = useCallback(() => {
     setShowCalendar(true);
-  }, []);
+    setCalendarMonth(selectedDate);
+  }, [selectedDate]);
 
   const closeCalendar = useCallback(() => {
     setShowCalendar(false);
@@ -100,21 +121,24 @@ export function SideButtons({
     onShowSidebarPanel(null);
   }, [onShowSidebarPanel]);
 
-  const toggleDatasetSelection = useCallback((datasetId: string) => {
-    setSelectedDatasets((prev) => {
-      if (!datasets.some((dataset) => dataset.id === datasetId)) {
-        return prev;
-      }
+  const toggleDatasetSelection = useCallback(
+    (datasetId: string) => {
+      setSelectedDatasets((prev) => {
+        if (!datasets.some((dataset) => dataset.id === datasetId)) {
+          return prev;
+        }
 
-      const newSelection = new Set(prev);
-      if (newSelection.has(datasetId)) {
-        newSelection.delete(datasetId);
-      } else {
-        newSelection.add(datasetId);
-      }
-      return newSelection;
-    });
-  }, [datasets]);
+        const newSelection = new Set(prev);
+        if (newSelection.has(datasetId)) {
+          newSelection.delete(datasetId);
+        } else {
+          newSelection.add(datasetId);
+        }
+        return newSelection;
+      });
+    },
+    [datasets]
+  );
 
   const handleApplyDatasets = useCallback(() => {
     const [firstSelection] = Array.from(selectedDatasets);
@@ -122,18 +146,45 @@ export function SideButtons({
       const dataset = datasets.find((item) => item.id === firstSelection);
       if (dataset) {
         setCurrentDataset(dataset);
+
+        // Clamp selected date to new dataset's range
+        let newDate = selectedDate;
+        if (selectedDate < dataset.startDate) {
+          newDate = dataset.startDate;
+        } else if (selectedDate > dataset.endDate) {
+          newDate = dataset.endDate;
+        }
+
+        if (newDate !== selectedDate) {
+          onDateChange(newDate);
+        }
       }
     }
     closeDatasetCard();
-  }, [selectedDatasets, datasets, setCurrentDataset, closeDatasetCard]);
+  }, [
+    selectedDatasets,
+    datasets,
+    setCurrentDataset,
+    closeDatasetCard,
+    selectedDate,
+    onDateChange,
+  ]);
 
   const handleDateSelect = useCallback(
     (date: Date | undefined) => {
       if (date) {
+        // Clamp date to valid range
+        let clampedDate = date;
+        if (date < dateRange.minDate) {
+          clampedDate = dateRange.minDate;
+        } else if (date > dateRange.maxDate) {
+          clampedDate = dateRange.maxDate;
+        }
+
         const newDate = new Date(
-          date.getFullYear(),
-          date.getMonth(),
-          date.getDate(),
+          clampedDate.getFullYear(),
+          clampedDate.getMonth(),
+          clampedDate.getDate(),
           selectedDate.getHours(),
           selectedDate.getMinutes(),
           selectedDate.getSeconds()
@@ -142,8 +193,44 @@ export function SideButtons({
         closeCalendar();
       }
     },
-    [selectedDate, onDateChange, closeCalendar]
+    [selectedDate, onDateChange, closeCalendar, dateRange]
   );
+
+  const handleMonthChange = useCallback((newMonth: Date) => {
+    setCalendarMonth(newMonth);
+  }, []);
+
+  // Click-outside handler
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        calendarRef.current &&
+        !calendarRef.current.contains(event.target as Node)
+      ) {
+        closeCalendar();
+      }
+      if (
+        datasetCardRef.current &&
+        !datasetCardRef.current.contains(event.target as Node)
+      ) {
+        closeDatasetCard();
+      }
+    };
+
+    if (showCalendar || showDatasetCard) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [showCalendar, showDatasetCard, closeCalendar, closeDatasetCard]);
+
+  // Sync calendar month with selected date when calendar opens
+  useEffect(() => {
+    if (showCalendar) {
+      setCalendarMonth(selectedDate);
+    }
+  }, [showCalendar, selectedDate]);
 
   useEffect(() => {
     if (!datasets.length) {
@@ -165,7 +252,10 @@ export function SideButtons({
         return new Set([fallback]);
       }
 
-      if (validIds.length === prev.size && validIds.every((id) => prev.has(id))) {
+      if (
+        validIds.length === prev.size &&
+        validIds.every((id) => prev.has(id))
+      ) {
         return prev;
       }
 
@@ -238,7 +328,7 @@ export function SideButtons({
             initial={{ x: 0 }}
             exit={{ x: -100, opacity: 0 }}
             transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="pointer-events-auto fixed top-0 left-4 z-9999 flex h-screen flex-col items-center justify-center gap-2"
+            className="z-9999 pointer-events-auto fixed left-4 top-0 flex h-screen flex-col items-center justify-center gap-2"
           >
             {/* Dynamic Buttons */}
             {buttonConfigs.map(({ id, icon, label, onClick, delay }) => (
@@ -283,11 +373,12 @@ export function SideButtons({
       <AnimatePresence>
         {showCalendar && (
           <motion.div
+            ref={calendarRef}
             initial={{ x: -100, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -100, opacity: 0 }}
             transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="pointer-events-auto fixed top-1/2 left-4 z-9999 w-80 -translate-y-1/2"
+            className="z-9999 pointer-events-auto fixed left-4 top-1/2 w-80 -translate-y-1/2"
           >
             <Calendar
               mode="single"
@@ -295,31 +386,38 @@ export function SideButtons({
               onSelect={handleDateSelect}
               month={selectedDate}
               onMonthChange={(newMonth) => {
-                // When year/month dropdown changes, update the date to the first of that month
                 const newDate = new Date(
                   newMonth.getFullYear(),
                   newMonth.getMonth(),
                   selectedDate.getDate()
                 );
                 onDateChange(newDate);
-                closeCalendar();
               }}
+              // Add date range restrictions
+              disabled={(date) => {
+                if (!currentDataset) return false;
+                const start = currentDataset.startDate;
+                const end = currentDataset.endDate;
+                return date < start || date > end;
+              }}
+              fromDate={currentDataset?.startDate}
+              toDate={currentDataset?.endDate}
               className="rounded-md border shadow-sm lg:h-[300px] lg:w-[250px]"
               captionLayout="dropdown"
             />
           </motion.div>
         )}
       </AnimatePresence>
-
       {/* Dataset Selection Card */}
       <AnimatePresence>
         {showDatasetCard && (
           <motion.div
+            ref={datasetCardRef}
             initial={{ x: -100, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -100, opacity: 0 }}
             transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="pointer-events-auto fixed top-1/2 left-4 z-9999 w-96 -translate-y-1/2"
+            className="z-9999 pointer-events-auto fixed left-4 top-1/2 w-96 -translate-y-1/2"
           >
             <Card>
               <CardHeader className="pb-3">
@@ -335,7 +433,7 @@ export function SideButtons({
               </CardHeader>
               <CardContent className="max-h-96 space-y-3 overflow-y-auto">
                 {isLoading && (
-                  <div className="rounded border border-slate-600 bg-slate-800/50 p-3 text-sm text-slate-300">
+                  <div className="rounded border border-neutral-600 bg-neutral-800/50 p-3 text-sm text-slate-300">
                     Loading datasets...
                   </div>
                 )}
@@ -366,8 +464,8 @@ export function SideButtons({
                       key={dataset.id}
                       className={`cursor-pointer rounded-lg border p-3 transition-all ${
                         isSelected
-                          ? 'border-slate-300/50 bg-slate-300/20'
-                          : 'border-slate-600 bg-slate-700/50 hover:bg-slate-700/70'
+                          ? 'border-neutral-300/50 bg-neutral-300/20'
+                          : 'border-neutral-600 bg-neutral-700/50 hover:bg-neutral-700/70'
                       }`}
                       onClick={() => toggleDatasetSelection(dataset.id)}
                     >

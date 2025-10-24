@@ -4,8 +4,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Info } from 'lucide-react';
-import { ChartSplineIcon } from '../../../../components/UI/chart-spline';
-import { SettingsGearIcon } from '../../../../components/UI/settings-gear';
+import { ChartSplineIcon } from '@/components/ui/chart-spline';
+import { SettingsGearIcon } from '@/components/ui/settings-gear';
 import { useAppState } from '@/context/HeaderContext';
 import { SettingsModal } from '@/app/(frontpage)/_components/Modals/SettingsModal';
 import AboutModal from '@/app/(frontpage)/_components/Modals/AboutModal';
@@ -29,20 +29,6 @@ const NavigationIcons: React.FC = () => {
   const handleAboutClick = () => {
     setActiveDropdown(null);
     setShowAboutModal(true); // Use local state instead of context
-  };
-
-  const handleDatasetClick = () => {
-    setActiveDropdown(activeDropdown === 'datasets' ? null : 'datasets');
-  };
-
-  const handleDatasetSelect = (dataset: any) => {
-    setCurrentDataset(dataset);
-    setActiveDropdown(null);
-  };
-
-  const handleSettingSelect = (setting: any) => {
-    console.log('Setting selected:', setting);
-    setActiveDropdown(null);
   };
 
   const handleSettingsClick = () => {
@@ -88,8 +74,8 @@ const NavigationIcons: React.FC = () => {
   const getIconContainerClasses = (isActive: boolean = false) => {
     return `relative group p-2 rounded-xl transition-all duration-300 ${
       isActive
-        ? 'bg-blue-500/20 border border-blue-400/30 text-blue-400'
-        : 'bg-slate-800/50  hover:bg-slate-700/90 text-gray-400 hover:text-gray-200 border border-transparent hover:border-gray-600/50'
+        ? 'bg-neutral-500/20 border border-blue-400/30 text-blue-400'
+        : 'bg-neutral-800/50  hover:bg-neutral-700/90 text-gray-400 hover:text-gray-200 border border-transparent hover:border-gray-600/50'
     }`;
   };
 
@@ -187,12 +173,6 @@ const NavigationIcons: React.FC = () => {
       <AboutModal
         isOpen={showAboutModal} // Pass the isOpen prop
         onClose={closeAboutModal}
-        onShowTutorial={() => {
-          // Handle tutorial launch
-          closeAboutModal();
-          // You might want to add tutorial launch logic here
-          console.log('Launch tutorial from About modal');
-        }}
       />
     </>
   );

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { MessageCircle, X } from 'lucide-react';
-import ChatPage from '../UI/ChatPage';
+import ChatPage from '@/components/ui/ChatPage';
 
 // Remove ChatBotProps since we're managing state internally
 const ChatBot: React.FC = () => {
@@ -42,10 +42,10 @@ const ChatBot: React.FC = () => {
         <button
           id="chatbot"
           onClick={show ? handleClose : handleOpenFullPage}
-          className={`fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full border text-white shadow-xl transition-all duration-300 hover:scale-110 hover:shadow-2xl ${
+          className={`fixed right-6 bottom-6 z-50 flex h-14 w-14 items-center justify-center rounded-full border text-white shadow-xl transition-all duration-300 hover:scale-110 hover:shadow-2xl ${
             showFullPage
-              ? 'border-gray-600/30 bg-gray-800/95 backdrop-blur-sm hover:border-gray-500/50'
-              : 'border-transparent bg-slate-800 hover:bg-slate-700'
+              ? 'border-gray-600/30 bg-neutral-800/95 backdrop-blur-sm hover:border-gray-500/50'
+              : 'border-transparent bg-neutral-800 hover:bg-neutral-700'
           }`}
           aria-label={show ? 'Close chat' : 'Open chat'}
         >
