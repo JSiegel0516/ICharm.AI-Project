@@ -1,4 +1,5 @@
 from typing import Optional, Dict, Any
+from pathlib import Path
 from fastapi import FastAPI, Body, HTTPException
 import xarray as xr
 import pandas as pd
@@ -13,6 +14,41 @@ from .raster_visualization import serialize_raster_array
 app = FastAPI()
 
 METADATA_PATH = "metadata.csv"
+
+RASTER_BACKEND_OVERRIDES: dict[str, dict[str, object]] = {
+    "NOAA Extended Reconstructed SST V5": {"supportsRaster": True},
+    "NOAA Global Surface Temperature (NOAAGlobalTemp)": {"supportsRaster": True},
+    "Global Precipitation Climatology Project (GPCP) Monthly Analysis Product": {"supportsRaster": True},
+    "NOAA/CIRES/DOE 20th Century Reanalysis (V3)": {"supportsRaster": True},
+    "NCEP Global Ocean Data Assimilation System (GODAS)": {"supportsRaster": True},
+    "Mean Layer Temperature - NOAA CDR": {"supportsRaster": True},
+    "Precipitation - CMORPH CDR": {
+        "supportsRaster": True,
+        "colorMap": "Color Brewer 2.0|Sequential|Multi-hue|9-class YlGnBu",
+    },
+    "Sea Surface Temperature – Optimum Interpolation CDR": {"supportsRaster": True},
+    "Normalized Difference Vegetation Index CDR": {"supportsRaster": True},
+}
+
+
+def _open_zarr_store(path: str, storage_options: Optional[Dict[str, Any]] = None):
+    mapper: Any = path
+    opts = storage_options or {}
+    if path.startswith("s3://"):
+        mapper = fsspec.get_mapper(path, **opts)
+    try:
+        return xr.open_zarr(mapper, consolidated=True)
+    except (ValueError, KeyError, OSError):
+        return xr.open_zarr(mapper, consolidated=False)
+
+
+def _open_remote_dataset(path: str, engine: Optional[str], storage_options: Dict[str, Any]):
+    open_kwargs = storage_options or {}
+    opener = fsspec.open(path, mode="rb", **open_kwargs)
+    ds = xr.open_dataset(opener.open(), engine=engine, decode_times=True, use_cftime=True)
+    ds.attrs["_file_obj"] = opener
+    return ds
+
 
 def load_metadata(metadata_path: str) -> pd.DataFrame:
     try:
@@ -180,15 +216,39 @@ def load_dataset(
     key_var = row['keyVariable']
     kerchunk_path = row['kerchunkPath'] if pd.notna(row['kerchunkPath']) and row['kerchunkPath'] != 'None' else None
     storage_options = {"anon": True}
+    is_http_source = False
 
+    if stored == 'local':
+        candidate = Path(str(input_file))
+        if not candidate.is_absolute():
+            candidate = Path("/app") / candidate
+        if not candidate.exists():
+            fallback = row['origLocation'] if pd.notna(row['origLocation']) else None
+            if fallback and isinstance(fallback, str) and fallback.strip():
+                print(f"[Load Dataset] Local path '{input_file}' missing. Falling back to {fallback}")
+                stored = 'cloud'
+                input_file = fallback.strip()
+                engine = None
+                storage_options = {}
+                is_http_source = input_file.startswith("http://") or input_file.startswith("https://")
+            else:
+                raise FileNotFoundError(f"Local dataset '{input_file}' not found and no fallback available.")
+
+    if stored != 'local':
+        input_file = str(input_file)
+        is_http_source = input_file.startswith("http://") or input_file.startswith("https://")
+        if not is_http_source and not input_file.startswith('s3://'):
+            input_file = 's3://' + input_file
+        if is_http_source:
+            storage_options = {}
     if stored == 'local':
         path = input_file
         if engine == 'zarr':
-            ds = xr.open_zarr(path)
+            ds = _open_zarr_store(path)
         else:
             ds = xr.open_dataset(path, decode_times=True, use_cftime=True)
     else:
-        if not input_file.startswith('s3://'):
+        if not is_http_source and not input_file.startswith('s3://'):
             input_file = 's3://' + input_file
         format_dict = {}
         if year is not None:
@@ -224,12 +284,16 @@ def load_dataset(
                         open_file = fsspec.open(file_path, mode='rb', **storage_options)
                         datasets.append(xr.open_dataset(open_file.open(), engine=engine))
                         open_file_refs.append(open_file)
+                    elif engine == 'zarr':
+                        datasets.append(_open_zarr_store(file_path, storage_options))
                     else:
-                        open_kwargs: dict[str, Any] = {}
-                        if engine:
-                            open_kwargs['engine'] = engine
-                        open_kwargs['backend_kwargs'] = {'storage_options': storage_options}
-                        datasets.append(xr.open_dataset(file_path, **open_kwargs))
+                        if storage_options:
+                            datasets.append(_open_remote_dataset(file_path, engine, storage_options))
+                        else:
+                            open_kwargs: dict[str, Any] = {'decode_times': True, 'use_cftime': True}
+                            if engine:
+                                open_kwargs['engine'] = engine
+                            datasets.append(xr.open_dataset(file_path, **open_kwargs))
                 ds = xr.concat(datasets, dim='time')
                 if open_file_refs:
                     ds.attrs['_file_obj'] = open_file_refs
@@ -239,15 +303,19 @@ def load_dataset(
                     open_file = fsspec.open(file_path, mode='rb', **storage_options)
                     ds = xr.open_dataset(open_file.open(), engine=engine)
                     ds.attrs['_file_obj'] = open_file
+                elif engine == 'zarr':
+                    ds = _open_zarr_store(file_path, storage_options)
                 else:
-                    open_kwargs: dict[str, Any] = {}
-                    if engine:
-                        open_kwargs['engine'] = engine
-                    open_kwargs['backend_kwargs'] = {'storage_options': storage_options}
-                    ds = xr.open_dataset(
-                        file_path,
-                        **open_kwargs
-                    )
+                    if storage_options:
+                        ds = _open_remote_dataset(file_path, engine, storage_options)
+                    else:
+                        open_kwargs: dict[str, Any] = {'decode_times': True, 'use_cftime': True}
+                        if engine:
+                            open_kwargs['engine'] = engine
+                        ds = xr.open_dataset(
+                            file_path,
+                            **open_kwargs
+                        )
         else:
             file_path = input_file
             if file_path.endswith('.nc'):
@@ -255,43 +323,50 @@ def load_dataset(
                     open_file = fsspec.open(file_path, mode='rb', **storage_options)
                     ds = xr.open_dataset(open_file.open(), engine=engine)
                     ds.attrs['_file_obj'] = open_file
+                elif engine == 'zarr':
+                    ds = _open_zarr_store(file_path, storage_options)
                 else:
-                    open_kwargs: dict[str, Any] = {'decode_times': True, 'use_cftime': True}
-                    if engine:
-                        open_kwargs['engine'] = engine
-                    open_kwargs['backend_kwargs'] = {'storage_options': storage_options}
-                    ds = xr.open_dataset(
-                        file_path,
-                        **open_kwargs
-                    )
+                    if storage_options:
+                        ds = _open_remote_dataset(file_path, engine, storage_options)
+                    else:
+                        open_kwargs: dict[str, Any] = {'decode_times': True, 'use_cftime': True}
+                        if engine:
+                            open_kwargs['engine'] = engine
+                        ds = xr.open_dataset(
+                            file_path,
+                            **open_kwargs
+                        )
             else:
-                if year is None or month is None:
-                    raise ValueError(f"Year and month required for dataset '{dataset_name}'")
-                glob_pattern = file_path + f"{year:04d}/{month:02d}/*.nc"
-                fs = s3fs.S3FileSystem(anon=True)
-                file_urls = fs.glob(glob_pattern)
-                if not file_urls:
-                    raise FileNotFoundError(f"No files found for {year}-{month:02d} in '{dataset_name}'")
-                full_urls = [f"s3://{u}" for u in file_urls]
-                if engine == 'h5netcdf':
-                    open_files = fsspec.open_files(full_urls, mode='rb', **storage_options)
-                    ds = xr.open_mfdataset(
-                        [open_file.open() for open_file in open_files],
-                        engine=engine,
-                        combine="by_coords",
-                        parallel=True,
-                        chunks={'time': 1},
-                    )
-                    ds.attrs['_file_obj'] = open_files
+                if engine == 'zarr':
+                    ds = _open_zarr_store(file_path, storage_options)
                 else:
-                    mfd_kwargs: dict[str, Any] = {'combine': 'by_coords', 'parallel': True, 'chunks': {'time': 1}}
-                    if engine:
-                        mfd_kwargs['engine'] = engine
-                    mfd_kwargs['backend_kwargs'] = {'storage_options': storage_options}
-                    ds = xr.open_mfdataset(
-                        full_urls,
-                        **mfd_kwargs
-                    )
+                    if year is None or month is None:
+                        raise ValueError(f"Year and month required for dataset '{dataset_name}'")
+                    glob_pattern = file_path + f"{year:04d}/{month:02d}/*.nc"
+                    fs = s3fs.S3FileSystem(anon=True)
+                    file_urls = fs.glob(glob_pattern)
+                    if not file_urls:
+                        raise FileNotFoundError(f"No files found for {year}-{month:02d} in '{dataset_name}'")
+                    full_urls = [f"s3://{u}" for u in file_urls]
+                    if engine == 'h5netcdf':
+                        open_files = fsspec.open_files(full_urls, mode='rb', **storage_options)
+                        ds = xr.open_mfdataset(
+                            [open_file.open() for open_file in open_files],
+                            engine=engine,
+                            combine="by_coords",
+                            parallel=True,
+                            chunks={'time': 1},
+                        )
+                        ds.attrs['_file_obj'] = open_files
+                    else:
+                        mfd_kwargs: dict[str, Any] = {'combine': 'by_coords', 'parallel': True, 'chunks': {'time': 1}}
+                        if engine:
+                            mfd_kwargs['engine'] = engine
+                        mfd_kwargs['backend_kwargs'] = {'storage_options': storage_options}
+                        ds = xr.open_mfdataset(
+                            full_urls,
+                            **mfd_kwargs
+                        )
     if variable and variable in ds.data_vars:
         da = ds[variable]
     else:
@@ -498,11 +573,36 @@ def get_dataset_raster(payload: Dict[str, Any] = Body(...)):
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    if not _bool_from_metadata(row.get("supportsRaster")):
+    override_key = dataset_name
+    if override_key not in RASTER_BACKEND_OVERRIDES and "datasetName" in row:
+        override_key = row["datasetName"]
+    overrides = RASTER_BACKEND_OVERRIDES.get(override_key, {})
+    if not overrides:
+        normalized_key = (dataset_name or "").strip()
+        overrides = RASTER_BACKEND_OVERRIDES.get(normalized_key, {})
+        if overrides:
+            override_key = normalized_key
+    print(
+        f"[Raster API] Override lookup for '{dataset_name}' -> key='{override_key}' found={bool(overrides)}"
+    )
+
+    supports_raster_requested = _bool_from_metadata(row.get("supportsRaster")) or bool(
+        overrides.get("supportsRaster")
+    )
+
+    if not supports_raster_requested:
+        print(
+            f"[Raster API] Raster disabled for {dataset_name}. metadata={row.get('supportsRaster')} overrides={overrides.get('supportsRaster')}"
+        )
         raise HTTPException(
             status_code=404,
             detail=f"Dataset '{dataset_name}' does not expose raster data.",
         )
+
+    if overrides:
+        row = row.copy()
+        for key, value in overrides.items():
+            row[key] = value
 
     variable = payload.get("variable")
     year = payload.get("year")

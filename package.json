@@ -83,6 +83,7 @@
     "@types/react-dom": "^19",
     "babel-loader": "^10.0.0",
     "copy-webpack-plugin": "^13.0.1",
+    "drizzle-kit": "^0.31.5",
     "fs-extra": "^11.3.2",
     "prettier": "^3.6.2",
     "prettier-plugin-tailwindcss": "^0.6.14",

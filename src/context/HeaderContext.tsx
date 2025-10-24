@@ -10,6 +10,23 @@ import React, {
 import type { Dataset, AppState, TemperatureUnit, RegionData } from '@/types';
 import { mockDatasets } from '@/utils/constants';
 
+const RASTER_ENABLED_DATASETS = new Set<string>([
+  'NOAA Extended Reconstructed SST V5',
+  'NOAA Global Surface Temperature (NOAAGlobalTemp)',
+  'Global Precipitation Climatology Project (GPCP) Monthly Analysis Product',
+  'NOAA/CIRES/DOE 20th Century Reanalysis (V3)',
+  'NCEP Global Ocean Data Assimilation System (GODAS)',
+  'Mean Layer Temperature - NOAA CDR',
+  'Precipitation - CMORPH CDR',
+  'Sea Surface Temperature – Optimum Interpolation CDR',
+  'Normalized Difference Vegetation Index CDR',
+]);
+
+const RASTER_COLOR_MAP_OVERRIDES: Record<string, string> = {
+  'Precipitation - CMORPH CDR':
+    'Color Brewer 2.0|Sequential|Multi-hue|9-class YlGnBu',
+};
+
 type DatabaseDataset = {
   id: string;
   sourceName: string;
@@ -30,6 +47,8 @@ type DatabaseDataset = {
   origLocation: string;
   startDate: string;
   endDate: string;
+  supportsRaster?: string | boolean | null;
+  colorMap?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -72,21 +91,27 @@ function transformDataset(db: DatabaseDataset): Dataset {
     description: `${db.layerParameter} - ${db.statistic}`,
     dataType: db.datasetType,
     units: db.units,
-    // Add default colorScale based on parameter type
-    colorScale: generateColorScale(db.layerParameter, db.units),
-    // Store full backend data for reference
-    backend: {
-      ...db,
-      startDate: db.startDate,
-      endDate: db.endDate,
-      spatialResolution: db.spatialResolution,
-      datasetName: db.datasetName,
-      datasetType: db.datasetType,
-    },
-    // Parse dates for easy use
-    startDate: parseDate(db.startDate),
-    endDate: parseDate(db.endDate),
-  };
+  // Add default colorScale based on parameter type
+  colorScale: generateColorScale(db.layerParameter, db.units),
+  // Store full backend data for reference
+  backend: {
+    ...db,
+    supportsRaster: RASTER_ENABLED_DATASETS.has(db.datasetName),
+    colorMap: RASTER_COLOR_MAP_OVERRIDES[db.datasetName] ?? db.colorMap ?? undefined,
+    startDate: db.startDate,
+    endDate: db.endDate,
+    spatialResolution: db.spatialResolution,
+    datasetName: db.datasetName,
+    datasetType: db.datasetType,
+  },
+  // Parse dates for easy use
+  startDate: parseDate(db.startDate),
+  endDate: parseDate(db.endDate),
+  raster: {
+    supportsRaster: RASTER_ENABLED_DATASETS.has(db.datasetName),
+    colorMap: RASTER_COLOR_MAP_OVERRIDES[db.datasetName] ?? undefined,
+  },
+};
 }
 
 // Generate appropriate color scale based on parameter type
