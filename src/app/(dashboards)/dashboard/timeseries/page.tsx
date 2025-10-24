@@ -143,11 +143,65 @@ export default function TimeSeriesPage() {
     start: '1950-01-01',
     end: '2023-12-31',
   });
+  const [validDateRange, setValidDateRange] = useState({
+    start: '1950-01-01',
+    end: '2023-12-31',
+  });
+  const [dateRangeError, setDateRangeError] = useState<string | null>(null);
   const [chartType, setChartType] = useState<'line' | 'bar' | 'area'>('line');
   const [normalize, setNormalize] = useState(false);
   const [analysisModel, setAnalysisModel] = useState('raw');
   const [timeSeriesData, setTimeSeriesData] = useState<TimeSeriesPoint[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Update valid date range when selected datasets change
+  useEffect(() => {
+    if (selectedDatasets.length === 0) {
+      setValidDateRange({
+        start: '1950-01-01',
+        end: new Date().toISOString().split('T')[0],
+      });
+      setDateRangeError(null);
+      return;
+    }
+
+    // Calculate overlapping date range
+    let overallStart = new Date(selectedDatasets[0].startDate);
+    let overallEnd = new Date(selectedDatasets[0].endDate);
+
+    for (let i = 1; i < selectedDatasets.length; i++) {
+      const dsStart = new Date(selectedDatasets[i].startDate);
+      const dsEnd = new Date(selectedDatasets[i].endDate);
+
+      if (dsStart > overallStart) {
+        overallStart = dsStart;
+      }
+      if (dsEnd < overallEnd) {
+        overallEnd = dsEnd;
+      }
+    }
+
+    // Check if there's overlap
+    if (overallStart > overallEnd) {
+      setDateRangeError('Selected datasets have no overlapping time period');
+      return;
+    }
+
+    const newValidRange = {
+      start: overallStart.toISOString().split('T')[0],
+      end: overallEnd.toISOString().split('T')[0],
+    };
+
+    setValidDateRange(newValidRange);
+    setDateRangeError(null);
+
+    // Update current date range to fit within valid range
+    setDateRange((prev) => ({
+      start:
+        prev.start < newValidRange.start ? newValidRange.start : prev.start,
+      end: prev.end > newValidRange.end ? newValidRange.end : prev.end,
+    }));
+  }, [selectedDatasets]);
 
   const categories = useMemo(
     () => ['All', ...new Set(DATASETS.map((d) => d.category))],
@@ -164,6 +218,25 @@ export default function TimeSeriesPage() {
       return matchesSearch && matchesCategory;
     });
   }, [DATASETS, searchTerm, selectedCategory]);
+
+  const toggleDatasetSelection = (dataset: Dataset) => {
+    // Check if dataset is already selected
+    const isSelected = selectedDatasets.find((d) => d.id === dataset.id);
+
+    if (isSelected) {
+      // Remove dataset
+      setSelectedDatasets((prev) => prev.filter((d) => d.id !== dataset.id));
+      setVisibleDatasets((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(dataset.id);
+        return newSet;
+      });
+    } else {
+      // Add dataset
+      setSelectedDatasets((prev) => [...prev, dataset]);
+      setVisibleDatasets((prev) => new Set([...prev, dataset.id]));
+    }
+  };
 
   const addDatasetToComparison = (dataset: Dataset) => {
     if (selectedDatasets.find((d) => d.id === dataset.id)) return;
@@ -233,9 +306,47 @@ export default function TimeSeriesPage() {
     }
   };
 
-  const generateTimeSeriesData = () => {
+  const generateTimeSeriesData = async () => {
+    if (dateRangeError) {
+      console.error('Cannot load data: ' + dateRangeError);
+      return;
+    }
+
     setIsLoading(true);
-    setTimeout(() => {
+
+    try {
+      // Call FastAPI backend to get real time series data
+      const response = await fetch('/api/timeseries/data', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          datasetIds: selectedDatasets.map((d) => d.id),
+          startDate: dateRange.start,
+          endDate: dateRange.end,
+          analysisModel: analysisModel,
+          normalize: normalize,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to load data');
+      }
+
+      const result = await response.json();
+
+      // Transform API response to match component's data structure
+      setTimeSeriesData(result.data);
+
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Error loading time series data:', error);
+      setIsLoading(false);
+
+      // Fallback to mock data for development
+      console.warn('Using mock data as fallback');
       const data: TimeSeriesPoint[] = [];
       const startDate = new Date(dateRange.start);
       const endDate = new Date(dateRange.end);
@@ -251,30 +362,12 @@ export default function TimeSeriesPage() {
           const timeFactor =
             (currentDate.getTime() - startDate.getTime()) /
             (endDate.getTime() - startDate.getTime());
-          let value = 0;
-
-          switch (dataset.id) {
-            case 'temp-global':
-              value = 14 + timeFactor * 1.2 + Math.random() * 0.5;
-              break;
-            case 'co2-mauna-loa':
-              value = 310 + timeFactor * 100 + Math.random() * 2;
-              break;
-            case 'arctic-ice':
-              value = 12 - timeFactor * 4 + Math.random() * 1;
-              break;
-            case 'precipitation-global':
-              value =
-                100 +
-                Math.sin(timeFactor * Math.PI * 2) * 20 +
-                Math.random() * 10;
-              break;
-            case 'sea-level':
-              value = timeFactor * 100 + Math.random() * 2;
-              break;
-            default:
-              value = Math.random() * 100;
-          }
+          // Generate mock data based on dataset ID
+          const value =
+            50 +
+            timeFactor * 30 +
+            Math.sin(timeFactor * Math.PI * 4) * 10 +
+            Math.random() * 5;
           point.values[dataset.id] = Number(value.toFixed(2));
         });
 
@@ -283,17 +376,10 @@ export default function TimeSeriesPage() {
       }
 
       setTimeSeriesData(data);
-      setIsLoading(false);
-    }, 800);
+    }
   };
 
-  useEffect(() => {
-    if (selectedDatasets.length > 0) {
-      generateTimeSeriesData();
-    } else {
-      setTimeSeriesData([]);
-    }
-  }, [selectedDatasets, dateRange, analysisModel]);
+  // Removed auto-loading useEffect - user must click "Load Data" button
 
   const normalizeData = (data: number[]): number[] => {
     const min = Math.min(...data);
@@ -370,11 +456,17 @@ export default function TimeSeriesPage() {
       return (
         <div className="bg-background rounded-lg border p-3 shadow-lg">
           <p className="text-foreground text-sm font-medium">{label}</p>
-          {payload.map((entry: any, index: number) => (
-            <p key={index} className="text-sm" style={{ color: entry.color }}>
-              {entry.dataKey}: {normalize ? `${entry.value}%` : entry.value}
-            </p>
-          ))}
+          {payload.map((entry: any, index: number) => {
+            // Find the dataset by ID to get its name
+            const dataset = selectedDatasets.find((d) => d.id === entry.name);
+            const displayName = dataset ? dataset.name : entry.name;
+
+            return (
+              <p key={index} className="text-sm" style={{ color: entry.color }}>
+                {displayName}: {normalize ? `${entry.value}%` : entry.value}
+              </p>
+            );
+          })}
         </div>
       );
     }
@@ -643,7 +735,7 @@ export default function TimeSeriesPage() {
                                           : 'hover:bg-muted/50'
                                       }`}
                                       onClick={() =>
-                                        addDatasetToComparison(dataset)
+                                        toggleDatasetSelection(dataset)
                                       }
                                     >
                                       <CardContent className="p-3">
@@ -771,13 +863,21 @@ export default function TimeSeriesPage() {
                               <Input
                                 type="date"
                                 value={dateRange.start}
+                                min={validDateRange.start}
+                                max={validDateRange.end}
                                 onChange={(e) =>
                                   setDateRange((prev) => ({
                                     ...prev,
                                     start: e.target.value,
                                   }))
                                 }
+                                disabled={selectedDatasets.length === 0}
                               />
+                              {selectedDatasets.length > 0 && (
+                                <p className="text-muted-foreground text-xs">
+                                  Min: {validDateRange.start}
+                                </p>
+                              )}
                             </div>
                             <div className="space-y-2">
                               <label className="text-sm font-medium">
@@ -786,13 +886,21 @@ export default function TimeSeriesPage() {
                               <Input
                                 type="date"
                                 value={dateRange.end}
+                                min={validDateRange.start}
+                                max={validDateRange.end}
                                 onChange={(e) =>
                                   setDateRange((prev) => ({
                                     ...prev,
                                     end: e.target.value,
                                   }))
                                 }
+                                disabled={selectedDatasets.length === 0}
                               />
+                              {selectedDatasets.length > 0 && (
+                                <p className="text-muted-foreground text-xs">
+                                  Max: {validDateRange.end}
+                                </p>
+                              )}
                             </div>
                             <div className="space-y-2">
                               <label className="text-sm font-medium">
@@ -839,23 +947,101 @@ export default function TimeSeriesPage() {
                               </Select>
                             </div>
                           </div>
-                          <div className="mt-4 flex items-center space-x-2">
-                            <Checkbox
-                              id="normalize"
-                              checked={normalize}
-                              onCheckedChange={(checked) =>
-                                setNormalize(checked as boolean)
+                          <div className="mt-4 flex items-center justify-between gap-4">
+                            <div className="flex items-center space-x-2">
+                              <Checkbox
+                                id="normalize"
+                                checked={normalize}
+                                onCheckedChange={(checked) =>
+                                  setNormalize(checked as boolean)
+                                }
+                              />
+                              <label
+                                htmlFor="normalize"
+                                className="text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                              >
+                                Normalize Data
+                              </label>
+                            </div>
+
+                            {/* Load Data Button */}
+                            <Button
+                              onClick={() => generateTimeSeriesData()}
+                              disabled={
+                                selectedDatasets.length === 0 ||
+                                !!dateRangeError ||
+                                isLoading
                               }
-                            />
-                            <label
-                              htmlFor="normalize"
-                              className="text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                              className="min-w-[120px]"
                             >
-                              Normalize Data
-                            </label>
+                              {isLoading ? (
+                                <>
+                                  <svg
+                                    className="mr-2 h-4 w-4 animate-spin"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <circle
+                                      className="opacity-25"
+                                      cx="12"
+                                      cy="12"
+                                      r="10"
+                                      stroke="currentColor"
+                                      strokeWidth="4"
+                                    />
+                                    <path
+                                      className="opacity-75"
+                                      fill="currentColor"
+                                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                    />
+                                  </svg>
+                                  Loading...
+                                </>
+                              ) : (
+                                <>
+                                  <BarChart3 className="mr-2 h-4 w-4" />
+                                  Load Data
+                                </>
+                              )}
+                            </Button>
                           </div>
                         </CardContent>
                       </Card>
+
+                      {/* Date Range Error Alert */}
+                      {dateRangeError && (
+                        <Card className="border-destructive bg-destructive/10">
+                          <CardContent className="pt-6">
+                            <div className="flex items-start gap-3">
+                              <div className="bg-destructive/20 mt-0.5 rounded-full p-2">
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                  strokeWidth={2}
+                                  stroke="currentColor"
+                                  className="text-destructive h-4 w-4"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+                                  />
+                                </svg>
+                              </div>
+                              <div className="flex-1">
+                                <h4 className="text-destructive text-sm font-semibold">
+                                  Date Range Issue
+                                </h4>
+                                <p className="text-muted-foreground mt-1 text-sm">
+                                  {dateRangeError}
+                                </p>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
 
                       {/* Chart Area */}
                       <Card>
@@ -876,8 +1062,27 @@ export default function TimeSeriesPage() {
                                   No datasets selected
                                 </p>
                                 <p className="text-sm">
-                                  Add datasets from the sidebar to begin
-                                  analysis
+                                  Click datasets from the sidebar to select them
+                                </p>
+                              </motion.div>
+                            ) : timeSeriesData.length === 0 && !isLoading ? (
+                              <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="text-muted-foreground flex h-96 flex-col items-center justify-center"
+                              >
+                                <BarChart3
+                                  size={64}
+                                  className="mb-4 opacity-50"
+                                />
+                                <p className="text-lg font-medium">
+                                  Ready to visualize
+                                </p>
+                                <p className="text-sm">
+                                  {selectedDatasets.length} dataset
+                                  {selectedDatasets.length > 1 ? 's' : ''}{' '}
+                                  selected
                                 </p>
                               </motion.div>
                             ) : isLoading ? (

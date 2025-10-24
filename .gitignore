@@ -10,6 +10,15 @@ node_modules
 !.yarn/releases
 !.yarn/versions
 
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+
+# python
+__pycache__/
+
 # testing
 /coverage
 
