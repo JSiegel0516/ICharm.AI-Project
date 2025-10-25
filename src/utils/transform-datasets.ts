@@ -2,6 +2,7 @@
 
 interface DatabaseDataset {
   id: string;
+  slug: string; // ⭐ ADD THIS
   sourceName: string;
   datasetName: string;
   layerParameter: string;
@@ -26,6 +27,7 @@ interface DatabaseDataset {
 
 export interface Dataset {
   id: string;
+  slug: string; // ⭐ ADD THIS
   name: string;
   description: string;
   category: string;
@@ -182,6 +184,7 @@ export function transformDataset(
 
   return {
     id: dbDataset.id,
+    slug: dbDataset.slug, // ⭐ PRESERVE THE SLUG
     name: dbDataset.layerParameter,
     description: `${dbDataset.datasetName} - ${dbDataset.statistic}`,
     category,

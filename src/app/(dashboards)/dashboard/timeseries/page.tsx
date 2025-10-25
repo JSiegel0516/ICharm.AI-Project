@@ -17,6 +17,7 @@ import {
   ResizablePanelGroup,
 } from '@/components/ui/resizable';
 import { useState, useEffect, useMemo } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
@@ -70,6 +71,7 @@ import {
 
 interface Dataset {
   id: string;
+  slug: string; // ⭐ NEW: URL-friendly identifier
   name: string;
   description: string;
   category: string;
@@ -126,6 +128,9 @@ const ANALYSIS_MODELS: AnalysisModel[] = [
 ];
 
 export default function TimeSeriesPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   // Fetch datasets from API using SWR
   const {
     datasets: DATASETS,
@@ -153,6 +158,105 @@ export default function TimeSeriesPage() {
   const [analysisModel, setAnalysisModel] = useState('raw');
   const [timeSeriesData, setTimeSeriesData] = useState<TimeSeriesPoint[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Initialize state from URL parameters on component mount
+  useEffect(() => {
+    if (!DATASETS.length || isInitialized) return;
+
+    const datasetSlugs =
+      searchParams.get('datasets')?.split(',').filter(Boolean) || [];
+    const startDate = searchParams.get('start') || '1950-01-01';
+    const endDate = searchParams.get('end') || '2023-12-31';
+    const chartTypeParam =
+      (searchParams.get('chart') as 'line' | 'bar' | 'area') || 'line';
+    const normalizeParam = searchParams.get('normalize') === 'true';
+    const modelParam = searchParams.get('model') || 'raw';
+    const categoryParam = searchParams.get('category') || 'All';
+    const searchParam = searchParams.get('search') || '';
+
+    // Restore selected datasets from URL using slugs
+    if (datasetSlugs.length > 0) {
+      const datasetsToSelect = DATASETS.filter((d) =>
+        datasetSlugs.includes(d.slug)
+      );
+      if (datasetsToSelect.length > 0) {
+        setSelectedDatasets(datasetsToSelect);
+        setVisibleDatasets(new Set(datasetsToSelect.map((d) => d.id)));
+      }
+    }
+
+    // Restore other filters
+    setDateRange({ start: startDate, end: endDate });
+    setChartType(chartTypeParam);
+    setNormalize(normalizeParam);
+    setAnalysisModel(modelParam);
+    setSelectedCategory(categoryParam);
+    setSearchTerm(searchParam);
+
+    setIsInitialized(true);
+  }, [DATASETS, searchParams, isInitialized]);
+
+  // Update URL when state changes (using slugs instead of IDs)
+  useEffect(() => {
+    if (!isInitialized) return;
+
+    const params = new URLSearchParams();
+
+    // Add selected datasets using slugs
+    if (selectedDatasets.length > 0) {
+      params.set('datasets', selectedDatasets.map((d) => d.slug).join(','));
+    }
+
+    // Add date range (use shorter param names)
+    if (dateRange.start !== '1950-01-01') {
+      params.set('start', dateRange.start);
+    }
+    if (dateRange.end !== '2023-12-31') {
+      params.set('end', dateRange.end);
+    }
+
+    // Add chart type (use shorter param name)
+    if (chartType !== 'line') {
+      params.set('chart', chartType);
+    }
+
+    // Add normalize
+    if (normalize) {
+      params.set('normalize', 'true');
+    }
+
+    // Add analysis model
+    if (analysisModel !== 'raw') {
+      params.set('model', analysisModel);
+    }
+
+    // Add category filter
+    if (selectedCategory !== 'All') {
+      params.set('category', selectedCategory);
+    }
+
+    // Add search term
+    if (searchTerm) {
+      params.set('search', searchTerm);
+    }
+
+    // Update URL without reloading the page
+    const newUrl = params.toString()
+      ? `?${params.toString()}`
+      : window.location.pathname;
+    router.replace(newUrl, { scroll: false });
+  }, [
+    selectedDatasets,
+    dateRange,
+    chartType,
+    normalize,
+    analysisModel,
+    selectedCategory,
+    searchTerm,
+    isInitialized,
+    router,
+  ]);
 
   // Update valid date range when selected datasets change
   useEffect(() => {

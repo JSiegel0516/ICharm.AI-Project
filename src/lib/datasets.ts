@@ -1,6 +1,8 @@
 import type { ColorScale, Dataset, DatasetBackendDetails } from '@/types';
 
 export interface BackendDatasetRecord {
+  id?: string; // ⭐ Add database ID
+  slug?: string; // ⭐ Add slug from database
   sourceName?: string;
   datasetName: string;
   layerParameter?: string;
@@ -223,7 +225,9 @@ export function normalizeDataset(record: BackendDatasetRecord): Dataset {
   const baseColorScale = DEFAULT_COLOR_SCALES[colorKey];
 
   return {
-    id: slugify(record.datasetName),
+    // ⭐ Use slug from database if available, otherwise fall back to slugified name
+    id: record.slug || slugify(record.datasetName),
+    slug: record.slug || slugify(record.datasetName), // ⭐ Add slug field
     name: record.datasetName,
     description: [record.layerParameter, record.statistic]
       .filter(Boolean)

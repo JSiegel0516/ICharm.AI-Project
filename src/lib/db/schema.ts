@@ -83,11 +83,11 @@ export const chatMessage = pgTable("chat_messages", {
 });
 
 // ---------------------------
-// Climate Datasets Table (matches metadata.csv EXACTLY)
-// Column order matches CSV: sourceName,datasetName,layerParameter,statistic,datasetType,levels,levelValues,levelUnits,Stored,inputFile,keyVariable,units,spatialResolution,engine,kerchunkPath,origLocation,startDate,endDate
+// Climate Datasets Table (matches metadata.csv EXACTLY + slug field)
 // ---------------------------
 export const climateDataset = pgTable("metadata", {
   id: text("id").primaryKey(),
+  slug: text("slug").notNull().unique(),
   sourceName: text("sourceName").notNull(),
   datasetName: text("datasetName").notNull(),
   layerParameter: text("layerParameter").notNull(),

@@ -1,5 +1,5 @@
 {
-  "id": "bab472de-51f9-46cd-8bb4-073da59f9354",
+  "id": "9b81bd66-75d8-4e0a-8d8a-132542836709",
   "prevId": "503cb5fe-f1fb-4e85-9b4d-2c9fc8783092",
   "version": "7",
   "dialect": "postgresql",
@@ -244,6 +244,12 @@
           "primaryKey": true,
           "notNull": true
         },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "sourceName": {
           "name": "sourceName",
           "type": "text",
@@ -370,7 +376,15 @@
       "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "metadata_slug_unique": {
+          "name": "metadata_slug_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "slug"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
