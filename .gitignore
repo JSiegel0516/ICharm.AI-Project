@@ -15,6 +15,7 @@ venv/
 env/
 ENV/
 .venv/
+datasets
 
 # python
 __pycache__/

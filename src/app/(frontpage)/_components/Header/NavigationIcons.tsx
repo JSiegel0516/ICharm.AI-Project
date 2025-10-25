@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { Info } from 'lucide-react';
 import { ChartSplineIcon } from '@/components/ui/chart-spline';
 import { SettingsGearIcon } from '@/components/ui/settings-gear';
@@ -103,7 +103,7 @@ const NavigationIcons: React.FC = () => {
           id="time-series-button"
         >
           <Link
-            href="/timeseries"
+            href="/dashboard/timeseries"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center justify-center"

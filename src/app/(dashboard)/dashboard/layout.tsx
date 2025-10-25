@@ -1,5 +1,5 @@
-import { AppSidebar } from '@/app/(dashboards)/dashboard/_components/app-sidebar';
-import { SiteHeader } from '@/app/(dashboards)/dashboard/_components/site-header';
+import { AppSidebar } from '@/app/(dashboard)/dashboard/_components/app-sidebar';
+import { SiteHeader } from '@/app/(dashboard)/dashboard/_components/site-header';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 
 import '@/app/globals.css';
