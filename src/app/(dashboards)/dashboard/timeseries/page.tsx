@@ -707,782 +707,742 @@ export default function TimeSeriesPage() {
   };
 
   return (
-    <SidebarProvider>
-      <AppSidebar variant="inset" />
-      <SidebarInset>
-        <SiteHeader />
-        <div className="flex flex-1 flex-col">
-          <div className="@container/main flex flex-1 flex-col gap-2">
-            <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-              {/* Loading State */}
-              {isDatasetsLoading && (
-                <div className="flex h-96 items-center justify-center">
-                  <div className="space-y-4 text-center">
-                    <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite]"></div>
-                    <p className="text-muted-foreground">Loading datasets...</p>
-                  </div>
-                </div>
-              )}
+    <div className="flex flex-1 flex-col">
+      <div className="@container/main flex flex-1 flex-col gap-2">
+        <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+          {/* Loading State */}
+          {isDatasetsLoading && (
+            <div className="flex h-96 items-center justify-center">
+              <div className="space-y-4 text-center">
+                <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite]"></div>
+                <p className="text-muted-foreground">Loading datasets...</p>
+              </div>
+            </div>
+          )}
 
-              {/* Error State */}
-              {isDatasetsError && (
-                <div className="flex h-96 items-center justify-center">
-                  <div className="space-y-4 text-center">
-                    <div className="text-destructive mx-auto h-12 w-12">
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        strokeWidth={1.5}
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+          {/* Error State */}
+          {isDatasetsError && (
+            <div className="flex h-96 items-center justify-center">
+              <div className="space-y-4 text-center">
+                <div className="text-destructive mx-auto h-12 w-12">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth={1.5}
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+                    />
+                  </svg>
+                </div>
+                <p className="text-destructive font-medium">
+                  Failed to load datasets
+                </p>
+                <p className="text-muted-foreground text-sm">
+                  Please try refreshing the page
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Main Content - Only show when datasets are loaded */}
+          {!isDatasetsLoading && !isDatasetsError && (
+            <ResizablePanelGroup direction="horizontal">
+              {/* Left Panel - Dataset Selection */}
+              <ResizablePanel defaultSize={30} minSize={20} maxSize={40}>
+                <div className="h-full space-y-4 overflow-auto p-4">
+                  {/* Dataset Browser */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">Add Datasets</CardTitle>
+                      <CardDescription>
+                        Search and select datasets to compare
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {/* Search */}
+                      <div className="relative">
+                        <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                        <Input
+                          type="text"
+                          placeholder="Search datasets..."
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          className="pl-10"
                         />
-                      </svg>
-                    </div>
-                    <p className="text-destructive font-medium">
-                      Failed to load datasets
-                    </p>
-                    <p className="text-muted-foreground text-sm">
-                      Please try refreshing the page
-                    </p>
-                  </div>
-                </div>
-              )}
+                      </div>
 
-              {/* Main Content - Only show when datasets are loaded */}
-              {!isDatasetsLoading && !isDatasetsError && (
-                <ResizablePanelGroup direction="horizontal">
-                  {/* Left Panel - Dataset Selection */}
-                  <ResizablePanel defaultSize={30} minSize={20} maxSize={40}>
-                    <div className="h-full space-y-4 overflow-auto p-4">
-                      {/* Dataset Browser */}
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-lg">
-                            Add Datasets
-                          </CardTitle>
-                          <CardDescription>
-                            Search and select datasets to compare
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                          {/* Search */}
-                          <div className="relative">
-                            <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                            <Input
-                              type="text"
-                              placeholder="Search datasets..."
-                              value={searchTerm}
-                              onChange={(e) => setSearchTerm(e.target.value)}
-                              className="pl-10"
-                            />
-                          </div>
+                      {/* Category Filter */}
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Category</label>
+                        <Select
+                          value={selectedCategory}
+                          onValueChange={setSelectedCategory}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {categories.map((category) => (
+                              <SelectItem key={category} value={category}>
+                                {category}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
 
-                          {/* Category Filter */}
-                          <div className="space-y-2">
-                            <label className="text-sm font-medium">
-                              Category
-                            </label>
-                            <Select
-                              value={selectedCategory}
-                              onValueChange={setSelectedCategory}
-                            >
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {categories.map((category) => (
-                                  <SelectItem key={category} value={category}>
-                                    {category}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          {/* Available Datasets */}
-                          <div className="mb-2 flex items-center justify-between">
-                            <p className="text-muted-foreground text-sm">
-                              {filteredDatasets.length} dataset(s) available
-                            </p>
-                          </div>
-                          <ScrollArea className="h-96">
-                            <div className="space-y-2">
-                              {filteredDatasets.length === 0 ? (
-                                <div className="text-muted-foreground flex h-32 items-center justify-center text-center text-sm">
-                                  <p>
-                                    No datasets found.
-                                    {searchTerm && (
-                                      <span className="mt-1 block">
-                                        Try a different search term.
-                                      </span>
-                                    )}
-                                  </p>
-                                </div>
-                              ) : (
-                                filteredDatasets.map((dataset) => (
-                                  <motion.div
-                                    key={dataset.id}
-                                    initial={{ opacity: 0, y: 10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                  >
-                                    <Card
-                                      className={`cursor-pointer transition-all ${
-                                        selectedDatasets.find(
-                                          (d) => d.id === dataset.id
-                                        )
-                                          ? 'border-blue-500/50 bg-blue-600/10'
-                                          : 'hover:bg-muted/50'
-                                      }`}
-                                      onClick={() =>
-                                        toggleDatasetSelection(dataset)
-                                      }
-                                    >
-                                      <CardContent className="p-3">
-                                        <div className="flex items-start justify-between gap-2">
-                                          <div className="flex-1 space-y-1">
-                                            <div className="flex items-center gap-2">
-                                              <div
-                                                className="h-3 w-3 rounded-full"
-                                                style={{
-                                                  backgroundColor:
-                                                    dataset.color,
-                                                }}
-                                              />
-                                              <h4 className="text-sm font-medium">
-                                                {dataset.name}
-                                              </h4>
-                                            </div>
-                                            <p className="text-muted-foreground line-clamp-2 text-xs">
-                                              {dataset.description}
-                                            </p>
-                                            <div className="flex items-center gap-2 text-xs">
-                                              <Badge variant="secondary">
-                                                {dataset.category}
-                                              </Badge>
-                                              <span className="text-muted-foreground">
-                                                {dataset.frequency}
-                                              </span>
-                                            </div>
-                                          </div>
-                                          <Plus size={16} className="mt-1" />
-                                        </div>
-                                      </CardContent>
-                                    </Card>
-                                  </motion.div>
-                                ))
-                              )}
+                      {/* Available Datasets */}
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="text-muted-foreground text-sm">
+                          {filteredDatasets.length} dataset(s) available
+                        </p>
+                      </div>
+                      <ScrollArea className="h-96">
+                        <div className="space-y-2">
+                          {filteredDatasets.length === 0 ? (
+                            <div className="text-muted-foreground flex h-32 items-center justify-center text-center text-sm">
+                              <p>
+                                No datasets found.
+                                {searchTerm && (
+                                  <span className="mt-1 block">
+                                    Try a different search term.
+                                  </span>
+                                )}
+                              </p>
                             </div>
-                          </ScrollArea>
-                        </CardContent>
-                      </Card>
-
-                      {/* Selected Datasets */}
-                      {selectedDatasets.length > 0 && (
-                        <Card>
-                          <CardHeader>
-                            <CardTitle className="text-lg">
-                              Selected Datasets ({selectedDatasets.length})
-                            </CardTitle>
-                          </CardHeader>
-                          <CardContent>
-                            <div className="space-y-2">
-                              {selectedDatasets.map((dataset) => (
-                                <motion.div
-                                  key={dataset.id}
-                                  initial={{ opacity: 0, scale: 0.95 }}
-                                  animate={{ opacity: 1, scale: 1 }}
+                          ) : (
+                            filteredDatasets.map((dataset) => (
+                              <motion.div
+                                key={dataset.id}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                              >
+                                <Card
+                                  className={`cursor-pointer transition-all ${
+                                    selectedDatasets.find(
+                                      (d) => d.id === dataset.id
+                                    )
+                                      ? 'border-blue-500/50 bg-blue-600/10'
+                                      : 'hover:bg-muted/50'
+                                  }`}
+                                  onClick={() =>
+                                    toggleDatasetSelection(dataset)
+                                  }
                                 >
-                                  <Card>
-                                    <CardContent className="p-3">
-                                      <div className="flex items-center justify-between">
+                                  <CardContent className="p-3">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="flex-1 space-y-1">
                                         <div className="flex items-center gap-2">
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() =>
-                                              toggleDatasetVisibility(
-                                                dataset.id
-                                              )
-                                            }
-                                            className="h-6 w-6 p-0"
-                                          >
-                                            {visibleDatasets.has(dataset.id) ? (
-                                              <Eye size={14} />
-                                            ) : (
-                                              <EyeOff size={14} />
-                                            )}
-                                          </Button>
                                           <div
                                             className="h-3 w-3 rounded-full"
                                             style={{
                                               backgroundColor: dataset.color,
                                             }}
                                           />
-                                          <span className="text-sm font-medium">
+                                          <h4 className="text-sm font-medium">
                                             {dataset.name}
+                                          </h4>
+                                        </div>
+                                        <p className="text-muted-foreground line-clamp-2 text-xs">
+                                          {dataset.description}
+                                        </p>
+                                        <div className="flex items-center gap-2 text-xs">
+                                          <Badge variant="secondary">
+                                            {dataset.category}
+                                          </Badge>
+                                          <span className="text-muted-foreground">
+                                            {dataset.frequency}
                                           </span>
                                         </div>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() =>
-                                            removeDatasetFromComparison(
-                                              dataset.id
-                                            )
-                                          }
-                                          className="text-destructive h-6 w-6 p-0"
-                                        >
-                                          <Trash2 size={14} />
-                                        </Button>
                                       </div>
-                                    </CardContent>
-                                  </Card>
-                                </motion.div>
-                              ))}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      )}
-                    </div>
-                  </ResizablePanel>
+                                      <Plus size={16} className="mt-1" />
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              </motion.div>
+                            ))
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </CardContent>
+                  </Card>
 
-                  <ResizableHandle withHandle />
-
-                  {/* Right Panel - Visualization */}
-                  <ResizablePanel defaultSize={70}>
-                    <div className="h-full space-y-4 overflow-auto p-4">
-                      {/* Configuration Panel */}
-                      <Card>
-                        <CardContent className="pt-6">
-                          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-                            <div className="space-y-2">
-                              <label className="text-sm font-medium">
-                                Start Date
-                              </label>
-                              <Input
-                                type="date"
-                                value={dateRange.start}
-                                min={validDateRange.start}
-                                max={validDateRange.end}
-                                onChange={(e) =>
-                                  setDateRange((prev) => ({
-                                    ...prev,
-                                    start: e.target.value,
-                                  }))
-                                }
-                                disabled={selectedDatasets.length === 0}
-                              />
-                              {selectedDatasets.length > 0 && (
-                                <p className="text-muted-foreground text-xs">
-                                  Min: {validDateRange.start}
-                                </p>
-                              )}
-                            </div>
-                            <div className="space-y-2">
-                              <label className="text-sm font-medium">
-                                End Date
-                              </label>
-                              <Input
-                                type="date"
-                                value={dateRange.end}
-                                min={validDateRange.start}
-                                max={validDateRange.end}
-                                onChange={(e) =>
-                                  setDateRange((prev) => ({
-                                    ...prev,
-                                    end: e.target.value,
-                                  }))
-                                }
-                                disabled={selectedDatasets.length === 0}
-                              />
-                              {selectedDatasets.length > 0 && (
-                                <p className="text-muted-foreground text-xs">
-                                  Max: {validDateRange.end}
-                                </p>
-                              )}
-                            </div>
-                            <div className="space-y-2">
-                              <label className="text-sm font-medium">
-                                Chart Type
-                              </label>
-                              <Select
-                                value={chartType}
-                                onValueChange={(value: any) =>
-                                  setChartType(value)
-                                }
-                              >
-                                <SelectTrigger>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="line">
-                                    Line Chart
-                                  </SelectItem>
-                                  <SelectItem value="bar">Bar Chart</SelectItem>
-                                  <SelectItem value="area">
-                                    Area Chart
-                                  </SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="space-y-2">
-                              <label className="text-sm font-medium">
-                                Analysis Model
-                              </label>
-                              <Select
-                                value={analysisModel}
-                                onValueChange={setAnalysisModel}
-                              >
-                                <SelectTrigger>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {ANALYSIS_MODELS.map((model) => (
-                                    <SelectItem key={model.id} value={model.id}>
-                                      {model.name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </div>
-                          <div className="mt-4 flex items-center justify-between gap-4">
-                            <div className="flex items-center space-x-2">
-                              <Checkbox
-                                id="normalize"
-                                checked={normalize}
-                                onCheckedChange={(checked) =>
-                                  setNormalize(checked as boolean)
-                                }
-                              />
-                              <label
-                                htmlFor="normalize"
-                                className="text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                              >
-                                Normalize Data
-                              </label>
-                            </div>
-
-                            {/* Load Data Button */}
-                            <Button
-                              onClick={() => generateTimeSeriesData()}
-                              disabled={
-                                selectedDatasets.length === 0 ||
-                                !!dateRangeError ||
-                                isLoading
-                              }
-                              className="min-w-[120px]"
+                  {/* Selected Datasets */}
+                  {selectedDatasets.length > 0 && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">
+                          Selected Datasets ({selectedDatasets.length})
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2">
+                          {selectedDatasets.map((dataset) => (
+                            <motion.div
+                              key={dataset.id}
+                              initial={{ opacity: 0, scale: 0.95 }}
+                              animate={{ opacity: 1, scale: 1 }}
                             >
-                              {isLoading ? (
-                                <>
-                                  <svg
-                                    className="mr-2 h-4 w-4 animate-spin"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <circle
-                                      className="opacity-25"
-                                      cx="12"
-                                      cy="12"
-                                      r="10"
-                                      stroke="currentColor"
-                                      strokeWidth="4"
-                                    />
-                                    <path
-                                      className="opacity-75"
-                                      fill="currentColor"
-                                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                    />
-                                  </svg>
-                                  Loading...
-                                </>
-                              ) : (
-                                <>
-                                  <BarChart3 className="mr-2 h-4 w-4" />
-                                  Load Data
-                                </>
-                              )}
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-
-                      {/* Date Range Error Alert */}
-                      {dateRangeError && (
-                        <Card className="border-destructive bg-destructive/10">
-                          <CardContent className="pt-6">
-                            <div className="flex items-start gap-3">
-                              <div className="bg-destructive/20 mt-0.5 rounded-full p-2">
-                                <svg
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  fill="none"
-                                  viewBox="0 0 24 24"
-                                  strokeWidth={2}
-                                  stroke="currentColor"
-                                  className="text-destructive h-4 w-4"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
-                                  />
-                                </svg>
-                              </div>
-                              <div className="flex-1">
-                                <h4 className="text-destructive text-sm font-semibold">
-                                  Date Range Issue
-                                </h4>
-                                <p className="text-muted-foreground mt-1 text-sm">
-                                  {dateRangeError}
-                                </p>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      )}
-
-                      {/* Chart Area */}
-                      <Card>
-                        <CardContent className="p-6">
-                          <AnimatePresence mode="wait">
-                            {selectedDatasets.length === 0 ? (
-                              <motion.div
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                                className="text-muted-foreground flex h-96 flex-col items-center justify-center"
-                              >
-                                <BarChart3
-                                  size={64}
-                                  className="mb-4 opacity-50"
-                                />
-                                <p className="text-lg font-medium">
-                                  No datasets selected
-                                </p>
-                                <p className="text-sm">
-                                  Click datasets from the sidebar to select them
-                                </p>
-                              </motion.div>
-                            ) : timeSeriesData.length === 0 && !isLoading ? (
-                              <motion.div
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                                className="text-muted-foreground flex h-96 flex-col items-center justify-center"
-                              >
-                                <BarChart3
-                                  size={64}
-                                  className="mb-4 opacity-50"
-                                />
-                                <p className="text-lg font-medium">
-                                  Ready to visualize
-                                </p>
-                                <p className="text-sm">
-                                  {selectedDatasets.length} dataset
-                                  {selectedDatasets.length > 1 ? 's' : ''}{' '}
-                                  selected
-                                </p>
-                              </motion.div>
-                            ) : isLoading ? (
-                              <motion.div
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                                className="flex h-96 items-center justify-center"
-                              >
-                                <div className="text-center">
-                                  <div className="border-muted border-t-primary mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4" />
-                                  <p className="text-muted-foreground">
-                                    Loading data...
-                                  </p>
-                                </div>
-                              </motion.div>
-                            ) : (
-                              <motion.div
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                              >
-                                <div className="mb-4 flex items-center justify-between">
-                                  <div>
-                                    <h3 className="text-lg font-semibold">
-                                      Time Series Comparison
-                                    </h3>
-                                    <p className="text-muted-foreground text-sm">
-                                      {dateRange.start} to {dateRange.end} •{' '}
-                                      {
-                                        ANALYSIS_MODELS.find(
-                                          (m) => m.id === analysisModel
-                                        )?.name
-                                      }
-                                    </p>
-                                  </div>
-                                  <Button onClick={downloadData}>
-                                    <Download size={16} className="mr-2" />
-                                    Export CSV
-                                  </Button>
-                                </div>
-
-                                <div className="bg-muted/20 h-96 rounded-lg border p-4">
-                                  <ResponsiveContainer
-                                    width="100%"
-                                    height="100%"
-                                  >
-                                    {renderChart()}
-                                  </ResponsiveContainer>
-                                </div>
-
-                                <div className="mt-4 flex flex-wrap gap-2">
-                                  {selectedDatasets.map((dataset) => (
-                                    <Button
-                                      key={dataset.id}
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() =>
-                                        toggleDatasetVisibility(dataset.id)
-                                      }
-                                      className={
-                                        !visibleDatasets.has(dataset.id)
-                                          ? 'opacity-50'
-                                          : ''
-                                      }
-                                    >
+                              <Card>
+                                <CardContent className="p-3">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() =>
+                                          toggleDatasetVisibility(dataset.id)
+                                        }
+                                        className="h-6 w-6 p-0"
+                                      >
+                                        {visibleDatasets.has(dataset.id) ? (
+                                          <Eye size={14} />
+                                        ) : (
+                                          <EyeOff size={14} />
+                                        )}
+                                      </Button>
                                       <div
-                                        className="mr-2 h-3 w-3 rounded-full"
+                                        className="h-3 w-3 rounded-full"
                                         style={{
                                           backgroundColor: dataset.color,
                                         }}
                                       />
-                                      {dataset.name}
+                                      <span className="text-sm font-medium">
+                                        {dataset.name}
+                                      </span>
+                                    </div>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() =>
+                                        removeDatasetFromComparison(dataset.id)
+                                      }
+                                      className="text-destructive h-6 w-6 p-0"
+                                    >
+                                      <Trash2 size={14} />
                                     </Button>
-                                  ))}
-                                </div>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </CardContent>
-                      </Card>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            </motion.div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              </ResizablePanel>
 
-                      {/* Analysis Model Info */}
-                      {selectedDatasets.length > 0 && (
-                        <Card>
-                          <CardHeader>
-                            <CardTitle className="text-sm">
-                              Analysis Model Information
-                            </CardTitle>
-                          </CardHeader>
-                          <CardContent>
-                            <div className="flex items-start gap-3">
-                              {React.createElement(
-                                ANALYSIS_MODELS.find(
-                                  (m) => m.id === analysisModel
-                                )?.icon || Activity,
-                                {
-                                  size: 20,
-                                  className: 'text-primary mt-1 flex-shrink-0',
-                                }
-                              )}
+              <ResizableHandle withHandle />
+
+              {/* Right Panel - Visualization */}
+              <ResizablePanel defaultSize={70}>
+                <div className="h-full space-y-4 overflow-auto p-4">
+                  {/* Configuration Panel */}
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">
+                            Start Date
+                          </label>
+                          <Input
+                            type="date"
+                            value={dateRange.start}
+                            min={validDateRange.start}
+                            max={validDateRange.end}
+                            onChange={(e) =>
+                              setDateRange((prev) => ({
+                                ...prev,
+                                start: e.target.value,
+                              }))
+                            }
+                            disabled={selectedDatasets.length === 0}
+                          />
+                          {selectedDatasets.length > 0 && (
+                            <p className="text-muted-foreground text-xs">
+                              Min: {validDateRange.start}
+                            </p>
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">
+                            End Date
+                          </label>
+                          <Input
+                            type="date"
+                            value={dateRange.end}
+                            min={validDateRange.start}
+                            max={validDateRange.end}
+                            onChange={(e) =>
+                              setDateRange((prev) => ({
+                                ...prev,
+                                end: e.target.value,
+                              }))
+                            }
+                            disabled={selectedDatasets.length === 0}
+                          />
+                          {selectedDatasets.length > 0 && (
+                            <p className="text-muted-foreground text-xs">
+                              Max: {validDateRange.end}
+                            </p>
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">
+                            Chart Type
+                          </label>
+                          <Select
+                            value={chartType}
+                            onValueChange={(value: any) => setChartType(value)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="line">Line Chart</SelectItem>
+                              <SelectItem value="bar">Bar Chart</SelectItem>
+                              <SelectItem value="area">Area Chart</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">
+                            Analysis Model
+                          </label>
+                          <Select
+                            value={analysisModel}
+                            onValueChange={setAnalysisModel}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {ANALYSIS_MODELS.map((model) => (
+                                <SelectItem key={model.id} value={model.id}>
+                                  {model.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <div className="mt-4 flex items-center justify-between gap-4">
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id="normalize"
+                            checked={normalize}
+                            onCheckedChange={(checked) =>
+                              setNormalize(checked as boolean)
+                            }
+                          />
+                          <label
+                            htmlFor="normalize"
+                            className="text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                          >
+                            Normalize Data
+                          </label>
+                        </div>
+
+                        {/* Load Data Button */}
+                        <Button
+                          onClick={() => generateTimeSeriesData()}
+                          disabled={
+                            selectedDatasets.length === 0 ||
+                            !!dateRangeError ||
+                            isLoading
+                          }
+                          className="min-w-[120px]"
+                        >
+                          {isLoading ? (
+                            <>
+                              <svg
+                                className="mr-2 h-4 w-4 animate-spin"
+                                xmlns="http://www.w3.org/2000/svg"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                              >
+                                <circle
+                                  className="opacity-25"
+                                  cx="12"
+                                  cy="12"
+                                  r="10"
+                                  stroke="currentColor"
+                                  strokeWidth="4"
+                                />
+                                <path
+                                  className="opacity-75"
+                                  fill="currentColor"
+                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                />
+                              </svg>
+                              Loading...
+                            </>
+                          ) : (
+                            <>
+                              <BarChart3 className="mr-2 h-4 w-4" />
+                              Load Data
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Date Range Error Alert */}
+                  {dateRangeError && (
+                    <Card className="border-destructive bg-destructive/10">
+                      <CardContent className="pt-6">
+                        <div className="flex items-start gap-3">
+                          <div className="bg-destructive/20 mt-0.5 rounded-full p-2">
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              strokeWidth={2}
+                              stroke="currentColor"
+                              className="text-destructive h-4 w-4"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+                              />
+                            </svg>
+                          </div>
+                          <div className="flex-1">
+                            <h4 className="text-destructive text-sm font-semibold">
+                              Date Range Issue
+                            </h4>
+                            <p className="text-muted-foreground mt-1 text-sm">
+                              {dateRangeError}
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Chart Area */}
+                  <Card>
+                    <CardContent className="p-6">
+                      <AnimatePresence mode="wait">
+                        {selectedDatasets.length === 0 ? (
+                          <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="text-muted-foreground flex h-96 flex-col items-center justify-center"
+                          >
+                            <BarChart3 size={64} className="mb-4 opacity-50" />
+                            <p className="text-lg font-medium">
+                              No datasets selected
+                            </p>
+                            <p className="text-sm">
+                              Click datasets from the sidebar to select them
+                            </p>
+                          </motion.div>
+                        ) : timeSeriesData.length === 0 && !isLoading ? (
+                          <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="text-muted-foreground flex h-96 flex-col items-center justify-center"
+                          >
+                            <BarChart3 size={64} className="mb-4 opacity-50" />
+                            <p className="text-lg font-medium">
+                              Ready to visualize
+                            </p>
+                            <p className="text-sm">
+                              {selectedDatasets.length} dataset
+                              {selectedDatasets.length > 1 ? 's' : ''} selected
+                            </p>
+                          </motion.div>
+                        ) : isLoading ? (
+                          <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="flex h-96 items-center justify-center"
+                          >
+                            <div className="text-center">
+                              <div className="border-muted border-t-primary mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4" />
+                              <p className="text-muted-foreground">
+                                Loading data...
+                              </p>
+                            </div>
+                          </motion.div>
+                        ) : (
+                          <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                          >
+                            <div className="mb-4 flex items-center justify-between">
                               <div>
-                                <p className="font-medium">
+                                <h3 className="text-lg font-semibold">
+                                  Time Series Comparison
+                                </h3>
+                                <p className="text-muted-foreground text-sm">
+                                  {dateRange.start} to {dateRange.end} •{' '}
                                   {
                                     ANALYSIS_MODELS.find(
                                       (m) => m.id === analysisModel
                                     )?.name
                                   }
                                 </p>
-                                <p className="text-muted-foreground text-sm">
-                                  {
-                                    ANALYSIS_MODELS.find(
-                                      (m) => m.id === analysisModel
-                                    )?.description
-                                  }
-                                </p>
                               </div>
+                              <Button onClick={downloadData}>
+                                <Download size={16} className="mr-2" />
+                                Export CSV
+                              </Button>
                             </div>
-                          </CardContent>
-                        </Card>
-                      )}
 
-                      {/* Data Table */}
-                      {selectedDatasets.length > 0 &&
-                        timeSeriesData.length > 0 && (
-                          <Card>
-                            <CardHeader>
-                              <CardTitle className="text-lg">
-                                Data Table
-                              </CardTitle>
-                              <CardDescription>
-                                Raw time series data for selected datasets
-                              </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                              <ScrollArea className="h-64">
-                                <Table>
-                                  <TableHeader>
-                                    <TableRow>
-                                      <TableHead className="w-32">
-                                        Date
-                                      </TableHead>
-                                      {selectedDatasets.map((dataset) => (
-                                        <TableHead key={dataset.id}>
-                                          <div className="flex items-center gap-2">
-                                            <div
-                                              className="h-3 w-3 rounded-full"
-                                              style={{
-                                                backgroundColor: dataset.color,
-                                              }}
-                                            />
-                                            {dataset.name}
-                                          </div>
-                                        </TableHead>
-                                      ))}
-                                    </TableRow>
-                                  </TableHeader>
-                                  <TableBody>
-                                    {timeSeriesData
-                                      .slice(0, 50) // Limit to first 50 rows for performance
-                                      .map((point, index) => (
-                                        <TableRow key={index}>
-                                          <TableCell className="font-mono text-xs">
-                                            {point.date}
-                                          </TableCell>
-                                          {selectedDatasets.map((dataset) => (
-                                            <TableCell key={dataset.id}>
-                                              <div className="font-mono text-xs">
-                                                {point.values[
-                                                  dataset.id
-                                                ]?.toFixed(2) || '-'}
-                                              </div>
-                                            </TableCell>
-                                          ))}
-                                        </TableRow>
-                                      ))}
-                                    {timeSeriesData.length > 50 && (
-                                      <TableRow>
-                                        <TableCell
-                                          colSpan={selectedDatasets.length + 1}
-                                          className="text-muted-foreground text-center"
-                                        >
-                                          Showing first 50 of{' '}
-                                          {timeSeriesData.length} rows
-                                        </TableCell>
-                                      </TableRow>
-                                    )}
-                                  </TableBody>
-                                </Table>
-                              </ScrollArea>
-                            </CardContent>
-                          </Card>
+                            <div className="bg-muted/20 h-96 rounded-lg border p-4">
+                              <ResponsiveContainer width="100%" height="100%">
+                                {renderChart()}
+                              </ResponsiveContainer>
+                            </div>
+
+                            <div className="mt-4 flex flex-wrap gap-2">
+                              {selectedDatasets.map((dataset) => (
+                                <Button
+                                  key={dataset.id}
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    toggleDatasetVisibility(dataset.id)
+                                  }
+                                  className={
+                                    !visibleDatasets.has(dataset.id)
+                                      ? 'opacity-50'
+                                      : ''
+                                  }
+                                >
+                                  <div
+                                    className="mr-2 h-3 w-3 rounded-full"
+                                    style={{
+                                      backgroundColor: dataset.color,
+                                    }}
+                                  />
+                                  {dataset.name}
+                                </Button>
+                              ))}
+                            </div>
+                          </motion.div>
                         )}
+                      </AnimatePresence>
+                    </CardContent>
+                  </Card>
 
-                      {/* Statistics Summary */}
-                      {selectedDatasets.length > 0 &&
-                        timeSeriesData.length > 0 && (
-                          <Card>
-                            <CardHeader>
-                              <CardTitle className="text-lg">
-                                Statistics Summary
-                              </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                                {selectedDatasets.map((dataset) => {
-                                  const values = timeSeriesData
-                                    .map((point) => point.values[dataset.id])
-                                    .filter((val) => val !== undefined);
+                  {/* Analysis Model Info */}
+                  {selectedDatasets.length > 0 && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-sm">
+                          Analysis Model Information
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="flex items-start gap-3">
+                          {React.createElement(
+                            ANALYSIS_MODELS.find((m) => m.id === analysisModel)
+                              ?.icon || Activity,
+                            {
+                              size: 20,
+                              className: 'text-primary mt-1 flex-shrink-0',
+                            }
+                          )}
+                          <div>
+                            <p className="font-medium">
+                              {
+                                ANALYSIS_MODELS.find(
+                                  (m) => m.id === analysisModel
+                                )?.name
+                              }
+                            </p>
+                            <p className="text-muted-foreground text-sm">
+                              {
+                                ANALYSIS_MODELS.find(
+                                  (m) => m.id === analysisModel
+                                )?.description
+                              }
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
 
-                                  if (values.length === 0) return null;
-
-                                  const min = Math.min(...values);
-                                  const max = Math.max(...values);
-                                  const avg =
-                                    values.reduce((a, b) => a + b, 0) /
-                                    values.length;
-                                  const trend =
-                                    values[values.length - 1] - values[0];
-
-                                  return (
-                                    <Card
-                                      key={dataset.id}
-                                      className="relative overflow-hidden"
-                                    >
+                  {/* Data Table */}
+                  {selectedDatasets.length > 0 && timeSeriesData.length > 0 && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">Data Table</CardTitle>
+                        <CardDescription>
+                          Raw time series data for selected datasets
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <ScrollArea className="h-64">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="w-32">Date</TableHead>
+                                {selectedDatasets.map((dataset) => (
+                                  <TableHead key={dataset.id}>
+                                    <div className="flex items-center gap-2">
                                       <div
-                                        className="absolute top-0 left-0 h-1 w-full"
+                                        className="h-3 w-3 rounded-full"
                                         style={{
                                           backgroundColor: dataset.color,
                                         }}
                                       />
-                                      <CardContent className="pt-6">
-                                        <div className="mb-3 flex items-center gap-2">
-                                          <div
-                                            className="h-3 w-3 rounded-full"
-                                            style={{
-                                              backgroundColor: dataset.color,
-                                            }}
-                                          />
-                                          <h4 className="font-semibold">
-                                            {dataset.name}
-                                          </h4>
+                                      {dataset.name}
+                                    </div>
+                                  </TableHead>
+                                ))}
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {timeSeriesData
+                                .slice(0, 50) // Limit to first 50 rows for performance
+                                .map((point, index) => (
+                                  <TableRow key={index}>
+                                    <TableCell className="font-mono text-xs">
+                                      {point.date}
+                                    </TableCell>
+                                    {selectedDatasets.map((dataset) => (
+                                      <TableCell key={dataset.id}>
+                                        <div className="font-mono text-xs">
+                                          {point.values[dataset.id]?.toFixed(
+                                            2
+                                          ) || '-'}
                                         </div>
-                                        <div className="space-y-2 text-sm">
-                                          <div className="flex justify-between">
-                                            <span className="text-muted-foreground">
-                                              Min:
-                                            </span>
-                                            <span className="font-mono">
-                                              {min.toFixed(2)}
-                                            </span>
-                                          </div>
-                                          <div className="flex justify-between">
-                                            <span className="text-muted-foreground">
-                                              Max:
-                                            </span>
-                                            <span className="font-mono">
-                                              {max.toFixed(2)}
-                                            </span>
-                                          </div>
-                                          <div className="flex justify-between">
-                                            <span className="text-muted-foreground">
-                                              Average:
-                                            </span>
-                                            <span className="font-mono">
-                                              {avg.toFixed(2)}
-                                            </span>
-                                          </div>
-                                          <div className="flex justify-between">
-                                            <span className="text-muted-foreground">
-                                              Trend:
-                                            </span>
-                                            <span
-                                              className={`font-mono ${trend >= 0 ? 'text-green-600' : 'text-red-600'}`}
-                                            >
-                                              {trend >= 0 ? '+' : ''}
-                                              {trend.toFixed(2)}
-                                            </span>
-                                          </div>
-                                        </div>
-                                      </CardContent>
-                                    </Card>
-                                  );
-                                })}
-                              </div>
-                            </CardContent>
-                          </Card>
-                        )}
-                    </div>
-                  </ResizablePanel>
-                </ResizablePanelGroup>
-              )}
-            </div>
-          </div>
+                                      </TableCell>
+                                    ))}
+                                  </TableRow>
+                                ))}
+                              {timeSeriesData.length > 50 && (
+                                <TableRow>
+                                  <TableCell
+                                    colSpan={selectedDatasets.length + 1}
+                                    className="text-muted-foreground text-center"
+                                  >
+                                    Showing first 50 of {timeSeriesData.length}{' '}
+                                    rows
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </TableBody>
+                          </Table>
+                        </ScrollArea>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Statistics Summary */}
+                  {selectedDatasets.length > 0 && timeSeriesData.length > 0 && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">
+                          Statistics Summary
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                          {selectedDatasets.map((dataset) => {
+                            const values = timeSeriesData
+                              .map((point) => point.values[dataset.id])
+                              .filter((val) => val !== undefined);
+
+                            if (values.length === 0) return null;
+
+                            const min = Math.min(...values);
+                            const max = Math.max(...values);
+                            const avg =
+                              values.reduce((a, b) => a + b, 0) / values.length;
+                            const trend = values[values.length - 1] - values[0];
+
+                            return (
+                              <Card
+                                key={dataset.id}
+                                className="relative overflow-hidden"
+                              >
+                                <div
+                                  className="absolute top-0 left-0 h-1 w-full"
+                                  style={{
+                                    backgroundColor: dataset.color,
+                                  }}
+                                />
+                                <CardContent className="pt-6">
+                                  <div className="mb-3 flex items-center gap-2">
+                                    <div
+                                      className="h-3 w-3 rounded-full"
+                                      style={{
+                                        backgroundColor: dataset.color,
+                                      }}
+                                    />
+                                    <h4 className="font-semibold">
+                                      {dataset.name}
+                                    </h4>
+                                  </div>
+                                  <div className="space-y-2 text-sm">
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">
+                                        Min:
+                                      </span>
+                                      <span className="font-mono">
+                                        {min.toFixed(2)}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">
+                                        Max:
+                                      </span>
+                                      <span className="font-mono">
+                                        {max.toFixed(2)}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">
+                                        Average:
+                                      </span>
+                                      <span className="font-mono">
+                                        {avg.toFixed(2)}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">
+                                        Trend:
+                                      </span>
+                                      <span
+                                        className={`font-mono ${trend >= 0 ? 'text-green-600' : 'text-red-600'}`}
+                                      >
+                                        {trend >= 0 ? '+' : ''}
+                                        {trend.toFixed(2)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            );
+                          })}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              </ResizablePanel>
+            </ResizablePanelGroup>
+          )}
         </div>
-      </SidebarInset>
-    </SidebarProvider>
+      </div>
+    </div>
   );
 }
