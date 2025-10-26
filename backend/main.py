@@ -170,17 +170,17 @@ class AggregationMethod(str, Enum):
 class TimeSeriesRequest(BaseModel):
     """Enhanced request model for time series data extraction"""
     datasetIds: List[str] = Field(..., min_items=1, max_items=10)
-    startDate: str = Field(..., pattern="^\d{4}-\d{2}-\d{2}$")
-    endDate: str = Field(..., pattern="^\d{4}-\d{2}-\d{2}$")
+    startDate: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")  # Added 'r' prefix
+    endDate: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")    # Added 'r' prefix
     analysisModel: Optional[AnalysisModel] = AnalysisModel.RAW
     normalize: Optional[bool] = False
     chartType: Optional[ChartType] = ChartType.LINE
-    spatialBounds: Optional[Dict[str, float]] = None  # {"lat_min": -90, "lat_max": 90, ...}
+    spatialBounds: Optional[Dict[str, float]] = None
     aggregation: Optional[AggregationMethod] = AggregationMethod.MEAN
-    resampleFreq: Optional[str] = None  # "D", "W", "M", "Q", "Y"
+    resampleFreq: Optional[str] = None
     includeStatistics: Optional[bool] = True
     includeMetadata: Optional[bool] = True
-    smoothingWindow: Optional[int] = None  # For moving averages
+    smoothingWindow: Optional[int] = None
     
     @validator('endDate')
     def validate_date_range(cls, v, values):
