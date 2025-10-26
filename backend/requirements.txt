@@ -1,24 +1,51 @@
 # FastAPI and server
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-pydantic==2.5.0
+fastapi
+uvicorn[standard]
+pydantic
 
 # Environment variables
-python-dotenv==1.0.0
+python-dotenv
 
 # Database
-sqlalchemy==2.0.23
-psycopg2-binary==2.9.9
+sqlalchemy
+psycopg2-binary
 
-# Data processing
-xarray==2023.12.0
-zarr==2.16.1
-h5netcdf==1.3.0
-netCDF4==1.6.5
-pandas==2.1.4
-numpy==1.26.2
+# Data processing and analysis
+xarray
+zarr
+h5netcdf
+netCDF4
+pandas
+numpy
+cftime
 
 # File system / S3 access
-fsspec==2023.12.2
-s3fs==2023.12.2
-aiohttp==3.9.1
+fsspec
+s3fs
+aiohttp
+
+# Scientific computing dependencies
+scipy
+
+# Kerchunk for cloud-optimized data access
+kerchunk
+
+# Additional utilities
+requests
+
+# CORS support
+python-multipart
+
+# Additional data format support
+openpyxl
+xlsxwriter
+
+# Memory optimization
+psutil
+
+# Development and testing (optional)
+pytest
+pytest-asyncio
+
+# Logging
+loguru

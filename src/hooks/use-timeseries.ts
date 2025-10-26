@@ -80,6 +80,7 @@ export interface Statistics {
 
 export interface DatasetMetadata {
   id: string;
+  slug: string;  // ADD THIS LINE
   name: string;
   source: string;
   units: string;
@@ -125,6 +126,7 @@ export interface TimeSeriesResponse {
 
 export interface DatasetInfo {
   id: string;
+  slug: string;  // ADD THIS LINE
   name: string;
   source: string;
   type: string;
@@ -292,8 +294,8 @@ export function useTimeSeriesAPI(
       if (filters?.source) params.append('source', filters.source);
       if (filters?.search) params.append('search', filters.search);
       
-      const response = await apiClientRef.current!.get<DatasetListResponse>(
-        `/api/v2/timeseries/datasets?${params.toString()}`
+      const response = await axios.get<{ datasets: DatasetInfo[] }>(
+        `/api/datasets?${params.toString()}`
       );
       
       setAvailableDatasets(response.data.datasets);
