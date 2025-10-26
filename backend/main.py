@@ -112,24 +112,24 @@ executor = ThreadPoolExecutor(max_workers=4)
 # Create synchronous engine
 engine = create_engine(DATABASE_URL, poolclass=NullPool)
 
-def get_metadata_by_dataset_names(dataset_names: List[str]) -> pd.DataFrame:
-    """Fetch metadata from database for specified datasets"""
+def get_metadata_by_ids(dataset_ids: List[str]) -> pd.DataFrame:
+    """Fetch metadata from database for specified dataset IDs (UUIDs)"""
     try:
         with engine.connect() as conn:
-            placeholders = ', '.join([f':name{i}' for i in range(len(dataset_names))])
-            # Use 'metadata' table name and correct columns to match Drizzle schema
+            placeholders = ', '.join([f':id{i}' for i in range(len(dataset_ids))])
+            # Query by UUID id column instead of datasetName
             query = text(f"""
                 SELECT * FROM metadata 
-                WHERE "datasetName" IN ({placeholders})
+                WHERE id IN ({placeholders})
             """)
             
-            params = {f'name{i}': name for i, name in enumerate(dataset_names)}
+            params = {f'id{i}': dataset_id for i, dataset_id in enumerate(dataset_ids)}
             
             result = conn.execute(query, params)
             df = pd.DataFrame(result.fetchall(), columns=result.keys())
             
             if df.empty:
-                logger.warning(f"No metadata found for datasets: {dataset_names}")
+                logger.warning(f"No metadata found for dataset IDs: {dataset_ids}")
             
             return df
     except Exception as e:
@@ -714,8 +714,8 @@ async def extract_timeseries(request: TimeSeriesRequest):
         start_date = datetime.strptime(request.startDate, "%Y-%m-%d")
         end_date = datetime.strptime(request.endDate, "%Y-%m-%d")
         
-        # Get metadata for requested datasets
-        metadata_df = get_metadata_by_dataset_names(request.datasetIds)
+        # Get metadata for requested datasets (UUIDs)
+        metadata_df = get_metadata_by_ids(request.datasetIds)
         
         if len(metadata_df) == 0:
             raise HTTPException(
@@ -777,15 +777,15 @@ async def extract_timeseries(request: TimeSeriesRequest):
                 if request.resampleFreq:
                     series = series.resample(request.resampleFreq).mean()
                 
-                # Store results
-                dataset_id = meta_row["datasetName"]
+                # Store results - use keyVariable as the identifier (what frontend expects)
+                dataset_id = meta_row["keyVariable"]
                 all_series[dataset_id] = series
                 
                 # Add metadata
                 if request.includeMetadata:
                     dataset_metadata[dataset_id] = DatasetMetadata(
-                        id=dataset_id,
-                        name=meta_row["layerParameter"],
+                        id=meta_row["id"],  # UUID
+                        name=meta_row["datasetName"],  # Full dataset name
                         source=meta_row["sourceName"],
                         units=meta_row["units"],
                         spatialResolution=meta_row.get("spatialResolution"),
@@ -915,14 +915,16 @@ async def list_available_datasets(
                 df["slug"].str.contains(search, case=False, na=False)
             ]
         
-        # Convert to list of dicts (matching Drizzle schema fields)
+        # Convert to list of dicts (matching frontend expectations)
         datasets = []
         for _, row in df.iterrows():
             datasets.append({
-                "id": row["datasetName"],  # Use datasetName as the API id
+                "id": row["id"],  # UUID - what frontend sends to extract endpoint
                 "slug": row.get("slug"),
-                "name": row["layerParameter"],
-                "source": row["sourceName"],
+                "name": row["layerParameter"],  # Shortened name for display
+                "datasetName": row["datasetName"],  # Full dataset name
+                "sourceName": row["sourceName"],  # Full source name
+                "source": row["sourceName"],  # Alias for compatibility
                 "type": row["datasetType"],
                 "stored": row["Stored"],
                 "startDate": row["startDate"],
@@ -934,7 +936,7 @@ async def list_available_datasets(
                 "levelUnits": row.get("levelUnits"),
                 "statistic": row.get("statistic"),
                 "inputFile": row.get("inputFile"),
-                "keyVariable": row.get("keyVariable")
+                "keyVariable": row.get("keyVariable")  # What data is keyed by
             })
         
         return {

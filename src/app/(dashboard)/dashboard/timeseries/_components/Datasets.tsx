@@ -69,7 +69,9 @@ export function DatasetFilter({
   // Get unique categories (sources)
   const categories = React.useMemo(() => {
     const sources = new Set(
-      availableDatasets.map((d) => (d as any).source).filter(Boolean)
+      availableDatasets
+        .map((d) => (d as any).sourceName || (d as any).source)
+        .filter(Boolean)
     );
     return ['All', ...Array.from(sources)];
   }, [availableDatasets]);
@@ -77,11 +79,16 @@ export function DatasetFilter({
   // Filter datasets
   const filteredDatasets = React.useMemo(() => {
     return availableDatasets.filter((dataset) => {
+      const datasetName = (dataset as any).datasetName || dataset.name || '';
       const matchesSearch =
-        dataset.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        dataset.id.toLowerCase().includes(searchTerm.toLowerCase());
+        datasetName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        dataset.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        ((dataset as any).slug || '')
+          .toLowerCase()
+          .includes(searchTerm.toLowerCase());
       const matchesCategory =
         selectedCategory === 'All' ||
+        (dataset as any).sourceName === selectedCategory ||
         (dataset as any).source === selectedCategory;
       return matchesSearch && matchesCategory;
     });
@@ -264,7 +271,7 @@ export function DatasetFilter({
                           <div className="flex-1 space-y-1">
                             <div className="flex items-center justify-between gap-2">
                               <h4 className="text-sm font-medium">
-                                {dataset.name}
+                                {(dataset as any).datasetName || dataset.name}
                               </h4>
                               {(dataset as any).stored === 'cloud' ? (
                                 <Cloud className="h-3 w-3 flex-shrink-0 text-blue-500" />
@@ -273,8 +280,10 @@ export function DatasetFilter({
                               )}
                             </div>
                             <p className="text-muted-foreground text-xs">
-                              {(dataset as any).source || 'Unknown source'} •{' '}
-                              {dataset.id}
+                              {(dataset as any).sourceName ||
+                                (dataset as any).source ||
+                                'Unknown source'}{' '}
+                              • {dataset.name}
                             </p>
                             <p className="text-muted-foreground text-xs">
                               {(dataset as any).units || 'N/A'}

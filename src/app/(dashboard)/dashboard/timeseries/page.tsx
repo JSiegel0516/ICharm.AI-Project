@@ -164,7 +164,7 @@ export default function EnhancedTimeSeriesPage() {
     // Select datasets based on IDs from URL
     if (datasetIds.length > 0) {
       const selected = availableDatasets.filter((d) =>
-        datasetIds.includes(d.id)
+        datasetIds.includes((d as any).slug || d.id)
       );
       setSelectedDatasets(selected);
       setVisibleDatasets(new Set(selected.map((d) => d.id)));
@@ -175,7 +175,7 @@ export default function EnhancedTimeSeriesPage() {
 
   // Create stable serialized values for URL update dependencies
   const selectedDatasetIds = useMemo(
-    () => selectedDatasets.map((d) => d.id).join(','),
+    () => selectedDatasets.map((d) => (d as any).slug || d.id).join(','),
     [selectedDatasets]
   );
 
@@ -223,8 +223,13 @@ export default function EnhancedTimeSeriesPage() {
       return;
     }
 
+    // Send UUIDs directly - Python looks them up in the database
+    const datasetIds = selectedDatasets.map((d) => d.id);
+    console.log('Extracting datasets with UUIDs:', datasetIds);
+    console.log('Selected datasets:', selectedDatasets);
+
     await extractTimeSeries({
-      datasetIds: selectedDatasets.map((d) => d.id),
+      datasetIds,
       startDate: dateRange.start,
       endDate: dateRange.end,
       analysisModel,
