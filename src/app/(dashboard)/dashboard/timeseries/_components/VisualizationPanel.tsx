@@ -137,7 +137,7 @@ export function VisualizationPanel({
                   <Line
                     key={dataset.id}
                     type="monotone"
-                    dataKey={(dataset as any).keyVariable || dataset.id}
+                    dataKey={dataset.id}
                     name={(dataset as any).datasetName || dataset.name}
                     stroke={colors[idx % colors.length]}
                     strokeWidth={2}
@@ -168,7 +168,7 @@ export function VisualizationPanel({
                 visibleDatasetIds.includes(dataset.id) && (
                   <Bar
                     key={dataset.id}
-                    dataKey={(dataset as any).keyVariable || dataset.id}
+                    dataKey={dataset.id}
                     name={(dataset as any).datasetName || dataset.name}
                     fill={colors[idx % colors.length]}
                   />
@@ -198,7 +198,7 @@ export function VisualizationPanel({
                   <Area
                     key={dataset.id}
                     type="monotone"
-                    dataKey={(dataset as any).keyVariable || dataset.id}
+                    dataKey={dataset.id}
                     name={(dataset as any).datasetName || dataset.name}
                     stroke={colors[idx % colors.length]}
                     fill={colors[idx % colors.length]}
@@ -228,7 +228,7 @@ export function VisualizationPanel({
                 visibleDatasetIds.includes(dataset.id) && (
                   <Scatter
                     key={dataset.id}
-                    dataKey={(dataset as any).keyVariable || dataset.id}
+                    dataKey={dataset.id}
                     name={(dataset as any).datasetName || dataset.name}
                     fill={colors[idx % colors.length]}
                   />

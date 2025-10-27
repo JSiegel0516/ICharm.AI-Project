@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, validator
 from typing import List, Optional, Dict, Any, Literal, Union
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timedelta
 from enum import Enum
 import xarray as xr
 import pandas as pd
@@ -26,14 +26,14 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 from concurrent.futures import ThreadPoolExecutor
 import warnings
+import ujson
 import kerchunk.hdf
 import kerchunk.combine
 from functools import lru_cache
 import cftime
 
 # Import raster visualization module
-from .raster import serialize_raster_array
-
+from raster import serialize_raster_array
 
 warnings.filterwarnings("ignore")
 
@@ -79,41 +79,27 @@ class CustomJSONResponse(JSONResponse):
             separators=(",", ":"),
         ).encode("utf-8")
 
-# Load environment variables from common locations inside the container volume
-ROOT_DIR = Path(__file__).resolve().parent.parent
-ENV_LOCATIONS = [
-    ROOT_DIR / ".env.local",
-    ROOT_DIR / ".env",
-    Path("/app/.env.local"),
-    Path("/app/.env"),
-]
-for env_path in ENV_LOCATIONS:
-    if env_path.exists():
-        load_dotenv(dotenv_path=env_path, override=False)
+# Load environment variables from .env file in root folder
+ROOT_DIR = Path(__file__).resolve().parent.parent 
+env_path = ROOT_DIR / '.env.local'
+load_dotenv(dotenv_path=env_path)
 
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
 
-# Database configuration (support both legacy POSTGRES_URL and DATABASE_URL)
-DATABASE_URL = os.getenv("POSTGRES_URL") or os.getenv("DATABASE_URL")
+# Database configuration
+DATABASE_URL = os.getenv("POSTGRES_URL")
 if not DATABASE_URL:
     raise ValueError(
         f"DATABASE_URL not found in environment variables. "
-        "Please set POSTGRES_URL or DATABASE_URL to a valid PostgreSQL connection string."
+        f"Please create a .env file at {env_path} with DATABASE_URL=postgresql://..."
     )
-
-# Normalize SQLAlchemy URL scheme (support legacy postgres:// URIs)
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # File paths configuration
 LOCAL_DATASETS_PATH = (ROOT_DIR / os.getenv("LOCAL_DATASETS_PATH", "datasets")).resolve()
 KERCHUNK_PATH = (ROOT_DIR / os.getenv("KERCHUNK_PATH", "kerchunk")).resolve()
 CACHE_DIR = Path(os.getenv("CACHE_DIR", "/tmp/climate_cache")).resolve()
-
-# Ensure auxiliary directories exist
-KERCHUNK_PATH.mkdir(parents=True, exist_ok=True)
 
 # AWS S3 configuration (for cloud datasets)
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
@@ -137,6 +123,7 @@ def get_metadata_by_ids(dataset_ids: List[str]) -> pd.DataFrame:
     try:
         with engine.connect() as conn:
             placeholders = ', '.join([f':id{i}' for i in range(len(dataset_ids))])
+            # Query by UUID id column instead of datasetName
             query = text(f"""
                 SELECT * FROM metadata 
                 WHERE id IN ({placeholders})
@@ -208,7 +195,7 @@ class TimeSeriesRequest(BaseModel):
             end = datetime.strptime(v, "%Y-%m-%d")
             if end < start:
                 raise ValueError("endDate must be after startDate")
-            if (end - start).days > 365 * 50:
+            if (end - start).days > 365 * 50:  # Max 50 years
                 raise ValueError("Date range cannot exceed 50 years")
         return v
 
@@ -240,6 +227,7 @@ class Statistics(BaseModel):
 class DatasetMetadata(BaseModel):
     """Metadata for a dataset"""
     id: str
+    slug: Optional[str] = None
     name: str
     source: str
     units: str
@@ -278,6 +266,7 @@ class DatasetCache:
     
     def set(self, key: str, dataset: xr.Dataset):
         if len(self.cache) >= self.max_size:
+            # Remove least recently used
             oldest = min(self.access_times, key=self.access_times.get)
             del self.cache[oldest]
             del self.access_times[oldest]
@@ -287,7 +276,10 @@ class DatasetCache:
     
     def clear(self):
         for ds in self.cache.values():
-            ds.close()
+            try:
+                ds.close()
+            except:
+                pass
         self.cache.clear()
         self.access_times.clear()
 
@@ -443,95 +435,249 @@ def create_kerchunk_reference(url: str, output_path: str) -> str:
         logger.error(f"Failed to create kerchunk reference: {e}")
         raise
 
-async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date: datetime) -> xr.Dataset:
-    """Open cloud-based dataset with optimizations"""
+
+
+def expand_date_pattern(url_pattern: str, start_date: datetime, end_date: datetime) -> List[str]:
+    """Expand URL pattern with date wildcards into list of URLs"""
+    urls = []
+    current = start_date
     
-    cache_key = f"{metadata['datasetName']}_{start_date}_{end_date}"
+    while current <= end_date:
+        url = url_pattern.format(
+            year=current.year,
+            month=current.month,
+            day=current.day
+        )
+        urls.append(url)
+        
+        # Increment based on pattern granularity
+        if '{day' in url_pattern:
+            current += timedelta(days=1)
+        elif '{month' in url_pattern:
+            # Move to first day of next month
+            if current.month == 12:
+                current = datetime(current.year + 1, 1, 1)
+            else:
+                current = datetime(current.year, current.month + 1, 1)
+        else:
+            current = datetime(current.year + 1, 1, 1)
+    
+    return urls
+
+async def load_kerchunk_reference(kerchunk_path: str) -> Dict:
+    """Load kerchunk reference file with multiple fallback methods"""
+    try:
+        # Try ujson first (fastest)
+        with open(kerchunk_path, 'r') as f:
+            refs = ujson.load(f)
+            logger.info(f"Loaded kerchunk reference with ujson: {len(refs.get('refs', {}))} refs")
+            return refs
+    except Exception as ujson_error:
+        logger.warning(f"ujson failed, trying standard json: {ujson_error}")
+        try:
+            # Fallback to standard json
+            with open(kerchunk_path, 'r') as f:
+                refs = json.load(f)
+                logger.info(f"Loaded kerchunk reference with json: {len(refs.get('refs', {}))} refs")
+                return refs
+        except Exception as e:
+            logger.error(f"Failed to load kerchunk reference {kerchunk_path}: {e}")
+            raise
+
+async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date: datetime) -> xr.Dataset:
+    """Open cloud-based dataset using direct S3 access (simplified from working example)"""
+    
+    cache_key = f"{metadata['id']}_{start_date.date()}_{end_date.date()}"
     cached = dataset_cache.get(cache_key)
     if cached is not None:
+        logger.info(f"Using cached cloud dataset: {cache_key}")
         return cached
     
     try:
-        engine = (metadata.get("engine") or "h5netcdf").lower()
-        dataset_slug = _slugify(metadata.get("slug") or metadata.get("datasetName") or metadata.get("id", "dataset"))
-
-        if engine == "zarr" and metadata.get("kerchunkPath"):
-            kerchunk_hint = Path(str(metadata["kerchunkPath"]))
-            kerchunk_file = kerchunk_hint if kerchunk_hint.is_absolute() else (KERCHUNK_PATH / kerchunk_hint.name)
-            if not kerchunk_file.exists():
-                source_url = _resolve_remote_asset(metadata, start_date)
-                kerchunk_file_path = await asyncio.to_thread(
-                    create_kerchunk_reference,
-                    source_url,
-                    str(kerchunk_file),
+        input_file = str(metadata["inputFile"])
+        engine = str(metadata.get("engine", "h5netcdf")).lower()
+        
+        logger.info(f"Opening cloud dataset: {metadata['datasetName']}")
+        logger.info(f"Input file: {input_file}")
+        logger.info(f"Engine: {engine}")
+        
+        # ====================================================================
+        # SIMPLIFIED CLOUD ACCESS (from working example)
+        # ====================================================================
+        
+        if engine == "zarr":
+            # ZARR: Try kerchunk first, then direct access
+            if input_file.startswith("s3://"):
+                kerchunk_path_rel = metadata.get("kerchunkPath")
+                
+                # Try kerchunk if available
+                if kerchunk_path_rel and str(kerchunk_path_rel).lower() not in ['none', 'null', '']:
+                    # Clean up kerchunk path
+                    if str(kerchunk_path_rel).startswith('kerchunk/'):
+                        kerchunk_path_rel = str(kerchunk_path_rel).replace('kerchunk/', '', 1)
+                    
+                    kerchunk_file = KERCHUNK_PATH / kerchunk_path_rel
+                    
+                    if kerchunk_file.exists():
+                        logger.info(f"Using kerchunk: {kerchunk_file}")
+                        try:
+                            ds = await asyncio.to_thread(
+                                xr.open_zarr,
+                                "reference://",
+                                storage_options={
+                                    "fo": str(kerchunk_file),
+                                    "remote_protocol": "s3",
+                                    "remote_options": {"anon": S3_ANON},
+                                    "asynchronous": False
+                                },
+                                consolidated=False
+                            )
+                            logger.info(f"✅ Opened via kerchunk")
+                            dataset_cache.set(cache_key, ds)
+                            return ds
+                        except Exception as e:
+                            logger.warning(f"Kerchunk failed ({e}), trying direct access")
+                
+                # Direct zarr access
+                logger.info(f"Opening zarr directly from S3")
+                ds = await asyncio.to_thread(
+                    xr.open_zarr,
+                    input_file,
+                    consolidated=True
                 )
-                kerchunk_file = Path(kerchunk_file_path)
-            
-            ds = await asyncio.to_thread(
-                xr.open_zarr,
-                "reference://",
-                storage_options={
-                    "fo": str(kerchunk_file),
-                    "remote_protocol": "s3",
-                    "remote_options": {"anon": S3_ANON},
-                    "asynchronous": False
-                },
-                consolidated=False
-            )
+            else:
+                # Local zarr
+                ds = await asyncio.to_thread(
+                    xr.open_zarr,
+                    input_file,
+                    consolidated=True
+                )
         
         elif engine == "h5netcdf":
-            kerchunk_hint = metadata.get("kerchunkPath")
-            if kerchunk_hint:
-                hint_path = Path(str(kerchunk_hint))
-                kerchunk_file = hint_path if hint_path.is_absolute() else (KERCHUNK_PATH / hint_path.name)
-            else:
-                kerchunk_file = KERCHUNK_PATH / f"{dataset_slug}.json"
-
-            kerchunk_file.parent.mkdir(parents=True, exist_ok=True)
-
-            if not os.path.exists(kerchunk_file):
-                source_url = _resolve_remote_asset(metadata, start_date)
-                kerchunk_file = await asyncio.to_thread(
-                    create_kerchunk_reference,
-                    source_url,
-                    str(kerchunk_file)
-                )
-            else:
-                kerchunk_file = str(kerchunk_file)
+            # HDF5/NetCDF: Direct S3 access with fsspec
+            url = input_file
             
-            ds = await asyncio.to_thread(
-                xr.open_zarr,
-                "reference://",
-                storage_options={
-                    "fo": kerchunk_file,
-                    "remote_protocol": "s3",
-                    "remote_options": {"anon": S3_ANON},
-                    "asynchronous": False
-                },
-                consolidated=False
-            )
+            # Handle wildcards and date patterns
+            fs = fsspec.filesystem("s3", anon=S3_ANON)
+            
+            # Check if URL has date patterns or wildcards
+            has_date_pattern = "{" in url
+            has_wildcard = "*" in url or "?" in url
+            
+            if has_date_pattern or has_wildcard:
+                logger.info(f"Finding files for date range: {start_date.date()} to {end_date.date()}")
+                
+                all_matching_files = []
+                
+                if has_date_pattern:
+                    # Expand URL for each day in the date range
+                    current = start_date
+                    while current <= end_date:
+                        daily_url = url.format(
+                            year=current.year,
+                            month=current.month,
+                            day=current.day
+                        )
+                        
+                        # Remove s3:// prefix for glob
+                        url_for_glob = daily_url[5:] if daily_url.startswith("s3://") else daily_url
+                        
+                        # Find files matching this day's pattern
+                        try:
+                            matching_files = fs.glob(url_for_glob)
+                            if matching_files:
+                                all_matching_files.extend([f"s3://{f}" for f in matching_files])
+                                logger.info(f"Found {len(matching_files)} file(s) for {current.date()}")
+                        except Exception as e:
+                            logger.debug(f"No files for {current.date()}: {e}")
+                        
+                        # Move to next day
+                        current += timedelta(days=1)
+                else:
+                    # Just a wildcard pattern, no date
+                    url_for_glob = url[5:] if url.startswith("s3://") else url
+                    matching_files = fs.glob(url_for_glob)
+                    if matching_files:
+                        all_matching_files = [f"s3://{f}" for f in matching_files]
+                        logger.info(f"Found {len(matching_files)} file(s) matching pattern")
+                
+                if not all_matching_files:
+                    raise FileNotFoundError(f"No files found for date range {start_date.date()} to {end_date.date()}")
+                
+                logger.info(f"Total files found: {len(all_matching_files)}")
+                
+                # Limit files to avoid memory issues and work without dask
+                max_files = 50  # Reasonable limit
+                if len(all_matching_files) > max_files:
+                    logger.warning(f"Found {len(all_matching_files)} files, limiting to first {max_files}")
+                    all_matching_files = all_matching_files[:max_files]
+                
+                # Open files without dask
+                if len(all_matching_files) == 1:
+                    # Single file - open directly
+                    url_clean = all_matching_files[0][5:] if all_matching_files[0].startswith("s3://") else all_matching_files[0]
+                    logger.info(f"Opening single file: {all_matching_files[0]}")
+                    s3_file = fs.open(url_clean, mode="rb")
+                    ds = await asyncio.to_thread(xr.open_dataset, s3_file, engine="h5netcdf")
+                else:
+                    # Multiple files - open each and concatenate manually (no dask needed)
+                    logger.info(f"Opening {len(all_matching_files)} files sequentially (no dask)")
+                    
+                    datasets = []
+                    for i, url_path in enumerate(all_matching_files):
+                        try:
+                            url_clean = url_path[5:] if url_path.startswith("s3://") else url_path
+                            s3_file = fs.open(url_clean, mode="rb")
+                            ds_single = await asyncio.to_thread(xr.open_dataset, s3_file, engine="h5netcdf")
+                            datasets.append(ds_single)
+                            
+                            if (i + 1) % 10 == 0:
+                                logger.info(f"Opened {i + 1}/{len(all_matching_files)} files")
+                        except Exception as e:
+                            logger.warning(f"Failed to open {url_path}: {e}")
+                            continue
+                    
+                    if not datasets:
+                        raise FileNotFoundError(f"Could not open any files in date range")
+                    
+                    logger.info(f"Successfully opened {len(datasets)} files, concatenating...")
+                    
+                    # Concatenate along time dimension
+                    ds = await asyncio.to_thread(xr.concat, datasets, dim='time', combine_attrs='override')
+            else:
+                # Simple URL with no patterns or wildcards
+                url_clean = url[5:] if url.startswith("s3://") else url
+                logger.info(f"Opening single S3 file with h5netcdf")
+                s3_file = fs.open(url_clean, mode="rb")
+                ds = await asyncio.to_thread(xr.open_dataset, s3_file, engine="h5netcdf")
         
         else:
-            fs = fsspec.filesystem("s3", anon=S3_ANON)
-            resolved_url = _resolve_remote_asset(metadata, start_date)
-            object_key = resolved_url[5:] if resolved_url.startswith("s3://") else resolved_url
-            with fs.open(object_key, "rb") as f:
-                ds = await asyncio.to_thread(
-                    xr.open_dataset,
-                    f,
-                    engine=metadata["engine"],
-                    use_cftime=True,
-                )
+            # Other engines
+            logger.info(f"Opening with engine: {engine}")
+            ds = await asyncio.to_thread(
+                xr.open_dataset,
+                input_file,
+                engine=engine
+            )
         
+        logger.info(f"✅ Successfully opened: {metadata['datasetName']}")
+        logger.info(f"   Dimensions: {dict(ds.dims)}")
+        logger.info(f"   Variables: {list(ds.data_vars)}")
+        
+        # Cache the dataset
         dataset_cache.set(cache_key, ds)
         return ds
         
     except Exception as e:
         logger.error(f"Failed to open cloud dataset {metadata['datasetName']}: {e}")
+        logger.error(f"Error type: {type(e).__name__}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to access cloud dataset: {metadata['datasetName']}"
+            detail=f"Failed to access cloud dataset '{metadata['datasetName']}': {str(e)}"
         )
+
 
 async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
     """Open local dataset with caching"""
@@ -543,7 +689,9 @@ async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
         return cached
     
     try:
+        # Handle different path formats
         input_file = metadata["inputFile"]
+        # Remove 'datasets/' prefix if present
         if input_file.startswith("datasets/"):
             input_file = input_file.replace("datasets/", "", 1)
         
@@ -552,37 +700,40 @@ async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
         
         if not os.path.exists(file_path):
             logger.error(f"Dataset file not found: {file_path}")
+            logger.error(f"LOCAL_DATASETS_PATH: {LOCAL_DATASETS_PATH}")
+            logger.error(f"Input file from metadata: {metadata['inputFile']}")
+            
+            # List available files in directory for debugging
+            if os.path.exists(LOCAL_DATASETS_PATH):
+                available_files = os.listdir(LOCAL_DATASETS_PATH)
+                logger.info(f"Available files in {LOCAL_DATASETS_PATH}: {available_files[:10]}")
+            
             raise FileNotFoundError(f"Local dataset not found: {file_path}")
         
         engine = metadata.get("engine", "h5netcdf")
         logger.info(f"Opening dataset with engine: {engine}")
         
         if engine == "zarr":
+            # Try consolidated first, fall back to non-consolidated
             try:
+                logger.info(f"Attempting to open zarr with consolidated metadata")
                 ds = await asyncio.to_thread(xr.open_zarr, file_path, consolidated=True)
-            except Exception:
-                ds = await asyncio.to_thread(xr.open_zarr, file_path, consolidated=False)
-        else:
-            open_kwargs = {"engine": engine, "use_cftime": True}
-            try:
-                ds = await asyncio.to_thread(xr.open_dataset, file_path, **open_kwargs)
-            except Exception as exc:
-                if "unable to decode time units" in str(exc).lower():
-                    logger.warning(
-                        "Falling back to decode_times=False for dataset %s due to: %s",
-                        metadata["datasetName"],
-                        exc,
-                    )
-                    open_kwargs["decode_times"] = False
-                    ds = await asyncio.to_thread(xr.open_dataset, file_path, **open_kwargs)
-                else:
+                logger.info(f"Successfully opened zarr with consolidated metadata")
+            except Exception as zarr_error:
+                logger.warning(f"Consolidated metadata not found for {metadata['datasetName']}: {zarr_error}")
+                logger.info(f"Trying to open zarr without consolidated metadata")
+                try:
+                    ds = await asyncio.to_thread(xr.open_zarr, file_path, consolidated=False)
+                    logger.info(f"Successfully opened zarr without consolidated metadata")
+                except Exception as e:
+                    logger.error(f"Failed to open zarr with both methods: {e}")
                     raise
-        
-        ds = _ensure_datetime_coordinates(ds)
-        
-        ds = _ensure_datetime_coordinates(ds)
+        else:
+            ds = await asyncio.to_thread(xr.open_dataset, file_path, engine=engine)
+            logger.info(f"Successfully opened dataset with engine: {engine}")
         
         dataset_cache.set(cache_key, ds)
+        logger.info(f"Cached dataset: {cache_key}")
         return ds
         
     except Exception as e:
@@ -629,8 +780,10 @@ async def extract_time_series(
     
     lat_name, lon_name, time_name = normalize_coordinates(ds)
     
+    # Time selection
     ds_time = ds.sel({time_name: slice(start_date, end_date)})
     
+    # Spatial selection
     if spatial_bounds:
         if lat_name and lon_name:
             ds_spatial = ds_time.sel({
@@ -644,14 +797,17 @@ async def extract_time_series(
     else:
         ds_spatial = ds_time
     
+    # Get variable
     var_name = metadata["keyVariable"]
     var = ds_spatial[var_name]
     
+    # Level selection if applicable
     if level_value is not None:
         level_dims = [d for d in var.dims if d not in (time_name, lat_name, lon_name)]
         if level_dims:
             var = var.sel({level_dims[0]: level_value}, method="nearest")
     
+    # Spatial aggregation
     spatial_dims = [d for d in var.dims if d != time_name]
     
     if aggregation == AggregationMethod.MEAN:
@@ -667,8 +823,10 @@ async def extract_time_series(
     elif aggregation == AggregationMethod.STD:
         result = var.std(dim=spatial_dims)
     
+    # Convert to pandas Series
     series = result.to_pandas()
     
+    # Ensure datetime index
     if not isinstance(series.index, pd.DatetimeIndex):
         series.index = pd.to_datetime(series.index)
     
@@ -689,6 +847,7 @@ def apply_analysis_model(
         return series.rolling(window=window, center=True, min_periods=1).mean()
     
     elif model == AnalysisModel.TREND:
+        # Detrend using linear regression
         x = np.arange(len(series))
         y = series.values
         valid_mask = ~np.isnan(y)
@@ -701,6 +860,7 @@ def apply_analysis_model(
         return pd.Series(trend, index=series.index)
     
     elif model == AnalysisModel.ANOMALY:
+        # Calculate anomalies from climatology
         climatology = series.groupby([series.index.month, series.index.day]).mean()
         anomalies = series.copy()
         
@@ -712,7 +872,8 @@ def apply_analysis_model(
         return anomalies
     
     elif model == AnalysisModel.SEASONAL:
-        if len(series) < 24:
+        # Simple seasonal decomposition
+        if len(series) < 24:  # Need at least 2 years
             return series
         
         from statsmodels.tsa.seasonal import seasonal_decompose
@@ -742,6 +903,7 @@ def calculate_statistics(series: pd.Series) -> Statistics:
             percentiles={"25": 0, "50": 0, "75": 0}
         )
     
+    # Calculate trend
     x = np.arange(len(valid_data))
     y = valid_data.values
     if len(y) > 1:
@@ -824,13 +986,15 @@ def generate_chart_config(
 # API ENDPOINTS
 # ============================================================================
 
+# Create FastAPI app and router
 app = FastAPI(
-    title="Enhanced Climate Time Series API with Raster Visualization",
-    description="Advanced API for extracting and processing climate time series data with 3D globe visualization",
-    version="2.1.0",
+    title="Enhanced Climate Time Series API",
+    description="Advanced API for extracting and processing climate time series data",
+    version="2.0.0",
     default_response_class=CustomJSONResponse
 )
 
+# Configure CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -847,14 +1011,24 @@ router = APIRouter(prefix="/api/v2")
 
 @router.post("/timeseries/extract", response_model=TimeSeriesResponse, response_class=CustomJSONResponse)
 async def extract_timeseries(request: TimeSeriesRequest):
-    """Extract and process time series data from multiple datasets"""
+    """
+    Extract and process time series data from multiple datasets
+    
+    This endpoint:
+    - Fetches data from local or cloud sources based on metadata
+    - Applies spatial and temporal filtering
+    - Performs requested analysis (trend, anomaly, etc.)
+    - Returns chart-ready data with statistics and metadata
+    """
     
     start_time = datetime.now()
     
     try:
+        # Parse dates
         start_date = datetime.strptime(request.startDate, "%Y-%m-%d")
         end_date = datetime.strptime(request.endDate, "%Y-%m-%d")
         
+        # Get metadata for requested datasets (UUIDs)
         metadata_df = get_metadata_by_ids(request.datasetIds)
         
         if len(metadata_df) == 0:
@@ -863,30 +1037,28 @@ async def extract_timeseries(request: TimeSeriesRequest):
                 detail="No datasets found with provided IDs"
             )
         
-        tasks = []
-        for _, meta_row in metadata_df.iterrows():
-            is_local = meta_row["Stored"] == "local"
-            
-            if is_local:
-                task = open_local_dataset(meta_row)
-            else:
-                task = open_cloud_dataset(meta_row, start_date, end_date)
-            
-            tasks.append((meta_row, task))
-        
+        # Process each dataset
         all_series = {}
         dataset_metadata = {}
         statistics = {} if request.includeStatistics else None
         
-        for meta_row, task in tasks:
+        for _, meta_row in metadata_df.iterrows():
             try:
-                ds = await task
+                is_local = meta_row["Stored"] == "local"
                 
+                # Open dataset
+                if is_local:
+                    ds = await open_local_dataset(meta_row)
+                else:
+                    ds = await open_cloud_dataset(meta_row, start_date, end_date)
+                
+                # Determine level if multi-level
                 level_value = None
                 if meta_row.get("levelValues") and str(meta_row["levelValues"]).lower() != "none":
-                    level_vals = [float(x) for x in str(meta_row["levelValues"]).split(",")]
+                    level_vals = [float(x.strip()) for x in str(meta_row["levelValues"]).split(",")]
                     level_value = np.median(level_vals)
                 
+                # Extract time series
                 series = await extract_time_series(
                     ds, meta_row, start_date, end_date,
                     spatial_bounds=request.spatialBounds,
@@ -894,27 +1066,33 @@ async def extract_timeseries(request: TimeSeriesRequest):
                     level_value=level_value
                 )
                 
+                # Apply analysis model
                 series = apply_analysis_model(
                     series, 
                     request.analysisModel,
                     request.smoothingWindow
                 )
                 
+                # Normalize if requested
                 if request.normalize:
                     series_min = series.min()
                     series_max = series.max()
                     if series_max > series_min:
                         series = (series - series_min) / (series_max - series_min)
                 
+                # Resample if requested
                 if request.resampleFreq:
                     series = series.resample(request.resampleFreq).mean()
                 
-                dataset_id = meta_row["keyVariable"]
+                # Use ID as the key (what frontend sends)
+                dataset_id = str(meta_row["id"])
                 all_series[dataset_id] = series
                 
+                # Add metadata
                 if request.includeMetadata:
                     dataset_metadata[dataset_id] = DatasetMetadata(
-                        id=meta_row["id"],
+                        id=str(meta_row["id"]),
+                        slug=meta_row.get("slug"),
                         name=meta_row["datasetName"],
                         source=meta_row["sourceName"],
                         units=meta_row["units"],
@@ -922,16 +1100,18 @@ async def extract_timeseries(request: TimeSeriesRequest):
                         temporalResolution=meta_row.get("statistic", "Monthly"),
                         startDate=meta_row["startDate"],
                         endDate=meta_row["endDate"],
-                        isLocal=meta_row["Stored"] == "local",
+                        isLocal=is_local,
                         level=f"{level_value} {meta_row.get('levelUnits', '')}" if level_value else None,
                         description=meta_row.get("description")
                     )
                 
+                # Calculate statistics
                 if request.includeStatistics:
                     statistics[dataset_id] = calculate_statistics(series)
                 
             except Exception as e:
                 logger.error(f"Error processing dataset {meta_row['datasetName']}: {e}")
+                # Continue with other datasets
                 continue
         
         if not all_series:
@@ -940,6 +1120,7 @@ async def extract_timeseries(request: TimeSeriesRequest):
                 detail="Failed to extract data from any dataset"
             )
         
+        # Align all series to common time index
         common_index = None
         for series in all_series.values():
             if common_index is None:
@@ -947,6 +1128,7 @@ async def extract_timeseries(request: TimeSeriesRequest):
             else:
                 common_index = common_index.intersection(series.index)
         
+        # Build response data
         data_points = []
         for timestamp in common_index:
             point = DataPoint(
@@ -962,6 +1144,7 @@ async def extract_timeseries(request: TimeSeriesRequest):
             
             data_points.append(point)
         
+        # Generate chart configuration
         chart_config = None
         if request.chartType and dataset_metadata:
             chart_config = generate_chart_config(
@@ -970,6 +1153,7 @@ async def extract_timeseries(request: TimeSeriesRequest):
                 dataset_metadata
             )
         
+        # Processing info
         processing_time = (datetime.now() - start_time).total_seconds()
         processing_info = {
             "processingTime": f"{processing_time:.2f}s",
@@ -995,10 +1179,13 @@ async def extract_timeseries(request: TimeSeriesRequest):
         raise
     except Exception as e:
         logger.error(f"Unexpected error in extract_timeseries: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
         )
+
 
 @router.post("/raster/visualize", response_class=CustomJSONResponse)
 async def visualize_raster(request: RasterRequest):
@@ -1090,14 +1277,18 @@ async def visualize_raster(request: RasterRequest):
             detail=f"Failed to generate raster visualization: {str(e)}"
         )
 
+
 @router.get("/timeseries/datasets", response_class=CustomJSONResponse)
 async def list_available_datasets(
     stored: Optional[Literal["local", "cloud", "all"]] = "all",
     source: Optional[str] = None,
     search: Optional[str] = None
 ):
-    """List all available datasets with filtering options"""
+    """
+    List all available datasets with filtering options
+    """
     try:
+        # Load metadata from database using 'metadata' table
         with engine.connect() as conn:
             query = text("SELECT * FROM metadata")
             result = conn.execute(query)
@@ -1109,11 +1300,9 @@ async def list_available_datasets(
                 "datasets": []
             }
         
+        # Apply filters
         if stored != "all":
-            if stored == "local":
-                df = df[df["Stored"] == "local"]
-            else:
-                df = df[df["Stored"] == "cloud"]
+            df = df[df["Stored"].str.lower() == stored.lower()]
         
         if source:
             df = df[df["sourceName"].str.contains(source, case=False, na=False)]
@@ -1122,13 +1311,14 @@ async def list_available_datasets(
             df = df[
                 df["datasetName"].str.contains(search, case=False, na=False) |
                 df["layerParameter"].str.contains(search, case=False, na=False) |
-                df["slug"].str.contains(search, case=False, na=False)
+                df.get("slug", pd.Series(dtype=str)).str.contains(search, case=False, na=False)
             ]
         
+        # Convert to list of dicts
         datasets = []
         for _, row in df.iterrows():
             datasets.append({
-                "id": row["id"],
+                "id": str(row["id"]),
                 "slug": row.get("slug"),
                 "name": row["layerParameter"],
                 "datasetName": row["datasetName"],
@@ -1170,7 +1360,7 @@ async def health_check():
         "status": "healthy",
         "service": "climate-timeseries-api-v2",
         "cache_size": len(dataset_cache.cache),
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now().isoformat()
         "features": {
             "timeseries": True,
             "rasterVisualization": True,
@@ -1195,11 +1385,20 @@ app.include_router(router)
 @app.on_event("startup")
 async def startup_event():
     """Initialize resources on startup"""
-    logger.info("Starting Enhanced Climate Time Series API with Raster Visualization")
+    logger.info("Starting Enhanced Climate Time Series API")
     logger.info(f"Local datasets path: {LOCAL_DATASETS_PATH}")
+    logger.info(f"Kerchunk directory: {KERCHUNK_PATH}")
     logger.info(f"Cache directory: {CACHE_DIR}")
     logger.info(f"Database connected: {DATABASE_URL is not None}")
-    logger.info("Features enabled: Time Series Extraction, Raster Visualization")
+    logger.info(f"S3 Anonymous access: {S3_ANON}")
+    
+    # Check if kerchunk directory exists
+    if KERCHUNK_PATH.exists():
+        kerchunk_files = list(KERCHUNK_PATH.glob("**/*.json"))
+        logger.info(f"Found {len(kerchunk_files)} kerchunk file(s)")
+    else:
+        logger.warning(f"Kerchunk directory not found: {KERCHUNK_PATH}")
+        logger.warning(f"Cloud datasets will use direct S3 access (slower)")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -1214,15 +1413,15 @@ async def shutdown_event():
 
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 Starting Enhanced Climate Time Series API with Raster Visualization...")
+    print("🚀 Starting Enhanced Climate Time Series API...")
     print("📍 API will be available at: http://localhost:8000")
     print("📚 API docs at: http://localhost:8000/docs")
     print("🔧 Features:")
     print("   - Local and cloud dataset support")
+    print("   - Kerchunk optimized cloud access")
+    print("   - Multi-file cloud dataset support")
     print("   - Advanced analysis models (trend, anomaly, seasonal)")
     print("   - Spatial filtering and aggregation")
     print("   - Multiple chart types")
     print("   - Data caching for performance")
-    print("   - 🌍 Raster visualization for 3D globe display")
-    print("   - Base64-encoded PNG textures for Cesium")
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

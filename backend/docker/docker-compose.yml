@@ -47,12 +47,13 @@ services:
     container_name: icharm-data-api
     restart: unless-stopped
     volumes:
-      - ./services/data-api/app:/app/app
-      - ../datasets:/app/datasets:ro
+      - ./services/data-api/app:/app
+      - ./datasets:/app/datasets:ro
+      - ./kerchunk:/app/kerchunk:ro
       # IMPORTANT: Mount colorMaps.json if you have it (optional)
       #- ../src/data/colorMaps.json:/app/data/colorMaps.json:ro
-    env_file:
-      - ./.env
+    ports:
+      - "8000:8000"
     environment:
       DATABASE_URL: postgres://${ICHARM_DB_USER}:${ICHARM_DB_PASSWORD}@db:${ICHARM_DB_PORT}/${ICHARM_DB_NAME}
       TEST_CHAT_USER_EMAIL: ${TEST_CHAT_USER_EMAIL:-testuser@gmail.com}
@@ -60,9 +61,6 @@ services:
       LOCAL_DATASETS_PATH: /app/datasets
       KERCHUNK_PATH: kerchunk
       CACHE_DIR: /tmp/climate_cache
-    ports:
-      # CHANGED: Map host port 8002 to container port 8000
-      - "8002:8000"
     depends_on:
       db:
         condition: service_started

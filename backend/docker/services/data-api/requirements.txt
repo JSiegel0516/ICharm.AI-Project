@@ -18,6 +18,7 @@ netCDF4
 pandas
 numpy
 cftime
+dask
 
 # File system / S3 access
 fsspec

@@ -16,6 +16,7 @@ env/
 ENV/
 .venv/
 datasets
+kerchunk
 
 # python
 __pycache__/

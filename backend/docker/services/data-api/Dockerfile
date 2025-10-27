@@ -14,12 +14,12 @@ WORKDIR /app
 # Install system build dependencies INCLUDING libpq-dev for PostgreSQL
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        build-essential \
-        cargo \
-        pkg-config \
-        libpq-dev \
-        gcc \
-        g++ \
+    build-essential \
+    cargo \
+    pkg-config \
+    libpq-dev \
+    gcc \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
 # Install requirements
@@ -37,5 +37,5 @@ COPY . .
 EXPOSE 8000
 
 # Run the application (explicit module path)
-CMD ["uvicorn", "app.iCharmFastAPI:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 # Use --reload for development; remove it for production
