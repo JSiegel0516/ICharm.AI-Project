@@ -27,15 +27,6 @@ import warnings
 import kerchunk.hdf
 import kerchunk.combine
 from functools import lru_cache
-from fastapi.middleware.cors import CORSMiddleware
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Your Next.js dev server
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 warnings.filterwarnings("ignore")
 
@@ -91,7 +82,7 @@ load_dotenv(dotenv_path=env_path)
 # ============================================================================
 
 # Database configuration
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("POSTGRES_URL")
 if not DATABASE_URL:
     raise ValueError(
         f"DATABASE_URL not found in environment variables. "
@@ -696,7 +687,11 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",  # Next.js dev server
+        "http://127.0.0.1:3000",  # Alternative localhost
+        "*"  # Allow all in development
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
