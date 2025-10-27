@@ -27,6 +27,15 @@ import warnings
 import kerchunk.hdf
 import kerchunk.combine
 from functools import lru_cache
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # Your Next.js dev server
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 warnings.filterwarnings("ignore")
 

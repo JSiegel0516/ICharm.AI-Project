@@ -12,7 +12,6 @@ services:
       - "${ICHARM_DB_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test:
         - CMD-SHELL
@@ -28,6 +27,8 @@ services:
       dockerfile: Dockerfile               # ✅ Dockerfile is inside the service folder
     container_name: icharm-llm-service
     restart: unless-stopped
+    volumes:
+       - ./services/llm-service:/app
     environment:
       HF_TOKEN: ${HF_TOKEN:-}
       LLAMA_API_KEY: ${LLAMA_API_KEY:-}
@@ -46,10 +47,12 @@ services:
     container_name: icharm-data-api
     restart: unless-stopped
     volumes:
-      - ./metadata.csv:/app/metadata.csv:ro       # ✅ CSV in same folder as docker-compose
       - ./datasets:/app/datasets:ro
     ports:
       - "${DATA_API_PORT:-8002}:8000"
+    depends_on:
+      db:
+        condition: service_started
 
 volumes:
   postgres-data:
