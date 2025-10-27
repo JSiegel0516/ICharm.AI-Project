@@ -248,6 +248,9 @@ export function DatasetFilter({
                     const isSelected = selectedDatasets.some(
                       (d) => d.id === dataset.id
                     );
+                    const isCloud =
+                      (dataset as any).stored === 'cloud' ||
+                      (dataset as any).Stored === 'cloud';
                     return (
                       <motion.div
                         key={dataset.id}
@@ -273,7 +276,7 @@ export function DatasetFilter({
                               <h4 className="text-sm font-medium">
                                 {(dataset as any).datasetName || dataset.name}
                               </h4>
-                              {(dataset as any).stored === 'cloud' ? (
+                              {isCloud ? (
                                 <Cloud className="h-3 w-3 flex-shrink-0 text-blue-500" />
                               ) : (
                                 <Database className="h-3 w-3 flex-shrink-0 text-green-500" />
@@ -323,56 +326,62 @@ export function DatasetFilter({
                     No datasets selected
                   </div>
                 ) : (
-                  selectedDatasets.map((dataset) => (
-                    <motion.div
-                      key={dataset.id}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: 20 }}
-                      className="flex items-center justify-between rounded-md border p-2"
-                    >
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="h-3 w-3 rounded-full"
-                          style={{
-                            backgroundColor: dataset.color || '#888',
-                          }}
-                        />
-                        <span className="text-sm">{dataset.name}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => toggleVisibility(dataset.id)}
-                              >
-                                {visibleDatasets.has(dataset.id) ? (
-                                  <Eye className="h-4 w-4" />
-                                ) : (
-                                  <EyeOff className="text-muted-foreground h-4 w-4" />
-                                )}
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {visibleDatasets.has(dataset.id)
-                                ? 'Hide'
-                                : 'Show'}
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeDataset(dataset.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </motion.div>
-                  ))
+                  selectedDatasets.map((dataset) => {
+                    const isCloud =
+                      (dataset as any).stored === 'cloud' ||
+                      (dataset as any).Stored === 'cloud';
+                    const displayName =
+                      (dataset as any).datasetName || dataset.name;
+                    return (
+                      <motion.div
+                        key={dataset.id}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 20 }}
+                        className="flex items-center justify-between rounded-md border p-2"
+                      >
+                        <div className="flex items-center gap-2">
+                          {isCloud ? (
+                            <Cloud className="h-3 w-3 flex-shrink-0 text-blue-500" />
+                          ) : (
+                            <Database className="h-3 w-3 flex-shrink-0 text-green-500" />
+                          )}
+                          <span className="text-sm">{displayName}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => toggleVisibility(dataset.id)}
+                                >
+                                  {visibleDatasets.has(dataset.id) ? (
+                                    <Eye className="h-4 w-4" />
+                                  ) : (
+                                    <EyeOff className="text-muted-foreground h-4 w-4" />
+                                  )}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {visibleDatasets.has(dataset.id)
+                                  ? 'Hide'
+                                  : 'Show'}
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeDataset(dataset.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </motion.div>
+                    );
+                  })
                 )}
               </AnimatePresence>
             </div>

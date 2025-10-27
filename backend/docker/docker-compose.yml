@@ -23,8 +23,8 @@ services:
 
   llm-service:
     build:
-      context: ./services/llm-service      # ✅ Now relative to docker-compose.yml
-      dockerfile: Dockerfile               # ✅ Dockerfile is inside the service folder
+      context: ./services/llm-service
+      dockerfile: Dockerfile 
     container_name: icharm-llm-service
     restart: unless-stopped
     volumes:
@@ -42,11 +42,12 @@ services:
 
   data-api:
     build:
-      context: ./services/data-api           # ✅ Now relative to docker-compose.yml
-      dockerfile: Dockerfile                 # ✅ Dockerfile is inside the service folder
+      context: ./services/data-api
+      dockerfile: Dockerfile
     container_name: icharm-data-api
     restart: unless-stopped
     volumes:
+      - ./services/data-api/app:/app
       - ./datasets:/app/datasets:ro
     env_file:
       - ./.env
@@ -54,7 +55,11 @@ services:
       DATABASE_URL: postgres://${ICHARM_DB_USER}:${ICHARM_DB_PASSWORD}@db:${ICHARM_DB_PORT}/${ICHARM_DB_NAME}
       TEST_CHAT_USER_EMAIL: ${TEST_CHAT_USER_EMAIL:-testuser@gmail.com}
     ports:
-      - "${DATA_API_PORT:-8002}:8000"
+      - "8000:8000"
+    environment:
+      POSTGRES_URL: ${POSTGRES_URL:-}
+      LOCAL_DATASETS_PATH: /app/datasets
+      KERCHUNK_PATH: kerchunk
     depends_on:
       db:
         condition: service_started

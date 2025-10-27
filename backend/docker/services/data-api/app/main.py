@@ -28,9 +28,12 @@ import warnings
 import kerchunk.hdf
 import kerchunk.combine
 from functools import lru_cache
+<<<<<<< HEAD:backend/docker/services/data-api/app/iCharmFastAPI.py
 
 # Import raster visualization module
 from .raster import serialize_raster_array
+=======
+>>>>>>> 4e7f56831bc830d8b45c87da29b215f5c268d3d8:backend/docker/services/data-api/app/main.py
 
 warnings.filterwarnings("ignore")
 
@@ -86,7 +89,7 @@ load_dotenv(dotenv_path=env_path)
 # ============================================================================
 
 # Database configuration
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("POSTGRES_URL")
 if not DATABASE_URL:
     raise ValueError(
         f"DATABASE_URL not found in environment variables. "
@@ -650,7 +653,11 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",  # Next.js dev server
+        "http://127.0.0.1:3000",  # Alternative localhost
+        "*"  # Allow all in development
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

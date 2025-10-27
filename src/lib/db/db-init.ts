@@ -12,7 +12,7 @@ import {
 } from "./schema";
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: process.env.POSTGRES_URL,
 });
 
 const db = drizzle(pool);
