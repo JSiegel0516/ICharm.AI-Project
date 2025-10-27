@@ -62,6 +62,41 @@ def _hex_to_rgba(value: str) -> Tuple[int, int, int, int]:
     return r, g, b, a
 
 
+def _css_color_to_rgba(color: str) -> Tuple[int, int, int, int]:
+    """Convert CSS color string (hex or rgb/rgba) to RGBA tuple"""
+    color = color.strip()
+    
+    # Handle hex colors
+    if color.startswith('#'):
+        return _hex_to_rgba(color)
+    
+    # Handle rgb() or rgba() colors
+    if color.startswith('rgb'):
+        # Extract numbers from rgb(r, g, b) or rgba(r, g, b, a)
+        import re
+        numbers = re.findall(r'[\d.]+', color)
+        if len(numbers) >= 3:
+            r = int(float(numbers[0]))
+            g = int(float(numbers[1]))
+            b = int(float(numbers[2]))
+            a = int(float(numbers[3]) * 255) if len(numbers) >= 4 else 255
+            return (r, g, b, a)
+    
+    # Fallback to matplotlib color parsing
+    try:
+        from matplotlib.colors import to_rgba
+        rgba = to_rgba(color)
+        return (
+            int(rgba[0] * 255),
+            int(rgba[1] * 255),
+            int(rgba[2] * 255),
+            int(rgba[3] * 255)
+        )
+    except:
+        # Default to black if parsing fails
+        return (0, 0, 0, 255)
+
+
 def _build_gradient(stops: List[Tuple[float, Tuple[int, int, int, int]]], resolution: int) -> np.ndarray:
     if resolution <= 1:
         first = stops[0][1] if stops else (0, 0, 0, 0)
@@ -87,6 +122,24 @@ def _build_gradient(stops: List[Tuple[float, Tuple[int, int, int, int]]], resolu
         ]
         data[index] = interpolated
     return data
+
+
+def _build_palette_from_css_colors(colors: List[str], resolution: int) -> np.ndarray:
+    """Build palette directly from CSS color strings (from frontend ColorBar)"""
+    if not colors:
+        return _matplotlib_palette(_COLOR_MAP_FALLBACK, resolution)
+    
+    # Convert CSS colors to RGBA tuples
+    rgba_colors = [_css_color_to_rgba(c) for c in colors]
+    
+    # Create gradient stops evenly distributed
+    total = max(len(rgba_colors) - 1, 1)
+    stops = [
+        (min(max(idx / total, 0.0), 1.0), rgba)
+        for idx, rgba in enumerate(rgba_colors)
+    ]
+    
+    return _build_gradient(stops, resolution)
 
 
 def _build_palette(entry: Dict[str, Any], resolution: int) -> Optional[np.ndarray]:
@@ -161,11 +214,21 @@ def _ensure_color_maps_loaded() -> None:
             print(f"[RasterViz] Loaded color map: {name}")
 
 
-def _get_color_palette(name: Optional[str]) -> np.ndarray:
+def _get_color_palette(name: Optional[str], css_colors: Optional[List[str]] = None) -> np.ndarray:
+    """Get color palette, prioritizing CSS colors from frontend if provided"""
+    
+    # PRIORITY 1: Use CSS colors directly from frontend ColorBar
+    if css_colors and len(css_colors) > 0:
+        print(f"[RasterViz] Using CSS colors from frontend ColorBar: {css_colors}")
+        return _build_palette_from_css_colors(css_colors, PALETTE_RESOLUTION)
+    
+    # PRIORITY 2: Use named colormap
     _ensure_color_maps_loaded()
     if name and isinstance(name, str) and name in _COLOR_MAP_CACHE:
         print(f"[RasterViz] Using color map: {name}")
         return _COLOR_MAP_CACHE[name]
+    
+    # PRIORITY 3: Fallback
     print(f"[RasterViz] Color map '{name}' not found, using fallback")
     return _COLOR_MAP_CACHE.get("__fallback__")
 
@@ -282,8 +345,10 @@ def _generate_textures(
     min_value: Optional[float],
     max_value: Optional[float],
     color_map_name: Optional[str],
+    css_colors: Optional[List[str]] = None,
 ) -> Tuple[List[Dict[str, Any]], float]:
-    palette = _get_color_palette(color_map_name)
+    # Get palette with CSS colors prioritized
+    palette = _get_color_palette(color_map_name, css_colors)
     if palette is None or len(palette) == 0:
         palette = _matplotlib_palette(_COLOR_MAP_FALLBACK, PALETTE_RESOLUTION)
 
@@ -445,8 +510,20 @@ def serialize_raster_array(
     da: xr.DataArray,
     row: pd.Series,
     dataset_name: str,
+    css_colors: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
+    """
+    Serialize raster array with optional CSS colors from frontend ColorBar
+    
+    Args:
+        da: xarray DataArray containing the raster data
+        row: Metadata row from database
+        dataset_name: Name of the dataset
+        css_colors: Optional list of CSS color strings from frontend ColorBar
+    """
     print(f"[RasterViz] Serializing raster for dataset: {dataset_name}")
+    if css_colors:
+        print(f"[RasterViz] Using CSS colors from frontend: {css_colors}")
     
     array = da.squeeze()
     if array.ndim > 2:
@@ -498,6 +575,7 @@ def serialize_raster_array(
         meta_min if meta_min is not None else data_min,
         meta_max if meta_max is not None else data_max,
         _stringify_palette_name(row.get("colorMap")),
+        css_colors=css_colors,
     )
 
     return {
