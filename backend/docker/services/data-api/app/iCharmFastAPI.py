@@ -217,6 +217,7 @@ class RasterRequest(BaseModel):
     datasetId: str = Field(..., description="Dataset UUID")
     date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$", description="Date for visualization")
     level: Optional[float] = Field(None, description="Atmospheric level (if applicable)")
+    cssColors: Optional[List[str]] = Field(None, description="CSS color strings from frontend ColorBar") 
 
 class DataPoint(BaseModel):
     """Individual data point in time series"""
@@ -1005,12 +1006,20 @@ async def visualize_raster(request: RasterRequest):
     Generate raster visualization for 3D globe display
     
     Returns base64-encoded PNG textures and metadata for Cesium rendering
+    Now supports CSS colors from frontend ColorBar for exact color matching
     """
     start_time = datetime.now()
     
     try:
         # Parse date
         target_date = datetime.strptime(request.date, "%Y-%m-%d")
+        
+        # Log CSS colors if provided
+        if request.cssColors:
+            logger.info(f"[RasterViz] Received {len(request.cssColors)} CSS colors from frontend")
+            logger.info(f"[RasterViz] Colors: {request.cssColors}")
+        else:
+            logger.info("[RasterViz] No CSS colors provided, will use default colormap")
         
         # Get metadata
         metadata_df = get_metadata_by_ids([request.datasetId])
@@ -1049,9 +1058,14 @@ async def visualize_raster(request: RasterRequest):
             if level_dims:
                 var = var.sel({level_dims[0]: request.level}, method="nearest")
         
-        # Call raster serialization
+        # CRITICAL: Pass CSS colors to serialize_raster_array
         logger.info(f"Generating raster visualization for {meta_row['datasetName']}")
-        raster_data = serialize_raster_array(var, meta_row, meta_row["datasetName"])
+        raster_data = serialize_raster_array(
+            var, 
+            meta_row, 
+            meta_row["datasetName"],
+            css_colors=request.cssColors  # THIS IS THE KEY LINE - ADD THIS!
+        )
         
         # Add processing info
         processing_time = (datetime.now() - start_time).total_seconds()
@@ -1059,7 +1073,8 @@ async def visualize_raster(request: RasterRequest):
             "processingTime": f"{processing_time:.2f}s",
             "date": request.date,
             "level": request.level,
-            "datasetId": request.datasetId
+            "datasetId": request.datasetId,
+            "colorSource": "CSS colors from ColorBar" if request.cssColors else "Default colormap"
         }
         
         logger.info(f"Raster visualization generated successfully in {processing_time:.2f}s")
