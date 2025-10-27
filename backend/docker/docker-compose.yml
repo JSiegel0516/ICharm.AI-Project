@@ -48,8 +48,8 @@ services:
     restart: unless-stopped
     volumes:
       - ./services/data-api/app:/app
-      - ./datasets:/app/datasets:ro
-      - ./kerchunk:/app/kerchunk:ro
+      - ../datasets:/app/datasets:ro
+      - ../kerchunk:/app/kerchunk:ro
       # IMPORTANT: Mount colorMaps.json if you have it (optional)
       #- ../src/data/colorMaps.json:/app/data/colorMaps.json:ro
     ports:
