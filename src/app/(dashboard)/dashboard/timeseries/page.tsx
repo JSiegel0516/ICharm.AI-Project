@@ -55,7 +55,7 @@ import {
   type SpatialBounds,
 } from '@/hooks/use-timeseries';
 // Import new components
-import { DatasetFilter } from '@/app/(dashboard)/dashboard/timeseries/_components/Datasets';
+import { DatasetFilter } from '@/app/(dashboard)/dashboard/timeseries/_components/DatasetPanel';
 import { VisualizationPanel } from '@/app/(dashboard)/dashboard/timeseries/_components/VisualizationPanel';
 import { DataTable } from '@/app/(dashboard)/dashboard/timeseries/_components/DataTable';
 
