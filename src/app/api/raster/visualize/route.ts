@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 const DATA_SERVICE_URL =
   process.env.DATA_SERVICE_URL ??
   process.env.DATA_BACKEND_URL ??
-  'http://localhost:8002';  // UPDATED: Backend runs on port 8002
+  'http://localhost:8000'; 
 
 export async function POST(request: NextRequest) {
   try {
