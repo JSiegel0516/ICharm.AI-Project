@@ -1360,7 +1360,7 @@ async def health_check():
         "status": "healthy",
         "service": "climate-timeseries-api-v2",
         "cache_size": len(dataset_cache.cache),
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
         "features": {
             "timeseries": True,
             "rasterVisualization": True,
