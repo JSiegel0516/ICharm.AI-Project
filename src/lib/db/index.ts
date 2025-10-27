@@ -7,11 +7,11 @@ dotenv.config({
   path: ".env.local",
 });
 
-if (!process.env.DATABASE_URL) {
+if (!process.env.POSTGRES_URL) {
   throw new Error("DATABASE_URL is not set");
 }
 
-const connectionString = process.env.DATABASE_URL;
+const connectionString = process.env.POSTGRES_URL;
 
 const queryClient = postgres(connectionString, { 
   max: 10,
