@@ -8,6 +8,7 @@ AI-powered climate data exploration combining interactive visualization, tutoria
 - Chat assistant backed by the Hugging Face router and Meta Llama 3.1 Instruct model.
 - Lightweight RAG layer that injects tutorial context into the LLM.
 - Local embedding pipeline (via `@xenova/transformers`) for tutorial content.
+- Time series page for data set analysis
 
 ## Prerequisites
 
@@ -54,19 +55,27 @@ Install Docker before attempting to run the database
 2. Start the database (and optional services):
 
    ```bash
-   docker compose -f docker/docker-compose.yml --project-directory . up -d db data-api llm-service
-   docker compose -f docker/docker-compose.yml --project-directory . down -v
+   # Navigate to docker directory
+   cd backend/docker
+
+   # Start all services in the background
+   docker compose up -d
+
+   # Stop and remove all containers
+   docker compose down
    ```
 
-   On first run the container executes `docker/postgres/init/00-init-db.sh`, which creates extensions, tables, triggers, indexes, and a sample `test@example.com` user.
+   ```bash
+   # Navigate back to root
+   cd ../../
 
-   ```
+   # Generate SQL migrations based on your Drizzle schema
+   # Then apply those migrations to your database
    npx drizzle-kit generate && npx drizzle-kit migrate
+
+   # Populate the database with initial seed data
    npm run db:seed
    ```
-
-   in project root to create correct table names in container and seed the metadata table
-   in project root to create correct table names in container and seed the metadata table
 
 3. Verify connectivity from Node: (run from root)
 
@@ -78,8 +87,9 @@ Install Docker before attempting to run the database
    docker exec -it icharm-db psql -U icharm_user -d icharm
    to go into a psql terminal.
    Once in psql terminal, run:
-   SELECT \* FROM chat_messages ORDER BY created_at DESC LIMIT 10;
-   to if database successfully initialized
+   \dt
+   SELECT \* FROM metadata;
+   to if database tables are successfully initialized and metadata is seeded
 
 5. Update/confirm the `POSTGRES_URL` values in `.env.local` match the credentials you used in step 1. The defaults match the connection string shown above.
 
