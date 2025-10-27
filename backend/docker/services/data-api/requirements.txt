@@ -26,6 +26,8 @@ aiohttp
 
 # Scientific computing dependencies
 scipy
+matplotlib
+pillow
 
 # Kerchunk for cloud-optimized data access
 kerchunk

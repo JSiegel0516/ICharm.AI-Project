@@ -1,6 +1,7 @@
 """
 Enhanced FastAPI application for climate time series data extraction
 Supports both local and cloud-based datasets with advanced processing capabilities
+NOW WITH RASTER VISUALIZATION SUPPORT
 """
 
 from fastapi import FastAPI, APIRouter, HTTPException, Query, BackgroundTasks
@@ -27,15 +28,9 @@ import warnings
 import kerchunk.hdf
 import kerchunk.combine
 from functools import lru_cache
-from fastapi.middleware.cors import CORSMiddleware
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Your Next.js dev server
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Import raster visualization module
+from .raster import serialize_raster_array
 
 warnings.filterwarnings("ignore")
 
@@ -99,10 +94,9 @@ if not DATABASE_URL:
     )
 
 # File paths configuration
-LOCAL_DATASETS_PATH = (ROOT_DIR / os.getenv("LOCAL_DATASETS_PATH")).resolve()
-KERCHUNK_PATH = (ROOT_DIR / os.getenv("KERCHUNK_PATH")).resolve()
+LOCAL_DATASETS_PATH = (ROOT_DIR / os.getenv("LOCAL_DATASETS_PATH", "datasets")).resolve()
+KERCHUNK_PATH = (ROOT_DIR / os.getenv("KERCHUNK_PATH", "kerchunk")).resolve()
 CACHE_DIR = Path(os.getenv("CACHE_DIR", "/tmp/climate_cache")).resolve()
-
 
 # AWS S3 configuration (for cloud datasets)
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
@@ -126,7 +120,6 @@ def get_metadata_by_ids(dataset_ids: List[str]) -> pd.DataFrame:
     try:
         with engine.connect() as conn:
             placeholders = ', '.join([f':id{i}' for i in range(len(dataset_ids))])
-            # Query by UUID id column instead of datasetName
             query = text(f"""
                 SELECT * FROM metadata 
                 WHERE id IN ({placeholders})
@@ -179,8 +172,8 @@ class AggregationMethod(str, Enum):
 class TimeSeriesRequest(BaseModel):
     """Enhanced request model for time series data extraction"""
     datasetIds: List[str] = Field(..., min_items=1, max_items=10)
-    startDate: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")  # Added 'r' prefix
-    endDate: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")    # Added 'r' prefix
+    startDate: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    endDate: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
     analysisModel: Optional[AnalysisModel] = AnalysisModel.RAW
     normalize: Optional[bool] = False
     chartType: Optional[ChartType] = ChartType.LINE
@@ -198,9 +191,15 @@ class TimeSeriesRequest(BaseModel):
             end = datetime.strptime(v, "%Y-%m-%d")
             if end < start:
                 raise ValueError("endDate must be after startDate")
-            if (end - start).days > 365 * 50:  # Max 50 years
+            if (end - start).days > 365 * 50:
                 raise ValueError("Date range cannot exceed 50 years")
         return v
+
+class RasterRequest(BaseModel):
+    """Request model for raster visualization"""
+    datasetId: str = Field(..., description="Dataset UUID")
+    date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$", description="Date for visualization")
+    level: Optional[float] = Field(None, description="Atmospheric level (if applicable)")
 
 class DataPoint(BaseModel):
     """Individual data point in time series"""
@@ -261,7 +260,6 @@ class DatasetCache:
     
     def set(self, key: str, dataset: xr.Dataset):
         if len(self.cache) >= self.max_size:
-            # Remove least recently used
             oldest = min(self.access_times, key=self.access_times.get)
             del self.cache[oldest]
             del self.access_times[oldest]
@@ -290,7 +288,6 @@ def create_kerchunk_reference(url: str, output_path: str) -> str:
             h5chunks = kerchunk.hdf.SingleHdf5ToZarr(f, url)
             refs = h5chunks.translate()
         
-        # Save reference file
         with open(output_path, "w") as f:
             json.dump(refs, f)
         
@@ -309,7 +306,6 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
     
     try:
         if metadata["engine"] == "zarr" and metadata.get("kerchunkPath"):
-            # Use existing kerchunk reference
             ds = await asyncio.to_thread(
                 xr.open_zarr,
                 "reference://",
@@ -323,17 +319,13 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
             )
         
         elif metadata["engine"] == "h5netcdf":
-            # Handle cloud HDF5/NetCDF files
             url = metadata["inputFile"]
-            
-            # Check if we need to create a kerchunk reference
             kerchunk_file = os.path.join(KERCHUNK_PATH, f"{metadata['datasetName']}.json")
             if not os.path.exists(kerchunk_file):
                 kerchunk_file = await asyncio.to_thread(
                     create_kerchunk_reference, url, kerchunk_file
                 )
             
-            # Open with kerchunk reference
             ds = await asyncio.to_thread(
                 xr.open_zarr,
                 "reference://",
@@ -346,11 +338,9 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
             )
         
         else:
-            # Direct S3 access
             fs = fsspec.filesystem("s3", anon=S3_ANON)
             url = metadata["inputFile"]
             
-            # Handle wildcards and date patterns
             if "{" in url:
                 url = url.format(
                     year=start_date.year,
@@ -367,7 +357,6 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
             with fs.open(url, "rb") as f:
                 ds = await asyncio.to_thread(xr.open_dataset, f, engine=metadata["engine"])
         
-        # Cache the dataset
         dataset_cache.set(cache_key, ds)
         return ds
         
@@ -388,9 +377,7 @@ async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
         return cached
     
     try:
-        # Handle different path formats
         input_file = metadata["inputFile"]
-        # Remove 'datasets/' prefix if present
         if input_file.startswith("datasets/"):
             input_file = input_file.replace("datasets/", "", 1)
         
@@ -399,40 +386,20 @@ async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
         
         if not os.path.exists(file_path):
             logger.error(f"Dataset file not found: {file_path}")
-            logger.error(f"LOCAL_DATASETS_PATH: {LOCAL_DATASETS_PATH}")
-            logger.error(f"Input file from metadata: {metadata['inputFile']}")
-            
-            # List available files in directory for debugging
-            if os.path.exists(LOCAL_DATASETS_PATH):
-                available_files = os.listdir(LOCAL_DATASETS_PATH)
-                logger.info(f"Available files in {LOCAL_DATASETS_PATH}: {available_files[:10]}")
-            
             raise FileNotFoundError(f"Local dataset not found: {file_path}")
         
         engine = metadata.get("engine", "h5netcdf")
         logger.info(f"Opening dataset with engine: {engine}")
         
         if engine == "zarr":
-            # Try consolidated first, fall back to non-consolidated
             try:
-                logger.info(f"Attempting to open zarr with consolidated metadata")
                 ds = await asyncio.to_thread(xr.open_zarr, file_path, consolidated=True)
-                logger.info(f"Successfully opened zarr with consolidated metadata")
-            except Exception as zarr_error:
-                logger.warning(f"Consolidated metadata not found for {metadata['datasetName']}: {zarr_error}")
-                logger.info(f"Trying to open zarr without consolidated metadata")
-                try:
-                    ds = await asyncio.to_thread(xr.open_zarr, file_path, consolidated=False)
-                    logger.info(f"Successfully opened zarr without consolidated metadata")
-                except Exception as e:
-                    logger.error(f"Failed to open zarr with both methods: {e}")
-                    raise
+            except Exception:
+                ds = await asyncio.to_thread(xr.open_zarr, file_path, consolidated=False)
         else:
             ds = await asyncio.to_thread(xr.open_dataset, file_path, engine=engine)
-            logger.info(f"Successfully opened dataset with engine: {engine}")
         
         dataset_cache.set(cache_key, ds)
-        logger.info(f"Cached dataset: {cache_key}")
         return ds
         
     except Exception as e:
@@ -479,10 +446,8 @@ async def extract_time_series(
     
     lat_name, lon_name, time_name = normalize_coordinates(ds)
     
-    # Time selection
     ds_time = ds.sel({time_name: slice(start_date, end_date)})
     
-    # Spatial selection
     if spatial_bounds:
         if lat_name and lon_name:
             ds_spatial = ds_time.sel({
@@ -496,17 +461,14 @@ async def extract_time_series(
     else:
         ds_spatial = ds_time
     
-    # Get variable
     var_name = metadata["keyVariable"]
     var = ds_spatial[var_name]
     
-    # Level selection if applicable
     if level_value is not None:
         level_dims = [d for d in var.dims if d not in (time_name, lat_name, lon_name)]
         if level_dims:
             var = var.sel({level_dims[0]: level_value}, method="nearest")
     
-    # Spatial aggregation
     spatial_dims = [d for d in var.dims if d != time_name]
     
     if aggregation == AggregationMethod.MEAN:
@@ -522,10 +484,8 @@ async def extract_time_series(
     elif aggregation == AggregationMethod.STD:
         result = var.std(dim=spatial_dims)
     
-    # Convert to pandas Series
     series = result.to_pandas()
     
-    # Ensure datetime index
     if not isinstance(series.index, pd.DatetimeIndex):
         series.index = pd.to_datetime(series.index)
     
@@ -546,7 +506,6 @@ def apply_analysis_model(
         return series.rolling(window=window, center=True, min_periods=1).mean()
     
     elif model == AnalysisModel.TREND:
-        # Detrend using linear regression
         x = np.arange(len(series))
         y = series.values
         valid_mask = ~np.isnan(y)
@@ -559,7 +518,6 @@ def apply_analysis_model(
         return pd.Series(trend, index=series.index)
     
     elif model == AnalysisModel.ANOMALY:
-        # Calculate anomalies from climatology
         climatology = series.groupby([series.index.month, series.index.day]).mean()
         anomalies = series.copy()
         
@@ -571,8 +529,7 @@ def apply_analysis_model(
         return anomalies
     
     elif model == AnalysisModel.SEASONAL:
-        # Simple seasonal decomposition
-        if len(series) < 24:  # Need at least 2 years
+        if len(series) < 24:
             return series
         
         from statsmodels.tsa.seasonal import seasonal_decompose
@@ -602,7 +559,6 @@ def calculate_statistics(series: pd.Series) -> Statistics:
             percentiles={"25": 0, "50": 0, "75": 0}
         )
     
-    # Calculate trend
     x = np.arange(len(valid_data))
     y = valid_data.values
     if len(y) > 1:
@@ -685,15 +641,13 @@ def generate_chart_config(
 # API ENDPOINTS
 # ============================================================================
 
-# Create FastAPI app and router
 app = FastAPI(
-    title="Enhanced Climate Time Series API",
-    description="Advanced API for extracting and processing climate time series data",
-    version="2.0.0",
+    title="Enhanced Climate Time Series API with Raster Visualization",
+    description="Advanced API for extracting and processing climate time series data with 3D globe visualization",
+    version="2.1.0",
     default_response_class=CustomJSONResponse
 )
 
-# Configure CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -706,24 +660,14 @@ router = APIRouter(prefix="/api/v2")
 
 @router.post("/timeseries/extract", response_model=TimeSeriesResponse, response_class=CustomJSONResponse)
 async def extract_timeseries(request: TimeSeriesRequest):
-    """
-    Extract and process time series data from multiple datasets
-    
-    This endpoint:
-    - Fetches data from local or cloud sources based on metadata
-    - Applies spatial and temporal filtering
-    - Performs requested analysis (trend, anomaly, etc.)
-    - Returns chart-ready data with statistics and metadata
-    """
+    """Extract and process time series data from multiple datasets"""
     
     start_time = datetime.now()
     
     try:
-        # Parse dates
         start_date = datetime.strptime(request.startDate, "%Y-%m-%d")
         end_date = datetime.strptime(request.endDate, "%Y-%m-%d")
         
-        # Get metadata for requested datasets (UUIDs)
         metadata_df = get_metadata_by_ids(request.datasetIds)
         
         if len(metadata_df) == 0:
@@ -732,7 +676,6 @@ async def extract_timeseries(request: TimeSeriesRequest):
                 detail="No datasets found with provided IDs"
             )
         
-        # Process each dataset in parallel
         tasks = []
         for _, meta_row in metadata_df.iterrows():
             is_local = meta_row["Stored"] == "local"
@@ -744,23 +687,19 @@ async def extract_timeseries(request: TimeSeriesRequest):
             
             tasks.append((meta_row, task))
         
-        # Collect all datasets
         all_series = {}
         dataset_metadata = {}
         statistics = {} if request.includeStatistics else None
         
         for meta_row, task in tasks:
             try:
-                # Open dataset
                 ds = await task
                 
-                # Determine level if multi-level
                 level_value = None
                 if meta_row.get("levelValues") and str(meta_row["levelValues"]).lower() != "none":
                     level_vals = [float(x) for x in str(meta_row["levelValues"]).split(",")]
                     level_value = np.median(level_vals)
                 
-                # Extract time series
                 series = await extract_time_series(
                     ds, meta_row, start_date, end_date,
                     spatial_bounds=request.spatialBounds,
@@ -768,33 +707,28 @@ async def extract_timeseries(request: TimeSeriesRequest):
                     level_value=level_value
                 )
                 
-                # Apply analysis model
                 series = apply_analysis_model(
                     series, 
                     request.analysisModel,
                     request.smoothingWindow
                 )
                 
-                # Normalize if requested
                 if request.normalize:
                     series_min = series.min()
                     series_max = series.max()
                     if series_max > series_min:
                         series = (series - series_min) / (series_max - series_min)
                 
-                # Resample if requested
                 if request.resampleFreq:
                     series = series.resample(request.resampleFreq).mean()
                 
-                # Store results - use keyVariable as the identifier (what frontend expects)
                 dataset_id = meta_row["keyVariable"]
                 all_series[dataset_id] = series
                 
-                # Add metadata
                 if request.includeMetadata:
                     dataset_metadata[dataset_id] = DatasetMetadata(
-                        id=meta_row["id"],  # UUID
-                        name=meta_row["datasetName"],  # Full dataset name
+                        id=meta_row["id"],
+                        name=meta_row["datasetName"],
                         source=meta_row["sourceName"],
                         units=meta_row["units"],
                         spatialResolution=meta_row.get("spatialResolution"),
@@ -806,13 +740,11 @@ async def extract_timeseries(request: TimeSeriesRequest):
                         description=meta_row.get("description")
                     )
                 
-                # Calculate statistics
                 if request.includeStatistics:
                     statistics[dataset_id] = calculate_statistics(series)
                 
             except Exception as e:
                 logger.error(f"Error processing dataset {meta_row['datasetName']}: {e}")
-                # Continue with other datasets
                 continue
         
         if not all_series:
@@ -821,7 +753,6 @@ async def extract_timeseries(request: TimeSeriesRequest):
                 detail="Failed to extract data from any dataset"
             )
         
-        # Align all series to common time index
         common_index = None
         for series in all_series.values():
             if common_index is None:
@@ -829,7 +760,6 @@ async def extract_timeseries(request: TimeSeriesRequest):
             else:
                 common_index = common_index.intersection(series.index)
         
-        # Build response data
         data_points = []
         for timestamp in common_index:
             point = DataPoint(
@@ -845,7 +775,6 @@ async def extract_timeseries(request: TimeSeriesRequest):
             
             data_points.append(point)
         
-        # Generate chart configuration
         chart_config = None
         if request.chartType and dataset_metadata:
             chart_config = generate_chart_config(
@@ -854,7 +783,6 @@ async def extract_timeseries(request: TimeSeriesRequest):
                 dataset_metadata
             )
         
-        # Processing info
         processing_time = (datetime.now() - start_time).total_seconds()
         processing_info = {
             "processingTime": f"{processing_time:.2f}s",
@@ -885,17 +813,89 @@ async def extract_timeseries(request: TimeSeriesRequest):
             detail=f"Internal server error: {str(e)}"
         )
 
+@router.post("/raster/visualize", response_class=CustomJSONResponse)
+async def visualize_raster(request: RasterRequest):
+    """
+    Generate raster visualization for 3D globe display
+    
+    Returns base64-encoded PNG textures and metadata for Cesium rendering
+    """
+    start_time = datetime.now()
+    
+    try:
+        # Parse date
+        target_date = datetime.strptime(request.date, "%Y-%m-%d")
+        
+        # Get metadata
+        metadata_df = get_metadata_by_ids([request.datasetId])
+        
+        if len(metadata_df) == 0:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Dataset not found: {request.datasetId}"
+            )
+        
+        meta_row = metadata_df.iloc[0]
+        
+        # Open dataset
+        is_local = meta_row["Stored"] == "local"
+        
+        if is_local:
+            ds = await open_local_dataset(meta_row)
+        else:
+            ds = await open_cloud_dataset(meta_row, target_date, target_date)
+        
+        # Get the variable
+        var_name = meta_row["keyVariable"]
+        var = ds[var_name]
+        
+        # Find time dimension
+        lat_name, lon_name, time_name = normalize_coordinates(ds)
+        
+        # Select the specific time
+        if time_name in var.dims:
+            var = var.sel({time_name: target_date}, method="nearest")
+        
+        # Select level if specified
+        if request.level is not None:
+            level_dims = [d for d in var.dims if d not in (time_name, lat_name, lon_name)]
+            if level_dims:
+                var = var.sel({level_dims[0]: request.level}, method="nearest")
+        
+        # Call raster serialization
+        logger.info(f"Generating raster visualization for {meta_row['datasetName']}")
+        raster_data = serialize_raster_array(var, meta_row, meta_row["datasetName"])
+        
+        # Add processing info
+        processing_time = (datetime.now() - start_time).total_seconds()
+        raster_data["processingInfo"] = {
+            "processingTime": f"{processing_time:.2f}s",
+            "date": request.date,
+            "level": request.level,
+            "datasetId": request.datasetId
+        }
+        
+        logger.info(f"Raster visualization generated successfully in {processing_time:.2f}s")
+        
+        return raster_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating raster visualization: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate raster visualization: {str(e)}"
+        )
+
 @router.get("/timeseries/datasets", response_class=CustomJSONResponse)
 async def list_available_datasets(
     stored: Optional[Literal["local", "cloud", "all"]] = "all",
     source: Optional[str] = None,
     search: Optional[str] = None
 ):
-    """
-    List all available datasets with filtering options
-    """
+    """List all available datasets with filtering options"""
     try:
-        # Load metadata from database using 'metadata' table
         with engine.connect() as conn:
             query = text("SELECT * FROM metadata")
             result = conn.execute(query)
@@ -907,7 +907,6 @@ async def list_available_datasets(
                 "datasets": []
             }
         
-        # Apply filters (using correct column names from Drizzle schema)
         if stored != "all":
             if stored == "local":
                 df = df[df["Stored"] == "local"]
@@ -924,16 +923,15 @@ async def list_available_datasets(
                 df["slug"].str.contains(search, case=False, na=False)
             ]
         
-        # Convert to list of dicts (matching frontend expectations)
         datasets = []
         for _, row in df.iterrows():
             datasets.append({
-                "id": row["id"],  # UUID - what frontend sends to extract endpoint
+                "id": row["id"],
                 "slug": row.get("slug"),
-                "name": row["layerParameter"],  # Shortened name for display
-                "datasetName": row["datasetName"],  # Full dataset name
-                "sourceName": row["sourceName"],  # Full source name
-                "source": row["sourceName"],  # Alias for compatibility
+                "name": row["layerParameter"],
+                "datasetName": row["datasetName"],
+                "sourceName": row["sourceName"],
+                "source": row["sourceName"],
                 "type": row["datasetType"],
                 "stored": row["Stored"],
                 "startDate": row["startDate"],
@@ -945,7 +943,10 @@ async def list_available_datasets(
                 "levelUnits": row.get("levelUnits"),
                 "statistic": row.get("statistic"),
                 "inputFile": row.get("inputFile"),
-                "keyVariable": row.get("keyVariable")  # What data is keyed by
+                "keyVariable": row.get("keyVariable"),
+                "colorMap": row.get("colorMap"),
+                "valueMin": row.get("valueMin"),
+                "valueMax": row.get("valueMax")
             })
         
         return {
@@ -960,34 +961,6 @@ async def list_available_datasets(
             detail=f"Failed to list datasets: {str(e)}"
         )
 
-@router.post("/timeseries/compare")
-async def compare_datasets(
-    dataset_ids: List[str],
-    reference_id: str,
-    start_date: str,
-    end_date: str,
-    metric: Literal["correlation", "rmse", "mae", "bias"] = "correlation"
-):
-    """
-    Compare multiple datasets against a reference dataset
-    """
-    # Implementation for dataset comparison
-    # This would calculate correlation, RMSE, etc. between datasets
-    pass
-
-@router.get("/timeseries/export/{format}")
-async def export_timeseries(
-    format: Literal["csv", "json", "netcdf", "parquet"],
-    dataset_ids: List[str] = Query(...),
-    start_date: str = Query(...),
-    end_date: str = Query(...)
-):
-    """
-    Export extracted time series data in various formats
-    """
-    # Implementation for data export
-    pass
-
 @router.get("/health")
 async def health_check():
     """Health check endpoint with system status"""
@@ -995,7 +968,13 @@ async def health_check():
         "status": "healthy",
         "service": "climate-timeseries-api-v2",
         "cache_size": len(dataset_cache.cache),
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "features": {
+            "timeseries": True,
+            "rasterVisualization": True,
+            "localDatasets": True,
+            "cloudDatasets": True
+        }
     }
 
 @router.post("/cache/clear")
@@ -1014,10 +993,11 @@ app.include_router(router)
 @app.on_event("startup")
 async def startup_event():
     """Initialize resources on startup"""
-    logger.info("Starting Enhanced Climate Time Series API")
+    logger.info("Starting Enhanced Climate Time Series API with Raster Visualization")
     logger.info(f"Local datasets path: {LOCAL_DATASETS_PATH}")
     logger.info(f"Cache directory: {CACHE_DIR}")
     logger.info(f"Database connected: {DATABASE_URL is not None}")
+    logger.info("Features enabled: Time Series Extraction, Raster Visualization")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -1032,7 +1012,7 @@ async def shutdown_event():
 
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 Starting Enhanced Climate Time Series API...")
+    print("🚀 Starting Enhanced Climate Time Series API with Raster Visualization...")
     print("📍 API will be available at: http://localhost:8000")
     print("📚 API docs at: http://localhost:8000/docs")
     print("🔧 Features:")
@@ -1041,5 +1021,6 @@ if __name__ == "__main__":
     print("   - Spatial filtering and aggregation")
     print("   - Multiple chart types")
     print("   - Data caching for performance")
-    print("   - Export capabilities")
+    print("   - 🌍 Raster visualization for 3D globe display")
+    print("   - Base64-encoded PNG textures for Cesium")
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

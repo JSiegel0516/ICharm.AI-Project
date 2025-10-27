@@ -7,20 +7,14 @@ import React, {
   useImperativeHandle,
   forwardRef,
 } from 'react';
-
-// Type definitions
-interface RegionData {
-  name: string;
-  precipitation: number;
-  temperature: number;
-  dataset: string;
-}
+import type { Dataset, RegionData } from '@/types';
+import { useRasterLayer } from '@/hooks/useRasterLayer';
+import type { RasterLayerData } from '@/hooks/useRasterLayer';
 
 interface GlobeProps {
-  currentDataset?: {
-    name: string;
-    description?: string;
-  };
+  currentDataset?: Dataset;
+  selectedDate?: Date;
+  selectedLevel?: number | null;
   onRegionClick?: (
     latitude: number,
     longitude: number,
@@ -111,19 +105,24 @@ const addGeographicBoundaries = (
     console.log(`Processing ${name}, type: ${data.type}`);
 
     if (data.type === 'FeatureCollection' && data.features) {
-      let color = Cesium.Color.BLACK.withAlpha(1.0);
+      let color = Cesium.Color.fromCssColorString('#f8fafc').withAlpha(0.8);
       let width = 2;
 
       if (name.includes('coastline')) {
         width = 3;
+        color = Cesium.Color.fromCssColorString('#e2e8f0').withAlpha(0.85);
       } else if (name.includes('geographic_lines')) {
         width = 2;
+        color = Cesium.Color.fromCssColorString('#94a3b8').withAlpha(0.6);
       } else if (name.includes('lakes')) {
         width = 2;
+        color = Cesium.Color.fromCssColorString('#cbd5f5').withAlpha(0.7);
       } else if (name.includes('rivers')) {
         width = 2;
+        color = Cesium.Color.fromCssColorString('#94a3b8').withAlpha(0.55);
       } else if (name.includes('time_zones')) {
         width = 1.5;
+        color = Cesium.Color.fromCssColorString('#64748b').withAlpha(0.5);
       }
 
       data.features.forEach((feature: any) => {
@@ -223,13 +222,22 @@ const addGeographicBoundaries = (
 };
 
 const Globe = forwardRef<GlobeRef, GlobeProps>(
-  ({ currentDataset, onRegionClick }, ref) => {
+  ({ currentDataset, onRegionClick, selectedDate, selectedLevel }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const viewerRef = useRef<any>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const currentMarkerRef = useRef<any>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
+
+    const [cesiumInstance, setCesiumInstance] = useState<any>(null);
+    const rasterLayerRef = useRef<any[]>([]);
+    const rasterDataRef = useRef<RasterLayerData | undefined>(undefined);
+    const rasterState = useRasterLayer({
+      dataset: currentDataset,
+      date: selectedDate,
+      level: selectedLevel ?? null,
+    });
 
     const clearMarker = () => {
       if (
@@ -349,6 +357,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
           console.log('Loading Cesium from CDN...');
           const Cesium = await loadCesiumFromCDN();
+          setCesiumInstance(Cesium);
 
           console.log('Creating self-hosted Cesium viewer...');
 
@@ -367,18 +376,71 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             imageryProvider: false,
           });
 
-          const usgsProvider = new Cesium.ArcGisMapServerImageryProvider({
-            url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer',
-            credit: 'USGS National Map',
-          });
-          viewer.imageryLayers.addImageryProvider(usgsProvider);
+          const oceanMaterial = new Cesium.Material({
+            fabric: {
+              type: 'ICharmOcean',
+              uniforms: {
+                deepColor: Cesium.Color.fromCssColorString('#063a6b'),
+                polarColor: Cesium.Color.fromCssColorString('#0f4f7d'),
+                horizonColor: Cesium.Color.fromCssColorString('#0d658f'),
+                horizonIntensity: 0.15,
+                polarBlendStart: 0.65,
+                polarBlendEnd: 0.95,
+                horizonExponent: 3.0,
+                emissionStrength: 0.02,
+              },
+              source: `
+              czm_material czm_getMaterial(czm_materialInput input)
+              {
+                czm_material material = czm_getDefaultMaterial(input);
+                vec3 normalEC = normalize(input.normalEC);
+                vec3 viewDir = normalize(-input.positionToEyeEC);
 
+                float polarBlend = smoothstep(
+                  polarBlendStart,
+                  polarBlendEnd,
+                  clamp(abs(input.st.t - 0.5) * 2.0, 0.0, 1.0)
+                );
+                vec3 base = mix(deepColor.rgb, polarColor.rgb, polarBlend);
+
+                float rim = pow(1.0 - clamp(dot(normalEC, viewDir), 0.0, 1.0), horizonExponent);
+                vec3 color = mix(base, horizonColor.rgb, rim * horizonIntensity);
+                color = clamp(color, 0.0, 1.0);
+
+                material.diffuse = color;
+                material.emission = color * emissionStrength;
+                material.alpha = 1.0;
+                return material;
+              }
+            `,
+            },
+          });
+
+          viewer.scene.globe.material = oceanMaterial;
+          viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#061e34');
           viewer.scene.globe.enableLighting = false;
+          viewer.scene.globe.dynamicAtmosphereLighting = false;
+          viewer.scene.globe.dynamicAtmosphereLightingFromSun = false;
           viewer.scene.globe.showGroundAtmosphere = true;
           viewer.scene.backgroundColor = Cesium.Color.TRANSPARENT;
           viewer.scene.skyBox.show = true;
           viewer.scene.sun.show = true;
           viewer.scene.moon.show = true;
+
+          try {
+            const satelliteProvider = new Cesium.ArcGisMapServerImageryProvider({
+              url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer',
+            });
+
+            const baseLayer = viewer.scene.imageryLayers.addImageryProvider(satelliteProvider);
+            baseLayer.alpha = 1.0;
+            baseLayer.brightness = 1.0;
+            baseLayer.contrast = 1.0;
+            viewer.scene.imageryLayers.lowerToBottom(baseLayer);
+            console.log('Satellite base layer added');
+          } catch (layerError) {
+            console.error('Failed to load satellite base layer', layerError);
+          }
 
           viewer.canvas.style.width = '100%';
           viewer.canvas.style.height = '100%';
@@ -411,11 +473,14 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
                 addClickMarker(Cesium, latitude, longitude);
 
                 if (onRegionClick) {
+                  const rasterValue = rasterDataRef.current?.sampleValue(latitude, longitude);
+                  const units = rasterDataRef.current?.units ?? currentDataset?.units ?? 'units';
                   const regionData: RegionData = {
                     name: `${latitude.toFixed(2)}°, ${longitude.toFixed(2)}°`,
-                    precipitation: Math.random() * 100,
+                    precipitation: rasterValue ?? Math.random() * 100,
                     temperature: -20 + Math.random() * 60,
                     dataset: currentDataset?.name || 'Sample Dataset',
+                    unit: units,
                   };
 
                   onRegionClick(latitude, longitude, regionData);
@@ -485,12 +550,122 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     useEffect(() => {
       return () => {
         if (viewerRef.current && !viewerRef.current.isDestroyed()) {
+          if (rasterLayerRef.current.length) {
+            rasterLayerRef.current.forEach((layer) => {
+              try {
+                viewerRef.current.scene.imageryLayers.remove(layer, true);
+              } catch (err) {
+                console.warn('Failed to remove raster layer during cleanup', err);
+              }
+            });
+            rasterLayerRef.current = [];
+          }
           clearMarker();
           viewerRef.current.destroy();
           viewerRef.current = null;
         }
       };
     }, []);
+
+    useEffect(() => {
+      if (rasterState.error) {
+        console.warn('Raster pipeline error', rasterState.error);
+      }
+    }, [rasterState.error]);
+
+    // Updated raster texture rendering - CRITICAL: preserve Python-generated colors exactly
+    useEffect(() => {
+      if (!viewerRef.current || !cesiumInstance) {
+        return;
+      }
+
+      const viewer = viewerRef.current;
+
+      // Remove old layers
+      if (rasterLayerRef.current.length) {
+        rasterLayerRef.current.forEach((layer) => {
+          try {
+            viewer.scene.imageryLayers.remove(layer, true);
+          } catch (err) {
+            console.warn('Failed to remove raster layer', err);
+          }
+        });
+        rasterLayerRef.current = [];
+      }
+
+      if (!rasterState.data || !rasterState.data.textures || rasterState.data.textures.length === 0) {
+        console.log('No raster data or textures to display');
+        return;
+      }
+
+      console.log('Adding raster textures:', rasterState.data.textures.length);
+      console.log('Raster data units:', rasterState.data.units);
+      console.log('Raster data range:', rasterState.data.min, 'to', rasterState.data.max);
+      
+      const newLayers: any[] = [];
+      rasterState.data.textures.forEach((texture, index) => {
+        console.log(`Texture ${index}:`, {
+          rectangle: texture.rectangle,
+          imageUrlLength: texture.imageUrl?.length || 0,
+          imageUrlPrefix: texture.imageUrl?.substring(0, 50)
+        });
+        
+        try {
+          const provider = new cesiumInstance.SingleTileImageryProvider({
+            url: texture.imageUrl,
+            rectangle: cesiumInstance.Rectangle.fromDegrees(
+              texture.rectangle.west,
+              texture.rectangle.south,
+              texture.rectangle.east,
+              texture.rectangle.north
+            ),
+          });
+
+          const layer = viewer.scene.imageryLayers.addImageryProvider(provider);
+          
+          // CRITICAL: DO NOT modify colors - preserve exact Python-generated RGBA values
+          layer.alpha = 0.65;           // Adjustable opacity (0.0-1.0) - allows base layer to show through
+          layer.brightness = 1.0;      // No brightness adjustment
+          layer.contrast = 1.0;        // No contrast adjustment
+          layer.hue = 0.0;             // No hue shift
+          layer.saturation = 1.0;      // No saturation adjustment
+          layer.gamma = 1.0;           // No gamma correction
+          
+          // Use NEAREST filtering to preserve exact pixel colors without interpolation
+          layer.minificationFilter = cesiumInstance.TextureMinificationFilter.NEAREST;
+          layer.magnificationFilter = cesiumInstance.TextureMagnificationFilter.NEAREST;
+
+          viewer.scene.imageryLayers.raiseToTop(layer);
+          
+          newLayers.push(layer);
+          console.log(`Successfully added texture layer ${index} with NEAREST filtering`);
+        } catch (err) {
+          console.error(`Failed to add texture ${index}:`, err);
+        }
+      });
+      
+      rasterLayerRef.current = newLayers;
+      console.log(`Successfully added ${newLayers.length} raster layers to globe`);
+      
+      // Force a render update
+      viewer.scene.requestRender();
+
+      return () => {
+        if (viewer && !viewer.isDestroyed()) {
+          newLayers.forEach((layer) => {
+            try {
+              viewer.scene.imageryLayers.remove(layer, true);
+            } catch (err) {
+              console.warn('Failed to remove raster texture layer', err);
+            }
+          });
+        }
+      };
+    }, [cesiumInstance, rasterState.data]);
+
+    useEffect(() => {
+      rasterDataRef.current = rasterState.data;
+    }, [rasterState.data]);
 
     if (error) {
       return (

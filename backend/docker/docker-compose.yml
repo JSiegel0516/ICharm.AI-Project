@@ -48,6 +48,11 @@ services:
     restart: unless-stopped
     volumes:
       - ./datasets:/app/datasets:ro
+    env_file:
+      - ./.env
+    environment:
+      DATABASE_URL: postgres://${ICHARM_DB_USER}:${ICHARM_DB_PASSWORD}@db:${ICHARM_DB_PORT}/${ICHARM_DB_NAME}
+      TEST_CHAT_USER_EMAIL: ${TEST_CHAT_USER_EMAIL:-testuser@gmail.com}
     ports:
       - "${DATA_API_PORT:-8002}:8000"
     depends_on:
