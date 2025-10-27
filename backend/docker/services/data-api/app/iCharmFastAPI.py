@@ -20,6 +20,7 @@ import json
 import logging
 import asyncio
 from pathlib import Path
+import re
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
@@ -28,6 +29,7 @@ import warnings
 import kerchunk.hdf
 import kerchunk.combine
 from functools import lru_cache
+import cftime
 
 # Import raster visualization module
 from .raster import serialize_raster_array
@@ -109,6 +111,9 @@ if DATABASE_URL.startswith("postgres://"):
 LOCAL_DATASETS_PATH = (ROOT_DIR / os.getenv("LOCAL_DATASETS_PATH", "datasets")).resolve()
 KERCHUNK_PATH = (ROOT_DIR / os.getenv("KERCHUNK_PATH", "kerchunk")).resolve()
 CACHE_DIR = Path(os.getenv("CACHE_DIR", "/tmp/climate_cache")).resolve()
+
+# Ensure auxiliary directories exist
+KERCHUNK_PATH.mkdir(parents=True, exist_ok=True)
 
 # AWS S3 configuration (for cloud datasets)
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
@@ -292,18 +297,147 @@ dataset_cache = DatasetCache()
 # DATA ACCESS FUNCTIONS
 # ============================================================================
 
+def _slugify(value: str) -> str:
+    """
+    Simplify strings to safe filesystem-friendly names.
+    """
+    return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-") or "dataset"
+
+
+def _normalize_s3_url(url: str) -> str:
+    """
+    Ensure S3 URIs include the s3:// prefix.
+    """
+    if not url:
+        raise ValueError("Remote URL template is empty.")
+    url = url.strip()
+    if url.startswith(("s3://", "http://", "https://")):
+        return url
+    return f"s3://{url.lstrip('/')}"
+
+
+def _resolve_remote_asset(metadata: pd.Series, date_hint: datetime) -> str:
+    """
+    Resolve the remote asset (S3 object) for a metadata record and date.
+    Handles template substitution and wildcard expansion.
+    """
+    template = (metadata.get("inputFile") or "").strip()
+    if not template:
+        raise ValueError(f"No inputFile configured for dataset {metadata.get('datasetName')}")
+
+    formatted = template
+    if "{" in formatted:
+        formatted = formatted.format(
+            year=date_hint.year,
+            month=date_hint.month,
+            day=date_hint.day,
+            hour=getattr(date_hint, "hour", 0),
+            minute=getattr(date_hint, "minute", 0),
+            second=getattr(date_hint, "second", 0),
+        )
+
+    normalized = _normalize_s3_url(formatted)
+
+    if normalized.endswith("/"):
+        raise ValueError(
+            f"Input file for dataset {metadata.get('datasetName')} resolves to a directory: {normalized}"
+        )
+
+    if "*" in normalized:
+        fs = fsspec.filesystem("s3", anon=S3_ANON)
+        glob_target = normalized[5:] if normalized.startswith("s3://") else normalized
+        matches = fs.glob(glob_target)
+        if not matches:
+            raise ValueError(f"No files found matching pattern: {normalized}")
+        candidate = matches[0]
+        if not candidate.startswith("s3://"):
+            candidate = f"s3://{candidate}"
+        normalized = candidate
+
+    return normalized
+
+
+def _ensure_datetime_coordinates(ds: xr.Dataset) -> xr.Dataset:
+    """
+    Ensure time-like coordinates are converted to pandas-friendly datetime64.
+    """
+    for coord_name in ds.coords:
+        if coord_name.lower() not in ("time", "date"):
+            continue
+
+        coord = ds.coords[coord_name]
+        if np.issubdtype(coord.dtype, np.datetime64):
+            continue
+
+        units = coord.attrs.get("units")
+        calendar = coord.attrs.get("calendar", "standard")
+        if not units:
+            logger.warning(
+                "Skipping datetime conversion for coordinate '%s' due to missing units.",
+                coord_name,
+            )
+            continue
+
+        try:
+            decoded = cftime.num2date(
+                coord.values,
+                units,
+                calendar=calendar,
+                only_use_cftime_datetimes=False,
+            )
+            ds = ds.assign_coords({coord_name: pd.to_datetime(decoded)})
+        except Exception as exc:
+            logger.warning(
+                "Unable to convert coordinate '%s' to datetime: %s",
+                coord_name,
+                exc,
+            )
+    return ds
+
+
+def _coerce_time_value(target: datetime, coord: xr.DataArray) -> Any:
+    """
+    Coerce a datetime to the same type as a time coordinate (handles cftime).
+    """
+    if coord.size == 0:
+        return target
+
+    sample = coord.values[0]
+    if isinstance(sample, cftime.datetime):
+        cls = sample.__class__
+        calendar = getattr(sample, "calendar", coord.attrs.get("calendar", "standard"))
+        try:
+            return cls(
+                target.year,
+                target.month,
+                target.day,
+                target.hour,
+                target.minute,
+                target.second,
+                calendar=calendar,
+            )
+        except Exception as exc:
+            logger.warning("Failed to coerce datetime for cftime coordinate: %s", exc)
+            return target
+
+    return target
+
 def create_kerchunk_reference(url: str, output_path: str) -> str:
     """Create kerchunk reference file for cloud NetCDF/HDF5 data"""
     try:
+        normalized_url = _normalize_s3_url(url)
+        destination = Path(output_path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+
         fs = fsspec.filesystem("s3", anon=S3_ANON)
-        with fs.open(url, "rb") as f:
-            h5chunks = kerchunk.hdf.SingleHdf5ToZarr(f, url)
+        with fs.open(normalized_url, "rb") as f:
+            h5chunks = kerchunk.hdf.SingleHdf5ToZarr(f, normalized_url)
             refs = h5chunks.translate()
         
-        with open(output_path, "w") as f:
+        with destination.open("w") as f:
             json.dump(refs, f)
         
-        return output_path
+        return str(destination)
     except Exception as e:
         logger.error(f"Failed to create kerchunk reference: {e}")
         raise
@@ -317,12 +451,26 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
         return cached
     
     try:
-        if metadata["engine"] == "zarr" and metadata.get("kerchunkPath"):
+        engine = (metadata.get("engine") or "h5netcdf").lower()
+        dataset_slug = _slugify(metadata.get("slug") or metadata.get("datasetName") or metadata.get("id", "dataset"))
+
+        if engine == "zarr" and metadata.get("kerchunkPath"):
+            kerchunk_hint = Path(str(metadata["kerchunkPath"]))
+            kerchunk_file = kerchunk_hint if kerchunk_hint.is_absolute() else (KERCHUNK_PATH / kerchunk_hint.name)
+            if not kerchunk_file.exists():
+                source_url = _resolve_remote_asset(metadata, start_date)
+                kerchunk_file_path = await asyncio.to_thread(
+                    create_kerchunk_reference,
+                    source_url,
+                    str(kerchunk_file),
+                )
+                kerchunk_file = Path(kerchunk_file_path)
+            
             ds = await asyncio.to_thread(
                 xr.open_zarr,
                 "reference://",
                 storage_options={
-                    "fo": metadata["kerchunkPath"],
+                    "fo": str(kerchunk_file),
                     "remote_protocol": "s3",
                     "remote_options": {"anon": S3_ANON},
                     "asynchronous": False
@@ -330,13 +478,25 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
                 consolidated=False
             )
         
-        elif metadata["engine"] == "h5netcdf":
-            url = metadata["inputFile"]
-            kerchunk_file = os.path.join(KERCHUNK_PATH, f"{metadata['datasetName']}.json")
+        elif engine == "h5netcdf":
+            kerchunk_hint = metadata.get("kerchunkPath")
+            if kerchunk_hint:
+                hint_path = Path(str(kerchunk_hint))
+                kerchunk_file = hint_path if hint_path.is_absolute() else (KERCHUNK_PATH / hint_path.name)
+            else:
+                kerchunk_file = KERCHUNK_PATH / f"{dataset_slug}.json"
+
+            kerchunk_file.parent.mkdir(parents=True, exist_ok=True)
+
             if not os.path.exists(kerchunk_file):
+                source_url = _resolve_remote_asset(metadata, start_date)
                 kerchunk_file = await asyncio.to_thread(
-                    create_kerchunk_reference, url, kerchunk_file
+                    create_kerchunk_reference,
+                    source_url,
+                    str(kerchunk_file)
                 )
+            else:
+                kerchunk_file = str(kerchunk_file)
             
             ds = await asyncio.to_thread(
                 xr.open_zarr,
@@ -344,30 +504,23 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
                 storage_options={
                     "fo": kerchunk_file,
                     "remote_protocol": "s3",
-                    "remote_options": {"anon": S3_ANON}
+                    "remote_options": {"anon": S3_ANON},
+                    "asynchronous": False
                 },
                 consolidated=False
             )
         
         else:
             fs = fsspec.filesystem("s3", anon=S3_ANON)
-            url = metadata["inputFile"]
-            
-            if "{" in url:
-                url = url.format(
-                    year=start_date.year,
-                    month=start_date.month,
-                    day=start_date.day
+            resolved_url = _resolve_remote_asset(metadata, start_date)
+            object_key = resolved_url[5:] if resolved_url.startswith("s3://") else resolved_url
+            with fs.open(object_key, "rb") as f:
+                ds = await asyncio.to_thread(
+                    xr.open_dataset,
+                    f,
+                    engine=metadata["engine"],
+                    use_cftime=True,
                 )
-            
-            if "*" in url:
-                files = fs.glob(url)
-                if not files:
-                    raise ValueError(f"No files found matching pattern: {url}")
-                url = f"s3://{files[0]}"
-            
-            with fs.open(url, "rb") as f:
-                ds = await asyncio.to_thread(xr.open_dataset, f, engine=metadata["engine"])
         
         dataset_cache.set(cache_key, ds)
         return ds
@@ -409,7 +562,24 @@ async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
             except Exception:
                 ds = await asyncio.to_thread(xr.open_zarr, file_path, consolidated=False)
         else:
-            ds = await asyncio.to_thread(xr.open_dataset, file_path, engine=engine)
+            open_kwargs = {"engine": engine, "use_cftime": True}
+            try:
+                ds = await asyncio.to_thread(xr.open_dataset, file_path, **open_kwargs)
+            except Exception as exc:
+                if "unable to decode time units" in str(exc).lower():
+                    logger.warning(
+                        "Falling back to decode_times=False for dataset %s due to: %s",
+                        metadata["datasetName"],
+                        exc,
+                    )
+                    open_kwargs["decode_times"] = False
+                    ds = await asyncio.to_thread(xr.open_dataset, file_path, **open_kwargs)
+                else:
+                    raise
+        
+        ds = _ensure_datetime_coordinates(ds)
+        
+        ds = _ensure_datetime_coordinates(ds)
         
         dataset_cache.set(cache_key, ds)
         return ds
@@ -870,7 +1040,8 @@ async def visualize_raster(request: RasterRequest):
         
         # Select the specific time
         if time_name in var.dims:
-            var = var.sel({time_name: target_date}, method="nearest")
+            selector_value = _coerce_time_value(target_date, ds[time_name])
+            var = var.sel({time_name: selector_value}, method="nearest")
         
         # Select level if specified
         if request.level is not None:
