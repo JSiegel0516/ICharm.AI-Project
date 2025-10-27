@@ -1,6 +1,8 @@
 import type { HTMLAttributes } from 'react';
 
 export interface DatasetBackendDetails {
+  id?: string | null;
+  slug?: string | null;
   sourceName: string | null;
   datasetName: string;
   layerParameter: string | null;
@@ -23,6 +25,8 @@ export interface DatasetBackendDetails {
 
 export interface Dataset {
   id: string;
+  backendId?: string | null;
+  backendSlug?: string | null;
   name: string;
   description: string;
   units: string;

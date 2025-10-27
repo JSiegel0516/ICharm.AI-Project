@@ -28,12 +28,10 @@ import warnings
 import kerchunk.hdf
 import kerchunk.combine
 from functools import lru_cache
-<<<<<<< HEAD:backend/docker/services/data-api/app/iCharmFastAPI.py
 
 # Import raster visualization module
 from .raster import serialize_raster_array
-=======
->>>>>>> 4e7f56831bc830d8b45c87da29b215f5c268d3d8:backend/docker/services/data-api/app/main.py
+
 
 warnings.filterwarnings("ignore")
 
@@ -79,22 +77,33 @@ class CustomJSONResponse(JSONResponse):
             separators=(",", ":"),
         ).encode("utf-8")
 
-# Load environment variables from .env file in root folder
-ROOT_DIR = Path(__file__).resolve().parent.parent 
-env_path = ROOT_DIR / '.env.local'
-load_dotenv(dotenv_path=env_path)
+# Load environment variables from common locations inside the container volume
+ROOT_DIR = Path(__file__).resolve().parent.parent
+ENV_LOCATIONS = [
+    ROOT_DIR / ".env.local",
+    ROOT_DIR / ".env",
+    Path("/app/.env.local"),
+    Path("/app/.env"),
+]
+for env_path in ENV_LOCATIONS:
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path, override=False)
 
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
 
-# Database configuration
-DATABASE_URL = os.getenv("POSTGRES_URL")
+# Database configuration (support both legacy POSTGRES_URL and DATABASE_URL)
+DATABASE_URL = os.getenv("POSTGRES_URL") or os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError(
         f"DATABASE_URL not found in environment variables. "
-        f"Please create a .env file at {env_path} with DATABASE_URL=postgresql://..."
+        "Please set POSTGRES_URL or DATABASE_URL to a valid PostgreSQL connection string."
     )
+
+# Normalize SQLAlchemy URL scheme (support legacy postgres:// URIs)
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # File paths configuration
 LOCAL_DATASETS_PATH = (ROOT_DIR / os.getenv("LOCAL_DATASETS_PATH", "datasets")).resolve()

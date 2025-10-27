@@ -192,6 +192,8 @@ function buildBackendDetails(
   const storedValue = (record.Stored ?? record.stored ?? '').toLowerCase();
 
   return {
+    id: record.id ?? null,
+    slug: record.slug ?? null,
     sourceName: record.sourceName ?? null,
     datasetName: record.datasetName,
     layerParameter: record.layerParameter ?? null,
@@ -223,11 +225,14 @@ export function normalizeDataset(record: BackendDatasetRecord): Dataset {
   const dataType = inferDataType(record);
   const colorKey: DataCategory = dataType in DEFAULT_COLOR_SCALES ? dataType : 'default';
   const baseColorScale = DEFAULT_COLOR_SCALES[colorKey];
+  const resolvedSlug = record.slug || slugify(record.datasetName);
 
   return {
     // ⭐ Use slug from database if available, otherwise fall back to slugified name
-    id: record.slug || slugify(record.datasetName),
-    slug: record.slug || slugify(record.datasetName), // ⭐ Add slug field
+    id: resolvedSlug,
+    slug: resolvedSlug, // ⭐ Add slug field
+    backendId: record.id ?? null,
+    backendSlug: record.slug ?? null,
     name: record.datasetName,
     description: [record.layerParameter, record.statistic]
       .filter(Boolean)

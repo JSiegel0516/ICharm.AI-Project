@@ -92,15 +92,19 @@ export default function HomePage() {
   }, []);
 
   // Memoized Globe
+  const selectedLevelValue = selectedPressureLevel?.value ?? null;
+
   const memoizedGlobe = useMemo(
     () => (
       <Globe
         ref={globeRef}
         currentDataset={currentDataset}
+        selectedDate={selectedDate}
+        selectedLevel={selectedLevelValue}
         onRegionClick={handleRegionClick}
       />
     ),
-    [currentDataset, handleRegionClick]
+    [currentDataset, handleRegionClick, selectedDate, selectedLevelValue]
   );
 
   return (

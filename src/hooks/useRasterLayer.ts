@@ -131,16 +131,29 @@ export const useRasterLayer = ({
   const [error, setError] = useState<string | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
 
+  const backendDatasetId = useMemo(() => {
+    if (!dataset) {
+      return null;
+    }
+    return (
+      dataset.backend?.id ??
+      dataset.backendId ??
+      dataset.backend?.slug ??
+      dataset.backendSlug ??
+      dataset.id
+    );
+  }, [dataset]);
+
   const requestKey = useMemo(() => {
     const dateKey = formatDateForApi(date);
-    if (!dataset?.id || !dateKey) {
+    if (!backendDatasetId || !dateKey) {
       return undefined;
     }
-    return `${dataset.id}::${dateKey}::${level ?? 'surface'}`;
-  }, [dataset?.id, date, level]);
+    return `${backendDatasetId}::${dateKey}::${level ?? 'surface'}`;
+  }, [backendDatasetId, date, level]);
 
   useEffect(() => {
-    if (!dataset?.id || !date) {
+    if (!backendDatasetId || !date) {
       setData(undefined);
       setError(null);
       setIsLoading(false);
@@ -165,7 +178,7 @@ export const useRasterLayer = ({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            datasetId: dataset.id,
+            datasetId: backendDatasetId,
             date: formatDateForApi(date),
             level: level ?? undefined,
           }),
@@ -224,7 +237,7 @@ export const useRasterLayer = ({
         controllerRef.current = null;
       }
     };
-  }, [dataset?.id, dataset?.units, date, level]);
+  }, [backendDatasetId, dataset?.units, date, level]);
 
   return { data, isLoading, error, requestKey };
 };
