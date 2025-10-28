@@ -294,40 +294,14 @@ def _extend_latitude_coverage(
     extended_mask = []
     extended_lat = []
     
-    # Add south pole rows by extending edge values to avoid gaps
-    if needs_south_pole:
-        south_row = data[0, :]
-        south_mask = mask[0, :]
-        # Add 10 rows that gradually approach -90 using edge data values
-        for i in range(10):
-            lat_val = -90 + i * (lat_min + 90) / 10
-            extended_lat.append(lat_val)
-            extended_data.append(south_row.copy())
-            extended_mask.append(south_mask.copy())
-
     # Add original data
     extended_lat.extend(lat_values.tolist())
     extended_data.extend([data[i, :] for i in range(data.shape[0])])
     extended_mask.extend([mask[i, :] for i in range(mask.shape[0])])
 
-    # Add north pole rows by extending edge values to avoid gaps
-    if needs_north_pole:
-        north_row = data[-1, :]
-        north_mask = mask[-1, :]
-        # Add 10 rows that gradually approach 90 using edge data values
-        for i in range(1, 11):
-            lat_val = lat_max + i * (90 - lat_max) / 10
-            extended_lat.append(lat_val)
-            extended_data.append(north_row.copy())
-            extended_mask.append(north_mask.copy())
-
-    print(f"[RasterViz] Added polar extension rows using edge values")
+    print(f"[RasterViz] Added polar extension rows using edge values -> disabled for basin masking")
     
-    return (
-        np.array(extended_data, dtype=data.dtype),
-        np.array(extended_mask, dtype=mask.dtype),
-        np.array(extended_lat, dtype=lat_values.dtype)
-    )
+    return np.array(extended_data, dtype=data.dtype), np.array(extended_mask, dtype=mask.dtype), np.array(extended_lat, dtype=lat_values.dtype)
 
 
 def _encode_png(rgba: np.ndarray) -> str:
