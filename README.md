@@ -64,6 +64,11 @@ Install Docker before attempting to run the database
    # Stop and remove all containers
    docker compose down
    ```
+   # IF YOU START TO GET API ERRORS FOR THE RASTERS, RUN:
+   docker compose down -v
+   docker compose build
+   docker compose up -d
+   
 
    ```bash
    # Navigate back to root
@@ -76,7 +81,9 @@ Install Docker before attempting to run the database
    # Populate the database with initial seed data
    npm run db:seed
    ```
-
+   # If this gives an error, make sure the docker containers are running then try:
+   npm run db:push
+   npm run db:seed
 3. Verify connectivity from Node: (run from root)
 
    ```bash
