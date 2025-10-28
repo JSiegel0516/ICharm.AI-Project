@@ -15,8 +15,10 @@ venv/
 env/
 ENV/
 .venv/
-datasets
-kerchunk
+
+
+*.zarr
+
 
 # python
 __pycache__/
