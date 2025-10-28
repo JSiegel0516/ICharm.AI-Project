@@ -501,163 +501,141 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
         logger.info(f"Input file: {input_file}")
         logger.info(f"Engine: {engine}")
         
-        # ====================================================================
-        # SIMPLIFIED CLOUD ACCESS (from working example)
-        # ====================================================================
-        
-        if engine == "zarr":
-            # ZARR: Try kerchunk first, then direct access
-            if input_file.startswith("s3://"):
-                kerchunk_path_rel = metadata.get("kerchunkPath")
-                
-                # Try kerchunk if available
-                if kerchunk_path_rel and str(kerchunk_path_rel).lower() not in ['none', 'null', '']:
-                    # Clean up kerchunk path
-                    if str(kerchunk_path_rel).startswith('kerchunk/'):
-                        kerchunk_path_rel = str(kerchunk_path_rel).replace('kerchunk/', '', 1)
-                    
-                    kerchunk_file = KERCHUNK_PATH / kerchunk_path_rel
-                    
-                    if kerchunk_file.exists():
-                        logger.info(f"Using kerchunk: {kerchunk_file}")
-                        try:
-                            ds = await asyncio.to_thread(
-                                xr.open_zarr,
-                                "reference://",
-                                storage_options={
-                                    "fo": str(kerchunk_file),
-                                    "remote_protocol": "s3",
-                                    "remote_options": {"anon": S3_ANON},
-                                    "asynchronous": False
-                                },
-                                consolidated=False
-                            )
-                            logger.info(f"✅ Opened via kerchunk")
-                            dataset_cache.set(cache_key, ds)
-                            return ds
-                        except Exception as e:
-                            logger.warning(f"Kerchunk failed ({e}), trying direct access")
-                
-                # Direct zarr access
-                logger.info(f"Opening zarr directly from S3")
-                ds = await asyncio.to_thread(
-                    xr.open_zarr,
-                    input_file,
-                    consolidated=True
-                )
-            else:
-                # Local zarr
-                ds = await asyncio.to_thread(
-                    xr.open_zarr,
-                    input_file,
-                    consolidated=True
-                )
-        
-        elif engine == "h5netcdf":
-            # HDF5/NetCDF: Direct S3 access with fsspec
-            url = input_file
-            
-            # Handle wildcards and date patterns
-            fs = fsspec.filesystem("s3", anon=S3_ANON)
-            
-            # Check if URL has date patterns or wildcards
-            has_date_pattern = "{" in url
-            has_wildcard = "*" in url or "?" in url
-            
-            if has_date_pattern or has_wildcard:
-                logger.info(f"Finding files for date range: {start_date.date()} to {end_date.date()}")
-                
-                all_matching_files = []
-                
-                if has_date_pattern:
-                    # Expand URL for each day in the date range
-                    current = start_date
-                    while current <= end_date:
-                        daily_url = url.format(
-                            year=current.year,
-                            month=current.month,
-                            day=current.day
-                        )
-                        
-                        # Remove s3:// prefix for glob
-                        url_for_glob = daily_url[5:] if daily_url.startswith("s3://") else daily_url
-                        
-                        # Find files matching this day's pattern
-                        try:
-                            matching_files = fs.glob(url_for_glob)
-                            if matching_files:
-                                all_matching_files.extend([f"s3://{f}" for f in matching_files])
-                                logger.info(f"Found {len(matching_files)} file(s) for {current.date()}")
-                        except Exception as e:
-                            logger.debug(f"No files for {current.date()}: {e}")
-                        
-                        # Move to next day
-                        current += timedelta(days=1)
-                else:
-                    # Just a wildcard pattern, no date
-                    url_for_glob = url[5:] if url.startswith("s3://") else url
-                    matching_files = fs.glob(url_for_glob)
-                    if matching_files:
-                        all_matching_files = [f"s3://{f}" for f in matching_files]
-                        logger.info(f"Found {len(matching_files)} file(s) matching pattern")
-                
-                if not all_matching_files:
-                    raise FileNotFoundError(f"No files found for date range {start_date.date()} to {end_date.date()}")
-                
-                logger.info(f"Total files found: {len(all_matching_files)}")
-                
-                # Limit files to avoid memory issues and work without dask
-                max_files = 50  # Reasonable limit
-                if len(all_matching_files) > max_files:
-                    logger.warning(f"Found {len(all_matching_files)} files, limiting to first {max_files}")
-                    all_matching_files = all_matching_files[:max_files]
-                
-                # Open files without dask
-                if len(all_matching_files) == 1:
-                    # Single file - open directly
-                    url_clean = all_matching_files[0][5:] if all_matching_files[0].startswith("s3://") else all_matching_files[0]
-                    logger.info(f"Opening single file: {all_matching_files[0]}")
-                    s3_file = fs.open(url_clean, mode="rb")
-                    ds = await asyncio.to_thread(xr.open_dataset, s3_file, engine="h5netcdf")
-                else:
-                    # Multiple files - open each and concatenate manually (no dask needed)
-                    logger.info(f"Opening {len(all_matching_files)} files sequentially (no dask)")
-                    
-                    datasets = []
-                    for i, url_path in enumerate(all_matching_files):
-                        try:
-                            url_clean = url_path[5:] if url_path.startswith("s3://") else url_path
-                            s3_file = fs.open(url_clean, mode="rb")
-                            ds_single = await asyncio.to_thread(xr.open_dataset, s3_file, engine="h5netcdf")
-                            datasets.append(ds_single)
-                            
-                            if (i + 1) % 10 == 0:
-                                logger.info(f"Opened {i + 1}/{len(all_matching_files)} files")
-                        except Exception as e:
-                            logger.warning(f"Failed to open {url_path}: {e}")
-                            continue
-                    
-                    if not datasets:
-                        raise FileNotFoundError(f"Could not open any files in date range")
-                    
-                    logger.info(f"Successfully opened {len(datasets)} files, concatenating...")
-                    
-                    # Concatenate along time dimension
-                    ds = await asyncio.to_thread(xr.concat, datasets, dim='time', combine_attrs='override')
-            else:
-                # Simple URL with no patterns or wildcards
-                url_clean = url[5:] if url.startswith("s3://") else url
-                logger.info(f"Opening single S3 file with h5netcdf")
-                s3_file = fs.open(url_clean, mode="rb")
-                ds = await asyncio.to_thread(xr.open_dataset, s3_file, engine="h5netcdf")
-        
+        # Resolve concrete object keys for the requested date range
+        candidate_urls: List[str] = []
+        if "{" in input_file:
+            expanded = expand_date_pattern(input_file, start_date, end_date)
         else:
-            # Other engines
-            logger.info(f"Opening with engine: {engine}")
+            expanded = [input_file]
+
+        fs = fsspec.filesystem("s3", anon=S3_ANON)
+        for candidate in expanded:
+            normalized = _normalize_s3_url(candidate)
+            if "*" in normalized or "?" in normalized:
+                glob_target = normalized[5:] if normalized.startswith("s3://") else normalized
+                matches = fs.glob(glob_target)
+                candidate_urls.extend(
+                    [match if match.startswith("s3://") else f"s3://{match}" for match in matches]
+                )
+            else:
+                candidate_urls.append(normalized)
+
+        if not candidate_urls:
+            raise FileNotFoundError(
+                f"No remote assets resolved for dataset {metadata['datasetName']} between "
+                f"{start_date.date()} and {end_date.date()}"
+            )
+
+        # Deduplicate while preserving order
+        seen = set()
+        unique_urls = []
+        for url in candidate_urls:
+            if url not in seen:
+                seen.add(url)
+                unique_urls.append(url)
+        candidate_urls = unique_urls
+
+        # Keep processing manageable
+        max_files = 12
+        if len(candidate_urls) > max_files:
+            logger.warning(
+                f"Resolved {len(candidate_urls)} files for {metadata['datasetName']}; "
+                f"limiting to first {max_files}"
+            )
+            candidate_urls = candidate_urls[:max_files]
+
+        kerchunk_hint = (metadata.get("kerchunkPath") or "").strip()
+
+        def _kerchunk_local_path() -> Optional[Path]:
+            if not kerchunk_hint or kerchunk_hint.lower() in ("none", "null"):
+                return None
+            cleaned = kerchunk_hint.lstrip("/\\")
+            if cleaned.startswith("kerchunk/"):
+                cleaned = cleaned[len("kerchunk/") :]
+            path = KERCHUNK_PATH / cleaned
+            path.parent.mkdir(parents=True, exist_ok=True)
+            return path
+
+        if engine == "zarr":
+            asset_url = candidate_urls[0]
+            local_ref = _kerchunk_local_path()
+
+            if local_ref:
+                if not local_ref.exists():
+                    logger.info(
+                        f"Kerchunk reference missing for {metadata['datasetName']}, creating: {local_ref}"
+                    )
+                    await asyncio.to_thread(create_kerchunk_reference, asset_url, str(local_ref))
+
+                ds = await asyncio.to_thread(
+                    xr.open_dataset,
+                    "reference://",
+                    engine="zarr",
+                    backend_kwargs={"consolidated": False},
+                    storage_options={
+                        "fo": str(local_ref),
+                        "remote_protocol": "s3",
+                        "remote_options": {"anon": S3_ANON},
+                        "asynchronous": False,
+                    },
+                )
+            else:
+                ds = await asyncio.to_thread(
+                    xr.open_zarr,
+                    asset_url,
+                    consolidated=True,
+                    storage_options={"anon": S3_ANON},
+                )
+
+        elif engine == "h5netcdf":
+            local_ref = _kerchunk_local_path()
+
+            if local_ref:
+                if not local_ref.exists():
+                    logger.info(
+                        f"Generating kerchunk reference for {metadata['datasetName']} at {local_ref}"
+                    )
+                    # Use first resolved asset as representative for reference
+                    await asyncio.to_thread(create_kerchunk_reference, candidate_urls[0], str(local_ref))
+
+                ds = await asyncio.to_thread(
+                    xr.open_dataset,
+                    "reference://",
+                    engine="zarr",
+                    backend_kwargs={"consolidated": False},
+                    storage_options={
+                        "fo": str(local_ref),
+                        "remote_protocol": "s3",
+                        "remote_options": {"anon": S3_ANON},
+                        "asynchronous": False,
+                    },
+                )
+            else:
+                datasets = []
+                for url in candidate_urls:
+                    logger.info(f"Opening S3 object {url}")
+                    url_clean = url[5:] if url.startswith("s3://") else url
+                    def _load():
+                        with fs.open(url_clean, mode="rb") as s3_file:
+                            ds_single = xr.open_dataset(s3_file, engine="h5netcdf")
+                            return ds_single.load()
+
+                    ds_single = await asyncio.to_thread(_load)
+                    datasets.append(ds_single)
+
+                if len(datasets) == 1:
+                    ds = datasets[0]
+                else:
+                    logger.info(f"Concatenating {len(datasets)} netCDF parts for {metadata['datasetName']}")
+                    ds = await asyncio.to_thread(xr.concat, datasets, dim="time", combine_attrs="override")
+
+        else:
+            asset_url = candidate_urls[0]
             ds = await asyncio.to_thread(
                 xr.open_dataset,
-                input_file,
-                engine=engine
+                asset_url,
+                engine=engine,
+                storage_options={"anon": S3_ANON},
             )
         
         logger.info(f"✅ Successfully opened: {metadata['datasetName']}")
