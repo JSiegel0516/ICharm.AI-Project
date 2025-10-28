@@ -59,7 +59,7 @@ services:
       TEST_CHAT_USER_EMAIL: ${TEST_CHAT_USER_EMAIL:-testuser@gmail.com}
       POSTGRES_URL: ${POSTGRES_URL:-}
       LOCAL_DATASETS_PATH: /app/datasets
-      KERCHUNK_PATH: kerchunk
+      KERCHUNK_PATH: /app/kerchunk
       CACHE_DIR: /tmp/climate_cache
     depends_on:
       db:
