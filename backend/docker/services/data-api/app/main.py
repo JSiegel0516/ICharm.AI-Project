@@ -553,6 +553,48 @@ def _open_cmorph_dataset(metadata: pd.Series, start_date: datetime, end_date: da
             except Exception:
                 pass
 
+
+def _open_ndvi_dataset(metadata: pd.Series, target_date: datetime) -> xr.Dataset:
+    """
+    Open NDVI CDR data for a specific day using the same approach as the reference cmorph loader.
+    """
+    template = (metadata.get("inputFile") or "").strip()
+    if not template:
+        raise ValueError("NDVI dataset inputFile is missing.")
+
+    filled = template.format(
+        year=target_date.year,
+        month=target_date.month,
+        day=target_date.day,
+    )
+
+    if filled.startswith("s3://"):
+        glob_path = filled[len("s3://") :]
+    else:
+        glob_path = filled
+
+    fs = s3fs.S3FileSystem(anon=S3_ANON)
+    matches = sorted(fs.glob(glob_path))
+    if not matches:
+        raise FileNotFoundError(
+            f"No NDVI files found for {target_date.strftime('%Y-%m-%d')} using pattern {glob_path}"
+        )
+
+    key = matches[0]
+    engine = (metadata.get("engine") or "h5netcdf").lower()
+
+    with fs.open(key, mode="rb") as handle:
+        ds = xr.open_dataset(handle, engine=engine)
+        loaded = ds.load()
+
+    if "time" in loaded.coords:
+        try:
+            loaded = loaded.sel(time=target_date, method="nearest")
+        except Exception:
+            pass
+
+    return loaded
+
 async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date: datetime) -> xr.Dataset:
     """Open cloud-based dataset using direct S3 access (simplified from working example)"""
     
@@ -570,10 +612,16 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
         logger.info(f"Input file: {input_file}")
         logger.info(f"Engine: {engine}")
         dataset_name = str(metadata.get("datasetName") or "")
+        normalized_name = dataset_name.lower()
 
-        if dataset_name.lower() == "precipitation - cmorph cdr":
+        if normalized_name == "precipitation - cmorph cdr":
             logger.info("Using CMORPH-specific loader")
             ds = await asyncio.to_thread(_open_cmorph_dataset, metadata, start_date, end_date)
+            dataset_cache.set(cache_key, ds)
+            return ds
+        if normalized_name == "normalized difference vegetation index cdr":
+            logger.info("Using NDVI-specific loader")
+            ds = await asyncio.to_thread(_open_ndvi_dataset, metadata, start_date)
             dataset_cache.set(cache_key, ds)
             return ds
         
