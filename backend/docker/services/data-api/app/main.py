@@ -710,26 +710,57 @@ async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
             
             raise FileNotFoundError(f"Local dataset not found: {file_path}")
         
-        engine = metadata.get("engine", "h5netcdf")
+        engine = (metadata.get("engine") or "h5netcdf").lower()
         logger.info(f"Opening dataset with engine: {engine}")
-        
+
+        path_obj = Path(file_path)
+        dataset_name = metadata["datasetName"]
+
         if engine == "zarr":
-            # Try consolidated first, fall back to non-consolidated
-            try:
-                logger.info(f"Attempting to open zarr with consolidated metadata")
-                ds = await asyncio.to_thread(xr.open_zarr, file_path, consolidated=True)
-                logger.info(f"Successfully opened zarr with consolidated metadata")
-            except Exception as zarr_error:
-                logger.warning(f"Consolidated metadata not found for {metadata['datasetName']}: {zarr_error}")
-                logger.info(f"Trying to open zarr without consolidated metadata")
-                try:
-                    ds = await asyncio.to_thread(xr.open_zarr, file_path, consolidated=False)
-                    logger.info(f"Successfully opened zarr without consolidated metadata")
-                except Exception as e:
-                    logger.error(f"Failed to open zarr with both methods: {e}")
-                    raise
+            # Determine whether this is a full Zarr store or a kerchunk reference.
+            if path_obj.is_dir():
+                zarr_json = path_obj / "zarr.json"
+                if zarr_json.exists():
+                    logger.info(f"Detected kerchunk reference for {dataset_name}: {zarr_json}")
+                    try:
+                        ds = await asyncio.to_thread(
+                            xr.open_dataset,
+                            "reference://",
+                            engine="zarr",
+                            backend_kwargs={"consolidated": False},
+                            storage_options={"fo": str(zarr_json), "asynchronous": False},
+                        )
+                        logger.info(f"Successfully opened kerchunk reference for {dataset_name}")
+                    except Exception as kerchunk_error:
+                        logger.warning(f"Kerchunk reference load failed for {dataset_name}: {kerchunk_error}")
+                        fallback_nc = path_obj.with_suffix(".nc")
+                        if fallback_nc.exists():
+                            logger.info(f"Falling back to NetCDF for {dataset_name}: {fallback_nc}")
+                            ds = await asyncio.to_thread(xr.open_dataset, str(fallback_nc), engine="h5netcdf")
+                        else:
+                            raise
+                else:
+                    try:
+                        logger.info(f"Attempting to open Zarr store with consolidated metadata")
+                        ds = await asyncio.to_thread(xr.open_zarr, str(path_obj), consolidated=True)
+                        logger.info(f"Successfully opened Zarr (consolidated) for {dataset_name}")
+                    except Exception as zarr_error:
+                        logger.warning(f"Consolidated Zarr open failed for {dataset_name}: {zarr_error}")
+                        logger.info(f"Retrying without consolidated metadata")
+                        ds = await asyncio.to_thread(xr.open_zarr, str(path_obj), consolidated=False)
+                        logger.info(f"Successfully opened Zarr (unconsolidated) for {dataset_name}")
+            elif path_obj.with_suffix(".nc").exists():
+                # Some records may point to .zarr but only the NetCDF exists locally; fall back.
+                fallback_nc = path_obj.with_suffix(".nc")
+                logger.warning(
+                    f"{dataset_name} Zarr path missing contents; falling back to NetCDF: {fallback_nc}"
+                )
+                ds = await asyncio.to_thread(xr.open_dataset, str(fallback_nc), engine="h5netcdf")
+            else:
+                raise FileNotFoundError(f"Zarr store not found for {dataset_name}: {path_obj}")
         else:
-            ds = await asyncio.to_thread(xr.open_dataset, file_path, engine=engine)
+            # Default to NetCDF (h5netcdf) or user-specified engine
+            ds = await asyncio.to_thread(xr.open_dataset, str(path_obj), engine=engine)
             logger.info(f"Successfully opened dataset with engine: {engine}")
         
         dataset_cache.set(cache_key, ds)
