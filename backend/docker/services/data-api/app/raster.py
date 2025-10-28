@@ -449,6 +449,10 @@ def _generate_textures(
             print(f"  Value: {value:.3f} -> Norm: {norm_val:.3f} -> Idx: {idx} -> RGBA: {rgba[row, col]}")
 
     texture_upscale = float(upsampled.shape[1] / max(data.shape[1], 1))
+
+    # Cesium expects the first row of the texture to map to the northernmost latitude.
+    # Our data arrays are stored from south-to-north after normalization, so flip vertically.
+    rgba = np.flipud(rgba)
     
     # Use extended latitude range
     south = -90.0
