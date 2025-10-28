@@ -294,32 +294,34 @@ def _extend_latitude_coverage(
     extended_mask = []
     extended_lat = []
     
-    # Add south pole rows if needed - but mark as INVALID
+    # Add south pole rows by extending edge values to avoid gaps
     if needs_south_pole:
-        # Add 10 transparent rows at south pole
+        south_row = data[0, :]
+        south_mask = mask[0, :]
+        # Add 10 rows that gradually approach -90 using edge data values
         for i in range(10):
             lat_val = -90 + i * (lat_min + 90) / 10
             extended_lat.append(lat_val)
-            # Use zeros for data, False for mask (will be transparent)
-            extended_data.append(np.zeros(data.shape[1], dtype=data.dtype))
-            extended_mask.append(np.zeros(data.shape[1], dtype=bool))
-    
+            extended_data.append(south_row.copy())
+            extended_mask.append(south_mask.copy())
+
     # Add original data
     extended_lat.extend(lat_values.tolist())
     extended_data.extend([data[i, :] for i in range(data.shape[0])])
     extended_mask.extend([mask[i, :] for i in range(mask.shape[0])])
-    
-    # Add north pole rows if needed - but mark as INVALID
+
+    # Add north pole rows by extending edge values to avoid gaps
     if needs_north_pole:
-        # Add 10 transparent rows at north pole
+        north_row = data[-1, :]
+        north_mask = mask[-1, :]
+        # Add 10 rows that gradually approach 90 using edge data values
         for i in range(1, 11):
             lat_val = lat_max + i * (90 - lat_max) / 10
             extended_lat.append(lat_val)
-            # Use zeros for data, False for mask (will be transparent)
-            extended_data.append(np.zeros(data.shape[1], dtype=data.dtype))
-            extended_mask.append(np.zeros(data.shape[1], dtype=bool))
-    
-    print(f"[RasterViz] Added transparent polar extension rows (not filled with data)")
+            extended_data.append(north_row.copy())
+            extended_mask.append(north_mask.copy())
+
+    print(f"[RasterViz] Added polar extension rows using edge values")
     
     return (
         np.array(extended_data, dtype=data.dtype),
@@ -365,8 +367,8 @@ def _generate_textures(
     # Simple upsampling with nearest neighbor - no smoothing at all
     upscale_factor = 2
     if upscale_factor > 1:
-        upsampled = zoom(extended_data, zoom=upscale_factor, order=0)
-        mask_upscaled = zoom(extended_mask.astype(np.float32), zoom=upscale_factor, order=0)
+        upsampled = zoom(extended_data, zoom=upscale_factor, order=1)
+        mask_upscaled = zoom(extended_mask.astype(np.float32), zoom=upscale_factor, order=1)
         mask_result = mask_upscaled > 0.5
     else:
         upsampled = extended_data
@@ -453,6 +455,12 @@ def _generate_textures(
     # Cesium expects the first row of the texture to map to the northernmost latitude.
     # Our data arrays are stored from south-to-north after normalization, so flip vertically.
     rgba = np.flipud(rgba)
+
+    # Gently reduce opacity so underlying basemap features remain visible.
+    if rgba.size:
+        alpha_scale = 0.7
+        alpha = rgba[..., 3].astype(np.float32) * alpha_scale
+        rgba[..., 3] = np.clip(alpha, 0, 255).astype(np.uint8)
     
     # Use extended latitude range
     south = -90.0
@@ -476,13 +484,14 @@ def _generate_textures(
         # Check if data already wraps (last column ~= first column)
         # If not, we may need to add overlap or adjust the rectangle
         
-        # Simply extend the rectangle bounds slightly to ensure no gaps
-        west = float(lon_values[0])
-        east = float(lon_values[-1]) + lon_step * 0.1  # Tiny overlap
+        # Ensure texture wraps seamlessly by duplicating the first and last column
+        rgba = np.concatenate([rgba[:, -1:, :], rgba, rgba[:, :1, :]], axis=1)
+        texture_upscale = float(rgba.shape[1] / max(data.shape[1], 1))
         
-        # Clamp to valid range
-        if east > 180:
-            east = 180.0
+        # Expand coverage to align with pixel edges
+        pixel_half = lon_step / 2.0 if len(lon_values) > 1 else 0.0
+        west = -180.0
+        east = 180.0
         
         print(f"[RasterViz] Adjusted longitude bounds: [{west}, {east}]")
         
@@ -496,12 +505,15 @@ def _generate_textures(
             },
         })
     else:
+        pixel_half = lon_step / 2.0 if len(lon_values) > 1 else 0.0
+        west = float(lon_values[0]) - pixel_half
+        east = float(lon_values[-1]) + pixel_half
         textures.append({
             "imageUrl": _encode_png(rgba),
             "rectangle": {
-                "west": float(lon_values[0]),
+                "west": west,
                 "south": south,
-                "east": float(lon_values[-1]),
+                "east": east,
                 "north": north,
             },
         })
