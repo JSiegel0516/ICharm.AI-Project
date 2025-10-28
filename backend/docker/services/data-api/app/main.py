@@ -31,6 +31,7 @@ import kerchunk.hdf
 import kerchunk.combine
 from functools import lru_cache
 import cftime
+import s3fs
 
 # Import raster visualization module
 from raster import serialize_raster_array
@@ -484,6 +485,74 @@ async def load_kerchunk_reference(kerchunk_path: str) -> Dict:
             logger.error(f"Failed to load kerchunk reference {kerchunk_path}: {e}")
             raise
 
+
+def _open_cmorph_dataset(metadata: pd.Series, start_date: datetime, end_date: datetime) -> xr.Dataset:
+    """
+    Open CMORPH precipitation data by mirroring the reference implementation in cmorph_test.py.
+    Aggregates all daily NetCDF files for the requested month(s) and returns an in-memory dataset.
+    """
+    base_path = str(metadata.get("inputFile") or "").rstrip("/")
+    if not base_path:
+        raise ValueError("CMORPH dataset inputFile is missing.")
+
+    if base_path.startswith("s3://"):
+        glob_base = base_path[len("s3://") :]
+    else:
+        glob_base = base_path
+
+    fs = s3fs.S3FileSystem(anon=S3_ANON)
+
+    month_keys: List[tuple[int, int]] = []
+    cursor = datetime(start_date.year, start_date.month, 1)
+    end_marker = datetime(end_date.year, end_date.month, 1)
+    while cursor <= end_marker:
+        month_keys.append((cursor.year, cursor.month))
+        # advance to first day next month
+        if cursor.month == 12:
+            cursor = datetime(cursor.year + 1, 1, 1)
+        else:
+            cursor = datetime(cursor.year, cursor.month + 1, 1)
+
+    file_urls: List[str] = []
+    for year, month in month_keys:
+        pattern = f"{glob_base}/{year:04d}/{month:02d}/*.nc"
+        matches = fs.glob(pattern)
+        if matches:
+            for match in matches:
+                file_urls.append(match if match.startswith("s3://") else f"s3://{match}")
+
+    if not file_urls:
+        raise FileNotFoundError(
+            f"No CMORPH NetCDF files found for {metadata['datasetName']} between "
+            f"{start_date.date()} and {end_date.date()} (searched under {glob_base})."
+        )
+
+    engine = (metadata.get("engine") or "h5netcdf").lower()
+    open_files = [fs.open(url, mode="rb") for url in file_urls]
+
+    ds: Optional[xr.Dataset] = None
+    try:
+        ds = xr.open_mfdataset(
+            open_files,
+            engine=engine,
+            combine="by_coords",
+            parallel=False,
+            chunks={"time": 1},
+        )
+        loaded = ds.load()
+        return loaded
+    finally:
+        if ds is not None:
+            try:
+                ds.close()
+            except Exception:
+                pass
+        for handle in open_files:
+            try:
+                handle.close()
+            except Exception:
+                pass
+
 async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date: datetime) -> xr.Dataset:
     """Open cloud-based dataset using direct S3 access (simplified from working example)"""
     
@@ -500,6 +569,13 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
         logger.info(f"Opening cloud dataset: {metadata['datasetName']}")
         logger.info(f"Input file: {input_file}")
         logger.info(f"Engine: {engine}")
+        dataset_name = str(metadata.get("datasetName") or "")
+
+        if dataset_name.lower() == "precipitation - cmorph cdr":
+            logger.info("Using CMORPH-specific loader")
+            ds = await asyncio.to_thread(_open_cmorph_dataset, metadata, start_date, end_date)
+            dataset_cache.set(cache_key, ds)
+            return ds
         
         # Resolve concrete object keys for the requested date range
         candidate_urls: List[str] = []
