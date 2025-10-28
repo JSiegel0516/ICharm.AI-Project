@@ -144,13 +144,25 @@ export const useRasterLayer = ({
     );
   }, [dataset]);
 
+  const cssColors = useMemo(() => {
+    const colors = dataset?.colorScale?.colors;
+    if (!Array.isArray(colors)) {
+      return undefined;
+    }
+    const sanitized = colors
+      .map((color) => (typeof color === 'string' ? color.trim() : ''))
+      .filter((color) => color.length > 0);
+    return sanitized.length ? sanitized : undefined;
+  }, [dataset]);
+
   const requestKey = useMemo(() => {
     const dateKey = formatDateForApi(date);
     if (!backendDatasetId || !dateKey) {
       return undefined;
     }
-    return `${backendDatasetId}::${dateKey}::${level ?? 'surface'}`;
-  }, [backendDatasetId, date, level]);
+    const colorKey = cssColors ? cssColors.join('|') : 'default';
+    return `${backendDatasetId}::${dateKey}::${level ?? 'surface'}::${colorKey}`;
+  }, [backendDatasetId, date, level, cssColors]);
 
   useEffect(() => {
     if (!backendDatasetId || !date) {
@@ -181,6 +193,7 @@ export const useRasterLayer = ({
             datasetId: backendDatasetId,
             date: formatDateForApi(date),
             level: level ?? undefined,
+            cssColors,
           }),
           signal: controller.signal,
         });
