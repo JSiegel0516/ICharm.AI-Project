@@ -40,6 +40,11 @@ const AppStateContext = createContext<AppStateContextType | undefined>(
   undefined
 );
 
+// Certain datasets report "present" in metadata even though archives stop earlier.
+const DATASET_END_OVERRIDES: Record<string, string> = {
+  'Sea Surface Temperature – Optimum Interpolation CDR': '2015-12-31',
+};
+
 // Parse date strings from database (handles formats like "1854/1/1" or "9/1/2025" or "present")
 function parseDate(dateStr: string): Date {
   if (!dateStr || dateStr === 'present' || dateStr.includes('present')) {
@@ -78,14 +83,14 @@ function transformDataset(db: DatabaseDataset): Dataset {
     backend: {
       ...db,
       startDate: db.startDate,
-      endDate: db.endDate,
+      endDate: DATASET_END_OVERRIDES[db.datasetName] ?? db.endDate,
       spatialResolution: db.spatialResolution,
       datasetName: db.datasetName,
       datasetType: db.datasetType,
     },
     // Parse dates for easy use
     startDate: parseDate(db.startDate),
-    endDate: parseDate(db.endDate),
+    endDate: parseDate(DATASET_END_OVERRIDES[db.datasetName] ?? db.endDate),
   };
 }
 
