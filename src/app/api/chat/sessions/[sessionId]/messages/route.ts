@@ -20,15 +20,52 @@ type NormalizedMessage = {
 };
 
 function normalizeMessage(message: ChatMessage): NormalizedMessage {
+  // Handle date conversion with fallback
+  let createdAtISO: string;
+  
+  try {
+    if (message.created_at instanceof Date) {
+      // Already a Date object
+      if (isNaN(message.created_at.getTime())) {
+        // Invalid Date object
+        createdAtISO = new Date().toISOString();
+      } else {
+        createdAtISO = message.created_at.toISOString();
+      }
+    } else if (typeof message.created_at === 'string') {
+      // String - try to parse it
+      const parsed = new Date(message.created_at);
+      if (isNaN(parsed.getTime())) {
+        // Invalid date string
+        createdAtISO = new Date().toISOString();
+      } else {
+        createdAtISO = parsed.toISOString();
+      }
+    } else if (typeof message.created_at === 'number') {
+      // Unix timestamp
+      const parsed = new Date(message.created_at);
+      if (isNaN(parsed.getTime())) {
+        createdAtISO = new Date().toISOString();
+      } else {
+        createdAtISO = parsed.toISOString();
+      }
+    } else {
+      // Unknown format - use current time
+      createdAtISO = new Date().toISOString();
+    }
+  } catch (error) {
+    console.error('Error parsing date for message', message.id, error);
+    // Fallback to current time if all else fails
+    createdAtISO = new Date().toISOString();
+  }
+
   return {
     id: message.id,
     sessionId: message.session_id,
     role: message.role,
     content: message.content,
     sources: message.sources ?? undefined,
-    createdAt: message.created_at instanceof Date
-      ? message.created_at.toISOString()
-      : new Date(message.created_at).toISOString(),
+    createdAt: createdAtISO,
   };
 }
 
