@@ -843,9 +843,7 @@ async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
         return cached
     
     try:
-        # Handle different path formats
         input_file = metadata["inputFile"]
-        # Remove 'datasets/' prefix if present
         if input_file.startswith("datasets/"):
             input_file = input_file.replace("datasets/", "", 1)
         
@@ -857,77 +855,125 @@ async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
             raise FileNotFoundError(f"Local dataset not found: {file_path}")
         
         engine = (metadata.get("engine") or "h5netcdf").lower()
-        logger.info(f"Opening dataset with engine: {engine}")
-
         path_obj = Path(file_path)
         dataset_name = metadata["datasetName"]
 
         if engine == "zarr":
-            # Check if this is a Zarr directory
             if path_obj.is_dir():
-                # Check for .zmetadata (Zarr v2 consolidated metadata)
                 zmetadata = path_obj / ".zmetadata"
                 zarr_json = path_obj / "zarr.json"
                 
-                # NEW LOGIC: Distinguish between actual Zarr stores and kerchunk references
-                # If .zmetadata exists OR zarr.json is part of Zarr v3, it's a real Zarr store
+                # Check for REAL Zarr store (has consolidated metadata)
                 if zmetadata.exists():
-                    # This is a Zarr v2 store with consolidated metadata
-                    logger.info(f"Opening Zarr v2 store with consolidated metadata: {dataset_name}")
+                    logger.info(f"Opening real Zarr v2 store: {dataset_name}")
                     ds = await asyncio.to_thread(xr.open_zarr, str(path_obj), consolidated=True)
+                    
+                # Check for Zarr v3 or Kerchunk reference
                 elif zarr_json.exists():
-                    # Check if this is a standalone kerchunk reference or part of Zarr v3
-                    # Zarr v3 stores have zarr.json as metadata, not kerchunk references
-                    # A kerchunk reference will have "refs" key in the JSON
                     try:
                         with open(zarr_json, 'r') as f:
                             zarr_content = json.load(f)
                         
-                        # If it has "refs" key, it's a kerchunk reference
+                        # Kerchunk reference (Zarr v2 style with "refs")
                         if "refs" in zarr_content:
-                            logger.info(f"Detected kerchunk reference for {dataset_name}: {zarr_json}")
+                            logger.info(f"Opening Kerchunk reference (v2 style): {dataset_name}")
                             ds = await asyncio.to_thread(
                                 xr.open_dataset,
                                 "reference://",
                                 engine="zarr",
                                 backend_kwargs={"consolidated": False},
-                                storage_options={"fo": str(zarr_json), "asynchronous": False},
+                                storage_options={
+                                    "fo": str(zarr_json),
+                                    "asynchronous": False
+                                },
                             )
+                        # Zarr v3 metadata file (just metadata, no actual data)
+                        elif zarr_content.get("node_type") == "group" and zarr_content.get("zarr_format") == 3:
+                            logger.warning(f"Detected Zarr v3 metadata-only file for {dataset_name}")
+                            logger.warning("This appears to be a Kerchunk reference without data arrays")
+                            logger.info("Falling back to NetCDF file...")
+                            raise ValueError("Zarr v3 metadata-only file (no data arrays)")
                         else:
-                            # It's Zarr v3 metadata, open as regular Zarr store
-                            logger.info(f"Opening Zarr v3 store: {dataset_name}")
-                            try:
-                                ds = await asyncio.to_thread(xr.open_zarr, str(path_obj), consolidated=True, zarr_format=3)
-                            except:
-                                # Fallback to unconsolidated
-                                ds = await asyncio.to_thread(xr.open_zarr, str(path_obj), consolidated=False)
-                    except json.JSONDecodeError as e:
-                        logger.warning(f"Could not parse {zarr_json}: {e}. Trying as regular Zarr store.")
-                        ds = await asyncio.to_thread(xr.open_zarr, str(path_obj), consolidated=False)
+                            # Try as regular Zarr v3 store
+                            logger.info(f"Attempting Zarr v3 store: {dataset_name}")
+                            ds = await asyncio.to_thread(xr.open_zarr, str(path_obj), consolidated=False)
+                            
+                    except (json.JSONDecodeError, ValueError) as e:
+                        logger.warning(f"Failed to open as Zarr/Kerchunk: {e}")
+                        raise
+                        
                 else:
-                    # No metadata files found, try opening as unconsolidated Zarr
-                    logger.info(f"Opening Zarr store without consolidated metadata: {dataset_name}")
+                    # No metadata files - try unconsolidated Zarr
+                    logger.info(f"Attempting unconsolidated Zarr: {dataset_name}")
                     ds = await asyncio.to_thread(xr.open_zarr, str(path_obj), consolidated=False)
+                
+                # Verify dataset has variables
+                if len(ds.data_vars) == 0:
+                    logger.error(f"Zarr store {dataset_name} has no variables!")
+                    raise ValueError("Empty Zarr store")
                     
-                logger.info(f"Successfully opened Zarr store for {dataset_name}")
-            elif path_obj.with_suffix(".nc").exists():
-                # Fallback to NetCDF if Zarr doesn't exist
-                fallback_nc = path_obj.with_suffix(".nc")
-                logger.warning(f"{dataset_name} Zarr path missing contents; falling back to NetCDF: {fallback_nc}")
-                ds = await asyncio.to_thread(xr.open_dataset, str(fallback_nc), engine="h5netcdf")
+                logger.info(f"✓ Successfully opened Zarr: {list(ds.data_vars)}")
+                
             else:
-                raise FileNotFoundError(f"Zarr store not found for {dataset_name}: {path_obj}")
+                logger.warning(f"Zarr path is not a directory: {path_obj}")
+                raise ValueError("Not a Zarr directory")
         else:
-            # Default to NetCDF (h5netcdf) or user-specified engine
-            ds = await asyncio.to_thread(xr.open_dataset, str(path_obj), engine=engine)
-            logger.info(f"Successfully opened dataset with engine: {engine}")
+            # NetCDF engine - TRY WITH decode_times=True first, fallback to False
+            try:
+                ds = await asyncio.to_thread(xr.open_dataset, str(path_obj), engine=engine, decode_times=True)
+                logger.info(f"✓ Successfully opened with {engine} (decode_times=True): {list(ds.data_vars)}")
+            except (ValueError, OSError) as time_error:
+                # Time decoding failed - try without decoding
+                if "decode time" in str(time_error).lower() or "cftime" in str(time_error).lower():
+                    logger.warning(f"Time decoding failed for {dataset_name}, retrying with decode_times=False")
+                    ds = await asyncio.to_thread(xr.open_dataset, str(path_obj), engine=engine, decode_times=False)
+                    
+                    # Manually decode time if needed
+                    ds = _ensure_datetime_coordinates(ds)
+                    
+                    logger.info(f"✓ Successfully opened with {engine} (decode_times=False): {list(ds.data_vars)}")
+                else:
+                    raise
         
         dataset_cache.set(cache_key, ds)
-        logger.info(f"Cached dataset: {cache_key}")
         return ds
         
+    except (ValueError, FileNotFoundError, KeyError) as e:
+        # FALLBACK: Try NetCDF file
+        logger.warning(f"Primary method failed for {metadata['datasetName']}: {e}")
+        
+        # Find corresponding .nc file
+        nc_path = path_obj.with_suffix(".nc")
+        
+        logger.info(f"🔄 Attempting NetCDF fallback: {nc_path}")
+        
+        if nc_path.exists():
+            try:
+                # Try with time decoding first
+                ds = await asyncio.to_thread(xr.open_dataset, str(nc_path), engine="h5netcdf", decode_times=True)
+            except (ValueError, OSError) as time_error:
+                # Fallback to no time decoding
+                if "decode time" in str(time_error).lower() or "cftime" in str(time_error).lower():
+                    logger.warning(f"Time decoding failed for fallback, using decode_times=False")
+                    ds = await asyncio.to_thread(xr.open_dataset, str(nc_path), engine="h5netcdf", decode_times=False)
+                    ds = _ensure_datetime_coordinates(ds)
+                else:
+                    raise
+                    
+            logger.info(f"✅ Fallback successful! Variables: {list(ds.data_vars)}")
+            dataset_cache.set(cache_key, ds)
+            return ds
+        else:
+            logger.error(f"❌ No NetCDF fallback found: {nc_path}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to open {metadata['datasetName']}: Zarr incomplete and no NetCDF fallback found"
+            )
+    
     except Exception as e:
-        logger.error(f"Failed to open local dataset {metadata['datasetName']}: {e}")
+        logger.error(f"❌ Unexpected error opening {metadata['datasetName']}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         raise HTTPException(
             status_code=500,
             detail=f"Failed to access local dataset: {metadata['datasetName']} - {str(e)}"
