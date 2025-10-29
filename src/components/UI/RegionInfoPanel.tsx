@@ -65,15 +65,27 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     regionData.dataset ??
     '';
 
+  // Get the dataset ID - try multiple possible locations
+  const datasetId = useMemo(() => {
+    return (
+      currentDataset?.backend?.id ??
+      currentDataset?.backendId ??
+      currentDataset?.id ??
+      null
+    );
+  }, [currentDataset]);
+
   const datasetStart = useMemo(() => {
-    if (!currentDataset?.backend?.startDate) return null;
-    const parsed = new Date(currentDataset.backend.startDate);
+    if (!currentDataset?.backend?.startDate && !currentDataset?.startDate) return null;
+    const dateStr = currentDataset.backend?.startDate ?? currentDataset.startDate;
+    const parsed = new Date(dateStr);
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }, [currentDataset]);
 
   const datasetEnd = useMemo(() => {
-    if (!currentDataset?.backend?.endDate) return null;
-    const parsed = new Date(currentDataset.backend.endDate);
+    if (!currentDataset?.backend?.endDate && !currentDataset?.endDate) return null;
+    const dateStr = currentDataset.backend?.endDate ?? currentDataset.endDate;
+    const parsed = new Date(dateStr);
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }, [currentDataset]);
 
@@ -197,70 +209,118 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     }));
   }, [timeseriesSeries]);
 
+  // Dynamic timeseries handler using your backend API
   const handleTimeseriesClick = async () => {
-    setTimeseriesOpen(true);
+  setTimeseriesOpen(true);
 
-    if (!datasetIdentifier.toLowerCase().includes('cmorph')) {
-      setTimeseriesError(
-        'Timeseries view is currently available for the CMORPH dataset only.'
-      );
-      setTimeseriesSeries([]);
-      setTimeseriesUnits(null);
-      return;
+  // Check if we have a valid dataset ID
+  if (!datasetId) {
+    console.error('[Timeseries] No dataset ID found');
+    console.log('[Timeseries] currentDataset:', currentDataset);
+    setTimeseriesError('No dataset selected. Please select a dataset from the sidebar.');
+    setTimeseriesSeries([]);
+    setTimeseriesUnits(null);
+    return;
+  }
+
+  // Use selectedDate or fallback to dataset end date
+  let targetDate = selectedDate ?? datasetEnd ?? new Date();
+
+  if (datasetStart && targetDate < datasetStart) {
+    targetDate = datasetStart;
+  }
+  if (datasetEnd && targetDate > datasetEnd) {
+    targetDate = datasetEnd;
+  }
+
+  // Calculate date range (e.g., full month for the selected date)
+  const startOfMonth = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
+  const endOfMonth = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0);
+
+  setTimeseriesLoading(true);
+  setTimeseriesError(null);
+
+  try {
+    // Format coordinates string for focusCoordinates parameter
+    const focusCoords = `${latitude},${longitude}`;
+
+    const payload = {
+      datasetIds: [datasetId],
+      startDate: startOfMonth.toISOString().split('T')[0],
+      endDate: endOfMonth.toISOString().split('T')[0],
+      focusCoordinates: focusCoords,
+      aggregation: 'mean',
+      includeStatistics: false,
+      includeMetadata: true,
+    };
+
+    console.log('[Timeseries] Request payload:', payload);
+    console.log('[Timeseries] Fetching from: /api/v2/timeseries/extract');
+
+    const response = await fetch('http://localhost:8000/api/v2/timeseries/extract', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    console.log('[Timeseries] Response status:', response.status);
+    console.log('[Timeseries] Response headers:', response.headers);
+
+    // Check content type before parsing
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text();
+      console.error('[Timeseries] Non-JSON response:', text.substring(0, 500));
+      throw new Error(`Server returned ${response.status}: ${response.statusText}. Expected JSON but got ${contentType}`);
     }
 
-    let targetDate =
-      selectedDate ??
-      datasetEnd ??
-      new Date();
-
-    if (datasetStart && targetDate < datasetStart) {
-      targetDate = datasetStart;
-    }
-    if (datasetEnd && targetDate > datasetEnd) {
-      targetDate = datasetEnd;
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData?.detail || `Request failed with status ${response.status}`);
     }
 
-    setTimeseriesLoading(true);
-    setTimeseriesError(null);
+    const result = await response.json();
+    console.log('[Timeseries] Response:', result);
 
-    try {
-      const payload = {
-        dataset_name: datasetIdentifier,
-        year: targetDate.getFullYear(),
-        month: String(targetDate.getMonth() + 1).padStart(2, '0'),
-        lat: latitude,
-        lon: longitude,
-      };
-
-      const response = await fetch('/api/cdr/precip-timeseries', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result?.detail || result?.error || 'Request failed');
-      }
-
-      const series = Array.isArray(result?.primary?.series)
-        ? (result.primary.series as SeriesPoint[])
-        : [];
-      setTimeseriesSeries(series);
-      setTimeseriesUnits(result?.metadata?.units ?? datasetUnit);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Failed to load timeseries';
-      setTimeseriesError(message);
-      setTimeseriesSeries([]);
-      setTimeseriesUnits(null);
-    } finally {
-      setTimeseriesLoading(false);
+    // Extract data from API response
+    if (!result?.data || !Array.isArray(result.data)) {
+      throw new Error('Invalid response format');
     }
-  };
+    
+    // Transform API response to SeriesPoint format
+    const series: SeriesPoint[] = result.data.map((point: any) => ({
+      date: point.date,
+      value: point.values?.[datasetId] ?? null,
+    }));
+
+    // Get units from metadata
+    const units = result.metadata?.[datasetId]?.units ?? datasetUnit;
+
+    setTimeseriesSeries(series);
+    setTimeseriesUnits(units);
+
+    console.log(`[Timeseries] Loaded ${series.length} data points for ${currentDataset?.name}`);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'Failed to load timeseries';
+    console.error('[Timeseries] Error:', message);
+    setTimeseriesError(message);
+    setTimeseriesSeries([]);
+    setTimeseriesUnits(null);
+  } finally {
+    setTimeseriesLoading(false);
+  }
+};
+  // Add this right before "if (!show) return null;"
+  console.log('[RegionInfoPanel] Debug info:', {
+  currentDataset: currentDataset,
+  datasetId: datasetId,
+  hasBackend: !!currentDataset?.backend,
+  backendId: currentDataset?.backend?.id,
+  directId: currentDataset?.id,
+});
 
   if (!show) return null;
 
@@ -346,7 +406,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                   </span>
                 </div>
                 <div className="text-sm text-gray-400">
-                  {regionData.name || datasetIdentifier || 'Precipitation'}
+                  {currentDataset?.name || regionData.name || datasetIdentifier || 'Value'}
                 </div>
               </div>
             </div>
@@ -368,9 +428,11 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
 
             <div className="pt-1">
               <button
-                className="w-full rounded-lg border border-gray-600/40 bg-gray-700/50 px-3 py-2 text-sm font-medium text-gray-200 transition-colors hover:border-gray-500/60 hover:bg-gray-600/50 hover:text-white"
+                className="w-full rounded-lg border border-gray-600/40 bg-gray-700/50 px-3 py-2 text-sm font-medium text-gray-200 transition-colors hover:border-gray-500/60 hover:bg-gray-600/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                 type="button"
                 onClick={handleTimeseriesClick}
+                disabled={!datasetId}
+                title={!datasetId ? 'Select a dataset first' : 'View time series for this location'}
               >
                 Time Series
               </button>
@@ -398,7 +460,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
             </button>
             <div className="mb-4">
               <h2 className="text-lg font-semibold text-white">
-                Daily Precipitation
+                {currentDataset?.name || 'Time Series'}
               </h2>
               <p className="text-sm text-gray-400">
                 {latitude.toFixed(2)}°, {longitude.toFixed(2)}° ·{' '}
@@ -416,29 +478,41 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                   Loading timeseries...
                 </div>
               ) : timeseriesError ? (
-                <div className="flex h-full w-full items-center justify-center text-sm text-red-400">
+                <div className="flex h-full w-full items-center justify-center p-4 text-center text-sm text-red-400">
                   {timeseriesError}
                 </div>
               ) : chartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis dataKey="date" stroke="#94a3b8" />
+                    <XAxis 
+                      dataKey="date" 
+                      stroke="#94a3b8"
+                      tick={{ fontSize: 12 }}
+                    />
                     <YAxis
                       stroke="#94a3b8"
+                      tick={{ fontSize: 12 }}
                       label={{
                         value: timeseriesUnits ?? datasetUnit,
                         angle: -90,
                         position: 'insideLeft',
                         fill: '#94a3b8',
+                        fontSize: 12,
                       }}
                     />
-                    <Tooltip />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: '#1f2937', 
+                        border: '1px solid #374151',
+                        borderRadius: '0.5rem'
+                      }}
+                    />
                     <Legend />
                     <Line
                       type="monotone"
                       dataKey="value"
-                      name="Precipitation"
+                      name={currentDataset?.name || 'Value'}
                       stroke="#38bdf8"
                       strokeWidth={2}
                       dot={false}
@@ -456,7 +530,10 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
         </div>
       )}
     </div>
+    
   );
+  
 };
+
 
 export default RegionInfoPanel;

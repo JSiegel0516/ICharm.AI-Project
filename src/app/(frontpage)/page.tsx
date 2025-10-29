@@ -182,6 +182,8 @@ export default function HomePage() {
           regionData={regionInfoData.regionData}
           colorBarPosition={colorBarPosition}
           colorBarCollapsed={colorBarCollapsed}
+          currentDataset={currentDataset}
+          selectedDate={selectedDate}
         />
 
         {/* Bottom Controls */}
