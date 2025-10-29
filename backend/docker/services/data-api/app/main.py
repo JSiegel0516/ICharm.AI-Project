@@ -728,7 +728,23 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
             cleaned = kerchunk_hint.lstrip("/\\")
             if cleaned.startswith("kerchunk/"):
                 cleaned = cleaned[len("kerchunk/") :]
-            path = KERCHUNK_PATH / cleaned
+            
+            # TRY KERCHUNK_PATH first, fallback to CACHE_DIR if not writable
+            try:
+                # Check if KERCHUNK_PATH exists and is writable
+                if KERCHUNK_PATH.exists():
+                    path = KERCHUNK_PATH / cleaned
+                    # Test write access
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    if os.access(path.parent, os.W_OK):
+                        logger.info(f"Using KERCHUNK_PATH: {path}")
+                        return path
+            except (OSError, PermissionError) as e:
+                logger.warning(f"KERCHUNK_PATH not writable: {e}")
+            
+            # Fallback to writable cache directory
+            path = CACHE_DIR / "kerchunk" / cleaned
+            logger.info(f"Using CACHE_DIR for kerchunk: {path}")
             path.parent.mkdir(parents=True, exist_ok=True)
             return path
 
@@ -741,20 +757,35 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
                     logger.info(
                         f"Kerchunk reference missing for {metadata['datasetName']}, creating: {local_ref}"
                     )
-                    await asyncio.to_thread(create_kerchunk_reference, asset_url, str(local_ref))
+                    try:
+                        await asyncio.to_thread(create_kerchunk_reference, asset_url, str(local_ref))
+                    except (OSError, PermissionError) as e:
+                        logger.error(f"Failed to create kerchunk reference: {e}")
+                        logger.info("Falling back to direct S3 access without kerchunk")
+                        local_ref = None  # Disable kerchunk, use direct access
 
-                ds = await asyncio.to_thread(
-                    xr.open_dataset,
-                    "reference://",
-                    engine="zarr",
-                    backend_kwargs={"consolidated": False},
-                    storage_options={
-                        "fo": str(local_ref),
-                        "remote_protocol": "s3",
-                        "remote_options": {"anon": S3_ANON},
-                        "asynchronous": False,
-                    },
-                )
+                if local_ref and local_ref.exists():
+                    ds = await asyncio.to_thread(
+                        xr.open_dataset,
+                        "reference://",
+                        engine="zarr",
+                        backend_kwargs={"consolidated": False},
+                        storage_options={
+                            "fo": str(local_ref),
+                            "remote_protocol": "s3",
+                            "remote_options": {"anon": S3_ANON},
+                            "asynchronous": False,
+                        },
+                    )
+                else:
+                    # Fallback to direct zarr access
+                    logger.warning("Kerchunk unavailable, using direct zarr access")
+                    ds = await asyncio.to_thread(
+                        xr.open_zarr,
+                        asset_url,
+                        consolidated=True,
+                        storage_options={"anon": S3_ANON},
+                    )
             else:
                 ds = await asyncio.to_thread(
                     xr.open_zarr,
@@ -771,21 +802,47 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
                     logger.info(
                         f"Generating kerchunk reference for {metadata['datasetName']} at {local_ref}"
                     )
-                    # Use first resolved asset as representative for reference
-                    await asyncio.to_thread(create_kerchunk_reference, candidate_urls[0], str(local_ref))
+                    try:
+                        # Use first resolved asset as representative for reference
+                        await asyncio.to_thread(create_kerchunk_reference, candidate_urls[0], str(local_ref))
+                    except (OSError, PermissionError) as e:
+                        logger.error(f"Failed to create kerchunk reference: {e}")
+                        logger.info("Falling back to direct S3 access without kerchunk")
+                        local_ref = None
 
-                ds = await asyncio.to_thread(
-                    xr.open_dataset,
-                    "reference://",
-                    engine="zarr",
-                    backend_kwargs={"consolidated": False},
-                    storage_options={
-                        "fo": str(local_ref),
-                        "remote_protocol": "s3",
-                        "remote_options": {"anon": S3_ANON},
-                        "asynchronous": False,
-                    },
-                )
+                if local_ref and local_ref.exists():
+                    ds = await asyncio.to_thread(
+                        xr.open_dataset,
+                        "reference://",
+                        engine="zarr",
+                        backend_kwargs={"consolidated": False},
+                        storage_options={
+                            "fo": str(local_ref),
+                            "remote_protocol": "s3",
+                            "remote_options": {"anon": S3_ANON},
+                            "asynchronous": False,
+                        },
+                    )
+                else:
+                    # Fallback to direct NetCDF access
+                    logger.warning("Kerchunk unavailable, using direct NetCDF access")
+                    datasets = []
+                    for url in candidate_urls:
+                        logger.info(f"Opening S3 object {url}")
+                        url_clean = url[5:] if url.startswith("s3://") else url
+                        def _load():
+                            with fs.open(url_clean, mode="rb") as s3_file:
+                                ds_single = xr.open_dataset(s3_file, engine="h5netcdf")
+                                return ds_single.load()
+
+                        ds_single = await asyncio.to_thread(_load)
+                        datasets.append(ds_single)
+
+                    if len(datasets) == 1:
+                        ds = datasets[0]
+                    else:
+                        logger.info(f"Concatenating {len(datasets)} netCDF parts for {metadata['datasetName']}")
+                        ds = await asyncio.to_thread(xr.concat, datasets, dim="time", combine_attrs="override")
             else:
                 datasets = []
                 for url in candidate_urls:
@@ -831,7 +888,6 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
             status_code=500,
             detail=f"Failed to access cloud dataset '{metadata['datasetName']}': {str(e)}"
         )
-
 
 async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
     """Open local dataset with caching"""
