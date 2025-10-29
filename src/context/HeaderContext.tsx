@@ -78,7 +78,7 @@ function transformDataset(db: DatabaseDataset): Dataset {
     dataType: db.datasetType,
     units: db.units,
     // Add default colorScale based on parameter type
-    colorScale: generateColorScale(db.layerParameter, db.units),
+    colorScale: generateColorScale(db.datasetName, db.layerParameter, db.units),
     // Store full backend data for reference
     backend: {
       ...db,
@@ -94,27 +94,83 @@ function transformDataset(db: DatabaseDataset): Dataset {
   };
 }
 
-// Generate appropriate color scale based on parameter type
-function generateColorScale(parameter: string, units: string) {
+// Generate appropriate color scale based on dataset name and parameter type
+function generateColorScale(datasetName: string, parameter: string, units: string) {
+  const name = datasetName.toLowerCase();
   const param = parameter.toLowerCase();
-
-  // Temperature scales
+  
+  // Check for Sea Surface Temperature first (more specific)
   if (
+    name.includes('sst') ||
+    name.includes('sea surface temperature') ||
+    name.includes('amsre') ||
+    name.includes('modis') ||
+    param.includes('sea surface')
+  ) {
+    return {
+      labels: ['-2°C', '5°C', '12°C', '18°C', '25°C', '32°C'],
+      colors: [
+        '#08306b', // Very dark blue (coldest)
+        '#2171b5', // Medium blue
+        '#6baed6', // Light blue
+        '#c6dbef', // Very pale blue
+        '#fcbba1', // Pale pink
+        '#fb6a4a', // Pink-red
+        '#ef3b2c', // Red
+        '#99000d', // Very dark red (warmest)
+      ],
+      min: -2,
+      max: 35,
+    };
+  }
+
+  // Air Temperature scales
+  if (
+    name.includes('air') ||
+    name.includes('airtemp') ||
+    param.includes('air temperature') ||
     param.includes('temperature') ||
     units.includes('degc') ||
     units.includes('kelvin')
   ) {
     return {
       labels: ['-40°C', '-20°C', '0°C', '20°C', '40°C'],
-      colors: ['#0000ff', '#00ffff', '#00ff00', '#ffff00', '#ff0000'],
+      colors: [
+        '#313695', // Deep blue (coldest)
+        '#4575b4', // Blue
+        '#abd9e9', // Pale blue
+        '#ffffbf', // Pale yellow (neutral)
+        '#fdae61', // Orange
+        '#f46d43', // Red-orange
+        '#a50026', // Deep red (hottest)
+      ],
+      min: -40,
+      max: 40,
     };
   }
 
   // Precipitation scales
-  if (param.includes('precipitation') || units.includes('mm')) {
+  if (
+    name.includes('precip') ||
+    name.includes('precipitation') ||
+    name.includes('rain') ||
+    param.includes('precipitation') ||
+    units.includes('mm')
+  ) {
     return {
-      labels: ['0 mm', '5 mm', '10 mm', '15 mm', '20 mm'],
-      colors: ['#ffffff', '#a0d8ef', '#4682b4', '#1e3a8a', '#000080'],
+      labels: ['0', '100', '200', '300', '400', '500'],
+      colors: [
+        '#8B4513', // Saddle brown (very dry)
+        '#CD853F', // Peru/tan (dry)
+        '#F0E68C', // Khaki (slightly dry)
+        '#90EE90', // Light green (moderate)
+        '#00FA9A', // Medium spring green (wet)
+        '#48D1CC', // Medium turquoise (wetter)
+        '#4169E1', // Royal blue (extremely wet)
+        '#0000CD', // Medium blue (wettest)
+      ],
+      min: 0,
+      max: 500,
     };
   }
 
@@ -127,6 +183,8 @@ function generateColorScale(parameter: string, units: string) {
     return {
       labels: ['0 m/s', '2 m/s', '4 m/s', '6 m/s', '8 m/s'],
       colors: ['#f0f0f0', '#90ee90', '#ffa500', '#ff4500', '#8b0000'],
+      min: 0,
+      max: 10,
     };
   }
 
@@ -134,6 +192,8 @@ function generateColorScale(parameter: string, units: string) {
   return {
     labels: ['Low', 'Medium-Low', 'Medium', 'Medium-High', 'High'],
     colors: ['#440154', '#31688e', '#35b779', '#fde724', '#ff0000'],
+    min: 0,
+    max: 100,
   };
 }
 

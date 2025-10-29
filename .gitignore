@@ -61,3 +61,7 @@ next-env.d.ts
 
 # package-lock
 package-lock.json
+
+# datasets
+backend/datasets/*.nc
+**/*.nc
