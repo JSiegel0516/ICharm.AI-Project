@@ -188,6 +188,7 @@ class TimeSeriesRequest(BaseModel):
     includeStatistics: Optional[bool] = True
     includeMetadata: Optional[bool] = True
     smoothingWindow: Optional[int] = None
+    focusCoordinates: Optional[str] = None  # NEW: e.g., "40.7128,-74.0060; 34.0522,-118.2437"
     
     @validator('endDate')
     def validate_date_range(cls, v, values):
@@ -349,6 +350,57 @@ def _resolve_remote_asset(metadata: pd.Series, date_hint: datetime) -> str:
         normalized = candidate
 
     return normalized
+
+
+def parse_focus_coordinates(coord_string: Optional[str]) -> List[Dict[str, float]]:
+    """
+    Parse focus coordinates string into list of lat/lon dicts
+    
+    Format: "lat1,lon1; lat2,lon2; lat3,lon3"
+    Example: "40.7128,-74.0060; 34.0522,-118.2437"
+    
+    Returns: [{"lat": 40.7128, "lon": -74.0060}, {"lat": 34.0522, "lon": -118.2437}]
+    """
+    if not coord_string or not coord_string.strip():
+        return []
+    
+    coordinates = []
+    
+    try:
+        # Split by semicolon for multiple coordinate pairs
+        pairs = coord_string.split(';')
+        
+        for pair in pairs:
+            pair = pair.strip()
+            if not pair:
+                continue
+            
+            # Split by comma for lat,lon
+            parts = pair.split(',')
+            if len(parts) != 2:
+                logger.warning(f"Invalid coordinate pair format: {pair}")
+                continue
+            
+            try:
+                lat = float(parts[0].strip())
+                lon = float(parts[1].strip())
+                
+                # Validate ranges
+                if -90 <= lat <= 90 and -180 <= lon <= 180:
+                    coordinates.append({"lat": lat, "lon": lon})
+                else:
+                    logger.warning(f"Coordinate out of range: lat={lat}, lon={lon}")
+            except ValueError:
+                logger.warning(f"Could not parse coordinates: {pair}")
+                continue
+        
+        logger.info(f"Parsed {len(coordinates)} valid coordinate pairs")
+        return coordinates
+        
+    except Exception as e:
+        logger.error(f"Error parsing focus coordinates: {e}")
+        return []
+
 
 
 def _ensure_datetime_coordinates(ds: xr.Dataset) -> xr.Dataset:
@@ -802,14 +854,6 @@ async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
         
         if not os.path.exists(file_path):
             logger.error(f"Dataset file not found: {file_path}")
-            logger.error(f"LOCAL_DATASETS_PATH: {LOCAL_DATASETS_PATH}")
-            logger.error(f"Input file from metadata: {metadata['inputFile']}")
-            
-            # List available files in directory for debugging
-            if os.path.exists(LOCAL_DATASETS_PATH):
-                available_files = os.listdir(LOCAL_DATASETS_PATH)
-                logger.info(f"Available files in {LOCAL_DATASETS_PATH}: {available_files[:10]}")
-            
             raise FileNotFoundError(f"Local dataset not found: {file_path}")
         
         engine = (metadata.get("engine") or "h5netcdf").lower()
@@ -819,44 +863,57 @@ async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
         dataset_name = metadata["datasetName"]
 
         if engine == "zarr":
-            # Determine whether this is a full Zarr store or a kerchunk reference.
+            # Check if this is a Zarr directory
             if path_obj.is_dir():
+                # Check for .zmetadata (Zarr v2 consolidated metadata)
+                zmetadata = path_obj / ".zmetadata"
                 zarr_json = path_obj / "zarr.json"
-                if zarr_json.exists():
-                    logger.info(f"Detected kerchunk reference for {dataset_name}: {zarr_json}")
+                
+                # NEW LOGIC: Distinguish between actual Zarr stores and kerchunk references
+                # If .zmetadata exists OR zarr.json is part of Zarr v3, it's a real Zarr store
+                if zmetadata.exists():
+                    # This is a Zarr v2 store with consolidated metadata
+                    logger.info(f"Opening Zarr v2 store with consolidated metadata: {dataset_name}")
+                    ds = await asyncio.to_thread(xr.open_zarr, str(path_obj), consolidated=True)
+                elif zarr_json.exists():
+                    # Check if this is a standalone kerchunk reference or part of Zarr v3
+                    # Zarr v3 stores have zarr.json as metadata, not kerchunk references
+                    # A kerchunk reference will have "refs" key in the JSON
                     try:
-                        ds = await asyncio.to_thread(
-                            xr.open_dataset,
-                            "reference://",
-                            engine="zarr",
-                            backend_kwargs={"consolidated": False},
-                            storage_options={"fo": str(zarr_json), "asynchronous": False},
-                        )
-                        logger.info(f"Successfully opened kerchunk reference for {dataset_name}")
-                    except Exception as kerchunk_error:
-                        logger.warning(f"Kerchunk reference load failed for {dataset_name}: {kerchunk_error}")
-                        fallback_nc = path_obj.with_suffix(".nc")
-                        if fallback_nc.exists():
-                            logger.info(f"Falling back to NetCDF for {dataset_name}: {fallback_nc}")
-                            ds = await asyncio.to_thread(xr.open_dataset, str(fallback_nc), engine="h5netcdf")
+                        with open(zarr_json, 'r') as f:
+                            zarr_content = json.load(f)
+                        
+                        # If it has "refs" key, it's a kerchunk reference
+                        if "refs" in zarr_content:
+                            logger.info(f"Detected kerchunk reference for {dataset_name}: {zarr_json}")
+                            ds = await asyncio.to_thread(
+                                xr.open_dataset,
+                                "reference://",
+                                engine="zarr",
+                                backend_kwargs={"consolidated": False},
+                                storage_options={"fo": str(zarr_json), "asynchronous": False},
+                            )
                         else:
-                            raise
-                else:
-                    try:
-                        logger.info(f"Attempting to open Zarr store with consolidated metadata")
-                        ds = await asyncio.to_thread(xr.open_zarr, str(path_obj), consolidated=True)
-                        logger.info(f"Successfully opened Zarr (consolidated) for {dataset_name}")
-                    except Exception as zarr_error:
-                        logger.warning(f"Consolidated Zarr open failed for {dataset_name}: {zarr_error}")
-                        logger.info(f"Retrying without consolidated metadata")
+                            # It's Zarr v3 metadata, open as regular Zarr store
+                            logger.info(f"Opening Zarr v3 store: {dataset_name}")
+                            try:
+                                ds = await asyncio.to_thread(xr.open_zarr, str(path_obj), consolidated=True, zarr_format=3)
+                            except:
+                                # Fallback to unconsolidated
+                                ds = await asyncio.to_thread(xr.open_zarr, str(path_obj), consolidated=False)
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"Could not parse {zarr_json}: {e}. Trying as regular Zarr store.")
                         ds = await asyncio.to_thread(xr.open_zarr, str(path_obj), consolidated=False)
-                        logger.info(f"Successfully opened Zarr (unconsolidated) for {dataset_name}")
+                else:
+                    # No metadata files found, try opening as unconsolidated Zarr
+                    logger.info(f"Opening Zarr store without consolidated metadata: {dataset_name}")
+                    ds = await asyncio.to_thread(xr.open_zarr, str(path_obj), consolidated=False)
+                    
+                logger.info(f"Successfully opened Zarr store for {dataset_name}")
             elif path_obj.with_suffix(".nc").exists():
-                # Some records may point to .zarr but only the NetCDF exists locally; fall back.
+                # Fallback to NetCDF if Zarr doesn't exist
                 fallback_nc = path_obj.with_suffix(".nc")
-                logger.warning(
-                    f"{dataset_name} Zarr path missing contents; falling back to NetCDF: {fallback_nc}"
-                )
+                logger.warning(f"{dataset_name} Zarr path missing contents; falling back to NetCDF: {fallback_nc}")
                 ds = await asyncio.to_thread(xr.open_dataset, str(fallback_nc), engine="h5netcdf")
             else:
                 raise FileNotFoundError(f"Zarr store not found for {dataset_name}: {path_obj}")
@@ -875,7 +932,6 @@ async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
             status_code=500,
             detail=f"Failed to access local dataset: {metadata['datasetName']} - {str(e)}"
         )
-
 # ============================================================================
 # DATA PROCESSING FUNCTIONS
 # ============================================================================
@@ -907,32 +963,24 @@ async def extract_time_series(
     end_date: datetime,
     spatial_bounds: Optional[Dict[str, float]] = None,
     aggregation: AggregationMethod = AggregationMethod.MEAN,
-    level_value: Optional[float] = None
+    level_value: Optional[float] = None,
+    focus_coordinates: Optional[List[Dict[str, float]]] = None  # NEW PARAMETER
 ) -> pd.Series:
-    """Extract time series with advanced spatial selection"""
+    """
+    Extract time series with advanced spatial selection
+    
+    NEW: If focus_coordinates are provided, extracts data from specific points
+    instead of spatial aggregation
+    """
     
     lat_name, lon_name, time_name = normalize_coordinates(ds)
     
     # Time selection
     ds_time = ds.sel({time_name: slice(start_date, end_date)})
     
-    # Spatial selection
-    if spatial_bounds:
-        if lat_name and lon_name:
-            ds_spatial = ds_time.sel({
-                lat_name: slice(spatial_bounds.get("lat_min", -90), 
-                               spatial_bounds.get("lat_max", 90)),
-                lon_name: slice(spatial_bounds.get("lon_min", -180), 
-                               spatial_bounds.get("lon_max", 180))
-            })
-        else:
-            ds_spatial = ds_time
-    else:
-        ds_spatial = ds_time
-    
     # Get variable
     var_name = metadata["keyVariable"]
-    var = ds_spatial[var_name]
+    var = ds_time[var_name]
     
     # Level selection if applicable
     if level_value is not None:
@@ -940,30 +988,89 @@ async def extract_time_series(
         if level_dims:
             var = var.sel({level_dims[0]: level_value}, method="nearest")
     
-    # Spatial aggregation
-    spatial_dims = [d for d in var.dims if d != time_name]
+    # NEW: Point-based extraction if focus coordinates provided
+    if focus_coordinates and len(focus_coordinates) > 0:
+        logger.info(f"Extracting data from {len(focus_coordinates)} specific coordinate(s)")
+        
+        point_series = []
+        
+        for coord in focus_coordinates:
+            try:
+                # Select nearest point to the specified coordinate
+                if lat_name and lon_name:
+                    point_data = var.sel(
+                        {lat_name: coord["lat"], lon_name: coord["lon"]},
+                        method="nearest"
+                    )
+                    
+                    # Convert to pandas Series
+                    point_series_data = point_data.to_pandas()
+                    
+                    # Ensure datetime index
+                    if not isinstance(point_series_data.index, pd.DatetimeIndex):
+                        point_series_data.index = pd.to_datetime(point_series_data.index)
+                    
+                    point_series.append(point_series_data)
+                    logger.info(f"Extracted data from point: lat={coord['lat']}, lon={coord['lon']}")
+                else:
+                    logger.warning(f"Cannot extract point data: lat/lon coordinates not found in dataset")
+                    
+            except Exception as e:
+                logger.error(f"Failed to extract data from coordinate {coord}: {e}")
+                continue
+        
+        if not point_series:
+            raise ValueError("Failed to extract data from any of the specified coordinates")
+        
+        # If multiple points, average them
+        if len(point_series) > 1:
+            logger.info(f"Averaging data from {len(point_series)} points")
+            # Align all series and take mean
+            combined = pd.concat(point_series, axis=1)
+            result = combined.mean(axis=1)
+        else:
+            result = point_series[0]
+        
+        return result
     
-    if aggregation == AggregationMethod.MEAN:
-        result = var.mean(dim=spatial_dims)
-    elif aggregation == AggregationMethod.MAX:
-        result = var.max(dim=spatial_dims)
-    elif aggregation == AggregationMethod.MIN:
-        result = var.min(dim=spatial_dims)
-    elif aggregation == AggregationMethod.SUM:
-        result = var.sum(dim=spatial_dims)
-    elif aggregation == AggregationMethod.MEDIAN:
-        result = var.median(dim=spatial_dims)
-    elif aggregation == AggregationMethod.STD:
-        result = var.std(dim=spatial_dims)
-    
-    # Convert to pandas Series
-    series = result.to_pandas()
-    
-    # Ensure datetime index
-    if not isinstance(series.index, pd.DatetimeIndex):
-        series.index = pd.to_datetime(series.index)
-    
-    return series
+    # ORIGINAL: Spatial aggregation (used when no focus coordinates)
+    else:
+        # Spatial bounds selection
+        if spatial_bounds:
+            if lat_name and lon_name:
+                var = var.sel({
+                    lat_name: slice(spatial_bounds.get("lat_min", -90), 
+                                   spatial_bounds.get("lat_max", 90)),
+                    lon_name: slice(spatial_bounds.get("lon_min", -180), 
+                                   spatial_bounds.get("lon_max", 180))
+                })
+        
+        # Spatial aggregation
+        spatial_dims = [d for d in var.dims if d != time_name]
+        
+        if aggregation == AggregationMethod.MEAN:
+            result = var.mean(dim=spatial_dims)
+        elif aggregation == AggregationMethod.MAX:
+            result = var.max(dim=spatial_dims)
+        elif aggregation == AggregationMethod.MIN:
+            result = var.min(dim=spatial_dims)
+        elif aggregation == AggregationMethod.SUM:
+            result = var.sum(dim=spatial_dims)
+        elif aggregation == AggregationMethod.MEDIAN:
+            result = var.median(dim=spatial_dims)
+        elif aggregation == AggregationMethod.STD:
+            result = var.std(dim=spatial_dims)
+        
+        # Convert to pandas Series
+        series = result.to_pandas()
+        
+        # Ensure datetime index
+        if not isinstance(series.index, pd.DatetimeIndex):
+            series.index = pd.to_datetime(series.index)
+        
+        return series
+
+
 
 def apply_analysis_model(
     series: pd.Series, 
@@ -1144,6 +1251,198 @@ router = APIRouter(prefix="/api/v2")
 
 @router.post("/timeseries/extract", response_model=TimeSeriesResponse, response_class=CustomJSONResponse)
 async def extract_timeseries(request: TimeSeriesRequest):
+    """
+    Extract and process time series data from multiple datasets
+    
+    NEW: Supports focusCoordinates parameter for point-based extraction
+    Format: "lat1,lon1; lat2,lon2"
+    Example: "40.7128,-74.0060; 34.0522,-118.2437"
+    
+    When focusCoordinates are provided:
+    - Extracts data from specific lat/lon points instead of spatial aggregation
+    - If multiple coordinates provided, averages the values
+    - Ignores spatialBounds and aggregation parameters
+    """
+    
+    start_time = datetime.now()
+    
+    try:
+        # Parse dates
+        start_date = datetime.strptime(request.startDate, "%Y-%m-%d")
+        end_date = datetime.strptime(request.endDate, "%Y-%m-%d")
+        
+        # NEW: Parse focus coordinates if provided
+        focus_coords = parse_focus_coordinates(request.focusCoordinates)
+        if focus_coords:
+            logger.info(f"Processing request with {len(focus_coords)} focus coordinate(s)")
+            for i, coord in enumerate(focus_coords):
+                logger.info(f"  Coordinate {i+1}: lat={coord['lat']}, lon={coord['lon']}")
+        
+        # Get metadata for requested datasets (UUIDs)
+        metadata_df = get_metadata_by_ids(request.datasetIds)
+        
+        if len(metadata_df) == 0:
+            raise HTTPException(
+                status_code=404,
+                detail="No datasets found with provided IDs"
+            )
+        
+        # Process each dataset
+        all_series = {}
+        dataset_metadata = {}
+        statistics = {} if request.includeStatistics else None
+        
+        for _, meta_row in metadata_df.iterrows():
+            try:
+                is_local = meta_row["Stored"] == "local"
+                
+                # Open dataset
+                if is_local:
+                    ds = await open_local_dataset(meta_row)
+                else:
+                    ds = await open_cloud_dataset(meta_row, start_date, end_date)
+                
+                # Determine level if multi-level
+                level_value = None
+                if meta_row.get("levelValues") and str(meta_row["levelValues"]).lower() != "none":
+                    level_vals = [float(x.strip()) for x in str(meta_row["levelValues"]).split(",")]
+                    level_value = np.median(level_vals)
+                
+                # Extract time series - NOW WITH FOCUS COORDINATES
+                series = await extract_time_series(
+                    ds, meta_row, start_date, end_date,
+                    spatial_bounds=request.spatialBounds if not focus_coords else None,  # Ignore bounds if using coords
+                    aggregation=request.aggregation,
+                    level_value=level_value,
+                    focus_coordinates=focus_coords  # NEW: Pass parsed coordinates
+                )
+                
+                # Apply analysis model
+                series = apply_analysis_model(
+                    series, 
+                    request.analysisModel,
+                    request.smoothingWindow
+                )
+                
+                # Normalize if requested
+                if request.normalize:
+                    series_min = series.min()
+                    series_max = series.max()
+                    if series_max > series_min:
+                        series = (series - series_min) / (series_max - series_min)
+                
+                # Resample if requested
+                if request.resampleFreq:
+                    series = series.resample(request.resampleFreq).mean()
+                
+                # Use ID as the key (what frontend sends)
+                dataset_id = str(meta_row["id"])
+                all_series[dataset_id] = series
+                
+                # Add metadata
+                if request.includeMetadata:
+                    dataset_metadata[dataset_id] = DatasetMetadata(
+                        id=str(meta_row["id"]),
+                        slug=meta_row.get("slug"),
+                        name=meta_row["datasetName"],
+                        source=meta_row["sourceName"],
+                        units=meta_row["units"],
+                        spatialResolution=meta_row.get("spatialResolution"),
+                        temporalResolution=meta_row.get("statistic", "Monthly"),
+                        startDate=meta_row["startDate"],
+                        endDate=meta_row["endDate"],
+                        isLocal=is_local,
+                        level=f"{level_value} {meta_row.get('levelUnits', '')}" if level_value else None,
+                        description=meta_row.get("description")
+                    )
+                
+                # Calculate statistics
+                if request.includeStatistics:
+                    statistics[dataset_id] = calculate_statistics(series)
+                
+            except Exception as e:
+                logger.error(f"Error processing dataset {meta_row['datasetName']}: {e}")
+                # Continue with other datasets
+                continue
+        
+        if not all_series:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to extract data from any dataset"
+            )
+        
+        # Align all series to common time index
+        common_index = None
+        for series in all_series.values():
+            if common_index is None:
+                common_index = series.index
+            else:
+                common_index = common_index.union(series.index)
+        
+        common_index = common_index.sort_values()
+
+        # Build response data
+        data_points = []
+        for timestamp in common_index:
+            point = DataPoint(
+                date=timestamp.strftime("%Y-%m-%d"),
+                values={},
+                timestamp=int(timestamp.timestamp())
+            )
+            
+            for dataset_id, series in all_series.items():
+                if timestamp in series.index:
+                    value = series[timestamp]
+                    point.values[dataset_id] = float(value) if not pd.isna(value) else None
+                else:
+                    point.values[dataset_id] = None
+                    
+            data_points.append(point)
+        
+        # Generate chart configuration
+        chart_config = None
+        if request.chartType and dataset_metadata:
+            chart_config = generate_chart_config(
+                list(all_series.keys()),
+                request.chartType,
+                dataset_metadata
+            )
+        
+        # Processing info
+        processing_time = (datetime.now() - start_time).total_seconds()
+        processing_info = {
+            "processingTime": f"{processing_time:.2f}s",
+            "totalPoints": len(data_points),
+            "datasetsProcessed": len(all_series),
+            "dateRange": {
+                "start": common_index[0].strftime("%Y-%m-%d") if len(common_index) > 0 else None,
+                "end": common_index[-1].strftime("%Y-%m-%d") if len(common_index) > 0 else None
+            },
+            "analysisModel": request.analysisModel.value,
+            "aggregation": request.aggregation.value,
+            "focusCoordinates": len(focus_coords) if focus_coords else None,  # NEW: Include in response
+            "extractionMode": "point-based" if focus_coords else "spatial-aggregation"  # NEW: Show mode
+        }
+        
+        return TimeSeriesResponse(
+            data=data_points,
+            metadata=dataset_metadata if request.includeMetadata else None,
+            statistics=statistics,
+            chartConfig=chart_config,
+            processingInfo=processing_info
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in extract_timeseries: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
+
     """
     Extract and process time series data from multiple datasets
     

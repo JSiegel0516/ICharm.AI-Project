@@ -1,4 +1,3 @@
-// app/timeseries/page.tsx
 'use client';
 import React, {
   useState,
@@ -29,6 +28,7 @@ import {
   Loader2,
   AlertCircle,
   CheckCircle,
+  XCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -42,6 +42,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { toast } from 'sonner'; // Add sonner for better toast notifications
 // Import the new API hook
 import {
   useTimeSeriesAPI,
@@ -51,6 +52,7 @@ import {
   formatDateForAPI,
   downloadBlob,
   generateFilename,
+  validateFocusCoordinates,
   type DatasetInfo,
   type SpatialBounds,
 } from '@/hooks/use-timeseries';
@@ -78,10 +80,7 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
-// ============================================================================
-// ENHANCED TIME SERIES PAGE COMPONENT
-// ============================================================================
-export default function EnhancedTimeSeriesPage() {
+export default function TimeSeriesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -138,6 +137,13 @@ export default function EnhancedTimeSeriesPage() {
     'all' | 'local' | 'cloud'
   >('all');
 
+  // Focus coordinates state
+  const [focusCoordinates, setFocusCoordinates] = useState('');
+  const [coordinateValidation, setCoordinateValidation] = useState<{
+    isValid: boolean;
+    errors: string[];
+  }>({ isValid: true, errors: [] });
+
   // Track if we've initialized from URL params
   const initializedFromUrl = useRef(false);
 
@@ -146,11 +152,11 @@ export default function EnhancedTimeSeriesPage() {
     listDatasets({ stored: dataSourceFilter });
   }, [listDatasets, dataSourceFilter]);
 
-  // Initialize from URL parameters (only once)
+  // IMPROVED: Initialize from URL parameters (only once)
   useEffect(() => {
     if (initializedFromUrl.current || availableDatasets.length === 0) return;
 
-    const datasetIds = searchParams.get('datasets')?.split(',') || [];
+    const datasetSlugs = searchParams.get('datasets')?.split(',') || [];
     const startDate = searchParams.get('start');
     const endDate = searchParams.get('end');
     const chart = searchParams.get('chart') as ChartType;
@@ -158,48 +164,60 @@ export default function EnhancedTimeSeriesPage() {
 
     if (startDate) setDateRange((prev) => ({ ...prev, start: startDate }));
     if (endDate) setDateRange((prev) => ({ ...prev, end: endDate }));
-    if (chart) setChartType(chart);
-    if (model) setAnalysisModel(model);
+    if (chart && Object.values(ChartType).includes(chart)) setChartType(chart);
+    if (model && Object.values(AnalysisModel).includes(model))
+      setAnalysisModel(model);
 
-    // Select datasets based on IDs from URL
-    if (datasetIds.length > 0) {
+    // FIXED: Select datasets based on slugs from URL, map to UUIDs internally
+    if (datasetSlugs.length > 0) {
       const selected = availableDatasets.filter((d) =>
-        datasetIds.includes((d as any).slug || d.id)
+        datasetSlugs.includes(d.slug || d.id)
       );
-      setSelectedDatasets(selected);
-      setVisibleDatasets(new Set(selected.map((d) => d.id)));
+      if (selected.length > 0) {
+        setSelectedDatasets(selected);
+        setVisibleDatasets(new Set(selected.map((d) => d.id)));
+
+        // Auto-extract if datasets are in URL
+        console.log('Auto-extracting from URL parameters');
+        setTimeout(() => {
+          handleExtract();
+        }, 100);
+      }
     }
 
     initializedFromUrl.current = true;
   }, [searchParams, availableDatasets]);
 
-  // Create stable serialized values for URL update dependencies
-  const selectedDatasetIds = useMemo(
-    () => selectedDatasets.map((d) => (d as any).slug || d.id).join(','),
+  // IMPROVED: Create stable serialized values for URL update dependencies
+  const selectedDatasetSlugs = useMemo(
+    () => selectedDatasets.map((d) => d.slug || d.id).join(','),
     [selectedDatasets]
   );
 
   // Debounce the URL update values
-  const debouncedDatasetIds = useDebounce(selectedDatasetIds, 500);
-  const debouncedStartDate = useDebounce(dateRange.start, 500);
-  const debouncedEndDate = useDebounce(dateRange.end, 500);
+  const debouncedDatasetSlugs = useDebounce(selectedDatasetSlugs, 800);
+  const debouncedStartDate = useDebounce(dateRange.start, 800);
+  const debouncedEndDate = useDebounce(dateRange.end, 800);
   const debouncedChartType = useDebounce(chartType, 500);
   const debouncedAnalysisModel = useDebounce(analysisModel, 500);
 
-  // Update URL when selections change (with debouncing)
+  // IMPROVED: Update URL when selections change (with debouncing)
   useEffect(() => {
     if (!initializedFromUrl.current) return;
 
     const params = new URLSearchParams();
-    if (debouncedDatasetIds) params.set('datasets', debouncedDatasetIds);
+    if (debouncedDatasetSlugs) params.set('datasets', debouncedDatasetSlugs);
     if (debouncedStartDate) params.set('start', debouncedStartDate);
     if (debouncedEndDate) params.set('end', debouncedEndDate);
     if (debouncedChartType) params.set('chart', debouncedChartType);
     if (debouncedAnalysisModel) params.set('model', debouncedAnalysisModel);
 
-    router.replace(`?${params.toString()}`, { scroll: false });
+    const newUrl = params.toString() ? `?${params.toString()}` : '';
+    if (window.location.search !== `?${params.toString()}`) {
+      router.replace(newUrl, { scroll: false });
+    }
   }, [
-    debouncedDatasetIds,
+    debouncedDatasetSlugs,
     debouncedStartDate,
     debouncedEndDate,
     debouncedChartType,
@@ -207,48 +225,84 @@ export default function EnhancedTimeSeriesPage() {
     router,
   ]);
 
-  // Prepare chart data
-  const chartData = useMemo(() => {
-    if (!data || data.length === 0) return [];
-    return data.map((point) => ({
-      date: point.date,
-      timestamp: point.timestamp,
-      ...point.values,
-    }));
-  }, [data]);
-
-  // Handle Extract button click
-  const handleExtract = useCallback(async () => {
-    if (selectedDatasets.length === 0) {
+  // IMPROVED: Validate focus coordinates in real-time
+  useEffect(() => {
+    if (focusCoordinates.trim() === '') {
+      setCoordinateValidation({ isValid: true, errors: [] });
       return;
     }
 
-    // Send UUIDs directly - Python looks them up in the database
-    const datasetIds = selectedDatasets.map((d) => d.id);
-    console.log('Extracting datasets with UUIDs:', datasetIds);
-    console.log('Selected datasets:', selectedDatasets);
-
-    await extractTimeSeries({
-      datasetIds,
-      startDate: dateRange.start,
-      endDate: dateRange.end,
-      analysisModel,
-      normalize,
-      chartType,
-      spatialBounds: showSpatialFilter ? spatialBounds : undefined,
-      aggregation,
-      resampleFreq,
-      includeStatistics: true,
-      includeMetadata: true,
-      smoothingWindow:
-        analysisModel === AnalysisModel.MOVING_AVG
-          ? smoothingWindow
-          : undefined,
+    const validation = validateFocusCoordinates(focusCoordinates);
+    setCoordinateValidation({
+      isValid: validation.isValid,
+      errors: validation.errors,
     });
+  }, [focusCoordinates]);
+
+  // FIXED: Memoized chart data (already transformed in hook)
+  const chartData = useMemo(() => {
+    return data; // Data is already in chart-ready format from the hook
+  }, [data]);
+
+  // IMPROVED: Handle Extract button click with validation
+  const handleExtract = useCallback(async () => {
+    if (selectedDatasets.length === 0) {
+      toast.error('Please select at least one dataset');
+      return;
+    }
+
+    // Validate focus coordinates
+    if (focusCoordinates.trim() && !coordinateValidation.isValid) {
+      toast.error(
+        `Invalid coordinates: ${coordinateValidation.errors.join(', ')}`
+      );
+      return;
+    }
+
+    // FIXED: Send UUIDs to API (backend uses them for database lookup)
+    const datasetIds = selectedDatasets.map((d) => d.id);
+    setVisibleDatasets(new Set(datasetIds));
+
+    console.log('🚀 Extracting datasets:');
+    console.log('  - UUIDs for API:', datasetIds);
+    console.log(
+      '  - Slugs for display:',
+      selectedDatasets.map((d) => d.slug)
+    );
+    console.log('  - Date range:', dateRange);
+
+    if (focusCoordinates) {
+      const validation = validateFocusCoordinates(focusCoordinates);
+      console.log('  - Focus coordinates:', validation.parsed);
+    }
+
+    try {
+      await extractTimeSeries({
+        datasetIds, // UUIDs for API
+        startDate: dateRange.start,
+        endDate: dateRange.end,
+        analysisModel,
+        normalize,
+        chartType,
+        spatialBounds: showSpatialFilter ? spatialBounds : undefined,
+        aggregation,
+        resampleFreq,
+        includeStatistics: true,
+        includeMetadata: true,
+        smoothingWindow:
+          analysisModel === AnalysisModel.MOVING_AVG
+            ? smoothingWindow
+            : undefined,
+        focusCoordinates: focusCoordinates.trim() || undefined,
+      });
+
+      toast.success('Data extracted successfully!');
+    } catch (err) {
+      toast.error('Failed to extract data');
+    }
   }, [
     selectedDatasets,
-    dateRange.start,
-    dateRange.end,
+    dateRange,
     analysisModel,
     aggregation,
     normalize,
@@ -257,27 +311,46 @@ export default function EnhancedTimeSeriesPage() {
     showSpatialFilter,
     spatialBounds,
     chartType,
+    focusCoordinates,
+    coordinateValidation,
     extractTimeSeries,
   ]);
 
-  // Handle export
+  // IMPROVED: Handle export with better error handling
   const handleExport = useCallback(
     async (format: 'csv' | 'json' | 'png') => {
-      if (!data || data.length === 0) return;
+      if (!data || data.length === 0) {
+        toast.error('No data to export');
+        return;
+      }
 
-      const blob = await exportData(format);
-      if (blob) {
+      try {
+        toast.loading(`Exporting as ${format.toUpperCase()}...`);
+
+        const blob = await exportData(format);
         const filename = generateFilename(
-          selectedDatasets.map((d) => d.name),
+          selectedDatasets.map((d) => d.name || d.slug),
           dateRange.start,
           dateRange.end,
           format
         );
+
         downloadBlob(blob, filename);
+        toast.success(`Exported successfully as ${filename}`);
+      } catch (err) {
+        console.error('Export error:', err);
+        toast.error(`Failed to export as ${format.toUpperCase()}`);
       }
     },
     [data, exportData, selectedDatasets, dateRange]
   );
+
+  // IMPROVED: Show error toast when API error occurs
+  useEffect(() => {
+    if (error) {
+      toast.error(error);
+    }
+  }, [error]);
 
   return (
     <div className="flex h-screen flex-col">
@@ -299,6 +372,7 @@ export default function EnhancedTimeSeriesPage() {
             <Button
               onClick={handleExtract}
               disabled={selectedDatasets.length === 0 || isLoading}
+              size="lg"
             >
               {isLoading ? (
                 <>
@@ -315,7 +389,11 @@ export default function EnhancedTimeSeriesPage() {
 
             <Dialog>
               <DialogTrigger asChild>
-                <Button variant="outline" disabled={!data || data.length === 0}>
+                <Button
+                  variant="outline"
+                  disabled={!data || data.length === 0}
+                  size="lg"
+                >
                   <Download className="mr-2 h-4 w-4" />
                   Export
                 </Button>
@@ -330,40 +408,84 @@ export default function EnhancedTimeSeriesPage() {
                 <div className="grid gap-4 py-4">
                   <Button
                     onClick={() => handleExport('csv')}
-                    className="w-full"
+                    className="w-full justify-start"
+                    variant="outline"
                   >
-                    Export as CSV
+                    <Download className="mr-2 h-4 w-4" />
+                    Export as CSV (Spreadsheet)
                   </Button>
                   <Button
                     onClick={() => handleExport('json')}
-                    className="w-full"
+                    className="w-full justify-start"
+                    variant="outline"
                   >
-                    Export as JSON
+                    <Download className="mr-2 h-4 w-4" />
+                    Export as JSON (Raw Data)
                   </Button>
                   <Button
                     onClick={() => handleExport('png')}
-                    className="w-full"
+                    className="w-full justify-start"
+                    variant="outline"
                   >
-                    Export Chart as PNG
+                    <Download className="mr-2 h-4 w-4" />
+                    Export Chart as PNG (Image)
                   </Button>
                 </div>
               </DialogContent>
             </Dialog>
 
-            <Button variant="ghost" onClick={() => reset()}>
+            <Button variant="ghost" onClick={() => reset()} size="lg">
               Reset
             </Button>
           </div>
         </div>
 
         {/* Progress Bar */}
-        {isLoading && progress !== null && (
+        {isLoading && progress > 0 && (
           <div className="mt-4">
             <Progress value={progress} className="h-2" />
             <p className="text-muted-foreground mt-1 text-xs">
               Processing: {progress.toFixed(0)}%
             </p>
           </div>
+        )}
+
+        {/* Processing Info Display */}
+        {processingInfo && !isLoading && (
+          <div className="mt-3 flex items-center gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="h-4 w-4 text-green-600" />
+              <span className="text-muted-foreground">
+                {processingInfo.datasetsProcessed} dataset(s) •{' '}
+                {processingInfo.totalPoints} points •{' '}
+                {processingInfo.processingTime}
+              </span>
+            </div>
+            {processingInfo.extractionMode && (
+              <div className="flex items-center gap-2">
+                <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                  {processingInfo.extractionMode === 'point-based'
+                    ? `Point-based (${processingInfo.focusCoordinates} coord${processingInfo.focusCoordinates !== 1 ? 's' : ''})`
+                    : 'Spatial aggregation'}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Coordinate Validation Warning */}
+        {focusCoordinates.trim() && !coordinateValidation.isValid && (
+          <Alert variant="destructive" className="mt-3">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Invalid Coordinates</AlertTitle>
+            <AlertDescription>
+              <ul className="list-disc pl-4">
+                {coordinateValidation.errors.map((err, i) => (
+                  <li key={i}>{err}</li>
+                ))}
+              </ul>
+            </AlertDescription>
+          </Alert>
         )}
       </header>
 
@@ -394,13 +516,24 @@ export default function EnhancedTimeSeriesPage() {
 
           {/* Right Panel - Visualization */}
           <ResizablePanel defaultSize={65}>
-            <div className="h-full space-y-4 overflow-y-auto p-4">
+            <div
+              className="h-full space-y-4 overflow-y-auto p-4"
+              data-chart-container
+            >
               {/* Error Alert */}
               {error && (
                 <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
+                  <XCircle className="h-4 w-4" />
                   <AlertTitle>Error</AlertTitle>
                   <AlertDescription>{error}</AlertDescription>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => reset()}
+                    className="mt-2"
+                  >
+                    Dismiss
+                  </Button>
                 </Alert>
               )}
 
@@ -420,6 +553,8 @@ export default function EnhancedTimeSeriesPage() {
                 setSmoothingWindow={setSmoothingWindow}
                 resampleFreq={resampleFreq}
                 setResampleFreq={setResampleFreq}
+                focusCoordinates={focusCoordinates}
+                setFocusCoordinates={setFocusCoordinates}
                 chartData={chartData}
                 selectedDatasets={selectedDatasets}
                 visibleDatasets={visibleDatasets}
@@ -429,7 +564,9 @@ export default function EnhancedTimeSeriesPage() {
               />
 
               {/* Data Table Component */}
-              <DataTable data={data} selectedDatasets={selectedDatasets} />
+              {data && data.length > 0 && (
+                <DataTable data={data} selectedDatasets={selectedDatasets} />
+              )}
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>

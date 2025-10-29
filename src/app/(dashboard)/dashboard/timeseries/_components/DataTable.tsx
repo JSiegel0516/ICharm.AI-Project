@@ -28,6 +28,15 @@ export function DataTable({ data, selectedDatasets }: DataTableProps) {
     return null;
   }
 
+  // Helper function to format value
+  const formatValue = (value: any): string => {
+    if (value === null || value === undefined) return '-';
+    if (typeof value === 'number') {
+      return value.toFixed(2);
+    }
+    return String(value);
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -41,21 +50,26 @@ export function DataTable({ data, selectedDatasets }: DataTableProps) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Date</TableHead>
+                <TableHead className="bg-background sticky left-0">
+                  Date
+                </TableHead>
                 {selectedDatasets.map((dataset) => (
-                  <TableHead key={dataset.id}>{dataset.name}</TableHead>
+                  <TableHead key={dataset.id}>
+                    {dataset.name || dataset.slug}
+                  </TableHead>
                 ))}
               </TableRow>
             </TableHeader>
             <TableBody>
               {data.slice(0, 50).map((point, idx) => (
                 <TableRow key={idx}>
-                  <TableCell className="font-mono text-xs">
+                  <TableCell className="bg-background sticky left-0 font-mono text-xs">
                     {point.date}
                   </TableCell>
                   {selectedDatasets.map((dataset) => (
                     <TableCell key={dataset.id} className="font-mono text-xs">
-                      {point.values[dataset.id]?.toFixed(2) || '-'}
+                      {/* FIXED: Access dataset.id directly, not point.values[dataset.id] */}
+                      {formatValue(point[dataset.id])}
                     </TableCell>
                   ))}
                 </TableRow>
