@@ -7,24 +7,9 @@ import React, {
   useImperativeHandle,
   forwardRef,
 } from 'react';
-import type { Dataset, RegionData } from '@/types';
+import type { Dataset, RegionData, GlobeProps, GlobeRef } from '@/types';
 import { useRasterLayer } from '@/hooks/useRasterLayer';
 import type { RasterLayerData } from '@/hooks/useRasterLayer';
-
-interface GlobeProps {
-  currentDataset?: Dataset;
-  selectedDate?: Date;
-  selectedLevel?: number | null;
-  onRegionClick?: (
-    latitude: number,
-    longitude: number,
-    data?: RegionData
-  ) => void;
-}
-
-interface GlobeRef {
-  clearMarker: () => void;
-}
 
 // Cesium setup function for CDN loading
 const loadCesiumFromCDN = async () => {
@@ -93,12 +78,13 @@ const loadGeographicBoundaries = async () => {
   return boundaryData;
 };
 
-// Draw geographic boundaries on the globe
+// Draw geographic boundaries on the globe - UPDATED: Returns entity array
 const addGeographicBoundaries = (
   Cesium: any,
   viewer: any,
   boundaryData: any[]
-) => {
+): any[] => {
+  const boundaryEntities: any[] = [];
   let totalLinesAdded = 0;
 
   boundaryData.forEach(({ name, data }) => {
@@ -137,7 +123,7 @@ const addGeographicBoundaries = (
           );
 
           if (positions.length > 1) {
-            viewer.entities.add({
+            const entity = viewer.entities.add({
               polyline: {
                 positions: positions,
                 width: width,
@@ -145,6 +131,7 @@ const addGeographicBoundaries = (
                 clampToGround: false,
               },
             });
+            boundaryEntities.push(entity);
             totalLinesAdded++;
           }
         };
@@ -187,7 +174,7 @@ const addGeographicBoundaries = (
             Cesium.Cartesian3.fromDegrees(data.Lon[i], data.Lat[i], 10000)
           );
         } else if (positions.length > 0) {
-          viewer.entities.add({
+          const entity = viewer.entities.add({
             polyline: {
               positions: positions.slice(),
               width: width,
@@ -195,13 +182,14 @@ const addGeographicBoundaries = (
               clampToGround: false,
             },
           });
+          boundaryEntities.push(entity);
           totalLinesAdded++;
           positions.length = 0;
         }
       }
 
       if (positions.length > 0) {
-        viewer.entities.add({
+        const entity = viewer.entities.add({
           polyline: {
             positions: positions,
             width: width,
@@ -209,6 +197,7 @@ const addGeographicBoundaries = (
             clampToGround: false,
           },
         });
+        boundaryEntities.push(entity);
         totalLinesAdded++;
       }
     } else {
@@ -219,10 +208,21 @@ const addGeographicBoundaries = (
   console.log(
     `Geographic boundaries added: ${totalLinesAdded} lines from ${boundaryData.length} files`
   );
+  
+  return boundaryEntities;
 };
 
 const Globe = forwardRef<GlobeRef, GlobeProps>(
-  ({ currentDataset, onRegionClick, selectedDate, selectedLevel }, ref) => {
+  ({ 
+    currentDataset, 
+    onRegionClick, 
+    selectedDate, 
+    selectedLevel,
+    // NEW: Globe settings props with defaults
+    satelliteLayerVisible = true,
+    boundaryLinesVisible = true,
+    rasterOpacity = 0.65,
+  }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const viewerRef = useRef<any>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -231,7 +231,12 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     const [cesiumInstance, setCesiumInstance] = useState<any>(null);
+    
+    // NEW: Layer references for visibility control
+    const satelliteLayerRef = useRef<any>(null);
+    const boundaryEntitiesRef = useRef<any[]>([]);
     const rasterLayerRef = useRef<any[]>([]);
+    
     const rasterDataRef = useRef<RasterLayerData | undefined>(undefined);
     const rasterState = useRasterLayer({
       dataset: currentDataset,
@@ -344,6 +349,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       }
     };
 
+    // Initialize Cesium viewer
     useEffect(() => {
       if (!containerRef.current || viewerRef.current) return;
 
@@ -437,7 +443,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             baseLayer.brightness = 1.0;
             baseLayer.contrast = 1.0;
             viewer.scene.imageryLayers.lowerToBottom(baseLayer);
-            console.log('Satellite base layer added');
+            
+            // NEW: Store satellite layer reference
+            satelliteLayerRef.current = baseLayer;
+            console.log('Satellite base layer added and stored');
           } catch (layerError) {
             console.error('Failed to load satellite base layer', layerError);
           }
@@ -456,7 +465,11 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
           console.log('Loading geographic boundaries...');
           const boundaryData = await loadGeographicBoundaries();
-          addGeographicBoundaries(Cesium, viewer, boundaryData);
+          
+          // NEW: Store boundary entities
+          const boundaryEnts = addGeographicBoundaries(Cesium, viewer, boundaryData);
+          boundaryEntitiesRef.current = boundaryEnts;
+          console.log(`Stored ${boundaryEnts.length} boundary entities for visibility control`);
 
           viewer.cesiumWidget.screenSpaceEventHandler.setInputAction(
             (event: any) => {
@@ -547,6 +560,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       return () => clearTimeout(timer);
     }, [onRegionClick, currentDataset]);
 
+    // Cleanup
     useEffect(() => {
       return () => {
         if (viewerRef.current && !viewerRef.current.isDestroyed()) {
@@ -573,7 +587,25 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       }
     }, [rasterState.error]);
 
-    // Updated raster texture rendering - CRITICAL: preserve Python-generated colors exactly
+    // NEW: Control satellite layer visibility
+    useEffect(() => {
+      if (!satelliteLayerRef.current) return;
+      
+      satelliteLayerRef.current.show = satelliteLayerVisible;
+      console.log('Satellite layer visibility:', satelliteLayerVisible);
+    }, [satelliteLayerVisible]);
+
+    // NEW: Control boundary lines visibility
+    useEffect(() => {
+      if (boundaryEntitiesRef.current.length === 0) return;
+      
+      boundaryEntitiesRef.current.forEach(entity => {
+        entity.show = boundaryLinesVisible;
+      });
+      console.log('Boundary lines visibility:', boundaryLinesVisible);
+    }, [boundaryLinesVisible]);
+
+    // Raster texture rendering - UPDATED: Use dynamic opacity
     useEffect(() => {
       if (!viewerRef.current || !cesiumInstance) {
         return;
@@ -599,17 +631,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       }
 
       console.log('Adding raster textures:', rasterState.data.textures.length);
-      console.log('Raster data units:', rasterState.data.units);
-      console.log('Raster data range:', rasterState.data.min, 'to', rasterState.data.max);
+      console.log('Raster opacity:', rasterOpacity);
       
       const newLayers: any[] = [];
       rasterState.data.textures.forEach((texture, index) => {
-        console.log(`Texture ${index}:`, {
-          rectangle: texture.rectangle,
-          imageUrlLength: texture.imageUrl?.length || 0,
-          imageUrlPrefix: texture.imageUrl?.substring(0, 50)
-        });
-        
         try {
           const provider = new cesiumInstance.SingleTileImageryProvider({
             url: texture.imageUrl,
@@ -623,22 +648,21 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
           const layer = viewer.scene.imageryLayers.addImageryProvider(provider);
           
-          // CRITICAL: DO NOT modify colors - preserve exact Python-generated RGBA values
-          layer.alpha = 0.65;           // Adjustable opacity (0.0-1.0) - allows base layer to show through
-          layer.brightness = 1.0;      // No brightness adjustment
-          layer.contrast = 1.0;        // No contrast adjustment
-          layer.hue = 0.0;             // No hue shift
-          layer.saturation = 1.0;      // No saturation adjustment
-          layer.gamma = 1.0;           // No gamma correction
+          // NEW: Use dynamic opacity from props
+          layer.alpha = rasterOpacity;
+          layer.brightness = 1.0;
+          layer.contrast = 1.0;
+          layer.hue = 0.0;
+          layer.saturation = 1.0;
+          layer.gamma = 1.0;
           
-          // Use NEAREST filtering to preserve exact pixel colors without interpolation
           layer.minificationFilter = cesiumInstance.TextureMinificationFilter.NEAREST;
           layer.magnificationFilter = cesiumInstance.TextureMagnificationFilter.NEAREST;
 
           viewer.scene.imageryLayers.raiseToTop(layer);
           
           newLayers.push(layer);
-          console.log(`Successfully added texture layer ${index} with NEAREST filtering`);
+          console.log(`Successfully added texture layer ${index} with opacity ${rasterOpacity}`);
         } catch (err) {
           console.error(`Failed to add texture ${index}:`, err);
         }
@@ -647,7 +671,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       rasterLayerRef.current = newLayers;
       console.log(`Successfully added ${newLayers.length} raster layers to globe`);
       
-      // Force a render update
       viewer.scene.requestRender();
 
       return () => {
@@ -661,7 +684,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           });
         }
       };
-    }, [cesiumInstance, rasterState.data]);
+    }, [cesiumInstance, rasterState.data, rasterOpacity]); // NEW: Added rasterOpacity dependency
 
     useEffect(() => {
       rasterDataRef.current = rasterState.data;

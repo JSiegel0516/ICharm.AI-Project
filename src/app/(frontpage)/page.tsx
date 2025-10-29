@@ -7,7 +7,7 @@ import TimeBar from '@/components/ui/TimeBar';
 import PressureLevelsSelector from '@/components/ui/Popups/PressureLevelsSelector';
 import RegionInfoPanel from '@/components/ui/RegionInfoPanel';
 import { useAppState } from '@/context/HeaderContext';
-import { TemperatureUnit, RegionData, PressureLevel } from '@/types';
+import { TemperatureUnit, RegionData, PressureLevel, GlobeSettings } from '@/types';
 import { SideButtons } from './_components/SideButtons';
 import { Tutorial } from './_components/Tutorial';
 
@@ -56,6 +56,13 @@ export default function HomePage() {
       unit: 'hPa',
     });
 
+  // Globe Settings State
+  const [globeSettings, setGlobeSettings] = useState<GlobeSettings>({
+    satelliteLayerVisible: true,
+    boundaryLinesVisible: true,
+    rasterOpacity: 0.65,
+  });
+
   // Event Handlers
   const handleDateChange = useCallback((date: Date) => {
     setSelectedDate(date);
@@ -91,6 +98,19 @@ export default function HomePage() {
     globeRef.current?.clearMarker();
   }, []);
 
+  // Globe Settings Handlers
+  const handleSatelliteToggle = useCallback((visible: boolean) => {
+    setGlobeSettings(prev => ({ ...prev, satelliteLayerVisible: visible }));
+  }, []);
+
+  const handleBoundaryToggle = useCallback((visible: boolean) => {
+    setGlobeSettings(prev => ({ ...prev, boundaryLinesVisible: visible }));
+  }, []);
+
+  const handleRasterOpacityChange = useCallback((opacity: number) => {
+    setGlobeSettings(prev => ({ ...prev, rasterOpacity: opacity }));
+  }, []);
+
   // Memoized Globe
   const selectedLevelValue = selectedPressureLevel?.value ?? null;
 
@@ -102,9 +122,20 @@ export default function HomePage() {
         selectedDate={selectedDate}
         selectedLevel={selectedLevelValue}
         onRegionClick={handleRegionClick}
+        satelliteLayerVisible={globeSettings.satelliteLayerVisible}
+        boundaryLinesVisible={globeSettings.boundaryLinesVisible}
+        rasterOpacity={globeSettings.rasterOpacity}
       />
     ),
-    [currentDataset, handleRegionClick, selectedDate, selectedLevelValue]
+    [
+      currentDataset,
+      handleRegionClick,
+      selectedDate,
+      selectedLevelValue,
+      globeSettings.satelliteLayerVisible,
+      globeSettings.boundaryLinesVisible,
+      globeSettings.rasterOpacity,
+    ]
   );
 
   return (
@@ -118,6 +149,10 @@ export default function HomePage() {
           onDateChange={handleDateChange}
           onShowTutorial={() => setTutorialOpen(true)}
           onShowSidebarPanel={setActiveSidebarPanel}
+          globeSettings={globeSettings}
+          onSatelliteToggle={handleSatelliteToggle}
+          onBoundaryToggle={handleBoundaryToggle}
+          onRasterOpacityChange={handleRasterOpacityChange}
         />
 
         {/* Tutorial Modal */}

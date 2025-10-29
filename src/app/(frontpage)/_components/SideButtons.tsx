@@ -25,14 +25,20 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Calendar } from '@/components/ui/calendar';
+import { GlobeSettingsPanel } from '@/components/GlobeSettingsPanel';
 import { useAppState } from '@/context/HeaderContext';
-import type { Dataset } from '@/types';
+import type { Dataset, GlobeSettings } from '@/types';
 
 interface SideButtonsProps {
   selectedDate: Date;
   onDateChange: (date: Date) => void;
   onShowTutorial: () => void;
   onShowSidebarPanel: (panel: 'datasets' | 'history' | 'about' | null) => void;
+  // NEW: Globe settings props
+  globeSettings: GlobeSettings;
+  onSatelliteToggle: (visible: boolean) => void;
+  onBoundaryToggle: (visible: boolean) => void;
+  onRasterOpacityChange: (opacity: number) => void;
 }
 
 const formatDisplayDate = (value?: string | null | Date) => {
@@ -53,6 +59,10 @@ export function SideButtons({
   onDateChange,
   onShowTutorial,
   onShowSidebarPanel,
+  globeSettings,
+  onSatelliteToggle,
+  onBoundaryToggle,
+  onRasterOpacityChange,
 }: SideButtonsProps) {
   const { datasets, currentDataset, setCurrentDataset, isLoading, error } =
     useAppState();
@@ -60,6 +70,7 @@ export function SideButtons({
   const [isExpanded, setIsExpanded] = useState(true);
   const [showCalendar, setShowCalendar] = useState(false);
   const [showDatasetCard, setShowDatasetCard] = useState(false);
+  const [showGlobeSettings, setShowGlobeSettings] = useState(false); // NEW
   const [selectedDatasets, setSelectedDatasets] = useState<Set<string>>(() =>
     currentDataset ? new Set([currentDataset.id]) : new Set()
   );
@@ -96,8 +107,8 @@ export function SideButtons({
   }, []);
 
   const handlePreferencesClick = useCallback(() => {
-    onShowSidebarPanel('about');
-  }, [onShowSidebarPanel]);
+    setShowGlobeSettings(true); // UPDATED: Open settings panel instead
+  }, []);
 
   const handleFullscreenClick = useCallback(() => {
     if (document.fullscreenElement) {
@@ -121,6 +132,10 @@ export function SideButtons({
     onShowSidebarPanel(null);
   }, [onShowSidebarPanel]);
 
+  const closeGlobeSettings = useCallback(() => {
+    setShowGlobeSettings(false);
+  }, []); // NEW
+
   const toggleDatasetSelection = useCallback(
     (datasetId: string) => {
       setSelectedDatasets((prev) => {
@@ -128,12 +143,9 @@ export function SideButtons({
           return prev;
         }
 
-        // Only allow selecting one dataset at a time
         if (prev.has(datasetId)) {
-          // If clicking the already selected dataset, deselect it
           return new Set();
         } else {
-          // Replace the current selection with the new one
           return new Set([datasetId]);
         }
       });
@@ -148,7 +160,6 @@ export function SideButtons({
       if (dataset) {
         setCurrentDataset(dataset);
 
-        // Clamp selected date to new dataset's range
         let newDate = selectedDate;
         if (selectedDate < dataset.startDate) {
           newDate = dataset.startDate;
@@ -174,7 +185,6 @@ export function SideButtons({
   const handleDateSelect = useCallback(
     (date: Date | undefined) => {
       if (date) {
-        // Clamp date to valid range
         let clampedDate = date;
         if (date < dateRange.minDate) {
           clampedDate = dateRange.minDate;
@@ -201,7 +211,7 @@ export function SideButtons({
     setCalendarMonth(newMonth);
   }, []);
 
-  // Click-outside handler
+  // Click-outside handler - UPDATED to include globe settings
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -226,7 +236,6 @@ export function SideButtons({
     }
   }, [showCalendar, showDatasetCard, closeCalendar, closeDatasetCard]);
 
-  // Sync calendar month with selected date when calendar opens
   useEffect(() => {
     if (showCalendar) {
       setCalendarMonth(selectedDate);
@@ -264,7 +273,6 @@ export function SideButtons({
     });
   }, [datasets, currentDataset]);
 
-  // Button configurations
   const buttonConfigs = useMemo(
     () => [
       {
@@ -324,14 +332,13 @@ export function SideButtons({
     <>
       {/* Side Menu */}
       <AnimatePresence>
-        {!showCalendar && !showDatasetCard && (
+        {!showCalendar && !showDatasetCard && !showGlobeSettings && (
           <motion.div
             initial={{ x: 0 }}
             exit={{ x: -100, opacity: 0 }}
             transition={{ duration: 0.3, ease: 'easeInOut' }}
             className="pointer-events-auto fixed top-0 left-4 z-9999 flex h-screen flex-col items-center justify-center gap-2"
           >
-            {/* Dynamic Buttons */}
             {buttonConfigs.map(({ id, icon, label, onClick, delay }) => (
               <motion.div
                 key={id}
@@ -353,7 +360,6 @@ export function SideButtons({
               </motion.div>
             ))}
 
-            {/* Settings Toggle */}
             <motion.div
               initial={false}
               animate={{ opacity: isExpanded ? 1 : 0.8, scale: 1, y: 1 }}
@@ -394,7 +400,6 @@ export function SideButtons({
                 );
                 onDateChange(newDate);
               }}
-              // Add date range restrictions
               disabled={(date) => {
                 if (!currentDataset) return false;
                 const start = currentDataset.startDate;
@@ -409,6 +414,7 @@ export function SideButtons({
           </motion.div>
         )}
       </AnimatePresence>
+
       {/* Dataset Selection Card */}
       <AnimatePresence>
         {showDatasetCard && (
@@ -540,6 +546,18 @@ export function SideButtons({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* NEW: Globe Settings Panel */}
+      <GlobeSettingsPanel
+        isOpen={showGlobeSettings}
+        onClose={closeGlobeSettings}
+        satelliteLayerVisible={globeSettings.satelliteLayerVisible}
+        onSatelliteLayerToggle={onSatelliteToggle}
+        boundaryLinesVisible={globeSettings.boundaryLinesVisible}
+        onBoundaryLinesToggle={onBoundaryToggle}
+        rasterOpacity={globeSettings.rasterOpacity}
+        onRasterOpacityChange={onRasterOpacityChange}
+      />
     </>
   );
 }

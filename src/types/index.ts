@@ -34,6 +34,8 @@ export interface Dataset {
   dataType: 'temperature' | 'precipitation' | 'wind' | 'pressure' | 'humidity';
   temporalResolution: 'hourly' | 'daily' | 'monthly' | 'yearly';
   backend?: DatasetBackendDetails;
+  startDate: Date;
+  endDate: Date;
 }
 
 export interface ControlPanelProps {
@@ -105,9 +107,15 @@ export interface SettingsIconHandle {
   stopAnimation: () => void;
 }
 
-
 export interface SettingsIconProps extends HTMLAttributes<HTMLDivElement> {
   size?: number;
+}
+
+// NEW: Globe settings interface
+export interface GlobeSettings {
+  satelliteLayerVisible: boolean;
+  boundaryLinesVisible: boolean;
+  rasterOpacity: number;
 }
 
 export interface AppState {
@@ -127,6 +135,7 @@ export interface AppState {
   globePosition: GlobePosition;
   isLoading: boolean;
   error: string | null;
+  globeSettings?: GlobeSettings; // NEW
 }
 
 export interface TooltipProps {
@@ -148,6 +157,7 @@ export interface HeaderProps {
   onShowSidebarPanel?: (panel: 'datasets' | 'history' | 'about') => void;
   activeSidebarPanel?: 'datasets' | 'history' | 'about' | null;
 }
+
 export interface ChatInputProps {
   onSendMessage: (message: string) => void;
   disabled?: boolean;
@@ -169,13 +179,20 @@ export interface CollapsibleSidebarProps {
   onPanelChange?: (panel: 'datasets' | 'history' | 'about' | null) => void;
 }
 
+// UPDATED: GlobeProps with new settings
 export interface GlobeProps {
-  currentDataset?: { name: string };
+  currentDataset?: Dataset;
+  selectedDate?: Date;
+  selectedLevel?: number | null;
   position?: { latitude: number; longitude: number; zoom: number };
   onPositionChange?: (pos: { latitude: number; longitude: number; zoom: number }) => void;
   onRegionClick?: (lat: number, lon: number, data: RegionData) => void;
-  customDataUrl?: string; // URL to your self-hosted GeoJSON/custom data
-  tileServerUrl?: string; // Optional custom tile server URL
+  customDataUrl?: string;
+  tileServerUrl?: string;
+  // NEW: Globe settings props
+  satelliteLayerVisible?: boolean;
+  boundaryLinesVisible?: boolean;
+  rasterOpacity?: number;
 }
 
 export interface RegionData {
@@ -198,8 +215,8 @@ export interface ColorBarProps {
   show: boolean;
   onToggle: () => void;
   dataset: Dataset;
-  unit?: TemperatureUnit; // Add unit prop
-  onUnitChange?: (unit: TemperatureUnit) => void; // Add unit change handler
+  unit?: TemperatureUnit;
+  onUnitChange?: (unit: TemperatureUnit) => void;
   onPositionChange?: (position: { x: number; y: number }) => void;
   collapsed?: boolean;
 }
@@ -236,31 +253,10 @@ export interface PressureLevelsSelectorProps {
   className?: string;
 }
 
-
 export interface YearSelectorProps {
   selectedYear?: number;
   onYearChange?: (year: number) => void;
   className?: string;
-}
-
-
-export interface RegionInfoPanelProps {
-  show: boolean;
-  onClose: () => void;
-  latitude?: number;
-  longitude?: number;
-  regionData?: {
-    name?: string;
-    precipitation?: number;
-    temperature?: number;
-    dataset?: string;
-    unit?: string;
-  };
-  colorBarPosition?: { x: number; y: number };
-  colorBarCollapsed?: boolean;
-  className?: string;
-  currentDataset?: Dataset;
-  selectedDate?: Date;
 }
 
 export interface TutorialSection {
@@ -291,3 +287,15 @@ export interface AboutModalProps extends ModalProps {
 export interface SettingsModalProps extends ModalProps {}
 
 export interface TutorialModalProps extends ModalProps {}
+
+// NEW: Globe settings panel props
+export interface GlobeSettingsPanelProps {
+  isOpen: boolean;
+  onClose: () => void;
+  satelliteLayerVisible: boolean;
+  onSatelliteLayerToggle: (visible: boolean) => void;
+  boundaryLinesVisible: boolean;
+  onBoundaryLinesToggle: (visible: boolean) => void;
+  rasterOpacity: number;
+  onRasterOpacityChange: (opacity: number) => void;
+}
