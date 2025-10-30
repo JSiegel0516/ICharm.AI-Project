@@ -3,6 +3,7 @@ import xarray as xr
 from pathlib import Path
 import requests
 import shutil
+from typing import Any, Dict
 
 # Path to CSV describing datasets
 csv_file = Path("./metadata.csv")  # replace with your actual CSV path
@@ -11,6 +12,41 @@ datasets_dir.mkdir(exist_ok=True)
 
 # Read the CSV
 df = pd.read_csv(csv_file)
+
+
+def _prepare_for_zarr(ds: xr.Dataset) -> xr.Dataset:
+    """
+    Xarray can persist stale chunk metadata from the original NetCDF file
+    (e.g. chunksizes=None) which triggers zarr's normalisation step to blow up
+    with ``Expected an integer or an iterable of integers. Got None instead``.
+    Normalising the encodings keeps the metadata simple before writing.
+    """
+    for name, var in ds.variables.items():
+        encoding = var.encoding
+        for key in ("chunksizes", "chunks", "preferred_chunks"):
+            value = encoding.get(key)
+            if value is None:
+                encoding.pop(key, None)
+            elif isinstance(value, (tuple, list)) and any(ch is None for ch in value):
+                encoding.pop(key, None)
+            elif key == "preferred_chunks":
+                # Always drop preferred_chunks – let zarr determine the chunks.
+                encoding.pop(key, None)
+    return ds
+
+
+def _open_dataset(path: Path, decode_times: bool) -> xr.Dataset:
+    open_kwargs: Dict[str, Any] = {"engine": "h5netcdf", "decode_times": decode_times}
+    if decode_times:
+        try:
+            import cftime  # noqa: F401
+        except ImportError:
+            # Fall back to numpy datetimes; further handling happens upstream.
+            print("cftime is not installed; continuing without it.")
+        else:
+            open_kwargs["use_cftime"] = True
+    return xr.open_dataset(path, **open_kwargs)
+
 
 for _, row in df.iterrows():
     if row["Stored"] != "local":
@@ -47,15 +83,17 @@ for _, row in df.iterrows():
     # Open NetCDF and convert to consolidated Zarr
     print("Opening NetCDF and converting to Zarr...")
     try:
-        ds = xr.open_dataset(temp_nc_file, engine="h5netcdf", decode_times=True, use_cftime=True)
-        ds.to_zarr(local_zarr_path, mode="w", consolidated=True)
+        with _open_dataset(temp_nc_file, decode_times=True) as ds:
+            _prepare_for_zarr(ds)
+            ds.to_zarr(local_zarr_path, mode="w", consolidated=True)
         print(f"Zarr store created: {local_zarr_path}")
     except Exception as e:
         print(f"Failed to convert {temp_nc_file} to Zarr: {e}")
         # Fallback: try decode_times=False
         try:
-            ds = xr.open_dataset(temp_nc_file, engine="h5netcdf", decode_times=False)
-            ds.to_zarr(local_zarr_path, mode="w", consolidated=True)
+            with _open_dataset(temp_nc_file, decode_times=False) as ds:
+                _prepare_for_zarr(ds)
+                ds.to_zarr(local_zarr_path, mode="w", consolidated=True)
             print(f"Zarr store created with decode_times=False: {local_zarr_path}")
         except Exception as e2:
             print(f"Failed again: {e2}")

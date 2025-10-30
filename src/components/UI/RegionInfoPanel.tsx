@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { ChevronDown, X, MapPin } from 'lucide-react';
+import { ChevronDown, X, MapPin, Calendar } from 'lucide-react';
 import { RegionInfoPanelProps } from '@/types';
 import {
   ResponsiveContainer,
@@ -18,6 +18,8 @@ type SeriesPoint = {
   date: string;
   value: number | null;
 };
+
+type DateRangeOption = 'all' | '1year' | '6months' | '3months' | '1month' | 'custom';
 
 const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   show,
@@ -56,6 +58,11 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   const [timeseriesError, setTimeseriesError] = useState<string | null>(null);
   const [timeseriesSeries, setTimeseriesSeries] = useState<SeriesPoint[]>([]);
   const [timeseriesUnits, setTimeseriesUnits] = useState<string | null>(null);
+  
+  // Date range selection state
+  const [dateRangeOption, setDateRangeOption] = useState<DateRangeOption>('1year');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
 
   const datasetUnit = regionData.unit ?? currentDataset?.units ?? 'units';
 
@@ -87,6 +94,12 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     const dateStr = currentDataset.backend?.endDate ?? currentDataset.endDate;
     const parsed = new Date(dateStr);
     return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }, [currentDataset]);
+
+  // Determine if this is a high-frequency dataset (CMORPH or NDVI)
+  const isHighFrequencyDataset = useMemo(() => {
+    const datasetName = (currentDataset?.name || '').toLowerCase();
+    return datasetName.includes('cmorph') || datasetName.includes('vegetation') || datasetName.includes('ndvi');
   }, [currentDataset]);
 
   useEffect(() => {
@@ -209,118 +222,206 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     }));
   }, [timeseriesSeries]);
 
+  // Calculate date range based on selected option
+  const calculateDateRange = (): { start: Date; end: Date } => {
+    let targetDate = selectedDate ?? datasetEnd ?? new Date();
+
+    if (datasetStart && targetDate < datasetStart) {
+      targetDate = datasetStart;
+    }
+    if (datasetEnd && targetDate > datasetEnd) {
+      targetDate = datasetEnd;
+    }
+
+    let startDate: Date;
+    let endDate: Date;
+
+    // For high-frequency datasets (CMORPH, NDVI), always use the selected month
+    if (isHighFrequencyDataset) {
+      startDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
+      endDate = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0, 23, 59, 59);
+    } else {
+      // For regular datasets, use the selected range option
+      switch (dateRangeOption) {
+        case 'all':
+          startDate = datasetStart ?? new Date(targetDate.getFullYear() - 10, 0, 1);
+          endDate = datasetEnd ?? targetDate;
+          break;
+        
+        case '1year':
+          startDate = new Date(targetDate.getFullYear() - 1, targetDate.getMonth(), 1);
+          endDate = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0, 23, 59, 59);
+          break;
+        
+        case '6months':
+          startDate = new Date(targetDate.getFullYear(), targetDate.getMonth() - 6, 1);
+          endDate = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0, 23, 59, 59);
+          break;
+        
+        case '3months':
+          startDate = new Date(targetDate.getFullYear(), targetDate.getMonth() - 3, 1);
+          endDate = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0, 23, 59, 59);
+          break;
+        
+        case '1month':
+          startDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
+          endDate = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0, 23, 59, 59);
+          break;
+        
+        case 'custom':
+          if (customStartDate && customEndDate) {
+            startDate = new Date(customStartDate);
+            endDate = new Date(customEndDate);
+            endDate.setHours(23, 59, 59, 999);
+          } else {
+            // Fallback to 1 year if custom dates not set
+            startDate = new Date(targetDate.getFullYear() - 1, targetDate.getMonth(), 1);
+            endDate = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0, 23, 59, 59);
+          }
+          break;
+        
+        default:
+          startDate = new Date(targetDate.getFullYear() - 1, targetDate.getMonth(), 1);
+          endDate = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0, 23, 59, 59);
+      }
+    }
+
+    // Clamp to dataset bounds
+    if (datasetStart && startDate < datasetStart) {
+      startDate = datasetStart;
+    }
+    if (datasetEnd && endDate > datasetEnd) {
+      endDate = datasetEnd;
+    }
+
+    return { start: startDate, end: endDate };
+  };
+
   // Dynamic timeseries handler using your backend API
   const handleTimeseriesClick = async () => {
-  setTimeseriesOpen(true);
+    setTimeseriesOpen(true);
 
-  // Check if we have a valid dataset ID
-  if (!datasetId) {
-    console.error('[Timeseries] No dataset ID found');
-    console.log('[Timeseries] currentDataset:', currentDataset);
-    setTimeseriesError('No dataset selected. Please select a dataset from the sidebar.');
-    setTimeseriesSeries([]);
-    setTimeseriesUnits(null);
-    return;
-  }
-
-  // Use selectedDate or fallback to dataset end date
-  let targetDate = selectedDate ?? datasetEnd ?? new Date();
-
-  if (datasetStart && targetDate < datasetStart) {
-    targetDate = datasetStart;
-  }
-  if (datasetEnd && targetDate > datasetEnd) {
-    targetDate = datasetEnd;
-  }
-
-  // Calculate date range (e.g., full month for the selected date)
-  const startOfMonth = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
-  const endOfMonth = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0);
-
-  setTimeseriesLoading(true);
-  setTimeseriesError(null);
-
-  try {
-    // Format coordinates string for focusCoordinates parameter
-    const focusCoords = `${latitude},${longitude}`;
-
-    const payload = {
-      datasetIds: [datasetId],
-      startDate: startOfMonth.toISOString().split('T')[0],
-      endDate: endOfMonth.toISOString().split('T')[0],
-      focusCoordinates: focusCoords,
-      aggregation: 'mean',
-      includeStatistics: false,
-      includeMetadata: true,
-    };
-
-    console.log('[Timeseries] Request payload:', payload);
-    console.log('[Timeseries] Fetching from: /api/v2/timeseries/extract');
-
-    const response = await fetch('http://localhost:8000/api/v2/timeseries/extract', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-
-    console.log('[Timeseries] Response status:', response.status);
-    console.log('[Timeseries] Response headers:', response.headers);
-
-    // Check content type before parsing
-    const contentType = response.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-      const text = await response.text();
-      console.error('[Timeseries] Non-JSON response:', text.substring(0, 500));
-      throw new Error(`Server returned ${response.status}: ${response.statusText}. Expected JSON but got ${contentType}`);
+    // Check if we have a valid dataset ID
+    if (!datasetId) {
+      console.error('[Timeseries] No dataset ID found');
+      console.log('[Timeseries] currentDataset:', currentDataset);
+      setTimeseriesError('No dataset selected. Please select a dataset from the sidebar.');
+      setTimeseriesSeries([]);
+      setTimeseriesUnits(null);
+      return;
     }
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData?.detail || `Request failed with status ${response.status}`);
+    const { start: startDate, end: endDate } = calculateDateRange();
+
+    setTimeseriesLoading(true);
+    setTimeseriesError(null);
+
+    try {
+      // Format coordinates string for focusCoordinates parameter
+      const focusCoords = `${latitude},${longitude}`;
+
+      // Format dates as YYYY-MM-DD (backend expects this format)
+      const formatDate = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+
+      const payload = {
+        datasetIds: [datasetId],
+        startDate: formatDate(startDate),
+        endDate: formatDate(endDate),
+        focusCoordinates: focusCoords,
+        aggregation: 'mean',
+        includeStatistics: false,
+        includeMetadata: true,
+      };
+
+      console.log('[Timeseries] Request payload:', payload);
+      console.log('[Timeseries] Date range:', {
+        startDate: formatDate(startDate),
+        endDate: formatDate(endDate),
+        rangeOption: isHighFrequencyDataset ? 'single-month' : dateRangeOption,
+        datasetType: isHighFrequencyDataset ? 'high-frequency' : 'regular'
+      });
+      console.log('[Timeseries] Fetching from: /api/v2/timeseries/extract');
+
+      const response = await fetch('http://localhost:8000/api/v2/timeseries/extract', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      console.log('[Timeseries] Response status:', response.status);
+      console.log('[Timeseries] Response headers:', response.headers);
+
+      // Check content type before parsing
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('[Timeseries] Non-JSON response:', text.substring(0, 500));
+        throw new Error(`Server returned ${response.status}: ${response.statusText}. Expected JSON but got ${contentType}`);
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData?.detail || `Request failed with status ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('[Timeseries] Full API Response:', result);
+      console.log('[Timeseries] Data array length:', result?.data?.length);
+      console.log('[Timeseries] First 3 data points:', result?.data?.slice(0, 3));
+      console.log('[Timeseries] Processing info:', result?.processingInfo);
+
+      // Extract data from API response
+      if (!result?.data || !Array.isArray(result.data)) {
+        throw new Error('Invalid response format');
+      }
+      
+      // Transform API response to SeriesPoint format
+      const series: SeriesPoint[] = result.data.map((point: any) => ({
+        date: point.date,
+        value: point.values?.[datasetId] ?? null,
+      }));
+      
+      console.log('[Timeseries] Transformed series length:', series.length);
+      console.log('[Timeseries] First 3 series points:', series.slice(0, 3));
+      console.log('[Timeseries] Non-null values:', series.filter(p => p.value !== null).length);
+
+      // Get units from metadata
+      const units = result.metadata?.[datasetId]?.units ?? datasetUnit;
+
+      setTimeseriesSeries(series);
+      setTimeseriesUnits(units);
+
+      console.log(`[Timeseries] Loaded ${series.length} data points for ${currentDataset?.name}`);
+      console.log(`[Timeseries] Date range: ${series[0]?.date} to ${series[series.length - 1]?.date}`);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to load timeseries';
+      console.error('[Timeseries] Error:', message);
+      setTimeseriesError(message);
+      setTimeseriesSeries([]);
+      setTimeseriesUnits(null);
+    } finally {
+      setTimeseriesLoading(false);
     }
+  };
 
-    const result = await response.json();
-    console.log('[Timeseries] Response:', result);
-
-    // Extract data from API response
-    if (!result?.data || !Array.isArray(result.data)) {
-      throw new Error('Invalid response format');
-    }
-    
-    // Transform API response to SeriesPoint format
-    const series: SeriesPoint[] = result.data.map((point: any) => ({
-      date: point.date,
-      value: point.values?.[datasetId] ?? null,
-    }));
-
-    // Get units from metadata
-    const units = result.metadata?.[datasetId]?.units ?? datasetUnit;
-
-    setTimeseriesSeries(series);
-    setTimeseriesUnits(units);
-
-    console.log(`[Timeseries] Loaded ${series.length} data points for ${currentDataset?.name}`);
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : 'Failed to load timeseries';
-    console.error('[Timeseries] Error:', message);
-    setTimeseriesError(message);
-    setTimeseriesSeries([]);
-    setTimeseriesUnits(null);
-  } finally {
-    setTimeseriesLoading(false);
-  }
-};
   // Add this right before "if (!show) return null;"
   console.log('[RegionInfoPanel] Debug info:', {
-  currentDataset: currentDataset,
-  datasetId: datasetId,
-  hasBackend: !!currentDataset?.backend,
-  backendId: currentDataset?.backend?.id,
-  directId: currentDataset?.id,
-});
+    currentDataset: currentDataset,
+    datasetId: datasetId,
+    hasBackend: !!currentDataset?.backend,
+    backendId: currentDataset?.backend?.id,
+    directId: currentDataset?.id,
+    isHighFrequency: isHighFrequencyDataset,
+    dateRangeOption: dateRangeOption,
+  });
 
   if (!show) return null;
 
@@ -447,7 +548,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
           onClick={() => setTimeseriesOpen(false)}
         >
           <div
-            className="relative w-full max-w-3xl rounded-xl border border-gray-700 bg-gray-900/95 p-6 text-gray-200 shadow-2xl"
+            className="relative w-full max-w-4xl rounded-xl border border-gray-700 bg-gray-900/95 p-6 text-gray-200 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -458,21 +559,72 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
             >
               <X className="h-4 w-4" />
             </button>
+            
             <div className="mb-4">
               <h2 className="text-lg font-semibold text-white">
                 {currentDataset?.name || 'Time Series'}
               </h2>
               <p className="text-sm text-gray-400">
-                {latitude.toFixed(2)}°, {longitude.toFixed(2)}° ·{' '}
-                {selectedDate
-                  ? `${selectedDate.getFullYear()}-${String(
-                      selectedDate.getMonth() + 1
-                    ).padStart(2, '0')}`
-                  : 'Select a date'}
+                {latitude.toFixed(2)}°, {longitude.toFixed(2)}°
               </p>
             </div>
 
-            <div className="relative h-72 w-full overflow-hidden rounded-lg border border-gray-700/50 bg-gray-900/50">
+            {/* Date Range Selector - Only show for non-high-frequency datasets */}
+            {!isHighFrequencyDataset && (
+              <div className="mb-4 space-y-2">
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-300">
+                  <Calendar className="h-4 w-4" />
+                  Date Range
+                </label>
+                
+                <div className="flex flex-wrap gap-2">
+                  <select
+                    value={dateRangeOption}
+                    onChange={(e) => setDateRangeOption(e.target.value as DateRangeOption)}
+                    className="rounded-lg border border-gray-600/40 bg-gray-800 px-3 py-2 text-sm text-gray-200 transition-colors hover:border-gray-500/60 focus:border-blue-500 focus:outline-none"
+                  >
+                    <option value="1month">1 Month</option>
+                    <option value="3months">3 Months</option>
+                    <option value="6months">6 Months</option>
+                    <option value="1year">1 Year</option>
+                    <option value="all">All Available Data</option>
+                    <option value="custom">Custom Range</option>
+                  </select>
+
+                  {dateRangeOption === 'custom' && (
+                    <>
+                      <input
+                        type="date"
+                        value={customStartDate}
+                        onChange={(e) => setCustomStartDate(e.target.value)}
+                        min={datasetStart?.toISOString().split('T')[0]}
+                        max={datasetEnd?.toISOString().split('T')[0]}
+                        className="rounded-lg border border-gray-600/40 bg-gray-800 px-3 py-2 text-sm text-gray-200 transition-colors hover:border-gray-500/60 focus:border-blue-500 focus:outline-none"
+                      />
+                      <span className="flex items-center text-gray-400">to</span>
+                      <input
+                        type="date"
+                        value={customEndDate}
+                        onChange={(e) => setCustomEndDate(e.target.value)}
+                        min={customStartDate || datasetStart?.toISOString().split('T')[0]}
+                        max={datasetEnd?.toISOString().split('T')[0]}
+                        className="rounded-lg border border-gray-600/40 bg-gray-800 px-3 py-2 text-sm text-gray-200 transition-colors hover:border-gray-500/60 focus:border-blue-500 focus:outline-none"
+                      />
+                    </>
+                  )}
+                  
+                  <button
+                    onClick={handleTimeseriesClick}
+                    className="rounded-lg border border-blue-500/50 bg-blue-600/20 px-4 py-2 text-sm font-medium text-blue-300 transition-colors hover:border-blue-400 hover:bg-blue-600/30"
+                    disabled={timeseriesLoading}
+                  >
+                    {timeseriesLoading ? 'Loading...' : 'Update'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="relative h-80 w-full overflow-hidden rounded-lg border border-gray-700/50 bg-gray-900/50">
               {timeseriesLoading ? (
                 <div className="flex h-full w-full items-center justify-center text-sm text-gray-400">
                   Loading timeseries...
