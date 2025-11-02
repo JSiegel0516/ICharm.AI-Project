@@ -1,27 +1,27 @@
-import { db } from './db/index';
-import { user, chatSession, chatMessage } from './db/schema';
-import { eq, desc, and } from 'drizzle-orm';
-import { randomUUID } from 'crypto';
+import { db } from "./db/index";
+import { user, chatSession, chatMessage } from "./db/schema";
+import { eq, desc, and } from "drizzle-orm";
+import { randomUUID } from "crypto";
 
 export type ChatSession = {
   id: string;
-  userId: string;      // Changed from user_id
+  userId: string; // Changed from user_id
   title?: string;
-  createdAt: Date;     // Changed from created_at
-  updatedAt: Date;     // Changed from updated_at
+  createdAt: Date; // Changed from created_at
+  updatedAt: Date; // Changed from updated_at
 };
 
 export type ChatUser = {
   id: string;
   email: string;
-  createdAt: Date;     // Changed from created_at
-  updatedAt: Date;     // Changed from updated_at
+  createdAt: Date; // Changed from created_at
+  updatedAt: Date; // Changed from updated_at
 };
 
 export type ChatMessage = {
   id: string;
-  sessionId: string;   // Changed from session_id
-  role: 'system' | 'user' | 'assistant';
+  sessionId: string; // Changed from session_id
+  role: "system" | "user" | "assistant";
   content: string;
   sources?: Array<{
     id: string;
@@ -29,13 +29,14 @@ export type ChatMessage = {
     category?: string;
     score: number;
   }>;
-  createdAt: Date;     // Changed from created_at
+  createdAt: Date; // Changed from created_at
 };
 
 export class ChatDB {
   // Ensure a user exists for the provided email, creating one if necessary.
   static async getOrCreateUserByEmail(email: string): Promise<ChatUser> {
-    const existing = await db.select()
+    const existing = await db
+      .select()
       .from(user)
       .where(eq(user.email, email))
       .limit(1);
@@ -44,7 +45,8 @@ export class ChatDB {
       return existing[0] as ChatUser;
     }
 
-    const created = await db.insert(user)
+    const created = await db
+      .insert(user)
       .values({
         id: randomUUID(),
         email: email,
@@ -56,8 +58,12 @@ export class ChatDB {
   }
 
   // Create a new chat session
-  static async createSession(userId: string, title?: string): Promise<ChatSession> {
-    const result = await db.insert(chatSession)
+  static async createSession(
+    userId: string,
+    title?: string,
+  ): Promise<ChatSession> {
+    const result = await db
+      .insert(chatSession)
       .values({
         id: randomUUID(),
         userId: userId,
@@ -70,7 +76,8 @@ export class ChatDB {
 
   // Get all sessions for a user
   static async getUserSessions(userId: string): Promise<ChatSession[]> {
-    const result = await db.select()
+    const result = await db
+      .select()
       .from(chatSession)
       .where(eq(chatSession.userId, userId))
       .orderBy(desc(chatSession.updatedAt));
@@ -79,54 +86,54 @@ export class ChatDB {
   }
 
   // Get a specific session
-  static async getSession(sessionId: string, userId: string): Promise<ChatSession | null> {
-    const result = await db.select()
+  static async getSession(
+    sessionId: string,
+    userId: string,
+  ): Promise<ChatSession | null> {
+    const result = await db
+      .select()
       .from(chatSession)
-      .where(
-        and(
-          eq(chatSession.id, sessionId),
-          eq(chatSession.userId, userId)
-        )
-      )
+      .where(and(eq(chatSession.id, sessionId), eq(chatSession.userId, userId)))
       .limit(1);
 
-    return result.length > 0 ? result[0] as ChatSession : null;
+    return result.length > 0 ? (result[0] as ChatSession) : null;
   }
 
   // Update session title
-  static async updateSessionTitle(sessionId: string, userId: string, title: string): Promise<void> {
-    await db.update(chatSession)
-      .set({ 
+  static async updateSessionTitle(
+    sessionId: string,
+    userId: string,
+    title: string,
+  ): Promise<void> {
+    await db
+      .update(chatSession)
+      .set({
         title: title,
-        updatedAt: new Date()
+        updatedAt: new Date(),
       })
       .where(
-        and(
-          eq(chatSession.id, sessionId),
-          eq(chatSession.userId, userId)
-        )
+        and(eq(chatSession.id, sessionId), eq(chatSession.userId, userId)),
       );
   }
 
   // Delete a session (will cascade delete messages)
   static async deleteSession(sessionId: string, userId: string): Promise<void> {
-    await db.delete(chatSession)
+    await db
+      .delete(chatSession)
       .where(
-        and(
-          eq(chatSession.id, sessionId),
-          eq(chatSession.userId, userId)
-        )
+        and(eq(chatSession.id, sessionId), eq(chatSession.userId, userId)),
       );
   }
 
   // Add a message to a session
   static async addMessage(
     sessionId: string,
-    role: 'system' | 'user' | 'assistant',
+    role: "system" | "user" | "assistant",
     content: string,
-    sources?: ChatMessage['sources']
+    sources?: ChatMessage["sources"],
   ): Promise<ChatMessage> {
-    const result = await db.insert(chatMessage)
+    const result = await db
+      .insert(chatMessage)
       .values({
         id: randomUUID(),
         sessionId: sessionId,
@@ -137,7 +144,8 @@ export class ChatDB {
       .returning();
 
     // Update session's updated_at timestamp
-    await db.update(chatSession)
+    await db
+      .update(chatSession)
       .set({ updatedAt: new Date() })
       .where(eq(chatSession.id, sessionId));
 
@@ -146,7 +154,8 @@ export class ChatDB {
 
   // Get all messages for a session
   static async getSessionMessages(sessionId: string): Promise<ChatMessage[]> {
-    const result = await db.select()
+    const result = await db
+      .select()
       .from(chatMessage)
       .where(eq(chatMessage.sessionId, sessionId))
       .orderBy(chatMessage.createdAt);
@@ -156,13 +165,11 @@ export class ChatDB {
 
   // Delete a specific message
   static async deleteMessage(messageId: string): Promise<void> {
-    await db.delete(chatMessage)
-      .where(eq(chatMessage.id, messageId));
+    await db.delete(chatMessage).where(eq(chatMessage.id, messageId));
   }
 
   // Clear all messages in a session
   static async clearSessionMessages(sessionId: string): Promise<void> {
-    await db.delete(chatMessage)
-      .where(eq(chatMessage.sessionId, sessionId));
+    await db.delete(chatMessage).where(eq(chatMessage.sessionId, sessionId));
   }
 }

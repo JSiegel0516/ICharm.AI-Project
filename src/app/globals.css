@@ -60,7 +60,6 @@
    Base Layer
 -------------------------- */
 @layer base {
-
   *,
   ::after,
   ::before,
@@ -161,7 +160,7 @@
 }
 
 @utility tooltip {
-  @apply pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 transform whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100;
+  @apply pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 transform rounded bg-gray-800 px-2 py-1 text-xs whitespace-nowrap text-white opacity-0 transition-opacity group-hover:opacity-100;
 }
 
 @utility modal-overlay {
@@ -189,7 +188,7 @@
 }
 
 @utility btn-hover {
-  @apply pointer-events-none absolute left-12 whitespace-nowrap rounded-xl bg-neutral-900/95 px-3 py-1.5 text-sm text-gray-100 opacity-0 transition-opacity;
+  @apply pointer-events-none absolute left-12 rounded-xl bg-neutral-900/95 px-3 py-1.5 text-sm whitespace-nowrap text-gray-100 opacity-0 transition-opacity;
 }
 
 /* -------------------------

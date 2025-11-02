@@ -1,36 +1,36 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import { Download } from 'lucide-react';
+import React, { useState } from "react";
+import { Download } from "lucide-react";
 
 const DatasetPanel: React.FC = () => {
-  const [selectedPressure, setSelectedPressure] = useState('1000.0');
+  const [selectedPressure, setSelectedPressure] = useState("1000.0");
 
   const pressureLevels = [
-    '1000.0',
-    '950.0',
-    '900.0',
-    '850.0',
-    '800.0',
-    '750.0',
-    '700.0',
-    '650.0',
-    '600.0',
-    '550.0',
-    '500.0',
-    '450.0',
-    '400.0',
-    '350.0',
-    '300.0',
-    '250.0',
-    '200.0',
-    '150.0',
-    '100.0',
-    '70.0',
-    '50.0',
-    '30.0',
-    '20.0',
-    '10.0',
+    "1000.0",
+    "950.0",
+    "900.0",
+    "850.0",
+    "800.0",
+    "750.0",
+    "700.0",
+    "650.0",
+    "600.0",
+    "550.0",
+    "500.0",
+    "450.0",
+    "400.0",
+    "350.0",
+    "300.0",
+    "250.0",
+    "200.0",
+    "150.0",
+    "100.0",
+    "70.0",
+    "50.0",
+    "30.0",
+    "20.0",
+    "10.0",
   ];
 
   return (
@@ -52,14 +52,14 @@ const DatasetPanel: React.FC = () => {
               onClick={() => setSelectedPressure(level)}
               className={`group flex w-full items-center justify-between rounded-xl p-3 transition-all duration-200 ${
                 selectedPressure === level
-                  ? 'bg-linear-to-r from-blue-600 to-purple-600 text-white shadow-lg'
-                  : 'border border-blue-600/30 bg-blue-800/30 text-blue-100 hover:border-blue-500/50 hover:bg-blue-700/50 hover:text-white'
+                  ? "bg-linear-to-r from-blue-600 to-purple-600 text-white shadow-lg"
+                  : "border border-blue-600/30 bg-blue-800/30 text-blue-100 hover:border-blue-500/50 hover:bg-blue-700/50 hover:text-white"
               }`}
             >
               <span className="font-medium">{level} millibar</span>
               <div
                 className={`h-2 w-2 rounded-full transition-colors ${
-                  selectedPressure === level ? 'bg-white' : 'bg-blue-400'
+                  selectedPressure === level ? "bg-white" : "bg-blue-400"
                 }`}
               />
             </button>

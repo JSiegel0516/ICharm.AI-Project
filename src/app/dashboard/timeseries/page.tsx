@@ -1,23 +1,23 @@
-'use client';
+"use client";
 
-import React from 'react';
-import { AppSidebar } from '@/app/dashboard/_components/app-sidebar';
-import { SiteHeader } from '@/app/dashboard/_components/site-header';
-import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
+import React from "react";
+import { AppSidebar } from "@/app/dashboard/_components/app-sidebar";
+import { SiteHeader } from "@/app/dashboard/_components/site-header";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
+} from "@/components/ui/card";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
-} from '@/components/ui/resizable';
-import { useState, useEffect, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+} from "@/components/ui/resizable";
+import { useState, useEffect, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
   Download,
@@ -29,19 +29,19 @@ import {
   Activity,
   TrendingUp,
   Zap,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { ScrollArea } from '@/components/ui/scroll-area';
+} from "@/components/ui/select";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Table,
   TableBody,
@@ -49,7 +49,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
+} from "@/components/ui/table";
 
 // Import Recharts components
 import {
@@ -65,7 +65,7 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-} from 'recharts';
+} from "recharts";
 
 interface Dataset {
   id: string;
@@ -93,115 +93,115 @@ interface AnalysisModel {
 
 const DATASETS: Dataset[] = [
   {
-    id: 'temp-global',
-    name: 'Global Temperature',
-    description: 'Global average temperature anomalies',
-    category: 'Climate',
-    startDate: '1880-01-01',
-    endDate: '2023-12-31',
-    frequency: 'Monthly',
-    source: 'NASA GISS',
-    color: '#ef4444',
+    id: "temp-global",
+    name: "Global Temperature",
+    description: "Global average temperature anomalies",
+    category: "Climate",
+    startDate: "1880-01-01",
+    endDate: "2023-12-31",
+    frequency: "Monthly",
+    source: "NASA GISS",
+    color: "#ef4444",
   },
   {
-    id: 'co2-mauna-loa',
-    name: 'CO2 Concentration',
-    description: 'Atmospheric CO2 measurements from Mauna Loa',
-    category: 'Atmosphere',
-    startDate: '1958-03-01',
-    endDate: '2023-12-31',
-    frequency: 'Monthly',
-    source: 'NOAA',
-    color: '#3b82f6',
+    id: "co2-mauna-loa",
+    name: "CO2 Concentration",
+    description: "Atmospheric CO2 measurements from Mauna Loa",
+    category: "Atmosphere",
+    startDate: "1958-03-01",
+    endDate: "2023-12-31",
+    frequency: "Monthly",
+    source: "NOAA",
+    color: "#3b82f6",
   },
   {
-    id: 'arctic-ice',
-    name: 'Arctic Sea Ice',
-    description: 'Arctic sea ice extent measurements',
-    category: 'Cryosphere',
-    startDate: '1979-01-01',
-    endDate: '2023-12-31',
-    frequency: 'Monthly',
-    source: 'NSIDC',
-    color: '#06b6d4',
+    id: "arctic-ice",
+    name: "Arctic Sea Ice",
+    description: "Arctic sea ice extent measurements",
+    category: "Cryosphere",
+    startDate: "1979-01-01",
+    endDate: "2023-12-31",
+    frequency: "Monthly",
+    source: "NSIDC",
+    color: "#06b6d4",
   },
   {
-    id: 'precipitation-global',
-    name: 'Global Precipitation',
-    description: 'Global precipitation anomalies',
-    category: 'Hydrology',
-    startDate: '1900-01-01',
-    endDate: '2023-12-31',
-    frequency: 'Monthly',
-    source: 'GPCC',
-    color: '#10b981',
+    id: "precipitation-global",
+    name: "Global Precipitation",
+    description: "Global precipitation anomalies",
+    category: "Hydrology",
+    startDate: "1900-01-01",
+    endDate: "2023-12-31",
+    frequency: "Monthly",
+    source: "GPCC",
+    color: "#10b981",
   },
   {
-    id: 'sea-level',
-    name: 'Global Sea Level',
-    description: 'Global mean sea level rise',
-    category: 'Oceans',
-    startDate: '1993-01-01',
-    endDate: '2023-12-31',
-    frequency: 'Monthly',
-    source: 'NASA',
-    color: '#8b5cf6',
+    id: "sea-level",
+    name: "Global Sea Level",
+    description: "Global mean sea level rise",
+    category: "Oceans",
+    startDate: "1993-01-01",
+    endDate: "2023-12-31",
+    frequency: "Monthly",
+    source: "NASA",
+    color: "#8b5cf6",
   },
 ];
 
 const ANALYSIS_MODELS: AnalysisModel[] = [
   {
-    id: 'raw',
-    name: 'Raw Data',
-    description: 'Original data without processing',
+    id: "raw",
+    name: "Raw Data",
+    description: "Original data without processing",
     icon: Activity,
   },
   {
-    id: 'moving-avg',
-    name: 'Moving Average',
-    description: '12-month moving average smoothing',
+    id: "moving-avg",
+    name: "Moving Average",
+    description: "12-month moving average smoothing",
     icon: TrendingUp,
   },
   {
-    id: 'trend',
-    name: 'Trend Analysis',
-    description: 'Linear trend line fitting',
+    id: "trend",
+    name: "Trend Analysis",
+    description: "Linear trend line fitting",
     icon: TrendingUp,
   },
   {
-    id: 'anomaly',
-    name: 'Anomaly Detection',
-    description: 'Statistical anomaly identification',
+    id: "anomaly",
+    name: "Anomaly Detection",
+    description: "Statistical anomaly identification",
     icon: Zap,
   },
   {
-    id: 'seasonal',
-    name: 'Seasonal Decomposition',
-    description: 'Separate seasonal patterns',
+    id: "seasonal",
+    name: "Seasonal Decomposition",
+    description: "Separate seasonal patterns",
     icon: Activity,
   },
 ];
 
 export default function TimeSeriesPage() {
   const [selectedDatasets, setSelectedDatasets] = useState<Dataset[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("All");
   const [visibleDatasets, setVisibleDatasets] = useState<Set<string>>(
-    new Set()
+    new Set(),
   );
   const [dateRange, setDateRange] = useState({
-    start: '1950-01-01',
-    end: '2023-12-31',
+    start: "1950-01-01",
+    end: "2023-12-31",
   });
-  const [chartType, setChartType] = useState<'line' | 'bar' | 'area'>('line');
+  const [chartType, setChartType] = useState<"line" | "bar" | "area">("line");
   const [normalize, setNormalize] = useState(false);
-  const [analysisModel, setAnalysisModel] = useState('raw');
+  const [analysisModel, setAnalysisModel] = useState("raw");
   const [timeSeriesData, setTimeSeriesData] = useState<TimeSeriesPoint[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   const categories = useMemo(
-    () => ['All', ...new Set(DATASETS.map((d) => d.category))],
-    []
+    () => ["All", ...new Set(DATASETS.map((d) => d.category))],
+    [],
   );
 
   const filteredDatasets = useMemo(() => {
@@ -210,7 +210,7 @@ export default function TimeSeriesPage() {
         dataset.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         dataset.description.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCategory =
-        selectedCategory === 'All' || dataset.category === selectedCategory;
+        selectedCategory === "All" || dataset.category === selectedCategory;
       return matchesSearch && matchesCategory;
     });
   }, [searchTerm, selectedCategory]);
@@ -244,14 +244,14 @@ export default function TimeSeriesPage() {
 
   const applyAnalysisModel = (data: number[], model: string): number[] => {
     switch (model) {
-      case 'moving-avg':
+      case "moving-avg":
         return data.map((val, idx, arr) => {
           const window = 12;
           const start = Math.max(0, idx - window + 1);
           const subset = arr.slice(start, idx + 1);
           return subset.reduce((a, b) => a + b, 0) / subset.length;
         });
-      case 'trend':
+      case "trend":
         const n = data.length;
         const sumX = (n * (n - 1)) / 2;
         const sumY = data.reduce((a, b) => a + b, 0);
@@ -260,19 +260,19 @@ export default function TimeSeriesPage() {
         const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
         const intercept = (sumY - slope * sumX) / n;
         return data.map((_, x) => slope * x + intercept);
-      case 'anomaly':
+      case "anomaly":
         const mean = data.reduce((a, b) => a + b, 0) / data.length;
         const std = Math.sqrt(
           data.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) /
-            data.length
+            data.length,
         );
         return data.map((val) => (Math.abs(val - mean) > 2 * std ? val : mean));
-      case 'seasonal':
+      case "seasonal":
         const seasonality = 12;
         return data.map((val, idx) => {
           const seasonIdx = idx % seasonality;
           const seasonVals = data.filter(
-            (_, i) => i % seasonality === seasonIdx
+            (_, i) => i % seasonality === seasonIdx,
           );
           const seasonMean =
             seasonVals.reduce((a, b) => a + b, 0) / seasonVals.length;
@@ -293,7 +293,7 @@ export default function TimeSeriesPage() {
 
       while (currentDate <= endDate) {
         const point: TimeSeriesPoint = {
-          date: currentDate.toISOString().split('T')[0],
+          date: currentDate.toISOString().split("T")[0],
           values: {},
         };
 
@@ -304,22 +304,22 @@ export default function TimeSeriesPage() {
           let value = 0;
 
           switch (dataset.id) {
-            case 'temp-global':
+            case "temp-global":
               value = 14 + timeFactor * 1.2 + Math.random() * 0.5;
               break;
-            case 'co2-mauna-loa':
+            case "co2-mauna-loa":
               value = 310 + timeFactor * 100 + Math.random() * 2;
               break;
-            case 'arctic-ice':
+            case "arctic-ice":
               value = 12 - timeFactor * 4 + Math.random() * 1;
               break;
-            case 'precipitation-global':
+            case "precipitation-global":
               value =
                 100 +
                 Math.sin(timeFactor * Math.PI * 2) * 20 +
                 Math.random() * 10;
               break;
-            case 'sea-level':
+            case "sea-level":
               value = timeFactor * 100 + Math.random() * 2;
               break;
             default:
@@ -368,11 +368,11 @@ export default function TimeSeriesPage() {
           let rawValue = point.values[datasetId] || 0;
           // Apply analysis model to individual dataset
           const datasetValues = timeSeriesData.map(
-            (p) => p.values[datasetId] || 0
+            (p) => p.values[datasetId] || 0,
           );
           const processedValues = applyAnalysisModel(
             datasetValues,
-            analysisModel
+            analysisModel,
           );
           const value = normalize
             ? normalizeData(processedValues)[timeSeriesData.indexOf(point)]
@@ -395,21 +395,21 @@ export default function TimeSeriesPage() {
 
   const downloadData = () => {
     if (timeSeriesData.length === 0) return;
-    const headers = ['Date', ...selectedDatasets.map((d) => d.name)];
+    const headers = ["Date", ...selectedDatasets.map((d) => d.name)];
     const csvContent = [
-      headers.join(','),
+      headers.join(","),
       ...timeSeriesData.map((point) =>
         [
           point.date,
-          ...selectedDatasets.map((dataset) => point.values[dataset.id] || ''),
-        ].join(',')
+          ...selectedDatasets.map((dataset) => point.values[dataset.id] || ""),
+        ].join(","),
       ),
-    ].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv' });
+    ].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv" });
     const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = 'timeseries-comparison.csv';
+    a.download = "timeseries-comparison.csv";
     a.click();
     window.URL.revokeObjectURL(url);
   };
@@ -434,7 +434,7 @@ export default function TimeSeriesPage() {
   // Render appropriate chart based on type
   const renderChart = () => {
     const visibleDatasetsList = selectedDatasets.filter((dataset) =>
-      visibleDatasets.has(dataset.id)
+      visibleDatasets.has(dataset.id),
     );
 
     const commonProps = {
@@ -451,7 +451,7 @@ export default function TimeSeriesPage() {
     }
 
     switch (chartType) {
-      case 'line':
+      case "line":
         return (
           <LineChart {...commonProps}>
             <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
@@ -460,9 +460,9 @@ export default function TimeSeriesPage() {
               tick={{ fontSize: 12 }}
               tickFormatter={(value) => {
                 const date = new Date(value);
-                return date.toLocaleDateString('en-US', {
-                  year: 'numeric',
-                  month: 'short',
+                return date.toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "short",
                 });
               }}
             />
@@ -487,7 +487,7 @@ export default function TimeSeriesPage() {
           </LineChart>
         );
 
-      case 'bar':
+      case "bar":
         return (
           <BarChart {...commonProps}>
             <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
@@ -496,9 +496,9 @@ export default function TimeSeriesPage() {
               tick={{ fontSize: 12 }}
               tickFormatter={(value) => {
                 const date = new Date(value);
-                return date.toLocaleDateString('en-US', {
-                  year: 'numeric',
-                  month: 'short',
+                return date.toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "short",
                 });
               }}
             />
@@ -519,7 +519,7 @@ export default function TimeSeriesPage() {
           </BarChart>
         );
 
-      case 'area':
+      case "area":
         return (
           <AreaChart {...commonProps}>
             <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
@@ -528,9 +528,9 @@ export default function TimeSeriesPage() {
               tick={{ fontSize: 12 }}
               tickFormatter={(value) => {
                 const date = new Date(value);
-                return date.toLocaleDateString('en-US', {
-                  year: 'numeric',
-                  month: 'short',
+                return date.toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "short",
                 });
               }}
             />
@@ -627,10 +627,10 @@ export default function TimeSeriesPage() {
                                 <Card
                                   className={`cursor-pointer transition-all ${
                                     selectedDatasets.find(
-                                      (d) => d.id === dataset.id
+                                      (d) => d.id === dataset.id,
                                     )
-                                      ? 'border-blue-500/50 bg-blue-600/10'
-                                      : 'hover:bg-muted/50'
+                                      ? "border-blue-500/50 bg-blue-600/10"
+                                      : "hover:bg-muted/50"
                                   }`}
                                   onClick={() =>
                                     addDatasetToComparison(dataset)
@@ -722,7 +722,7 @@ export default function TimeSeriesPage() {
                                         size="sm"
                                         onClick={() =>
                                           removeDatasetFromComparison(
-                                            dataset.id
+                                            dataset.id,
                                           )
                                         }
                                         className="text-destructive h-6 w-6 p-0"
@@ -887,10 +887,10 @@ export default function TimeSeriesPage() {
                                     Time Series Comparison
                                   </h3>
                                   <p className="text-muted-foreground text-sm">
-                                    {dateRange.start} to {dateRange.end} •{' '}
+                                    {dateRange.start} to {dateRange.end} •{" "}
                                     {
                                       ANALYSIS_MODELS.find(
-                                        (m) => m.id === analysisModel
+                                        (m) => m.id === analysisModel,
                                       )?.name
                                     }
                                   </p>
@@ -918,8 +918,8 @@ export default function TimeSeriesPage() {
                                     }
                                     className={
                                       !visibleDatasets.has(dataset.id)
-                                        ? 'opacity-50'
-                                        : ''
+                                        ? "opacity-50"
+                                        : ""
                                     }
                                   >
                                     <div
@@ -950,25 +950,25 @@ export default function TimeSeriesPage() {
                           <div className="flex items-start gap-3">
                             {React.createElement(
                               ANALYSIS_MODELS.find(
-                                (m) => m.id === analysisModel
+                                (m) => m.id === analysisModel,
                               )?.icon || Activity,
                               {
                                 size: 20,
-                                className: 'text-primary mt-1 flex-shrink-0',
-                              }
+                                className: "text-primary mt-1 flex-shrink-0",
+                              },
                             )}
                             <div>
                               <p className="font-medium">
                                 {
                                   ANALYSIS_MODELS.find(
-                                    (m) => m.id === analysisModel
+                                    (m) => m.id === analysisModel,
                                   )?.name
                                 }
                               </p>
                               <p className="text-muted-foreground text-sm">
                                 {
                                   ANALYSIS_MODELS.find(
-                                    (m) => m.id === analysisModel
+                                    (m) => m.id === analysisModel,
                                   )?.description
                                 }
                               </p>
@@ -1024,7 +1024,7 @@ export default function TimeSeriesPage() {
                                             <div className="font-mono text-xs">
                                               {point.values[
                                                 dataset.id
-                                              ]?.toFixed(2) || '-'}
+                                              ]?.toFixed(2) || "-"}
                                             </div>
                                           </TableCell>
                                         ))}
@@ -1036,7 +1036,7 @@ export default function TimeSeriesPage() {
                                         colSpan={selectedDatasets.length + 1}
                                         className="text-muted-foreground text-center"
                                       >
-                                        Showing first 50 of{' '}
+                                        Showing first 50 of{" "}
                                         {timeSeriesData.length} rows
                                       </TableCell>
                                     </TableRow>
@@ -1125,9 +1125,9 @@ export default function TimeSeriesPage() {
                                             Trend:
                                           </span>
                                           <span
-                                            className={`font-mono ${trend >= 0 ? 'text-green-600' : 'text-red-600'}`}
+                                            className={`font-mono ${trend >= 0 ? "text-green-600" : "text-red-600"}`}
                                           >
-                                            {trend >= 0 ? '+' : ''}
+                                            {trend >= 0 ? "+" : ""}
                                             {trend.toFixed(2)}
                                           </span>
                                         </div>

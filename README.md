@@ -15,6 +15,22 @@ AI-powered climate data exploration combining interactive visualization, tutoria
 - A Hugging Face access token with permission to run the target LLM.
 - Optional (for embedding script): ability to download the `Xenova/all-MiniLM-L6-v2` model the first time the script runs.
 
+## Common Setup
+
+- Setup [pre-commit](https://pre-commit.com) hooks: `pre-commit install`
+
+# Back-end
+
+## Setup for development:
+
+- Setup a python 3.x venv (usually in `.venv`)
+- `pip3 install --upgrade pip`
+- Install pip-tools `pip3 install pip-tools`
+- Install dev requirements `pip3 install -r requirements.dev.txt`
+- Install requirements `pip3 install -r requirements.txt`
+
+# Front-end
+
 ## Installation
 
 1. Install dependencies:
@@ -54,7 +70,7 @@ Install Docker before attempting to run the database
 2. Start the database (and optional services):
 
    ```
-   docker compose -f docker/docker-compose.yml up -d
+   docker compose -f docker-compose.yml up -d
    ```
 
    After this, run

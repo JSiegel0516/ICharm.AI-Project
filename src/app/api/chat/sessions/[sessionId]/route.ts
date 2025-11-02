@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { ChatDB } from '@/lib/db';
+import { NextRequest, NextResponse } from "next/server";
+import { ChatDB } from "@/lib/db";
 
 const TEST_USER_EMAIL =
-  process.env.TEST_CHAT_USER_EMAIL ?? 'test-user@icharm.local';
+  process.env.TEST_CHAT_USER_EMAIL ?? "test-user@icharm.local";
 
 type RouteParams = {
   params: {
@@ -16,8 +16,8 @@ export async function PATCH(request: NextRequest, ctx: RouteParams) {
 
   if (!sessionId) {
     return NextResponse.json(
-      { error: 'Session id is required' },
-      { status: 400 }
+      { error: "Session id is required" },
+      { status: 400 },
     );
   }
 
@@ -26,10 +26,7 @@ export async function PATCH(request: NextRequest, ctx: RouteParams) {
     const existing = await ChatDB.getSession(sessionId, user.id);
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Session not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
     let payload: { title?: string } = {};
@@ -40,10 +37,7 @@ export async function PATCH(request: NextRequest, ctx: RouteParams) {
     }
 
     if (!payload.title || !payload.title.trim()) {
-      return NextResponse.json(
-        { error: 'Title is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Title is required" }, { status: 400 });
     }
 
     await ChatDB.updateSessionTitle(sessionId, user.id, payload.title.trim());
@@ -54,10 +48,10 @@ export async function PATCH(request: NextRequest, ctx: RouteParams) {
       session: updated,
     });
   } catch (error) {
-    console.error('Failed to rename session', error);
+    console.error("Failed to rename session", error);
     return NextResponse.json(
-      { error: 'Failed to rename session' },
-      { status: 500 }
+      { error: "Failed to rename session" },
+      { status: 500 },
     );
   }
 }
@@ -68,8 +62,8 @@ export async function DELETE(_request: NextRequest, ctx: RouteParams) {
 
   if (!sessionId) {
     return NextResponse.json(
-      { error: 'Session id is required' },
-      { status: 400 }
+      { error: "Session id is required" },
+      { status: 400 },
     );
   }
 
@@ -79,10 +73,10 @@ export async function DELETE(_request: NextRequest, ctx: RouteParams) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Failed to delete session', error);
+    console.error("Failed to delete session", error);
     return NextResponse.json(
-      { error: 'Failed to delete session' },
-      { status: 500 }
+      { error: "Failed to delete session" },
+      { status: 500 },
     );
   }
 }

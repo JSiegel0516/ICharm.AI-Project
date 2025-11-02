@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
-import { MessageCircle, X } from 'lucide-react';
-import ChatPage from '@/components/ui/ChatPage';
+import React, { useState, useEffect } from "react";
+import { MessageCircle, X } from "lucide-react";
+import ChatPage from "@/components/ui/ChatPage";
 
 // Remove ChatBotProps since we're managing state internally
 const ChatBot: React.FC = () => {
@@ -44,10 +44,10 @@ const ChatBot: React.FC = () => {
           onClick={show ? handleClose : handleOpenFullPage}
           className={`fixed right-6 bottom-6 z-50 flex h-14 w-14 items-center justify-center rounded-full border text-white shadow-xl transition-all duration-300 hover:scale-110 hover:shadow-2xl ${
             showFullPage
-              ? 'border-gray-600/30 bg-neutral-800/95 backdrop-blur-sm hover:border-gray-500/50'
-              : 'border-transparent bg-neutral-800 hover:bg-neutral-700'
+              ? "border-gray-600/30 bg-neutral-800/95 backdrop-blur-sm hover:border-gray-500/50"
+              : "border-transparent bg-neutral-800 hover:bg-neutral-700"
           }`}
-          aria-label={show ? 'Close chat' : 'Open chat'}
+          aria-label={show ? "Close chat" : "Open chat"}
         >
           {show ? <X size={24} /> : <MessageCircle size={24} />}
         </button>

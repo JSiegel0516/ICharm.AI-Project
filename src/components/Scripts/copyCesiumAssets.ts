@@ -1,7 +1,7 @@
 // scripts/copy-cesium-assets.ts
-import * as fs from 'fs';
-import * as path from 'path';
-import { promisify } from 'util';
+import * as fs from "fs";
+import * as path from "path";
+import { promisify } from "util";
 
 // Promisify fs methods for async/await usage
 const readdir = promisify(fs.readdir);
@@ -42,7 +42,7 @@ async function removeDirectory(dirPath: string): Promise<void> {
 
 async function copyDirectory(src: string, dest: string): Promise<CopyStats> {
   const stats: CopyStats = { filesCopied: 0, directoriesCreated: 0 };
-  
+
   if (!(await pathExists(src))) {
     throw new Error(`Source directory does not exist: ${src}`);
   }
@@ -66,7 +66,7 @@ async function copyDirectory(src: string, dest: string): Promise<CopyStats> {
     } else if (itemStat.isFile()) {
       // Skip copying the main Cesium.js file as it's handled by webpack
       const relativePath = path.relative(src, srcPath);
-      if (!relativePath.startsWith('Cesium.js')) {
+      if (!relativePath.startsWith("Cesium.js")) {
         await copyFile(srcPath, destPath);
         stats.filesCopied++;
       }
@@ -79,11 +79,17 @@ async function copyDirectory(src: string, dest: string): Promise<CopyStats> {
 async function copyCesiumAssets(): Promise<void> {
   try {
     // Get the project root directory (go up from src/components/Scripts to project root)
-    const projectRoot = path.resolve(__dirname, '..', '..', '..');
-    const cesiumSource: string = path.join(projectRoot, 'node_modules', 'cesium', 'Build', 'Cesium');
-    const cesiumDest: string = path.join(projectRoot, 'public', 'cesium');
+    const projectRoot = path.resolve(__dirname, "..", "..", "..");
+    const cesiumSource: string = path.join(
+      projectRoot,
+      "node_modules",
+      "cesium",
+      "Build",
+      "Cesium",
+    );
+    const cesiumDest: string = path.join(projectRoot, "public", "cesium");
 
-    console.log('Copying Cesium assets...');
+    console.log("Copying Cesium assets...");
     console.log(`Project root: ${projectRoot}`);
     console.log(`From: ${cesiumSource}`);
     console.log(`To: ${cesiumDest}`);
@@ -98,11 +104,18 @@ async function copyCesiumAssets(): Promise<void> {
 
     // Copy assets
     const copyStats = await copyDirectory(cesiumSource, cesiumDest);
-    console.log(`Copied ${copyStats.filesCopied} files and created ${copyStats.directoriesCreated} directories`);
+    console.log(
+      `Copied ${copyStats.filesCopied} files and created ${copyStats.directoriesCreated} directories`,
+    );
 
     // Verify critical directories exist
-    const criticalDirs: string[] = ['Assets', 'Workers', 'ThirdParty', 'Widgets'];
-    
+    const criticalDirs: string[] = [
+      "Assets",
+      "Workers",
+      "ThirdParty",
+      "Widgets",
+    ];
+
     for (const dir of criticalDirs) {
       const dirPath: string = path.join(cesiumDest, dir);
       if (await pathExists(dirPath)) {
@@ -112,9 +125,9 @@ async function copyCesiumAssets(): Promise<void> {
       }
     }
 
-    console.log('Cesium assets copied successfully!');
+    console.log("Cesium assets copied successfully!");
   } catch (error: unknown) {
-    console.error('Failed to copy Cesium assets:', error);
+    console.error("Failed to copy Cesium assets:", error);
     process.exit(1);
   }
 }

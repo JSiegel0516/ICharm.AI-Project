@@ -1,11 +1,11 @@
-'use client';
+"use client";
 
-import React from 'react';
-import { Settings, Info, MessageCircle, Camera } from 'lucide-react';
-import NavigationIcons from './NavigationIcons';
-import Link from 'next/link';
-import { HeaderProps } from '@/types';
-import { useAppState } from '@/hooks/useAppState';
+import React from "react";
+import { Settings, Info, MessageCircle, Camera } from "lucide-react";
+import NavigationIcons from "./NavigationIcons";
+import Link from "next/link";
+import { HeaderProps } from "@/types";
+import { useAppState } from "@/hooks/useAppState";
 
 const Header: React.FC = () => {
   const {
@@ -22,7 +22,7 @@ const Header: React.FC = () => {
   return (
     <>
       {/* Logo and Title - Top Left */}
-      <div className="fixed left-8 top-6 z-50 flex items-center gap-4 leading-relaxed">
+      <div className="fixed top-6 left-8 z-50 flex items-center gap-4 leading-relaxed">
         <Link href="/" className="flex items-center gap-6">
           <img
             src="/images/4DVD.png"
@@ -36,7 +36,7 @@ const Header: React.FC = () => {
       </div>
 
       {/* Navigation Icons - Top Right */}
-      <div className="fixed right-8 top-6 z-50">
+      <div className="fixed top-6 right-8 z-50">
         <NavigationIcons />
       </div>
     </>

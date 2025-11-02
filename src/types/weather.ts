@@ -18,8 +18,8 @@ export interface DatasetInfo {
   name: string;
   description: string;
   unit: string;
-  type: 'temperature' | 'precipitation' | 'pressure' | 'wind' | 'humidity';
-  temporalResolution: 'hourly' | 'daily' | 'monthly' | 'annual';
+  type: "temperature" | "precipitation" | "pressure" | "wind" | "humidity";
+  temporalResolution: "hourly" | "daily" | "monthly" | "annual";
   spatialResolution: string;
   source: string;
   lastUpdated: Date;
@@ -39,47 +39,47 @@ class WeatherService {
   // Available datasets
   private datasets: DatasetInfo[] = [
     {
-      id: 'air-temp-monthly',
-      name: 'Air Temperature',
-      description: 'Global air temperature data with monthly averages',
-      unit: '°C',
-      type: 'temperature',
-      temporalResolution: 'monthly',
-      spatialResolution: '1° x 1°',
-      source: 'ERA5 Reanalysis',
+      id: "air-temp-monthly",
+      name: "Air Temperature",
+      description: "Global air temperature data with monthly averages",
+      unit: "°C",
+      type: "temperature",
+      temporalResolution: "monthly",
+      spatialResolution: "1° x 1°",
+      source: "ERA5 Reanalysis",
       lastUpdated: new Date(),
     },
     {
-      id: 'precipitation-monthly',
-      name: 'Precipitation',
-      description: 'Monthly precipitation totals worldwide',
-      unit: 'mm',
-      type: 'precipitation',
-      temporalResolution: 'monthly',
-      spatialResolution: '1° x 1°',
-      source: 'GPCP',
+      id: "precipitation-monthly",
+      name: "Precipitation",
+      description: "Monthly precipitation totals worldwide",
+      unit: "mm",
+      type: "precipitation",
+      temporalResolution: "monthly",
+      spatialResolution: "1° x 1°",
+      source: "GPCP",
       lastUpdated: new Date(),
     },
     {
-      id: 'sea-surface-temp',
-      name: 'Sea Surface Temperature',
-      description: 'Ocean surface temperature measurements',
-      unit: '°C',
-      type: 'temperature',
-      temporalResolution: 'daily',
-      spatialResolution: '0.25° x 0.25°',
-      source: 'NOAA OI SST',
+      id: "sea-surface-temp",
+      name: "Sea Surface Temperature",
+      description: "Ocean surface temperature measurements",
+      unit: "°C",
+      type: "temperature",
+      temporalResolution: "daily",
+      spatialResolution: "0.25° x 0.25°",
+      source: "NOAA OI SST",
       lastUpdated: new Date(),
     },
     {
-      id: 'wind-speed-10m',
-      name: 'Wind Speed (10m)',
-      description: 'Wind speed at 10 meters above surface',
-      unit: 'm/s',
-      type: 'wind',
-      temporalResolution: 'daily',
-      spatialResolution: '1° x 1°',
-      source: 'ERA5 Reanalysis',
+      id: "wind-speed-10m",
+      name: "Wind Speed (10m)",
+      description: "Wind speed at 10 meters above surface",
+      unit: "m/s",
+      type: "wind",
+      temporalResolution: "daily",
+      spatialResolution: "1° x 1°",
+      source: "ERA5 Reanalysis",
       lastUpdated: new Date(),
     },
   ];
@@ -103,7 +103,7 @@ class WeatherService {
 
     // Simulate API loading delay
     await new Promise((resolve) =>
-      setTimeout(resolve, 1000 + Math.random() * 1500)
+      setTimeout(resolve, 1000 + Math.random() * 1500),
     );
 
     const dataset = this.datasets.find((d) => d.id === datasetId);
@@ -131,24 +131,24 @@ class WeatherService {
         let value = 0;
 
         switch (dataset.type) {
-          case 'temperature':
+          case "temperature":
             // Temperature varies with latitude and adds some randomness
             value =
               Math.cos((lat * Math.PI) / 180) * 30 + Math.random() * 10 - 5;
-            if (dataset.id === 'sea-surface-temp') {
+            if (dataset.id === "sea-surface-temp") {
               // Ocean temperatures are more moderate
               value = Math.cos((lat * Math.PI) / 180) * 25 + Math.random() * 5;
             }
             break;
 
-          case 'precipitation':
+          case "precipitation":
             // More precipitation near equator and in certain regions
             const latEffect = Math.max(0, 1 - Math.abs(lat) / 60);
             const seasonalEffect = Math.random() * 0.5 + 0.5;
             value = latEffect * 200 * seasonalEffect + Math.random() * 50;
             break;
 
-          case 'wind':
+          case "wind":
             // Higher wind speeds at certain latitudes
             const windBelt =
               Math.abs(Math.abs(lat) - 30) < 10 ||
@@ -156,7 +156,7 @@ class WeatherService {
             value = (windBelt ? 15 : 5) + Math.random() * 10;
             break;
 
-          case 'pressure':
+          case "pressure":
             // Standard atmospheric pressure with variations
             value = 1013.25 + (Math.random() - 0.5) * 50;
             break;
@@ -189,7 +189,7 @@ class WeatherService {
       south: number;
       east: number;
       west: number;
-    }
+    },
   ): Promise<WeatherData> {
     const fullData = await this.getClimateData(datasetId);
 
@@ -199,7 +199,7 @@ class WeatherService {
         lat >= bounds.south &&
         lat <= bounds.north &&
         lon >= bounds.west &&
-        lon <= bounds.east
+        lon <= bounds.east,
     );
 
     const regionalBounds = regionalValues.reduce(
@@ -207,7 +207,7 @@ class WeatherService {
         min: Math.min(acc.min, value),
         max: Math.max(acc.max, value),
       }),
-      { min: Infinity, max: -Infinity }
+      { min: Infinity, max: -Infinity },
     );
 
     return {
@@ -221,7 +221,7 @@ class WeatherService {
   async getPointData(
     datasetId: string,
     lat: number,
-    lon: number
+    lon: number,
   ): Promise<{
     value: number;
     unit: string;
@@ -236,7 +236,7 @@ class WeatherService {
 
     for (const [dataLat, dataLon, value] of data.values) {
       const distance = Math.sqrt(
-        Math.pow(lat - dataLat, 2) + Math.pow(lon - dataLon, 2)
+        Math.pow(lat - dataLat, 2) + Math.pow(lon - dataLon, 2),
       );
 
       if (distance < nearestDistance) {

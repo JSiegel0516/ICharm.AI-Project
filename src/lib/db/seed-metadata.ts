@@ -16,11 +16,11 @@ async function seedDatasets() {
   const csvContent = fs.readFileSync(csvPath, "utf-8");
 
   const lines = csvContent.trim().split("\n");
-  const headers = lines[0].split(",").map(h => h.trim());
+  const headers = lines[0].split(",").map((h) => h.trim());
 
   console.log(`📊 Found ${lines.length - 1} datasets to import`);
 
-  const datasets = lines.slice(1).map(line => {
+  const datasets = lines.slice(1).map((line) => {
     const values: string[] = [];
     let current = "";
     let inQuotes = false;

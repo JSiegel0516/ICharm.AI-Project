@@ -1,25 +1,25 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import React, { useState } from "react";
+import { ChevronDown } from "lucide-react";
 
 const HistoryPanel: React.FC = () => {
   const [selectedYear, setSelectedYear] = useState(0);
-  const [selectedMonth, setSelectedMonth] = useState('January');
+  const [selectedMonth, setSelectedMonth] = useState("January");
 
   const months = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
   ];
 
   return (
@@ -61,7 +61,7 @@ const HistoryPanel: React.FC = () => {
             ))}
           </select>
           <ChevronDown
-            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 transform text-blue-200"
+            className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 transform text-blue-200"
             size={20}
           />
         </div>

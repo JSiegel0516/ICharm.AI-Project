@@ -1,0 +1,13 @@
+cftime
+dask[array]
+fastapi
+fsspec
+h5netcdf
+httpx
+numpy
+pandas
+pydantic
+s3fs
+scipy
+uvicorn[standard]
+xarray

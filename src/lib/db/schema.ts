@@ -11,7 +11,10 @@ export const user = pgTable("users", {
   emailVerified: boolean("emailVerified").default(false).notNull(),
   image: text("image"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+  updatedAt: timestamp("updatedAt")
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
 });
 
 // ---------------------------
@@ -21,7 +24,9 @@ export const account = pgTable("accounts", {
   id: text("id").primaryKey(),
   accountId: text("accountId").notNull(),
   providerId: text("providerId").notNull(),
-  userId: text("userId").notNull().references(() => user.id, { onDelete: "cascade" }),
+  userId: text("userId")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
   accessToken: text("accessToken"),
   refreshToken: text("refreshToken"),
   idToken: text("idToken"),
@@ -30,7 +35,10 @@ export const account = pgTable("accounts", {
   scope: text("scope"),
   password: text("password"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+  updatedAt: timestamp("updatedAt")
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
 });
 
 // ---------------------------
@@ -40,11 +48,16 @@ export const session = pgTable("sessions", {
   id: text("id").primaryKey(),
   token: text("token").notNull().unique(),
   expiresAt: timestamp("expiresAt").notNull(),
-  userId: text("userId").notNull().references(() => user.id, { onDelete: "cascade" }),
+  userId: text("userId")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
   ipAddress: text("ipAddress"),
   userAgent: text("userAgent"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+  updatedAt: timestamp("updatedAt")
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
 });
 
 // ---------------------------
@@ -56,7 +69,9 @@ export const verification = pgTable("verifications", {
   value: text("value").notNull(),
   expiresAt: timestamp("expiresAt").notNull(),
   createdAt: timestamp("createdAt").defaultNow(),
-  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()),
+  updatedAt: timestamp("updatedAt")
+    .defaultNow()
+    .$onUpdate(() => new Date()),
 });
 
 // ---------------------------
@@ -64,10 +79,15 @@ export const verification = pgTable("verifications", {
 // ---------------------------
 export const chatSession = pgTable("chat_sessions", {
   id: text("id").primaryKey(),
-  userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
   title: text("title"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().$onUpdate(() => new Date()).notNull(),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
 });
 
 // ---------------------------
@@ -75,7 +95,9 @@ export const chatSession = pgTable("chat_sessions", {
 // ---------------------------
 export const chatMessage = pgTable("chat_messages", {
   id: text("id").primaryKey(),
-  sessionId: text("session_id").notNull().references(() => chatSession.id, { onDelete: "cascade" }),
+  sessionId: text("session_id")
+    .notNull()
+    .references(() => chatSession.id, { onDelete: "cascade" }),
   role: text("role").notNull(),
   content: text("content").notNull(),
   sources: jsonb("sources"),
@@ -107,7 +129,10 @@ export const climateDataset = pgTable("metadata", {
   startDate: text("startDate").notNull(), // stored as text: "1854/1/1"
   endDate: text("endDate").notNull(), // stored as text: "9/1/2025" or "present"
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+  updatedAt: timestamp("updatedAt")
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
 });
 
 // ---------------------------

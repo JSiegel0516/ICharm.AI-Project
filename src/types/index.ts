@@ -1,4 +1,4 @@
-import type { HTMLAttributes } from 'react';
+import type { HTMLAttributes } from "react";
 
 export interface DatasetBackendDetails {
   sourceName: string | null;
@@ -9,7 +9,7 @@ export interface DatasetBackendDetails {
   levels: string | null;
   levelValues: number[];
   levelUnits: string | null;
-  stored: 'local' | 'cloud' | null;
+  stored: "local" | "cloud" | null;
   inputFile: string | null;
   keyVariable: string | null;
   units: string | null;
@@ -27,8 +27,8 @@ export interface Dataset {
   description: string;
   units: string;
   colorScale: ColorScale;
-  dataType: 'temperature' | 'precipitation' | 'wind' | 'pressure' | 'humidity';
-  temporalResolution: 'hourly' | 'daily' | 'monthly' | 'yearly';
+  dataType: "temperature" | "precipitation" | "wind" | "pressure" | "humidity";
+  temporalResolution: "hourly" | "daily" | "monthly" | "yearly";
   backend?: DatasetBackendDetails;
 }
 
@@ -45,7 +45,7 @@ export interface ColorScale {
 
 export interface ChatMessage {
   id: string;
-  type: 'user' | 'bot';
+  type: "user" | "bot";
   message: string;
   timestamp: Date;
   sources?: Array<{
@@ -101,7 +101,6 @@ export interface SettingsIconHandle {
   stopAnimation: () => void;
 }
 
-
 export interface SettingsIconProps extends HTMLAttributes<HTMLDivElement> {
   size?: number;
 }
@@ -128,7 +127,7 @@ export interface AppState {
 export interface TooltipProps {
   content: string;
   children: React.ReactNode;
-  position?: 'top' | 'bottom' | 'left' | 'right';
+  position?: "top" | "bottom" | "left" | "right";
   delay?: number;
   disabled?: boolean;
   className?: string;
@@ -141,8 +140,8 @@ export interface HeaderProps {
   onShowAbout: () => void;
   onShowChat: () => void;
   onSetDataset: (dataset: Dataset) => void;
-  onShowSidebarPanel?: (panel: 'datasets' | 'history' | 'about') => void;
-  activeSidebarPanel?: 'datasets' | 'history' | 'about' | null;
+  onShowSidebarPanel?: (panel: "datasets" | "history" | "about") => void;
+  activeSidebarPanel?: "datasets" | "history" | "about" | null;
 }
 export interface ChatInputProps {
   onSendMessage: (message: string) => void;
@@ -155,20 +154,24 @@ export interface NavigationIconsProps {
   onShowAbout: () => void;
   onShowChat: () => void;
   onSetDataset: (dataset: any) => void;
-  onShowSidebarPanel?: (panel: 'datasets' | 'history' | 'about') => void;
-  activeSidebarPanel?: 'datasets' | 'history' | 'about' | null;
+  onShowSidebarPanel?: (panel: "datasets" | "history" | "about") => void;
+  activeSidebarPanel?: "datasets" | "history" | "about" | null;
 }
 
 export interface CollapsibleSidebarProps {
   onShowSettings: () => void;
-  activePanel?: 'datasets' | 'history' | 'about' | null;
-  onPanelChange?: (panel: 'datasets' | 'history' | 'about' | null) => void;
+  activePanel?: "datasets" | "history" | "about" | null;
+  onPanelChange?: (panel: "datasets" | "history" | "about" | null) => void;
 }
 
 export interface GlobeProps {
   currentDataset?: { name: string };
   position?: { latitude: number; longitude: number; zoom: number };
-  onPositionChange?: (pos: { latitude: number; longitude: number; zoom: number }) => void;
+  onPositionChange?: (pos: {
+    latitude: number;
+    longitude: number;
+    zoom: number;
+  }) => void;
   onRegionClick?: (lat: number, lon: number, data: RegionData) => void;
   customDataUrl?: string; // URL to your self-hosted GeoJSON/custom data
   tileServerUrl?: string; // Optional custom tile server URL
@@ -186,9 +189,9 @@ export interface GlobeRef {
   clearMarker: () => void;
 }
 
-export type TemperatureUnit = 'celsius' | 'fahrenheit';
+export type TemperatureUnit = "celsius" | "fahrenheit";
 
-export type SidebarPanel = 'datasets' | 'history' | 'about' | null;
+export type SidebarPanel = "datasets" | "history" | "about" | null;
 
 export interface ColorBarProps {
   show: boolean;
@@ -232,13 +235,11 @@ export interface PressureLevelsSelectorProps {
   className?: string;
 }
 
-
 export interface YearSelectorProps {
   selectedYear?: number;
   onYearChange?: (year: number) => void;
   className?: string;
 }
-
 
 export interface RegionInfoPanelProps {
   show: boolean;

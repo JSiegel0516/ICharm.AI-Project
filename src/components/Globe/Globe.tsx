@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import React, {
   useState,
@@ -6,7 +6,7 @@ import React, {
   useEffect,
   useImperativeHandle,
   forwardRef,
-} from 'react';
+} from "react";
 
 // Type definitions
 interface RegionData {
@@ -24,7 +24,7 @@ interface GlobeProps {
   onRegionClick?: (
     latitude: number,
     longitude: number,
-    data?: RegionData
+    data?: RegionData,
   ) => void;
 }
 
@@ -39,24 +39,24 @@ const loadCesiumFromCDN = async () => {
   }
 
   return new Promise((resolve, reject) => {
-    const script = document.createElement('script');
+    const script = document.createElement("script");
     script.src =
-      'https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Cesium.js';
+      "https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Cesium.js";
     script.async = true;
 
     script.onload = () => {
-      const link = document.createElement('link');
+      const link = document.createElement("link");
       link.href =
-        'https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Widgets/widgets.css';
-      link.rel = 'stylesheet';
+        "https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Widgets/widgets.css";
+      link.rel = "stylesheet";
       document.head.appendChild(link);
 
       window.CESIUM_BASE_URL =
-        'https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/';
+        "https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/";
       resolve(window.Cesium);
     };
 
-    script.onerror = () => reject(new Error('Failed to load Cesium'));
+    script.onerror = () => reject(new Error("Failed to load Cesium"));
     document.head.appendChild(script);
   });
 };
@@ -64,9 +64,9 @@ const loadCesiumFromCDN = async () => {
 // Load geographic boundary data
 const loadGeographicBoundaries = async () => {
   const files = [
-    'ne_110m_coastline.json',
-    'ne_110m_lakes.json',
-    'ne_110m_rivers_lake_centerlines.json',
+    "ne_110m_coastline.json",
+    "ne_110m_lakes.json",
+    "ne_110m_rivers_lake_centerlines.json",
   ];
 
   const boundaryData = [];
@@ -81,13 +81,13 @@ const loadGeographicBoundaries = async () => {
         console.log(
           `Successfully loaded ${file}, type:`,
           data.type,
-          'features:',
-          data.features?.length
+          "features:",
+          data.features?.length,
         );
         boundaryData.push({ name: file, data });
       } else {
         console.warn(
-          `Failed to fetch ${file}: ${response.status} ${response.statusText}`
+          `Failed to fetch ${file}: ${response.status} ${response.statusText}`,
         );
       }
     } catch (error) {
@@ -103,26 +103,26 @@ const loadGeographicBoundaries = async () => {
 const addGeographicBoundaries = (
   Cesium: any,
   viewer: any,
-  boundaryData: any[]
+  boundaryData: any[],
 ) => {
   let totalLinesAdded = 0;
 
   boundaryData.forEach(({ name, data }) => {
     console.log(`Processing ${name}, type: ${data.type}`);
 
-    if (data.type === 'FeatureCollection' && data.features) {
+    if (data.type === "FeatureCollection" && data.features) {
       let color = Cesium.Color.BLACK.withAlpha(1.0);
       let width = 2;
 
-      if (name.includes('coastline')) {
+      if (name.includes("coastline")) {
         width = 3;
-      } else if (name.includes('geographic_lines')) {
+      } else if (name.includes("geographic_lines")) {
         width = 2;
-      } else if (name.includes('lakes')) {
+      } else if (name.includes("lakes")) {
         width = 2;
-      } else if (name.includes('rivers')) {
+      } else if (name.includes("rivers")) {
         width = 2;
-      } else if (name.includes('time_zones')) {
+      } else if (name.includes("time_zones")) {
         width = 1.5;
       }
 
@@ -134,7 +134,7 @@ const addGeographicBoundaries = (
           if (coords.length < 2) return;
 
           const positions = coords.map((coord: number[]) =>
-            Cesium.Cartesian3.fromDegrees(coord[0], coord[1], 10000)
+            Cesium.Cartesian3.fromDegrees(coord[0], coord[1], 10000),
           );
 
           if (positions.length > 1) {
@@ -150,17 +150,17 @@ const addGeographicBoundaries = (
           }
         };
 
-        if (geometry.type === 'LineString') {
+        if (geometry.type === "LineString") {
           processCoordinates(geometry.coordinates);
-        } else if (geometry.type === 'MultiLineString') {
+        } else if (geometry.type === "MultiLineString") {
           geometry.coordinates.forEach((lineCoords: any[]) => {
             processCoordinates(lineCoords);
           });
-        } else if (geometry.type === 'Polygon') {
+        } else if (geometry.type === "Polygon") {
           geometry.coordinates.forEach((ring: any[]) => {
             processCoordinates(ring);
           });
-        } else if (geometry.type === 'MultiPolygon') {
+        } else if (geometry.type === "MultiPolygon") {
           geometry.coordinates.forEach((polygon: any[]) => {
             polygon.forEach((ring: any[]) => {
               processCoordinates(ring);
@@ -173,11 +173,11 @@ const addGeographicBoundaries = (
       let color = Cesium.Color.CYAN.withAlpha(0.3);
       let width = 1.5;
 
-      if (name.includes('coastline')) {
+      if (name.includes("coastline")) {
         color = Cesium.Color.WHITE.withAlpha(0.6);
         width = 2;
       }
-      if (name.includes('lakes')) {
+      if (name.includes("lakes")) {
         color = Cesium.Color.WHITE.withAlpha(0.3);
         width = 2;
       }
@@ -185,7 +185,7 @@ const addGeographicBoundaries = (
       for (let i = 0; i < data.Lon.length; i++) {
         if (data.Lon[i] !== null && data.Lat[i] !== null) {
           positions.push(
-            Cesium.Cartesian3.fromDegrees(data.Lon[i], data.Lat[i], 10000)
+            Cesium.Cartesian3.fromDegrees(data.Lon[i], data.Lat[i], 10000),
           );
         } else if (positions.length > 0) {
           viewer.entities.add({
@@ -218,7 +218,7 @@ const addGeographicBoundaries = (
   });
 
   console.log(
-    `Geographic boundaries added: ${totalLinesAdded} lines from ${boundaryData.length} files`
+    `Geographic boundaries added: ${totalLinesAdded} lines from ${boundaryData.length} files`,
   );
 };
 
@@ -239,7 +239,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       ) {
         if (Array.isArray(currentMarkerRef.current)) {
           currentMarkerRef.current.forEach((marker) =>
-            viewerRef.current.entities.remove(marker)
+            viewerRef.current.entities.remove(marker),
           );
         } else {
           viewerRef.current.entities.remove(currentMarkerRef.current);
@@ -260,8 +260,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         }
       };
 
-      window.addEventListener('resize', handleResize);
-      return () => window.removeEventListener('resize', handleResize);
+      window.addEventListener("resize", handleResize);
+      return () => window.removeEventListener("resize", handleResize);
     }, []);
 
     const calculateRadiusFromCameraHeight = (cameraHeight: number): number => {
@@ -277,7 +277,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const addClickMarker = (
       Cesium: any,
       latitude: number,
-      longitude: number
+      longitude: number,
     ) => {
       if (!viewerRef.current) return;
 
@@ -298,7 +298,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           position: Cesium.Cartesian3.fromDegrees(
             longitude,
             latitude,
-            1000 + i
+            1000 + i,
           ),
           ellipse: {
             semiMajorAxis: radius,
@@ -347,10 +347,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           setIsLoading(true);
           setError(null);
 
-          console.log('Loading Cesium from CDN...');
+          console.log("Loading Cesium from CDN...");
           const Cesium = await loadCesiumFromCDN();
 
-          console.log('Creating self-hosted Cesium viewer...');
+          console.log("Creating self-hosted Cesium viewer...");
 
           const viewer = new Cesium.Viewer(container, {
             homeButton: false,
@@ -368,8 +368,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           });
 
           const usgsProvider = new Cesium.ArcGisMapServerImageryProvider({
-            url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer',
-            credit: 'USGS National Map',
+            url: "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer",
+            credit: "USGS National Map",
           });
           viewer.imageryLayers.addImageryProvider(usgsProvider);
 
@@ -380,19 +380,19 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           viewer.scene.sun.show = true;
           viewer.scene.moon.show = true;
 
-          viewer.canvas.style.width = '100%';
-          viewer.canvas.style.height = '100%';
+          viewer.canvas.style.width = "100%";
+          viewer.canvas.style.height = "100%";
 
-          const cesiumCredit = container.querySelector('.cesium-viewer-bottom');
+          const cesiumCredit = container.querySelector(".cesium-viewer-bottom");
           if (cesiumCredit) {
-            (cesiumCredit as HTMLElement).style.display = 'none';
+            (cesiumCredit as HTMLElement).style.display = "none";
           }
 
           viewer.camera.setView({
             destination: Cesium.Cartesian3.fromDegrees(0, 20, 25000000),
           });
 
-          console.log('Loading geographic boundaries...');
+          console.log("Loading geographic boundaries...");
           const boundaryData = await loadGeographicBoundaries();
           addGeographicBoundaries(Cesium, viewer, boundaryData);
 
@@ -400,7 +400,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             (event: any) => {
               const pickedPosition = viewer.camera.pickEllipsoid(
                 event.position,
-                viewer.scene.globe.ellipsoid
+                viewer.scene.globe.ellipsoid,
               );
               if (pickedPosition) {
                 const cartographic =
@@ -415,24 +415,24 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
                     name: `${latitude.toFixed(2)}°, ${longitude.toFixed(2)}°`,
                     precipitation: Math.random() * 100,
                     temperature: -20 + Math.random() * 60,
-                    dataset: currentDataset?.name || 'Sample Dataset',
+                    dataset: currentDataset?.name || "Sample Dataset",
                   };
 
                   onRegionClick(latitude, longitude, regionData);
                 }
               }
             },
-            Cesium.ScreenSpaceEventType.LEFT_CLICK
+            Cesium.ScreenSpaceEventType.LEFT_CLICK,
           );
 
           viewer.cesiumWidget.screenSpaceEventHandler.setInputAction(
             (event: any) => {
               const currentPosition = viewer.camera.positionCartographic;
               const currentLat = Cesium.Math.toDegrees(
-                currentPosition.latitude
+                currentPosition.latitude,
               );
               const currentLon = Cesium.Math.toDegrees(
-                currentPosition.longitude
+                currentPosition.longitude,
               );
               const currentHeight = currentPosition.height;
 
@@ -445,13 +445,13 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
                 destination: Cesium.Cartesian3.fromDegrees(
                   oppositeLon,
                   currentLat,
-                  currentHeight
+                  currentHeight,
                 ),
                 duration: 2.0,
                 easingFunction: Cesium.EasingFunction.CUBIC_IN_OUT,
               });
             },
-            Cesium.ScreenSpaceEventType.RIGHT_CLICK
+            Cesium.ScreenSpaceEventType.RIGHT_CLICK,
           );
 
           viewer.camera.changed.addEventListener(() => {
@@ -468,11 +468,11 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           viewerRef.current = viewer;
           setIsLoading(false);
 
-          console.log('Self-hosted Cesium viewer initialized successfully');
+          console.log("Self-hosted Cesium viewer initialized successfully");
         } catch (err) {
-          console.error('Failed to initialize Cesium:', err);
+          console.error("Failed to initialize Cesium:", err);
           setError(
-            err instanceof Error ? err.message : 'Failed to initialize globe'
+            err instanceof Error ? err.message : "Failed to initialize globe",
           );
           setIsLoading(false);
         }
@@ -518,9 +518,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         className="absolute inset-0 z-0 h-full w-full"
         style={{
           background:
-            'radial-gradient(ellipse at center, #1e3a8a 0%, #0f172a 50%, #000000 100%)',
-          minHeight: '100vh',
-          minWidth: '100vw',
+            "radial-gradient(ellipse at center, #1e3a8a 0%, #0f172a 50%, #000000 100%)",
+          minHeight: "100vh",
+          minWidth: "100vw",
         }}
       >
         {isLoading && (
@@ -539,9 +539,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           ref={containerRef}
           className="absolute inset-0 z-0 h-screen w-screen"
           style={{
-            minHeight: '100vh',
-            minWidth: '100vw',
-            overflow: 'hidden',
+            minHeight: "100vh",
+            minWidth: "100vw",
+            overflow: "hidden",
           }}
         />
 
@@ -562,7 +562,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             <div className="max-w-2xl rounded-lg bg-slate-800 p-6 text-white">
               <h2 className="mb-4 text-2xl font-bold">{currentDataset.name}</h2>
               <p className="mb-4">
-                {currentDataset.description || 'No description available'}
+                {currentDataset.description || "No description available"}
               </p>
               <button
                 onClick={() => setIsModalOpen(false)}
@@ -575,9 +575,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         )}
       </div>
     );
-  }
+  },
 );
 
-Globe.displayName = 'Globe';
+Globe.displayName = "Globe";
 
 export default Globe;

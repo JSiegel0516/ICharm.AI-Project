@@ -1,14 +1,18 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
-import * as Cesium from 'cesium';
-import { Dataset, GlobePosition, RegionData } from '@/types';
+import { useEffect, useRef, useCallback, useState } from "react";
+import * as Cesium from "cesium";
+import { Dataset, GlobePosition, RegionData } from "@/types";
 
 // Configure CesiumJS for self-hosted assets
-if (typeof window !== 'undefined') {
-  (window as any).CESIUM_BASE_URL = '/cesium/';
+if (typeof window !== "undefined") {
+  (window as any).CESIUM_BASE_URL = "/cesium/";
 }
 
 interface UseGlobeOptions {
-  onRegionClick?: (latitude: number, longitude: number, data?: RegionData) => void;
+  onRegionClick?: (
+    latitude: number,
+    longitude: number,
+    data?: RegionData,
+  ) => void;
   currentDataset?: Dataset;
   initialPosition?: GlobePosition;
 }
@@ -68,13 +72,13 @@ export const useGlobe = (options: UseGlobeOptions = {}): UseGlobeReturn => {
           destination: Cesium.Cartesian3.fromDegrees(
             initialPosition.longitude,
             initialPosition.latitude,
-            initialPosition.zoom
+            initialPosition.zoom,
           ),
         });
 
         // Add open imagery layer via OpenStreetMap tiles
         const imageryProvider = new Cesium.OpenStreetMapImageryProvider({
-          url: 'https://tile.openstreetmap.org/',
+          url: "https://tile.openstreetmap.org/",
         });
         viewer.imageryLayers.addImageryProvider(imageryProvider);
 
@@ -82,7 +86,7 @@ export const useGlobe = (options: UseGlobeOptions = {}): UseGlobeReturn => {
           (click: any) => {
             const pickedPosition = viewer.camera.pickEllipsoid(
               click.position,
-              viewer.scene.globe.ellipsoid
+              viewer.scene.globe.ellipsoid,
             );
 
             if (pickedPosition && onRegionClick) {
@@ -95,13 +99,13 @@ export const useGlobe = (options: UseGlobeOptions = {}): UseGlobeReturn => {
                 name: `Region ${latitude.toFixed(2)}, ${longitude.toFixed(2)}`,
                 precipitation: Math.random() * 50,
                 temperature: -10 + Math.random() * 50,
-                dataset: currentDataset?.name || 'Unknown Dataset',
+                dataset: currentDataset?.name || "Unknown Dataset",
               };
 
               onRegionClick(latitude, longitude, sampleData);
             }
           },
-          Cesium.ScreenSpaceEventType.LEFT_CLICK
+          Cesium.ScreenSpaceEventType.LEFT_CLICK,
         );
 
         viewer.camera.changed.addEventListener(() => {
@@ -122,17 +126,20 @@ export const useGlobe = (options: UseGlobeOptions = {}): UseGlobeReturn => {
           await updateDatasetInternal(viewer, currentDataset);
         }
       } catch (err) {
-        console.error('Failed to initialize Cesium viewer:', err);
+        console.error("Failed to initialize Cesium viewer:", err);
         setError(
-          err instanceof Error ? err.message : 'Failed to initialize globe'
+          err instanceof Error ? err.message : "Failed to initialize globe",
         );
         setIsLoading(false);
       }
     },
-    [initialPosition, onRegionClick, currentDataset]
+    [initialPosition, onRegionClick, currentDataset],
   );
 
-  const updateDatasetInternal = async (viewer: Cesium.Viewer, dataset: Dataset) => {
+  const updateDatasetInternal = async (
+    viewer: Cesium.Viewer,
+    dataset: Dataset,
+  ) => {
     try {
       const layersToRemove: Cesium.ImageryLayer[] = [];
       for (let i = viewer.imageryLayers.length - 1; i > 0; i--) {
@@ -146,24 +153,24 @@ export const useGlobe = (options: UseGlobeOptions = {}): UseGlobeReturn => {
       let newLayer: Cesium.ImageryLayer | null = null;
 
       switch (dataset.dataType) {
-        case 'temperature':
-          console.log('Loading temperature data for:', dataset.name);
+        case "temperature":
+          console.log("Loading temperature data for:", dataset.name);
           break;
-        case 'precipitation':
-          console.log('Loading precipitation data for:', dataset.name);
+        case "precipitation":
+          console.log("Loading precipitation data for:", dataset.name);
           break;
-        case 'wind':
-          console.log('Loading wind data for:', dataset.name);
+        case "wind":
+          console.log("Loading wind data for:", dataset.name);
           break;
         default:
-          console.log('Loading generic weather data for:', dataset.name);
+          console.log("Loading generic weather data for:", dataset.name);
       }
 
       if (newLayer) {
         (newLayer as any).isWeatherLayer = true;
       }
     } catch (err) {
-      console.error('Failed to update dataset:', err);
+      console.error("Failed to update dataset:", err);
       setError(`Failed to load dataset: ${dataset.name}`);
     }
   };
@@ -180,7 +187,7 @@ export const useGlobe = (options: UseGlobeOptions = {}): UseGlobeReturn => {
       destination: Cesium.Cartesian3.fromDegrees(
         newPosition.longitude,
         newPosition.latitude,
-        newPosition.zoom
+        newPosition.zoom,
       ),
       duration: 2.0,
     });

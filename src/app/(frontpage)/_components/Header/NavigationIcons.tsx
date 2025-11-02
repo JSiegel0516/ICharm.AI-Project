@@ -1,16 +1,16 @@
-'use client';
+"use client";
 
-import React, { useState, useRef, useEffect } from 'react';
-import Link from 'next/link';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Info } from 'lucide-react';
-import { ChartSplineIcon } from '@/components/ui/chart-spline';
-import { SettingsGearIcon } from '@/components/ui/settings-gear';
-import { useAppState } from '@/context/HeaderContext';
-import { SettingsModal } from '@/app/(frontpage)/_components/Modals/SettingsModal';
-import AboutModal from '@/app/(frontpage)/_components/Modals/AboutModal';
+import React, { useState, useRef, useEffect } from "react";
+import Link from "next/link";
+import { motion, AnimatePresence } from "framer-motion";
+import { Info } from "lucide-react";
+import { ChartSplineIcon } from "@/components/ui/chart-spline";
+import { SettingsGearIcon } from "@/components/ui/settings-gear";
+import { useAppState } from "@/context/HeaderContext";
+import { SettingsModal } from "@/app/(frontpage)/_components/Modals/SettingsModal";
+import AboutModal from "@/app/(frontpage)/_components/Modals/AboutModal";
 
-type ActiveDropdown = 'datasets' | 'settings' | null;
+type ActiveDropdown = "datasets" | "settings" | null;
 
 const NavigationIcons: React.FC = () => {
   const { setCurrentDataset, currentDataset } = useAppState();
@@ -64,9 +64,9 @@ const NavigationIcons: React.FC = () => {
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
 
@@ -74,15 +74,15 @@ const NavigationIcons: React.FC = () => {
   const getIconContainerClasses = (isActive: boolean = false) => {
     return `relative group p-2 rounded-xl transition-all duration-300 ${
       isActive
-        ? 'bg-neutral-500/20 border border-blue-400/30 text-blue-400'
-        : 'bg-neutral-800/50  hover:bg-neutral-700/90 text-gray-400 hover:text-gray-200 border border-transparent hover:border-gray-600/50'
+        ? "bg-neutral-500/20 border border-blue-400/30 text-blue-400"
+        : "bg-neutral-800/50  hover:bg-neutral-700/90 text-gray-400 hover:text-gray-200 border border-transparent hover:border-gray-600/50"
     }`;
   };
 
   // Standardized icon wrapper for consistent sizing
   const IconWrapper = ({
     children,
-    className = '',
+    className = "",
   }: {
     children: React.ReactNode;
     className?: string;
@@ -139,7 +139,7 @@ const NavigationIcons: React.FC = () => {
         <motion.div
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
-          className={getIconContainerClasses(activeDropdown === 'settings')}
+          className={getIconContainerClasses(activeDropdown === "settings")}
         >
           <button
             id="site-settings-button"
@@ -164,7 +164,7 @@ const NavigationIcons: React.FC = () => {
         onClose={closeSettingsModal}
         onSave={(settings) => {
           // Save settings logic
-          console.log('Saving settings:', settings);
+          console.log("Saving settings:", settings);
           closeSettingsModal();
         }}
       />
