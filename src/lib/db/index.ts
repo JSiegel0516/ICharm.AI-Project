@@ -8,7 +8,7 @@ dotenv.config({
 });
 
 if (!process.env.POSTGRES_URL) {
-  throw new Error("DATABASE_URL is not set");
+  throw new Error("POSTRGRES_URL is not set");
 }
 
 const connectionString = process.env.POSTGRES_URL;
