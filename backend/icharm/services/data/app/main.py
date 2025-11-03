@@ -93,11 +93,11 @@ load_dotenv(dotenv_path=env_path)
 # ============================================================================
 
 # Database configuration
-DATABASE_URL = os.getenv("POSTGRES_URL")
-if not DATABASE_URL:
+POSTRGRES_URL = os.getenv("POSTGRES_URL")
+if not POSTRGRES_URL:
     raise ValueError(
-        f"DATABASE_URL not found in environment variables. "
-        f"Please create a .env file at {env_path} with DATABASE_URL=postgresql://..."
+        f"POSTRGRES_URL not found in environment variables. "
+        f"Please create a .env file at {env_path} with POSTRGRES_URL=postgresql://..."
     )
 
 # File paths configuration
@@ -122,7 +122,7 @@ executor = ThreadPoolExecutor(max_workers=4)
 # ============================================================================
 
 # Create synchronous engine
-engine = create_engine(DATABASE_URL, poolclass=NullPool)
+engine = create_engine(POSTRGRES_URL, poolclass=NullPool)
 
 
 def get_metadata_by_ids(dataset_ids: List[str]) -> pd.DataFrame:
@@ -2110,7 +2110,7 @@ async def startup_event():
     logger.info(f"Local datasets path: {LOCAL_DATASETS_PATH}")
     logger.info(f"Kerchunk directory: {KERCHUNK_PATH}")
     logger.info(f"Cache directory: {CACHE_DIR}")
-    logger.info(f"Database connected: {DATABASE_URL is not None}")
+    logger.info(f"Database connected: {POSTRGRES_URL is not None}")
     logger.info(f"S3 Anonymous access: {S3_ANON}")
 
     # Check if kerchunk directory exists
