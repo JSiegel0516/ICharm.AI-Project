@@ -1,28 +1,28 @@
-import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
-import { AppStateProvider } from '@/context/HeaderContext';
-import Header from '@/app/(frontpage)/_components/Header/Header';
-import ChatBot from '@/components/Chat/ChatBot';
-import { ThemeProvider } from '@/components/theme-provider';
+import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import { AppStateProvider } from "@/context/HeaderContext";
+import Header from "@/app/(frontpage)/_components/Header/Header";
+import ChatBot from "@/components/Chat/ChatBot";
+import { ThemeProvider } from "@/components/theme-provider";
 
-import '@/app/globals.css';
-const inter = Inter({ subsets: ['latin'] });
+import "@/app/globals.css";
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: {
-    template: '%s | iCharm',
-    default: 'iCharm - Climate Data Visualization',
+    template: "%s | iCharm",
+    default: "iCharm - Climate Data Visualization",
   },
   description:
-    'Advanced weather and climate data visualization platform with AI assistance',
+    "Advanced weather and climate data visualization platform with AI assistance",
   icons: {
-    icon: '/favicon.ico',
+    icon: "/favicon.ico",
   },
   keywords:
-    'weather, climate, data visualization, AI, globe, temperature, precipitation',
-  authors: [{ name: 'Your Team' }],
-  creator: 'SCIL',
-  publisher: 'SCIL',
+    "weather, climate, data visualization, AI, globe, temperature, precipitation",
+  authors: [{ name: "Your Team" }],
+  creator: "SCIL",
+  publisher: "SCIL",
 };
 
 export default function RootLayout({

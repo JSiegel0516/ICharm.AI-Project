@@ -1,6 +1,6 @@
-'use client';
-import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+"use client";
+import React from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
   Plus,
@@ -11,33 +11,33 @@ import {
   Database,
   Cloud,
   Globe,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { ScrollArea } from '@/components/ui/scroll-area';
+} from "@/components/ui/select";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
+} from "@/components/ui/card";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { type DatasetInfo } from '@/hooks/use-timeseries';
+} from "@/components/ui/tooltip";
+import { type DatasetInfo } from "@/hooks/use-timeseries";
 
 interface DatasetFilterProps {
   selectedDatasets: DatasetInfo[];
@@ -49,8 +49,8 @@ interface DatasetFilterProps {
   setSelectedCategory: (category: string) => void;
   visibleDatasets: Set<string>;
   setVisibleDatasets: React.Dispatch<React.SetStateAction<Set<string>>>;
-  dataSourceFilter: 'all' | 'local' | 'cloud';
-  setDataSourceFilter: (filter: 'all' | 'local' | 'cloud') => void;
+  dataSourceFilter: "all" | "local" | "cloud";
+  setDataSourceFilter: (filter: "all" | "local" | "cloud") => void;
 }
 
 export function DatasetFilter({
@@ -71,23 +71,23 @@ export function DatasetFilter({
     const sources = new Set(
       availableDatasets
         .map((d) => (d as any).sourceName || (d as any).source)
-        .filter(Boolean)
+        .filter(Boolean),
     );
-    return ['All', ...Array.from(sources)];
+    return ["All", ...Array.from(sources)];
   }, [availableDatasets]);
 
   // Filter datasets
   const filteredDatasets = React.useMemo(() => {
     return availableDatasets.filter((dataset) => {
-      const datasetName = (dataset as any).datasetName || dataset.name || '';
+      const datasetName = (dataset as any).datasetName || dataset.name || "";
       const matchesSearch =
         datasetName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         dataset.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        ((dataset as any).slug || '')
+        ((dataset as any).slug || "")
           .toLowerCase()
           .includes(searchTerm.toLowerCase());
       const matchesCategory =
-        selectedCategory === 'All' ||
+        selectedCategory === "All" ||
         (dataset as any).sourceName === selectedCategory ||
         (dataset as any).source === selectedCategory;
       return matchesSearch && matchesCategory;
@@ -182,27 +182,27 @@ export function DatasetFilter({
           {/* Data Source Filter - All/Local/Cloud buttons */}
           <div className="flex gap-2">
             <Button
-              variant={dataSourceFilter === 'all' ? 'default' : 'outline'}
+              variant={dataSourceFilter === "all" ? "default" : "outline"}
               size="sm"
-              onClick={() => setDataSourceFilter('all')}
+              onClick={() => setDataSourceFilter("all")}
               className="flex-1"
             >
               <Globe className="mr-2 h-4 w-4" />
               All
             </Button>
             <Button
-              variant={dataSourceFilter === 'local' ? 'default' : 'outline'}
+              variant={dataSourceFilter === "local" ? "default" : "outline"}
               size="sm"
-              onClick={() => setDataSourceFilter('local')}
+              onClick={() => setDataSourceFilter("local")}
               className="flex-1"
             >
               <Database className="mr-2 h-4 w-4" />
               Local
             </Button>
             <Button
-              variant={dataSourceFilter === 'cloud' ? 'default' : 'outline'}
+              variant={dataSourceFilter === "cloud" ? "default" : "outline"}
               size="sm"
-              onClick={() => setDataSourceFilter('cloud')}
+              onClick={() => setDataSourceFilter("cloud")}
               className="flex-1"
             >
               <Cloud className="mr-2 h-4 w-4" />
@@ -246,11 +246,11 @@ export function DatasetFilter({
                 ) : (
                   filteredDatasets.map((dataset) => {
                     const isSelected = selectedDatasets.some(
-                      (d) => d.id === dataset.id
+                      (d) => d.id === dataset.id,
                     );
                     const isCloud =
-                      (dataset as any).stored === 'cloud' ||
-                      (dataset as any).Stored === 'cloud';
+                      (dataset as any).stored === "cloud" ||
+                      (dataset as any).Stored === "cloud";
                     return (
                       <motion.div
                         key={dataset.id}
@@ -259,8 +259,8 @@ export function DatasetFilter({
                         exit={{ opacity: 0, y: 10 }}
                         className={`cursor-pointer rounded-lg border p-3 transition-colors ${
                           isSelected
-                            ? 'border-primary bg-primary/5'
-                            : 'hover:bg-muted/50'
+                            ? "border-primary bg-primary/5"
+                            : "hover:bg-muted/50"
                         }`}
                         onClick={() => toggleDataset(dataset)}
                       >
@@ -285,16 +285,16 @@ export function DatasetFilter({
                             <p className="text-muted-foreground text-xs">
                               {(dataset as any).sourceName ||
                                 (dataset as any).source ||
-                                'Unknown source'}{' '}
+                                "Unknown source"}{" "}
                               • {dataset.name}
                             </p>
                             <p className="text-muted-foreground text-xs">
-                              {(dataset as any).units || 'N/A'}
+                              {(dataset as any).units || "N/A"}
                             </p>
                             {(dataset as any).startDate &&
                               (dataset as any).endDate && (
                                 <p className="text-muted-foreground text-xs">
-                                  {(dataset as any).startDate} to{' '}
+                                  {(dataset as any).startDate} to{" "}
                                   {(dataset as any).endDate}
                                 </p>
                               )}
@@ -328,8 +328,8 @@ export function DatasetFilter({
                 ) : (
                   selectedDatasets.map((dataset) => {
                     const isCloud =
-                      (dataset as any).stored === 'cloud' ||
-                      (dataset as any).Stored === 'cloud';
+                      (dataset as any).stored === "cloud" ||
+                      (dataset as any).Stored === "cloud";
                     const displayName =
                       (dataset as any).datasetName || dataset.name;
                     return (
@@ -366,8 +366,8 @@ export function DatasetFilter({
                               </TooltipTrigger>
                               <TooltipContent>
                                 {visibleDatasets.has(dataset.id)
-                                  ? 'Hide'
-                                  : 'Show'}
+                                  ? "Hide"
+                                  : "Show"}
                               </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>

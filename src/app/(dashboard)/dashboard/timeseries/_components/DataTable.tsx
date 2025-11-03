@@ -1,13 +1,13 @@
-'use client';
-import React from 'react';
+"use client";
+import React from "react";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
-import { ScrollArea } from '@/components/ui/scroll-area';
+} from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Table,
   TableBody,
@@ -15,8 +15,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { type DatasetInfo } from '@/hooks/use-timeseries';
+} from "@/components/ui/table";
+import { type DatasetInfo } from "@/hooks/use-timeseries";
 
 interface DataTableProps {
   data: any[];
@@ -30,8 +30,8 @@ export function DataTable({ data, selectedDatasets }: DataTableProps) {
 
   // Helper function to format value
   const formatValue = (value: any): string => {
-    if (value === null || value === undefined) return '-';
-    if (typeof value === 'number') {
+    if (value === null || value === undefined) return "-";
+    if (typeof value === "number") {
       return value.toFixed(2);
     }
     return String(value);

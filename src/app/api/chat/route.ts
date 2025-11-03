@@ -1,16 +1,20 @@
-import { NextRequest } from 'next/server';
-import { retrieveRelevantContext, buildContextString } from '@/utils/ragRetriever';
-import { ChatDB } from '@/lib/db';
+import { NextRequest } from "next/server";
+import {
+  retrieveRelevantContext,
+  buildContextString,
+} from "@/utils/ragRetriever";
+import { ChatDB } from "@/lib/db";
 
 const HF_MODEL =
-  process.env.LLAMA_MODEL ?? 'meta-llama/Meta-Llama-3-8B-Instruct';
+  process.env.LLAMA_MODEL ?? "meta-llama/Meta-Llama-3-8B-Instruct";
 const TEST_USER_EMAIL =
-  process.env.TEST_CHAT_USER_EMAIL ?? 'test-user@icharm.local';
-const LLM_SERVICE_URL =
-  (process.env.LLM_SERVICE_URL ?? 'http://localhost:8001').replace(/\/$/, '');
+  process.env.TEST_CHAT_USER_EMAIL ?? "test-user@icharm.local";
+const LLM_SERVICE_URL = (
+  process.env.LLM_SERVICE_URL ?? "http://localhost:8001"
+).replace(/\/$/, "");
 
 type ChatMessage = {
-  role: 'system' | 'user' | 'assistant';
+  role: "system" | "user" | "assistant";
   content: string;
 };
 
@@ -27,17 +31,17 @@ function isValidMessagesPayload(payload: unknown): payload is ChatMessage[] {
   return payload.every(
     (item) =>
       item &&
-      typeof item === 'object' &&
-      'role' in item &&
-      'content' in item &&
-      typeof (item as ChatMessage).role === 'string' &&
-      typeof (item as ChatMessage).content === 'string'
+      typeof item === "object" &&
+      "role" in item &&
+      "content" in item &&
+      typeof (item as ChatMessage).role === "string" &&
+      typeof (item as ChatMessage).content === "string",
   );
 }
 
 function findLastUserMessage(messages: ChatMessage[]): ChatMessage | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i]?.role === 'user') {
+    if (messages[i]?.role === "user") {
       return messages[i];
     }
   }
@@ -50,7 +54,7 @@ function deriveSessionTitle(lastUserMessage?: ChatMessage): string | undefined {
   }
 
   const firstLine = lastUserMessage.content
-    .split('\n')
+    .split("\n")
     .map((line) => line.trim())
     .find((line) => line.length > 0);
 
@@ -58,50 +62,44 @@ function deriveSessionTitle(lastUserMessage?: ChatMessage): string | undefined {
     return undefined;
   }
 
-  const normalized = firstLine.replace(/\s+/g, ' ').trim();
+  const normalized = firstLine.replace(/\s+/g, " ").trim();
   if (!normalized) {
     return undefined;
   }
 
-  const words = normalized.split(' ');
+  const words = normalized.split(" ");
   const maxWords = 8;
-  const title = words.slice(0, maxWords).join(' ');
+  const title = words.slice(0, maxWords).join(" ");
 
   return words.length > maxWords ? `${title}…` : title;
 }
 
 export const maxDuration = 120; // Allow up to 120 seconds
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   let body: ChatRequestPayload;
   try {
     body = await req.json();
   } catch {
-    return Response.json(
-      { error: 'Invalid JSON body' },
-      { status: 400 }
-    );
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
   const { messages, sessionId: incomingSessionId } = body ?? {};
 
   if (!isValidMessagesPayload(messages)) {
-    return Response.json(
-      { error: 'Invalid chat payload' },
-      { status: 400 }
-    );
+    return Response.json({ error: "Invalid chat payload" }, { status: 400 });
   }
 
   const sanitizedSessionId =
-    typeof incomingSessionId === 'string' && incomingSessionId.trim()
+    typeof incomingSessionId === "string" && incomingSessionId.trim()
       ? incomingSessionId.trim()
       : null;
 
   // === RAG ENHANCEMENT START ===
   // Get the latest user message
   const lastUserMessage = findLastUserMessage(messages);
-  const userQuery = lastUserMessage?.content ?? '';
+  const userQuery = lastUserMessage?.content ?? "";
 
   let contextSources: Array<{
     id: string;
@@ -112,33 +110,41 @@ export async function POST(req: NextRequest) {
   let enhancedMessages = [...messages];
 
   if (userQuery) {
-    console.log('🔍 Analyzing query...');
+    console.log("🔍 Analyzing query...");
 
     try {
-      const { results: relevantSections, contextType } = await retrieveRelevantContext(userQuery, 3);
+      const { results: relevantSections, contextType } =
+        await retrieveRelevantContext(userQuery, 3);
 
       if (relevantSections.length > 0) {
-        console.log(`📚 Found ${relevantSections.length} relevant sections (${contextType})`);
+        console.log(
+          `📚 Found ${relevantSections.length} relevant sections (${contextType})`,
+        );
 
         // Build context string
         const contextString = buildContextString(
           relevantSections,
-          contextType === 'general' ? 'tutorial' : (contextType as 'tutorial' | 'about')
+          contextType === "general"
+            ? "tutorial"
+            : (contextType as "tutorial" | "about"),
         );
 
         // Store sources for response
-        contextSources = relevantSections.map(section => ({
+        contextSources = relevantSections.map((section) => ({
           id: section.id,
           title: section.title,
           category: section.category || contextType,
-          score: Math.round(section.score * 100) / 100
+          score: Math.round(section.score * 100) / 100,
         }));
 
-        console.log('📖 Retrieved sources:', contextSources.map(s => s.title).join(', '));
+        console.log(
+          "📖 Retrieved sources:",
+          contextSources.map((s) => s.title).join(", "),
+        );
 
         // Create appropriate system message based on context type
-        let systemPrompt = '';
-        if (contextType === 'about') {
+        let systemPrompt = "";
+        if (contextType === "about") {
           systemPrompt = `You are an AI assistant for iCharm/4DVD, a climate visualization platform. Use the following context about the platform's history, development, and information to answer the user's question.
 
 ${contextString}
@@ -163,12 +169,12 @@ Instructions:
         }
 
         const systemMessage: ChatMessage = {
-          role: 'system',
-          content: systemPrompt
+          role: "system",
+          content: systemPrompt,
         };
 
         // Insert system message at the beginning or update existing system message
-        const hasSystemMessage = messages[0]?.role === 'system';
+        const hasSystemMessage = messages[0]?.role === "system";
         if (hasSystemMessage) {
           enhancedMessages = [systemMessage, ...messages.slice(1)];
         } else {
@@ -176,7 +182,7 @@ Instructions:
         }
       }
     } catch (error) {
-      console.error('❌ RAG retrieval error:', error);
+      console.error("❌ RAG retrieval error:", error);
       // Continue without RAG enhancement if it fails
     }
   }
@@ -195,10 +201,17 @@ Instructions:
       if (sessionId) {
         const existing = await ChatDB.getSession(sessionId, testUser.id);
         if (!existing) {
-          const created = await ChatDB.createSession(testUser.id, candidateTitle);
+          const created = await ChatDB.createSession(
+            testUser.id,
+            candidateTitle,
+          );
           sessionId = created.id;
         } else if (!existing.title && candidateTitle) {
-          await ChatDB.updateSessionTitle(sessionId, testUser.id, candidateTitle);
+          await ChatDB.updateSessionTitle(
+            sessionId,
+            testUser.id,
+            candidateTitle,
+          );
         }
       } else {
         const created = await ChatDB.createSession(testUser.id, candidateTitle);
@@ -207,23 +220,25 @@ Instructions:
 
       if (sessionId) {
         try {
-          await ChatDB.addMessage(sessionId, 'user', lastUserMessage.content);
+          await ChatDB.addMessage(sessionId, "user", lastUserMessage.content);
         } catch (messageError) {
-          console.error('Failed to persist user message', messageError);
+          console.error("Failed to persist user message", messageError);
         }
       }
     } catch (bootstrapError) {
-      console.error('Failed to bootstrap chat persistence', bootstrapError);
+      console.error("Failed to bootstrap chat persistence", bootstrapError);
     }
   } else {
-    console.warn('No user message detected in payload; skipping persistence bootstrap.');
+    console.warn(
+      "No user message detected in payload; skipping persistence bootstrap.",
+    );
   }
 
   try {
     const llmResponse = await fetch(`${LLM_SERVICE_URL}/v1/chat`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         model: HF_MODEL,
@@ -233,10 +248,10 @@ Instructions:
       }),
     });
 
-    const contentType = llmResponse.headers.get('content-type') ?? '';
+    const contentType = llmResponse.headers.get("content-type") ?? "";
     let result: any;
 
-    if (contentType.includes('application/json')) {
+    if (contentType.includes("application/json")) {
       result = await llmResponse.json();
     } else {
       const text = await llmResponse.text();
@@ -245,72 +260,80 @@ Instructions:
 
     if (!llmResponse.ok) {
       let detail: string;
-      if (typeof result?.detail === 'string') {
+      if (typeof result?.detail === "string") {
         detail = result.detail;
-      } else if (result?.detail && typeof result.detail === 'object') {
+      } else if (result?.detail && typeof result.detail === "object") {
         const innerDetail = result.detail as Record<string, unknown>;
-        if (typeof innerDetail.error === 'string') {
-          const statusInfo = innerDetail.status ? ` (status ${innerDetail.status})` : '';
+        if (typeof innerDetail.error === "string") {
+          const statusInfo = innerDetail.status
+            ? ` (status ${innerDetail.status})`
+            : "";
           detail = `${innerDetail.error}${statusInfo}`;
-          if (typeof innerDetail.body === 'string' && innerDetail.body.trim()) {
-            detail += `: ${innerDetail.body.slice(0, 240)}${innerDetail.body.length > 240 ? '…' : ''}`;
+          if (typeof innerDetail.body === "string" && innerDetail.body.trim()) {
+            detail += `: ${innerDetail.body.slice(0, 240)}${innerDetail.body.length > 240 ? "…" : ""}`;
           }
         } else {
           detail = JSON.stringify(innerDetail);
         }
       } else if (result?.error) {
         detail =
-          typeof result.error === 'string'
+          typeof result.error === "string"
             ? result.error
             : JSON.stringify(result.error);
       } else {
-        detail = 'LLM service error';
+        detail = "LLM service error";
       }
 
-      console.error('LLM service error:', detail);
+      console.error("LLM service error:", detail);
 
       return Response.json(
         {
-          error: 'LLM request failed',
+          error: "LLM request failed",
           details: detail,
           sessionId: sessionId ?? undefined,
         },
-        { status: llmResponse.status }
+        { status: llmResponse.status },
       );
     }
 
     const completionText =
-      typeof result?.content === 'string' ? result.content : '';
+      typeof result?.content === "string" ? result.content : "";
 
     if (!completionText.trim()) {
       return Response.json(
-        { error: 'Empty response from model', sessionId: sessionId ?? undefined },
-        { status: 502 }
+        {
+          error: "Empty response from model",
+          sessionId: sessionId ?? undefined,
+        },
+        { status: 502 },
       );
     }
 
     const providerModel =
-      typeof result?.model === 'string'
+      typeof result?.model === "string"
         ? result.model
-        : typeof result?.raw?.model === 'string'
+        : typeof result?.raw?.model === "string"
           ? result.raw.model
           : undefined;
 
-    console.log('[llm] Success! Model response:', completionText);
+    console.log("[llm] Success! Model response:", completionText);
     if (providerModel) {
-      console.log('[llm] Provider used:', providerModel);
+      console.log("[llm] Provider used:", providerModel);
     }
 
     if (sessionId && completionText) {
       try {
         await ChatDB.addMessage(
           sessionId,
-          'assistant',
+          "assistant",
           completionText,
-          contextSources.length > 0 ? contextSources : undefined
+          contextSources.length > 0 ? contextSources : undefined,
         );
       } catch (assistantStoreError) {
-        console.error('Failed to persist assistant message', assistantStoreError);
+        console.error(
+          "Failed to persist assistant message",
+          assistantStoreError,
+        );
       }
     }
 
@@ -323,20 +346,20 @@ Instructions:
       },
       {
         headers: {
-          'Cache-Control': 'no-store',
+          "Cache-Control": "no-store",
         },
-      }
+      },
     );
   } catch (error) {
-    console.error('LLM service call failed:', error);
+    console.error("LLM service call failed:", error);
 
     return Response.json(
       {
-        error: 'LLM request failed',
-        details: (error as Error).message ?? 'Unknown error from LLM service',
+        error: "LLM request failed",
+        details: (error as Error).message ?? "Unknown error from LLM service",
         sessionId: sessionId ?? undefined,
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

@@ -24,11 +24,11 @@ services:
   llm-service:
     build:
       context: ./services/llm-service
-      dockerfile: Dockerfile 
+      dockerfile: Dockerfile
     container_name: icharm-llm-service
     restart: unless-stopped
     volumes:
-       - ./services/llm-service:/app
+      - ./services/llm-service:/app
     environment:
       HF_TOKEN: ${HF_TOKEN:-}
       LLAMA_API_KEY: ${LLAMA_API_KEY:-}

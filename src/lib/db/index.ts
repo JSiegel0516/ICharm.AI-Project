@@ -13,7 +13,7 @@ if (!process.env.POSTGRES_URL) {
 
 const connectionString = process.env.POSTGRES_URL;
 
-const queryClient = postgres(connectionString, { 
+const queryClient = postgres(connectionString, {
   max: 10,
   idle_timeout: 20,
   connect_timeout: 10,

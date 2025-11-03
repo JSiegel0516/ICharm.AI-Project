@@ -40,7 +40,7 @@ export class WeatherDataProcessor {
       unit?: string;
       source?: string;
       timestamp?: Date;
-    }
+    },
   ): ProcessedWeatherData {
     const points: WeatherDataPoint[] = rawData.map(([lat, lon, value]) => ({
       lat,
@@ -153,14 +153,14 @@ export class WeatherDataProcessor {
    */
   static filterByBounds(
     points: WeatherDataPoint[],
-    bounds: { north: number; south: number; east: number; west: number }
+    bounds: { north: number; south: number; east: number; west: number },
   ): WeatherDataPoint[] {
     return points.filter(
       (point) =>
         point.lat >= bounds.south &&
         point.lat <= bounds.north &&
         point.lon >= bounds.west &&
-        point.lon <= bounds.east
+        point.lon <= bounds.east,
     );
   }
 
@@ -170,7 +170,7 @@ export class WeatherDataProcessor {
   static findNearestPoint(
     points: WeatherDataPoint[],
     targetLat: number,
-    targetLon: number
+    targetLon: number,
   ): WeatherDataPoint | null {
     if (points.length === 0) return null;
 
@@ -179,7 +179,7 @@ export class WeatherDataProcessor {
       targetLat,
       targetLon,
       nearestPoint.lat,
-      nearestPoint.lon
+      nearestPoint.lon,
     );
 
     for (const point of points) {
@@ -187,7 +187,7 @@ export class WeatherDataProcessor {
         targetLat,
         targetLon,
         point.lat,
-        point.lon
+        point.lon,
       );
       if (distance < minDistance) {
         minDistance = distance;
@@ -205,7 +205,7 @@ export class WeatherDataProcessor {
     lat1: number,
     lon1: number,
     lat2: number,
-    lon2: number
+    lon2: number,
   ): number {
     const R = 6371; // Earth's radius in km
     const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -228,14 +228,14 @@ export class WeatherDataProcessor {
     targetLat: number,
     targetLon: number,
     power: number = 2,
-    maxDistance: number = 5 // degrees
+    maxDistance: number = 5, // degrees
   ): number | null {
     const nearbyPoints = points.filter((point) => {
       const distance = this.calculateDistance(
         targetLat,
         targetLon,
         point.lat,
-        point.lon
+        point.lon,
       );
       return distance <= maxDistance * 111; // Convert degrees to km approximately
     });
@@ -251,7 +251,7 @@ export class WeatherDataProcessor {
         targetLat,
         targetLon,
         point.lat,
-        point.lon
+        point.lon,
       );
 
       if (distance === 0) {
@@ -272,7 +272,7 @@ export class WeatherDataProcessor {
   static createGrid(
     points: WeatherDataPoint[],
     bounds: DataBounds,
-    resolution: { lat: number; lon: number }
+    resolution: { lat: number; lon: number },
   ): WeatherDataPoint[] {
     const gridPoints: WeatherDataPoint[] = [];
 
@@ -298,7 +298,7 @@ export class WeatherDataProcessor {
    */
   static smoothData(
     points: WeatherDataPoint[],
-    radius: number = 2 // degrees
+    radius: number = 2, // degrees
   ): WeatherDataPoint[] {
     return points.map((point) => {
       const nearbyPoints = points.filter((p) => {
@@ -306,7 +306,7 @@ export class WeatherDataProcessor {
           point.lat,
           point.lon,
           p.lat,
-          p.lon
+          p.lon,
         );
         return distance <= radius * 111; // Convert to km
       });
@@ -330,15 +330,15 @@ export class WeatherDataProcessor {
    */
   static removeOutliers(
     points: WeatherDataPoint[],
-    method: 'iqr' | 'zscore' = 'iqr',
-    threshold: number = 1.5
+    method: "iqr" | "zscore" = "iqr",
+    threshold: number = 1.5,
   ): WeatherDataPoint[] {
     if (points.length === 0) return points;
 
     const values = points.map((p) => p.value);
     let outlierIndices: Set<number>;
 
-    if (method === 'iqr') {
+    if (method === "iqr") {
       // Interquartile Range method
       const sorted = [...values].sort((a, b) => a - b);
       const q1 = sorted[Math.floor(sorted.length * 0.25)];
@@ -350,24 +350,24 @@ export class WeatherDataProcessor {
       outlierIndices = new Set(
         values
           .map((value, index) =>
-            value < lowerBound || value > upperBound ? index : -1
+            value < lowerBound || value > upperBound ? index : -1,
           )
-          .filter((index) => index !== -1)
+          .filter((index) => index !== -1),
       );
     } else {
       // Z-score method
       const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
       const stdDev = Math.sqrt(
         values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) /
-          values.length
+          values.length,
       );
 
       outlierIndices = new Set(
         values
           .map((value, index) =>
-            Math.abs((value - mean) / stdDev) > threshold ? index : -1
+            Math.abs((value - mean) / stdDev) > threshold ? index : -1,
           )
-          .filter((index) => index !== -1)
+          .filter((index) => index !== -1),
       );
     }
 
@@ -380,19 +380,19 @@ export class WeatherDataProcessor {
   static convertCoordinates(
     lat: number,
     lon: number,
-    fromFormat: 'decimal' | 'dms',
-    toFormat: 'decimal' | 'dms'
+    fromFormat: "decimal" | "dms",
+    toFormat: "decimal" | "dms",
   ): { lat: number | string; lon: number | string } {
     if (fromFormat === toFormat) {
       return { lat, lon };
     }
 
-    if (fromFormat === 'decimal' && toFormat === 'dms') {
+    if (fromFormat === "decimal" && toFormat === "dms") {
       return {
         lat: this.decimalToDMS(lat, true),
         lon: this.decimalToDMS(lon, false),
       };
-    } else if (fromFormat === 'dms' && toFormat === 'decimal') {
+    } else if (fromFormat === "dms" && toFormat === "decimal") {
       // This would need DMS input parsing - simplified for now
       return { lat, lon };
     }
@@ -409,11 +409,11 @@ export class WeatherDataProcessor {
 
     const direction = isLatitude
       ? decimal >= 0
-        ? 'N'
-        : 'S'
+        ? "N"
+        : "S"
       : decimal >= 0
-        ? 'E'
-        : 'W';
+        ? "E"
+        : "W";
 
     return `${degrees}°${minutes}'${seconds.toFixed(2)}"${direction}`;
   }
@@ -428,7 +428,7 @@ export class WeatherDataProcessor {
           point.lat,
           point.lon,
           p.lat,
-          p.lon
+          p.lon,
         );
         return distance > 0 && distance <= 200; // Within 200km
       });
@@ -444,7 +444,7 @@ export class WeatherDataProcessor {
           point.lat,
           point.lon,
           neighbor.lat,
-          neighbor.lon
+          neighbor.lon,
         );
         const gradient = Math.abs(neighbor.value - point.value) / distance;
         gradientSum += gradient;
@@ -462,17 +462,17 @@ export class WeatherDataProcessor {
 export function formatCoordinates(
   lat: number,
   lon: number,
-  precision: number = 2
+  precision: number = 2,
 ): string {
-  const latStr = `${Math.abs(lat).toFixed(precision)}°${lat >= 0 ? 'N' : 'S'}`;
-  const lonStr = `${Math.abs(lon).toFixed(precision)}°${lon >= 0 ? 'E' : 'W'}`;
+  const latStr = `${Math.abs(lat).toFixed(precision)}°${lat >= 0 ? "N" : "S"}`;
+  const lonStr = `${Math.abs(lon).toFixed(precision)}°${lon >= 0 ? "E" : "W"}`;
   return `${latStr}, ${lonStr}`;
 }
 
 export function formatValue(
   value: number,
   unit: string,
-  precision: number = 1
+  precision: number = 1,
 ): string {
   return `${value.toFixed(precision)} ${unit}`;
 }
@@ -484,7 +484,7 @@ export function isValidCoordinate(lat: number, lon: number): boolean {
 export function normalizeValue(
   value: number,
   min: number,
-  max: number
+  max: number,
 ): number {
   if (max === min) return 0;
   return (value - min) / (max - min);

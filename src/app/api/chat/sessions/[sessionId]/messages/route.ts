@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { ChatDB, type ChatMessage } from '@/lib/db';
+import { NextRequest, NextResponse } from "next/server";
+import { ChatDB, type ChatMessage } from "@/lib/db";
 
 const TEST_USER_EMAIL =
-  process.env.TEST_CHAT_USER_EMAIL ?? 'test-user@icharm.local';
+  process.env.TEST_CHAT_USER_EMAIL ?? "test-user@icharm.local";
 
 type RouteParams = {
   params: {
@@ -13,16 +13,16 @@ type RouteParams = {
 type NormalizedMessage = {
   id: string;
   sessionId: string;
-  role: ChatMessage['role'];
+  role: ChatMessage["role"];
   content: string;
-  sources?: ChatMessage['sources'];
+  sources?: ChatMessage["sources"];
   createdAt: string;
 };
 
 function normalizeMessage(message: ChatMessage): NormalizedMessage {
   // Handle date conversion with fallback
   let createdAtISO: string;
-  
+
   try {
     if (message.created_at instanceof Date) {
       // Already a Date object
@@ -32,7 +32,7 @@ function normalizeMessage(message: ChatMessage): NormalizedMessage {
       } else {
         createdAtISO = message.created_at.toISOString();
       }
-    } else if (typeof message.created_at === 'string') {
+    } else if (typeof message.created_at === "string") {
       // String - try to parse it
       const parsed = new Date(message.created_at);
       if (isNaN(parsed.getTime())) {
@@ -41,7 +41,7 @@ function normalizeMessage(message: ChatMessage): NormalizedMessage {
       } else {
         createdAtISO = parsed.toISOString();
       }
-    } else if (typeof message.created_at === 'number') {
+    } else if (typeof message.created_at === "number") {
       // Unix timestamp
       const parsed = new Date(message.created_at);
       if (isNaN(parsed.getTime())) {
@@ -54,7 +54,7 @@ function normalizeMessage(message: ChatMessage): NormalizedMessage {
       createdAtISO = new Date().toISOString();
     }
   } catch (error) {
-    console.error('Error parsing date for message', message.id, error);
+    console.error("Error parsing date for message", message.id, error);
     // Fallback to current time if all else fails
     createdAtISO = new Date().toISOString();
   }
@@ -75,8 +75,8 @@ export async function GET(_request: NextRequest, ctx: RouteParams) {
 
   if (!sessionId) {
     return NextResponse.json(
-      { error: 'Session id is required' },
-      { status: 400 }
+      { error: "Session id is required" },
+      { status: 400 },
     );
   }
 
@@ -85,10 +85,7 @@ export async function GET(_request: NextRequest, ctx: RouteParams) {
     const session = await ChatDB.getSession(sessionId, user.id);
 
     if (!session) {
-      return NextResponse.json(
-        { error: 'Session not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
     const messages = await ChatDB.getSessionMessages(sessionId);
@@ -98,10 +95,10 @@ export async function GET(_request: NextRequest, ctx: RouteParams) {
       messages: messages.map(normalizeMessage),
     });
   } catch (error) {
-    console.error('Failed to fetch session messages', error);
+    console.error("Failed to fetch session messages", error);
     return NextResponse.json(
-      { error: 'Failed to fetch session messages' },
-      { status: 500 }
+      { error: "Failed to fetch session messages" },
+      { status: 500 },
     );
   }
 }

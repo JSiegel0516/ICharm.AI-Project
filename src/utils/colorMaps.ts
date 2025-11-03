@@ -1,17 +1,11 @@
-import rawColorMaps from '@/data/tutorial/colorMaps.json';
+import rawColorMaps from "@/data/tutorial/colorMaps.json";
 
 type RawColorMapEntry = {
   FullName?: string;
   Values?: Array<string | { Hex?: string; hex?: string; Color?: string }>;
 };
 
-const DEFAULT_PALETTE = [
-  '#440154',
-  '#3b528b',
-  '#21918c',
-  '#5ec962',
-  '#fde725',
-];
+const DEFAULT_PALETTE = ["#440154", "#3b528b", "#21918c", "#5ec962", "#fde725"];
 
 const SAMPLE_SIZE = 10;
 
@@ -20,7 +14,7 @@ let lowerLookup: Map<string, string[]> | null = null;
 
 const toHex = (value: string): string => {
   const trimmed = value.trim();
-  return trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
+  return trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
 };
 
 const sampleColors = (colors: string[], count: number): string[] => {
@@ -39,8 +33,8 @@ const sampleColors = (colors: string[], count: number): string[] => {
 const buildAliases = (name: string): string[] => {
   const aliases = new Set<string>();
   aliases.add(name);
-  aliases.add(name.replace(/\|/g, ' ').trim());
-  name.split('|').forEach((segment) => {
+  aliases.add(name.replace(/\|/g, " ").trim());
+  name.split("|").forEach((segment) => {
     const trimmed = segment.trim();
     if (trimmed.length > 0) {
       aliases.add(trimmed);
@@ -50,7 +44,7 @@ const buildAliases = (name: string): string[] => {
 };
 
 const normaliseHexValue = (value: unknown): string | null => {
-  if (typeof value === 'string' && value.trim()) {
+  if (typeof value === "string" && value.trim()) {
     const cleaned = value.trim();
     if (/^#?[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$/.test(cleaned)) {
       return toHex(cleaned);
@@ -58,15 +52,15 @@ const normaliseHexValue = (value: unknown): string | null => {
   }
   if (
     value &&
-    typeof value === 'object' &&
-    ('Hex' in (value as Record<string, unknown>) ||
-      'hex' in (value as Record<string, unknown>) ||
-      'Color' in (value as Record<string, unknown>))
+    typeof value === "object" &&
+    ("Hex" in (value as Record<string, unknown>) ||
+      "hex" in (value as Record<string, unknown>) ||
+      "Color" in (value as Record<string, unknown>))
   ) {
     const map = value as Record<string, unknown>;
     const candidate =
       (map.Hex as string) || (map.hex as string) || (map.Color as string);
-    if (typeof candidate === 'string') {
+    if (typeof candidate === "string") {
       return normaliseHexValue(candidate);
     }
   }
@@ -112,15 +106,15 @@ const ensureLookup = () => {
     });
   });
 
-  if (!primaryLookup.has('viridis')) {
-    primaryLookup.set('viridis', DEFAULT_PALETTE);
-    lowerLookup!.set('viridis', DEFAULT_PALETTE);
+  if (!primaryLookup.has("viridis")) {
+    primaryLookup.set("viridis", DEFAULT_PALETTE);
+    lowerLookup!.set("viridis", DEFAULT_PALETTE);
   }
 };
 
 export const getColorMapColors = (
   name?: string | null,
-  fallback: string[] = DEFAULT_PALETTE
+  fallback: string[] = DEFAULT_PALETTE,
 ): string[] => {
   ensureLookup();
 
@@ -140,8 +134,8 @@ export const getColorMapColors = (
   const candidates = [
     trimmed,
     trimmed.toLowerCase(),
-    trimmed.replace(/\|/g, ' ').trim(),
-    trimmed.split('|').pop()?.trim() ?? '',
+    trimmed.replace(/\|/g, " ").trim(),
+    trimmed.split("|").pop()?.trim() ?? "",
   ].filter(Boolean);
 
   for (const candidate of candidates) {

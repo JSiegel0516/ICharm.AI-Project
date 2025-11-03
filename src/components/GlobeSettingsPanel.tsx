@@ -1,16 +1,16 @@
-import React, { useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import React, { useRef, useEffect } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Slider } from '@/components/ui/slider';
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 
 interface GlobeSettingsPanelProps {
   isOpen: boolean;
@@ -49,9 +49,9 @@ export function GlobeSettingsPanel({
     };
 
     if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener("mousedown", handleClickOutside);
       return () => {
-        document.removeEventListener('mousedown', handleClickOutside);
+        document.removeEventListener("mousedown", handleClickOutside);
       };
     }
   }, [isOpen, onClose]);
@@ -64,7 +64,7 @@ export function GlobeSettingsPanel({
           initial={{ x: -100, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
           exit={{ x: -100, opacity: 0 }}
-          transition={{ duration: 0.3, ease: 'easeInOut' }}
+          transition={{ duration: 0.3, ease: "easeInOut" }}
           className="pointer-events-auto fixed top-1/2 left-4 z-9999 w-96 -translate-y-1/2"
         >
           <Card>
@@ -74,16 +74,21 @@ export function GlobeSettingsPanel({
                 Customize globe appearance and layers
               </CardDescription>
             </CardHeader>
-            
+
             <CardContent className="space-y-6">
               {/* Layer Manipulation Section */}
               <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-white">Layer Visibility</h3>
-                
+                <h3 className="text-sm font-semibold text-white">
+                  Layer Visibility
+                </h3>
+
                 {/* Satellite Layer Toggle */}
                 <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-3">
                   <div className="space-y-0.5">
-                    <Label htmlFor="satellite-toggle" className="text-sm font-medium text-white cursor-pointer">
+                    <Label
+                      htmlFor="satellite-toggle"
+                      className="cursor-pointer text-sm font-medium text-white"
+                    >
                       Satellite Imagery
                     </Label>
                     <p className="text-xs text-slate-400">
@@ -101,7 +106,10 @@ export function GlobeSettingsPanel({
                 {/* Boundary Lines Toggle */}
                 <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-3">
                   <div className="space-y-0.5">
-                    <Label htmlFor="boundary-toggle" className="text-sm font-medium text-white cursor-pointer">
+                    <Label
+                      htmlFor="boundary-toggle"
+                      className="cursor-pointer text-sm font-medium text-white"
+                    >
                       Boundary Lines
                     </Label>
                     <p className="text-xs text-slate-400">
@@ -121,7 +129,10 @@ export function GlobeSettingsPanel({
               <div className="space-y-4">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label htmlFor="raster-opacity" className="text-sm font-semibold text-white">
+                    <Label
+                      htmlFor="raster-opacity"
+                      className="text-sm font-semibold text-white"
+                    >
                       Raster Opacity
                     </Label>
                     <span className="text-sm font-medium text-slate-400">
@@ -153,8 +164,9 @@ export function GlobeSettingsPanel({
               {/* Info Section */}
               <div className="rounded-lg border border-blue-500/30 bg-blue-900/20 p-3">
                 <p className="text-xs text-blue-200">
-                  <strong>Tip:</strong> Disable satellite imagery to see pure climate data, 
-                  or adjust opacity to blend data with terrain features.
+                  <strong>Tip:</strong> Disable satellite imagery to see pure
+                  climate data, or adjust opacity to blend data with terrain
+                  features.
                 </p>
               </div>
             </CardContent>

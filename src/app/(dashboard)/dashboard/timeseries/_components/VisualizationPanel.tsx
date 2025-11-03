@@ -1,25 +1,25 @@
-'use client';
-import React, { useState, useEffect } from 'react';
-import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Button } from '@/components/ui/button';
+"use client";
+import React, { useState, useEffect } from "react";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
-import { Slider } from '@/components/ui/slider';
-import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+} from "@/components/ui/card";
+import { Slider } from "@/components/ui/slider";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   LineChart,
   Line,
@@ -35,17 +35,17 @@ import {
   Tooltip as RechartsTooltip,
   Legend,
   ResponsiveContainer,
-} from 'recharts';
+} from "recharts";
 import {
   ChartType,
   AnalysisModel,
   AggregationMethod,
   type DatasetInfo,
   type ProcessingInfo,
-} from '@/hooks/use-timeseries';
-import { X, RotateCcw } from 'lucide-react';
+} from "@/hooks/use-timeseries";
+import { X, RotateCcw } from "lucide-react";
 
-type NormalizationMode = 'all' | 'selected';
+type NormalizationMode = "all" | "selected";
 
 interface CoordinateSelection {
   lat?: number;
@@ -104,12 +104,12 @@ export function VisualizationPanel({
   metadata,
 }: VisualizationPanelProps) {
   const [normalizationMode, setNormalizationMode] =
-    useState<NormalizationMode>('all');
+    useState<NormalizationMode>("all");
   const [selectedCoordinates, setSelectedCoordinates] = useState<
     CoordinateSelection[]
   >([]);
-  const [tempLat, setTempLat] = useState('');
-  const [tempLon, setTempLon] = useState('');
+  const [tempLat, setTempLat] = useState("");
+  const [tempLon, setTempLon] = useState("");
 
   // NEW: Zoom state for X and Y axes
   const [xAxisZoom, setXAxisZoom] = useState<[number, number]>([0, 100]);
@@ -117,16 +117,16 @@ export function VisualizationPanel({
 
   // DEBUG: Log chart data structure
   useEffect(() => {
-    console.log('=== VisualizationPanel Debug ===');
-    console.log('chartData length:', chartData.length);
-    console.log('chartData sample:', chartData.slice(0, 3));
+    console.log("=== VisualizationPanel Debug ===");
+    console.log("chartData length:", chartData.length);
+    console.log("chartData sample:", chartData.slice(0, 3));
     console.log(
-      'chartData keys:',
-      chartData.length > 0 ? Object.keys(chartData[0]) : []
+      "chartData keys:",
+      chartData.length > 0 ? Object.keys(chartData[0]) : [],
     );
-    console.log('selectedDatasets:', selectedDatasets);
-    console.log('visibleDatasets:', Array.from(visibleDatasets));
-    console.log('processingInfo:', processingInfo);
+    console.log("selectedDatasets:", selectedDatasets);
+    console.log("visibleDatasets:", Array.from(visibleDatasets));
+    console.log("processingInfo:", processingInfo);
   }, [chartData, selectedDatasets, visibleDatasets, processingInfo]);
 
   const addCoordinate = () => {
@@ -135,8 +135,8 @@ export function VisualizationPanel({
 
     if (!isNaN(lat) && !isNaN(lon)) {
       setSelectedCoordinates([...selectedCoordinates, { lat, lon }]);
-      setTempLat('');
-      setTempLon('');
+      setTempLat("");
+      setTempLon("");
     }
   };
 
@@ -166,7 +166,7 @@ export function VisualizationPanel({
     filteredData.forEach((point) => {
       visibleDatasetIds.forEach((datasetId) => {
         const value = point[datasetId];
-        if (typeof value === 'number' && !isNaN(value)) {
+        if (typeof value === "number" && !isNaN(value)) {
           minY = Math.min(minY, value);
           maxY = Math.max(maxY, value);
         }
@@ -192,20 +192,20 @@ export function VisualizationPanel({
 
   const renderChart = () => {
     const visibleLines = selectedDatasets.filter((d) =>
-      visibleDatasets.has(d.id)
+      visibleDatasets.has(d.id),
     );
 
     const colors = [
-      '#8884d8',
-      '#82ca9d',
-      '#ffc658',
-      '#ff7c7c',
-      '#8dd1e1',
-      '#d084d0',
-      '#ffb347',
-      '#67b7dc',
-      '#a4de6c',
-      '#ffd93d',
+      "#8884d8",
+      "#82ca9d",
+      "#ffc658",
+      "#ff7c7c",
+      "#8dd1e1",
+      "#d084d0",
+      "#ffb347",
+      "#67b7dc",
+      "#a4de6c",
+      "#ffd93d",
     ];
 
     const visibleDatasetIds = Array.from(visibleDatasets);
@@ -215,7 +215,7 @@ export function VisualizationPanel({
     };
 
     // DEBUG: Log what we're trying to render
-    console.log('Rendering chart with:', {
+    console.log("Rendering chart with:", {
       dataPoints: filteredChartData.length,
       visibleDatasetIds,
       samplePoint: filteredChartData[0],
@@ -249,7 +249,7 @@ export function VisualizationPanel({
                     dot={false}
                     connectNulls={false}
                   />
-                )
+                ),
             )}
           </LineChart>
         );
@@ -277,7 +277,7 @@ export function VisualizationPanel({
                     name={(dataset as any).datasetName || dataset.name}
                     fill={colors[idx % colors.length]}
                   />
-                )
+                ),
             )}
           </BarChart>
         );
@@ -308,7 +308,7 @@ export function VisualizationPanel({
                     fill={colors[idx % colors.length]}
                     fillOpacity={0.6}
                   />
-                )
+                ),
             )}
           </AreaChart>
         );
@@ -336,7 +336,7 @@ export function VisualizationPanel({
                     name={(dataset as any).datasetName || dataset.name}
                     fill={colors[idx % colors.length]}
                   />
-                )
+                ),
             )}
           </ScatterChart>
         );
@@ -471,9 +471,9 @@ export function VisualizationPanel({
                   Resample Frequency
                 </label>
                 <Select
-                  value={resampleFreq || 'none'}
+                  value={resampleFreq || "none"}
                   onValueChange={(v) =>
-                    setResampleFreq(v === 'none' ? undefined : v)
+                    setResampleFreq(v === "none" ? undefined : v)
                   }
                 >
                   <SelectTrigger>
@@ -481,7 +481,7 @@ export function VisualizationPanel({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">No resampling</SelectItem>
-                    {['D', 'W', 'M', 'Q', 'Y'].map((freq) => (
+                    {["D", "W", "M", "Q", "Y"].map((freq) => (
                       <SelectItem key={freq} value={freq}>
                         {freq}
                       </SelectItem>
@@ -556,7 +556,7 @@ export function VisualizationPanel({
                     </div>
                   </RadioGroup>
 
-                  {normalizationMode === 'selected' && (
+                  {normalizationMode === "selected" && (
                     <div className="border-muted space-y-3 border-l-2 pl-6">
                       <div className="flex items-end gap-2">
                         <div className="flex-1">
@@ -608,7 +608,7 @@ export function VisualizationPanel({
                                 className="bg-muted/50 flex items-center justify-between rounded px-2 py-1 text-xs"
                               >
                                 <span className="font-mono">
-                                  {coord.lat?.toFixed(4)},{' '}
+                                  {coord.lat?.toFixed(4)},{" "}
                                   {coord.lon?.toFixed(4)}
                                 </span>
                                 <Button
@@ -635,7 +635,7 @@ export function VisualizationPanel({
                   )}
 
                   <div className="text-muted-foreground rounded bg-blue-50 p-2 text-xs dark:bg-blue-950/20">
-                    {normalizationMode === 'all' ? (
+                    {normalizationMode === "all" ? (
                       <p>
                         All data points will be normalized to a 0-1 scale based
                         on the min/max values across all datasets.
@@ -664,17 +664,17 @@ export function VisualizationPanel({
                 <CardTitle>Time Series Visualization</CardTitle>
                 {processingInfo && (
                   <CardDescription>
-                    {processingInfo.totalPoints} data points •{' '}
-                    {processingInfo.datasetsProcessed} datasets • Processed in{' '}
+                    {processingInfo.totalPoints} data points •{" "}
+                    {processingInfo.datasetsProcessed} datasets • Processed in{" "}
                     {processingInfo.processingTime}
                     {normalize && (
                       <>
-                        {' '}
-                        • Normalization:{' '}
-                        {normalizationMode === 'all'
-                          ? 'All data'
+                        {" "}
+                        • Normalization:{" "}
+                        {normalizationMode === "all"
+                          ? "All data"
                           : `${selectedCoordinates.length} coordinate${
-                              selectedCoordinates.length !== 1 ? 's' : ''
+                              selectedCoordinates.length !== 1 ? "s" : ""
                             }`}
                       </>
                     )}
@@ -792,16 +792,16 @@ export function VisualizationPanel({
                         <span className="text-muted-foreground">Trend:</span>
                         <span
                           className={`font-mono ${
-                            stats.trend >= 0 ? 'text-green-600' : 'text-red-600'
+                            stats.trend >= 0 ? "text-green-600" : "text-red-600"
                           }`}
                         >
-                          {stats.trend >= 0 ? '+' : ''}
+                          {stats.trend >= 0 ? "+" : ""}
                           {stats.trend.toFixed(4)}
                         </span>
                       </div>
                     </div>
                   </Card>
-                )
+                ),
               )}
             </div>
           </CardContent>

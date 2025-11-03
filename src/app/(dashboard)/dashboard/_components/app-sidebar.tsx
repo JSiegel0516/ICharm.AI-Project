@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import * as React from 'react';
+import * as React from "react";
 import {
   ArrowUpCircleIcon,
   BarChartIcon,
@@ -17,14 +17,14 @@ import {
   SearchIcon,
   SettingsIcon,
   UsersIcon,
-} from 'lucide-react';
+} from "lucide-react";
 
-import Link from 'next/link';
+import Link from "next/link";
 
-import { NavDocuments } from '@/components/nav-documents';
-import { NavMain } from '@/components/nav-main';
-import { NavSecondary } from '@/components/nav-secondary';
-import { NavUser } from '@/components/nav-user';
+import { NavDocuments } from "@/components/nav-documents";
+import { NavMain } from "@/components/nav-main";
+import { NavSecondary } from "@/components/nav-secondary";
+import { NavUser } from "@/components/nav-user";
 import {
   Sidebar,
   SidebarContent,
@@ -33,115 +33,115 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from '@/components/ui/sidebar';
+} from "@/components/ui/sidebar";
 
 const data = {
   user: {
-    name: 'shadcn',
-    email: 'm@example.com',
-    avatar: '/avatars/shadcn.jpg',
+    name: "shadcn",
+    email: "m@example.com",
+    avatar: "/avatars/shadcn.jpg",
   },
   navMain: [
     {
-      title: 'Dashboard',
-      url: '/dashboard',
+      title: "Dashboard",
+      url: "/dashboard",
       icon: LayoutDashboardIcon,
     },
     {
-      title: 'Time Series',
-      url: '/dashboard/timeseries',
+      title: "Time Series",
+      url: "/dashboard/timeseries",
       icon: BarChartIcon,
     },
     {
-      title: 'Projects',
-      url: '#',
+      title: "Projects",
+      url: "#",
       icon: FolderIcon,
     },
     {
-      title: 'Team',
-      url: '#',
+      title: "Team",
+      url: "#",
       icon: UsersIcon,
     },
   ],
   navClouds: [
     {
-      title: 'Capture',
+      title: "Capture",
       icon: CameraIcon,
       isActive: true,
-      url: '#',
+      url: "#",
       items: [
         {
-          title: 'Active Proposals',
-          url: '#',
+          title: "Active Proposals",
+          url: "#",
         },
         {
-          title: 'Archived',
-          url: '#',
+          title: "Archived",
+          url: "#",
         },
       ],
     },
     {
-      title: 'Proposal',
+      title: "Proposal",
       icon: FileTextIcon,
-      url: '#',
+      url: "#",
       items: [
         {
-          title: 'Active Proposals',
-          url: '#',
+          title: "Active Proposals",
+          url: "#",
         },
         {
-          title: 'Archived',
-          url: '#',
+          title: "Archived",
+          url: "#",
         },
       ],
     },
     {
-      title: 'Prompts',
+      title: "Prompts",
       icon: FileCodeIcon,
-      url: '#',
+      url: "#",
       items: [
         {
-          title: 'Active Proposals',
-          url: '#',
+          title: "Active Proposals",
+          url: "#",
         },
         {
-          title: 'Archived',
-          url: '#',
+          title: "Archived",
+          url: "#",
         },
       ],
     },
   ],
   navSecondary: [
     {
-      title: 'Settings',
-      url: '#',
+      title: "Settings",
+      url: "#",
       icon: SettingsIcon,
     },
     {
-      title: 'Get Help',
-      url: '#',
+      title: "Get Help",
+      url: "#",
       icon: HelpCircleIcon,
     },
     {
-      title: 'Search',
-      url: '#',
+      title: "Search",
+      url: "#",
       icon: SearchIcon,
     },
   ],
   documents: [
     {
-      name: 'Data Library',
-      url: '#',
+      name: "Data Library",
+      url: "#",
       icon: DatabaseIcon,
     },
     {
-      name: 'Reports',
-      url: '#',
+      name: "Reports",
+      url: "#",
       icon: ClipboardListIcon,
     },
     {
-      name: 'Chat History',
-      url: '#',
+      name: "Chat History",
+      url: "#",
       icon: FileIcon,
     },
   ],

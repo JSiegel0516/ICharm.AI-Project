@@ -3,104 +3,104 @@ export interface ColorScale {
   description: string;
   colors: string[];
   domain: [number, number];
-  type: 'sequential' | 'diverging' | 'categorical';
+  type: "sequential" | "diverging" | "categorical";
 }
 
 // Predefined color scales for different data types
 export const colorScales: Record<string, ColorScale> = {
   temperature: {
-    name: 'Air Temperature',
-    description: 'Blue to red air temperature scale',
+    name: "Air Temperature",
+    description: "Blue to red air temperature scale",
     colors: [
-      '#313695', // Deep blue (coldest)
-      '#4575b4', // Blue
-      '#74add1', // Light blue
-      '#abd9e9', // Pale blue
-      '#e0f3f8', // Very pale blue
-      '#ffffbf', // Pale yellow (neutral)
-      '#fee090', // Light orange
-      '#fdae61', // Orange
-      '#f46d43', // Red-orange
-      '#d73027', // Red
-      '#a50026', // Deep red (hottest)
+      "#313695", // Deep blue (coldest)
+      "#4575b4", // Blue
+      "#74add1", // Light blue
+      "#abd9e9", // Pale blue
+      "#e0f3f8", // Very pale blue
+      "#ffffbf", // Pale yellow (neutral)
+      "#fee090", // Light orange
+      "#fdae61", // Orange
+      "#f46d43", // Red-orange
+      "#d73027", // Red
+      "#a50026", // Deep red (hottest)
     ],
     domain: [-40, 40],
-    type: 'diverging',
+    type: "diverging",
   },
 
   precipitation: {
-    name: 'Precipitation',
-    description: 'Dry to wet precipitation scale',
+    name: "Precipitation",
+    description: "Dry to wet precipitation scale",
     colors: [
-      '#8B4513', // Saddle brown (very dry)
-      '#CD853F', // Peru/tan (dry)
-      '#DEB887', // Burlywood (dry-ish)
-      '#F0E68C', // Khaki (slightly dry)
-      '#90EE90', // Light green (moderate)
-      '#98FB98', // Pale green (moderate-wet)
-      '#00FA9A', // Medium spring green (wet)
-      '#48D1CC', // Medium turquoise (wetter)
-      '#4682B4', // Steel blue (very wet)
-      '#4169E1', // Royal blue (extremely wet)
-      '#0000CD', // Medium blue (wettest)
+      "#8B4513", // Saddle brown (very dry)
+      "#CD853F", // Peru/tan (dry)
+      "#DEB887", // Burlywood (dry-ish)
+      "#F0E68C", // Khaki (slightly dry)
+      "#90EE90", // Light green (moderate)
+      "#98FB98", // Pale green (moderate-wet)
+      "#00FA9A", // Medium spring green (wet)
+      "#48D1CC", // Medium turquoise (wetter)
+      "#4682B4", // Steel blue (very wet)
+      "#4169E1", // Royal blue (extremely wet)
+      "#0000CD", // Medium blue (wettest)
     ],
     domain: [0, 500],
-    type: 'sequential',
+    type: "sequential",
   },
 
   seaSurfaceTemp: {
-    name: 'Sea Surface Temperature',
-    description: 'Ocean temperature color scale',
+    name: "Sea Surface Temperature",
+    description: "Ocean temperature color scale",
     colors: [
-      '#08306b', // Very dark blue (coldest)
-      '#08519c', // Dark blue
-      '#2171b5', // Medium blue
-      '#4292c6', // Blue
-      '#6baed6', // Light blue
-      '#9ecae1', // Pale blue
-      '#c6dbef', // Very pale blue
-      '#deebf7', // Almost white blue
-      '#fee5d9', // Very pale pink
-      '#fcbba1', // Pale pink
-      '#fc9272', // Light red-pink
-      '#fb6a4a', // Pink-red
-      '#ef3b2c', // Red
-      '#cb181d', // Dark red
-      '#99000d', // Very dark red (warmest)
+      "#08306b", // Very dark blue (coldest)
+      "#08519c", // Dark blue
+      "#2171b5", // Medium blue
+      "#4292c6", // Blue
+      "#6baed6", // Light blue
+      "#9ecae1", // Pale blue
+      "#c6dbef", // Very pale blue
+      "#deebf7", // Almost white blue
+      "#fee5d9", // Very pale pink
+      "#fcbba1", // Pale pink
+      "#fc9272", // Light red-pink
+      "#fb6a4a", // Pink-red
+      "#ef3b2c", // Red
+      "#cb181d", // Dark red
+      "#99000d", // Very dark red (warmest)
     ],
     domain: [-2, 35],
-    type: 'sequential',
+    type: "sequential",
   },
 
   windSpeed: {
-    name: 'Wind Speed',
-    description: 'Wind speed visualization',
+    name: "Wind Speed",
+    description: "Wind speed visualization",
     colors: [
-      '#f8f9fa', // Calm
-      '#e9ecef',
-      '#adb5bd',
-      '#6c757d',
-      '#495057',
-      '#343a40',
-      '#212529', // Strong wind
+      "#f8f9fa", // Calm
+      "#e9ecef",
+      "#adb5bd",
+      "#6c757d",
+      "#495057",
+      "#343a40",
+      "#212529", // Strong wind
     ],
     domain: [0, 25],
-    type: 'sequential',
+    type: "sequential",
   },
 
   pressure: {
-    name: 'Atmospheric Pressure',
-    description: 'Pressure visualization',
+    name: "Atmospheric Pressure",
+    description: "Pressure visualization",
     colors: [
-      '#8e44ad', // Low pressure
-      '#3498db',
-      '#2ecc71',
-      '#f1c40f',
-      '#e67e22',
-      '#e74c3c', // High pressure
+      "#8e44ad", // Low pressure
+      "#3498db",
+      "#2ecc71",
+      "#f1c40f",
+      "#e67e22",
+      "#e74c3c", // High pressure
     ],
     domain: [980, 1040],
-    type: 'diverging',
+    type: "diverging",
   },
 };
 
@@ -108,7 +108,7 @@ export const colorScales: Record<string, ColorScale> = {
 export function interpolateColor(
   color1: string,
   color2: string,
-  factor: number
+  factor: number,
 ): string {
   // Convert hex to RGB
   const hexToRgb = (hex: string) => {
@@ -124,7 +124,7 @@ export function interpolateColor(
 
   // Convert RGB to hex
   const rgbToHex = (r: number, g: number, b: number) => {
-    return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+    return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
   };
 
   const c1 = hexToRgb(color1);
@@ -168,27 +168,31 @@ export function getColorScale(datasetId: string): (value: number) => string {
   const id = datasetId.toLowerCase();
 
   // Check for sea surface temperature first (more specific)
-  if (id.includes('sst') || id.includes('sea') || id.includes('ocean')) {
+  if (id.includes("sst") || id.includes("sea") || id.includes("ocean")) {
     scale = colorScales.seaSurfaceTemp;
   }
   // Then check for general temperature
-  else if (id.includes('temperature') || id.includes('temp') || id.includes('airtemp')) {
+  else if (
+    id.includes("temperature") ||
+    id.includes("temp") ||
+    id.includes("airtemp")
+  ) {
     scale = colorScales.temperature;
   }
   // Check for precipitation
   else if (
-    id.includes('precipitation') ||
-    id.includes('precip') ||
-    id.includes('rain')
+    id.includes("precipitation") ||
+    id.includes("precip") ||
+    id.includes("rain")
   ) {
     scale = colorScales.precipitation;
   }
   // Check for wind
-  else if (id.includes('wind')) {
+  else if (id.includes("wind")) {
     scale = colorScales.windSpeed;
   }
   // Check for pressure
-  else if (id.includes('pressure')) {
+  else if (id.includes("pressure")) {
     scale = colorScales.pressure;
   }
   // Default to temperature scale
@@ -212,34 +216,38 @@ export interface ColorBarData {
 
 export function generateColorBarData(
   datasetId: string,
-  numTicks: number = 7
+  numTicks: number = 7,
 ): ColorBarData {
   let scale: ColorScale;
 
   const id = datasetId.toLowerCase();
 
   // Check for sea surface temperature first (more specific)
-  if (id.includes('sst') || id.includes('sea') || id.includes('ocean')) {
+  if (id.includes("sst") || id.includes("sea") || id.includes("ocean")) {
     scale = colorScales.seaSurfaceTemp;
   }
   // Then check for general temperature
-  else if (id.includes('temperature') || id.includes('temp') || id.includes('airtemp')) {
+  else if (
+    id.includes("temperature") ||
+    id.includes("temp") ||
+    id.includes("airtemp")
+  ) {
     scale = colorScales.temperature;
   }
   // Check for precipitation
   else if (
-    id.includes('precipitation') ||
-    id.includes('precip') ||
-    id.includes('rain')
+    id.includes("precipitation") ||
+    id.includes("precip") ||
+    id.includes("rain")
   ) {
     scale = colorScales.precipitation;
   }
   // Check for wind
-  else if (id.includes('wind')) {
+  else if (id.includes("wind")) {
     scale = colorScales.windSpeed;
   }
   // Check for pressure
-  else if (id.includes('pressure')) {
+  else if (id.includes("pressure")) {
     scale = colorScales.pressure;
   }
   // Default
@@ -265,7 +273,7 @@ export function generateColorBarData(
       const position = (index / (scale.colors.length - 1)) * 100;
       return `${color} ${position}%`;
     })
-    .join(', ');
+    .join(", ");
 
   const gradient = `linear-gradient(to top, ${gradientStops})`;
 
@@ -292,47 +300,47 @@ function formatTickLabel(value: number, scale: ColorScale): string {
 // Color scale presets for different visualization needs
 export const colorScalePresets = {
   viridis: [
-    '#440154',
-    '#482777',
-    '#3f4a8a',
-    '#31678e',
-    '#26838f',
-    '#1f9d8a',
-    '#6cce5a',
-    '#b6de2b',
-    '#fee825',
+    "#440154",
+    "#482777",
+    "#3f4a8a",
+    "#31678e",
+    "#26838f",
+    "#1f9d8a",
+    "#6cce5a",
+    "#b6de2b",
+    "#fee825",
   ],
   plasma: [
-    '#0d0887',
-    '#4b0c6b',
-    '#781c6d',
-    '#a52c60',
-    '#cf4446',
-    '#ed6925',
-    '#fb9b06',
-    '#f7d03c',
-    '#f0f921',
+    "#0d0887",
+    "#4b0c6b",
+    "#781c6d",
+    "#a52c60",
+    "#cf4446",
+    "#ed6925",
+    "#fb9b06",
+    "#f7d03c",
+    "#f0f921",
   ],
   magma: [
-    '#000004',
-    '#1c1044',
-    '#4f127b',
-    '#812581',
-    '#b5367a',
-    '#e55c30',
-    '#fba40a',
-    '#f2f013',
+    "#000004",
+    "#1c1044",
+    "#4f127b",
+    "#812581",
+    "#b5367a",
+    "#e55c30",
+    "#fba40a",
+    "#f2f013",
   ],
   inferno: [
-    '#000004',
-    '#1f0c48',
-    '#550f6d',
-    '#88226a',
-    '#a83655',
-    '#cc4778',
-    '#dc7176',
-    '#f8a07e',
-    '#fbd7a4',
+    "#000004",
+    "#1f0c48",
+    "#550f6d",
+    "#88226a",
+    "#a83655",
+    "#cc4778",
+    "#dc7176",
+    "#f8a07e",
+    "#fbd7a4",
   ],
 };
 
@@ -340,7 +348,7 @@ export function createCustomColorScale(
   name: string,
   colors: string[],
   domain: [number, number],
-  type: ColorScale['type'] = 'sequential'
+  type: ColorScale["type"] = "sequential",
 ): ColorScale {
   return {
     name,

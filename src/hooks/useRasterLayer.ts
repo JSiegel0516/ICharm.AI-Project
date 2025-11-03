@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Buffer } from 'buffer';
-import type { Dataset } from '@/types';
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Buffer } from "buffer";
+import type { Dataset } from "@/types";
 
 export type RasterLayerTexture = {
   imageUrl: string;
@@ -37,17 +37,17 @@ const formatDateForApi = (date?: Date) => {
   if (!date) {
     return null;
   }
-  return date.toISOString().split('T')[0];
+  return date.toISOString().split("T")[0];
 };
 
 const decodeBase64 = (value?: string) => {
   if (!value) {
-    return '';
+    return "";
   }
-  if (typeof atob === 'function') {
+  if (typeof atob === "function") {
     return atob(value);
   }
-  return Buffer.from(value, 'base64').toString('binary');
+  return Buffer.from(value, "base64").toString("binary");
 };
 
 const decodeFloat32 = (base64: string | undefined): Float32Array => {
@@ -94,7 +94,7 @@ const buildSampler = (
   lonValues: Float64Array,
   values: Float32Array,
   rows: number,
-  cols: number
+  cols: number,
 ) => {
   if (
     !rows ||
@@ -150,7 +150,7 @@ export const useRasterLayer = ({
       return undefined;
     }
     const sanitized = colors
-      .map((color) => (typeof color === 'string' ? color.trim() : ''))
+      .map((color) => (typeof color === "string" ? color.trim() : ""))
       .filter((color) => color.length > 0);
     return sanitized.length ? sanitized : undefined;
   }, [dataset]);
@@ -160,8 +160,8 @@ export const useRasterLayer = ({
     if (!backendDatasetId || !dateKey) {
       return undefined;
     }
-    const colorKey = cssColors ? cssColors.join('|') : 'default';
-    return `${backendDatasetId}::${dateKey}::${level ?? 'surface'}::${colorKey}`;
+    const colorKey = cssColors ? cssColors.join("|") : "default";
+    return `${backendDatasetId}::${dateKey}::${level ?? "surface"}::${colorKey}`;
   }, [backendDatasetId, date, level, cssColors]);
 
   useEffect(() => {
@@ -186,9 +186,9 @@ export const useRasterLayer = ({
       setError(null);
 
       try {
-        const response = await fetch('/api/raster/visualize', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        const response = await fetch("/api/raster/visualize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             datasetId: backendDatasetId,
             date: formatDateForApi(date),
@@ -201,7 +201,7 @@ export const useRasterLayer = ({
         if (!response.ok) {
           const message = await response.text();
           throw new Error(
-            message || `Failed to generate raster (status ${response.status})`
+            message || `Failed to generate raster (status ${response.status})`,
           );
         }
 
@@ -226,12 +226,12 @@ export const useRasterLayer = ({
           sampleValue: sampler,
         });
       } catch (err) {
-        if ((err as Error).name === 'AbortError') {
+        if ((err as Error).name === "AbortError") {
           return;
         }
-        console.error('Raster visualization error', err);
+        console.error("Raster visualization error", err);
         setError(
-          err instanceof Error ? err.message : 'Failed to load raster layer'
+          err instanceof Error ? err.message : "Failed to load raster layer",
         );
         setData(undefined);
       } finally {

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 
 export interface WeatherDataPoint {
   lat: number;
@@ -33,18 +33,18 @@ function generateMockWeatherData(dataset: string): WeatherDataPoint[] {
       let value: number;
 
       switch (dataset) {
-        case 'air-temp-monthly':
+        case "air-temp-monthly":
           // Temperature varies with latitude and some randomness
           value = 30 * Math.cos((lat * Math.PI) / 180) + Math.random() * 10 - 5;
           break;
-        case 'precipitation-monthly':
+        case "precipitation-monthly":
           // Higher precipitation near equator and mid-latitudes
           value = Math.max(
             0,
-            200 * (1 - Math.abs(lat) / 90) + Math.random() * 100
+            200 * (1 - Math.abs(lat) / 90) + Math.random() * 100,
           );
           break;
-        case 'sea-surface-temp':
+        case "sea-surface-temp":
           // Ocean temperature, only for ocean areas (simplified)
           if (Math.abs(lng) > 20 || Math.abs(lat) < 60) {
             value = 25 * Math.cos((lat * Math.PI) / 180) + Math.random() * 5;
@@ -71,8 +71,8 @@ function generateMockWeatherData(dataset: string): WeatherDataPoint[] {
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const dataset = searchParams.get('dataset') || 'air-temp-monthly';
-    const format = searchParams.get('format') || 'json';
+    const dataset = searchParams.get("dataset") || "air-temp-monthly";
+    const format = searchParams.get("format") || "json";
 
     // Simulate API delay
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -84,11 +84,11 @@ export async function GET(request: NextRequest) {
       data,
       metadata: {
         dataset,
-        units: dataset.includes('temp')
-          ? '°C'
-          : dataset.includes('precipitation')
-            ? 'mm'
-            : 'units',
+        units: dataset.includes("temp")
+          ? "°C"
+          : dataset.includes("precipitation")
+            ? "mm"
+            : "units",
         timeRange: {
           start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
           end: new Date().toISOString(),
@@ -99,22 +99,22 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response, {
       headers: {
-        'Cache-Control': 'public, max-age=300', // Cache for 5 minutes
+        "Cache-Control": "public, max-age=300", // Cache for 5 minutes
       },
     });
   } catch (error) {
-    console.error('Weather API error:', error);
+    console.error("Weather API error:", error);
 
     const errorResponse: WeatherApiResponse = {
       success: false,
       data: [],
       metadata: {
-        dataset: 'unknown',
-        units: '',
-        timeRange: { start: '', end: '' },
+        dataset: "unknown",
+        units: "",
+        timeRange: { start: "", end: "" },
         totalPoints: 0,
       },
-      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      error: error instanceof Error ? error.message : "Unknown error occurred",
     };
 
     return NextResponse.json(errorResponse, { status: 500 });
@@ -131,13 +131,13 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'Weather data request received',
+      message: "Weather data request received",
       query: { dataset, dateRange, region },
     });
   } catch (error) {
     return NextResponse.json(
-      { success: false, error: 'Invalid request' },
-      { status: 400 }
+      { success: false, error: "Invalid request" },
+      { status: 400 },
     );
   }
 }

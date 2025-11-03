@@ -18,11 +18,19 @@ AI-powered climate data exploration combining interactive visualization, tutoria
 
 ## Installation
 
-1. Install dependencies:
+1. Install [pro-commit](https://pre-commit.com) hooks
+
+   ```bash
+   pre-commit install
+   ```
+
+2. Install dependencies:
+
    ```bash
    npm install
    ```
-2. Create `.env.local` in the project root (same folder as `package.json`) and supply:
+
+3. Create `.env.local` in the project root (same folder as `package.json`) and supply:
 
    ```ini
    # Chat backend
@@ -35,7 +43,7 @@ AI-powered climate data exploration combining interactive visualization, tutoria
 
    Add any other app-specific settings you need (API base URL, etc.).
 
-3. To generate embeddings, run:
+4. To generate embeddings, run:
    node src/components/Scripts/embedTutorial.js
    This will train the chatbot to gain information about the icharm website
 
@@ -64,11 +72,12 @@ Install Docker before attempting to run the database
    # Stop and remove all containers
    docker compose down
    ```
+
    # IF YOU START TO GET API ERRORS FOR THE RASTERS, RUN:
+
    docker compose down -v
    docker compose build
    docker compose up -d
-   
 
    ```bash
    # Navigate back to root
@@ -81,9 +90,12 @@ Install Docker before attempting to run the database
    # Populate the database with initial seed data
    npm run db:seed
    ```
+
    # If this gives an error, make sure the docker containers are running then try:
+
    npm run db:push
    npm run db:seed
+
 3. Verify connectivity from Node: (run from root)
 
    ```bash

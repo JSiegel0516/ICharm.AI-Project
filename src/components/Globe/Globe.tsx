@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import React, {
   useState,
@@ -6,10 +6,10 @@ import React, {
   useEffect,
   useImperativeHandle,
   forwardRef,
-} from 'react';
-import type { Dataset, RegionData, GlobeProps, GlobeRef } from '@/types';
-import { useRasterLayer } from '@/hooks/useRasterLayer';
-import type { RasterLayerData } from '@/hooks/useRasterLayer';
+} from "react";
+import type { Dataset, RegionData, GlobeProps, GlobeRef } from "@/types";
+import { useRasterLayer } from "@/hooks/useRasterLayer";
+import type { RasterLayerData } from "@/hooks/useRasterLayer";
 
 // Cesium setup function for CDN loading
 const loadCesiumFromCDN = async () => {
@@ -18,24 +18,24 @@ const loadCesiumFromCDN = async () => {
   }
 
   return new Promise((resolve, reject) => {
-    const script = document.createElement('script');
+    const script = document.createElement("script");
     script.src =
-      'https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Cesium.js';
+      "https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Cesium.js";
     script.async = true;
 
     script.onload = () => {
-      const link = document.createElement('link');
+      const link = document.createElement("link");
       link.href =
-        'https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Widgets/widgets.css';
-      link.rel = 'stylesheet';
+        "https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/Widgets/widgets.css";
+      link.rel = "stylesheet";
       document.head.appendChild(link);
 
       window.CESIUM_BASE_URL =
-        'https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/';
+        "https://cesium.com/downloads/cesiumjs/releases/1.95/Build/Cesium/";
       resolve(window.Cesium);
     };
 
-    script.onerror = () => reject(new Error('Failed to load Cesium'));
+    script.onerror = () => reject(new Error("Failed to load Cesium"));
     document.head.appendChild(script);
   });
 };
@@ -43,9 +43,9 @@ const loadCesiumFromCDN = async () => {
 // Load geographic boundary data
 const loadGeographicBoundaries = async () => {
   const files = [
-    'ne_110m_coastline.json',
-    'ne_110m_lakes.json',
-    'ne_110m_rivers_lake_centerlines.json',
+    "ne_110m_coastline.json",
+    "ne_110m_lakes.json",
+    "ne_110m_rivers_lake_centerlines.json",
   ];
 
   const boundaryData = [];
@@ -60,13 +60,13 @@ const loadGeographicBoundaries = async () => {
         console.log(
           `Successfully loaded ${file}, type:`,
           data.type,
-          'features:',
-          data.features?.length
+          "features:",
+          data.features?.length,
         );
         boundaryData.push({ name: file, data });
       } else {
         console.warn(
-          `Failed to fetch ${file}: ${response.status} ${response.statusText}`
+          `Failed to fetch ${file}: ${response.status} ${response.statusText}`,
         );
       }
     } catch (error) {
@@ -82,7 +82,7 @@ const loadGeographicBoundaries = async () => {
 const addGeographicBoundaries = (
   Cesium: any,
   viewer: any,
-  boundaryData: any[]
+  boundaryData: any[],
 ): any[] => {
   const boundaryEntities: any[] = [];
   let totalLinesAdded = 0;
@@ -90,25 +90,25 @@ const addGeographicBoundaries = (
   boundaryData.forEach(({ name, data }) => {
     console.log(`Processing ${name}, type: ${data.type}`);
 
-    if (data.type === 'FeatureCollection' && data.features) {
-      let color = Cesium.Color.fromCssColorString('#f8fafc').withAlpha(0.8);
+    if (data.type === "FeatureCollection" && data.features) {
+      let color = Cesium.Color.fromCssColorString("#f8fafc").withAlpha(0.8);
       let width = 2;
 
-      if (name.includes('coastline')) {
+      if (name.includes("coastline")) {
         width = 3;
-        color = Cesium.Color.fromCssColorString('#e2e8f0').withAlpha(0.85);
-      } else if (name.includes('geographic_lines')) {
+        color = Cesium.Color.fromCssColorString("#e2e8f0").withAlpha(0.85);
+      } else if (name.includes("geographic_lines")) {
         width = 2;
-        color = Cesium.Color.fromCssColorString('#94a3b8').withAlpha(0.6);
-      } else if (name.includes('lakes')) {
+        color = Cesium.Color.fromCssColorString("#94a3b8").withAlpha(0.6);
+      } else if (name.includes("lakes")) {
         width = 2;
-        color = Cesium.Color.fromCssColorString('#cbd5f5').withAlpha(0.7);
-      } else if (name.includes('rivers')) {
+        color = Cesium.Color.fromCssColorString("#cbd5f5").withAlpha(0.7);
+      } else if (name.includes("rivers")) {
         width = 2;
-        color = Cesium.Color.fromCssColorString('#94a3b8').withAlpha(0.55);
-      } else if (name.includes('time_zones')) {
+        color = Cesium.Color.fromCssColorString("#94a3b8").withAlpha(0.55);
+      } else if (name.includes("time_zones")) {
         width = 1.5;
-        color = Cesium.Color.fromCssColorString('#64748b').withAlpha(0.5);
+        color = Cesium.Color.fromCssColorString("#64748b").withAlpha(0.5);
       }
 
       data.features.forEach((feature: any) => {
@@ -119,7 +119,7 @@ const addGeographicBoundaries = (
           if (coords.length < 2) return;
 
           const positions = coords.map((coord: number[]) =>
-            Cesium.Cartesian3.fromDegrees(coord[0], coord[1], 10000)
+            Cesium.Cartesian3.fromDegrees(coord[0], coord[1], 10000),
           );
 
           if (positions.length > 1) {
@@ -136,17 +136,17 @@ const addGeographicBoundaries = (
           }
         };
 
-        if (geometry.type === 'LineString') {
+        if (geometry.type === "LineString") {
           processCoordinates(geometry.coordinates);
-        } else if (geometry.type === 'MultiLineString') {
+        } else if (geometry.type === "MultiLineString") {
           geometry.coordinates.forEach((lineCoords: any[]) => {
             processCoordinates(lineCoords);
           });
-        } else if (geometry.type === 'Polygon') {
+        } else if (geometry.type === "Polygon") {
           geometry.coordinates.forEach((ring: any[]) => {
             processCoordinates(ring);
           });
-        } else if (geometry.type === 'MultiPolygon') {
+        } else if (geometry.type === "MultiPolygon") {
           geometry.coordinates.forEach((polygon: any[]) => {
             polygon.forEach((ring: any[]) => {
               processCoordinates(ring);
@@ -159,11 +159,11 @@ const addGeographicBoundaries = (
       let color = Cesium.Color.CYAN.withAlpha(0.3);
       let width = 1.5;
 
-      if (name.includes('coastline')) {
+      if (name.includes("coastline")) {
         color = Cesium.Color.WHITE.withAlpha(0.6);
         width = 2;
       }
-      if (name.includes('lakes')) {
+      if (name.includes("lakes")) {
         color = Cesium.Color.WHITE.withAlpha(0.3);
         width = 2;
       }
@@ -171,7 +171,7 @@ const addGeographicBoundaries = (
       for (let i = 0; i < data.Lon.length; i++) {
         if (data.Lon[i] !== null && data.Lat[i] !== null) {
           positions.push(
-            Cesium.Cartesian3.fromDegrees(data.Lon[i], data.Lat[i], 10000)
+            Cesium.Cartesian3.fromDegrees(data.Lon[i], data.Lat[i], 10000),
           );
         } else if (positions.length > 0) {
           const entity = viewer.entities.add({
@@ -206,23 +206,26 @@ const addGeographicBoundaries = (
   });
 
   console.log(
-    `Geographic boundaries added: ${totalLinesAdded} lines from ${boundaryData.length} files`
+    `Geographic boundaries added: ${totalLinesAdded} lines from ${boundaryData.length} files`,
   );
-  
+
   return boundaryEntities;
 };
 
 const Globe = forwardRef<GlobeRef, GlobeProps>(
-  ({ 
-    currentDataset, 
-    onRegionClick, 
-    selectedDate, 
-    selectedLevel,
-    // NEW: Globe settings props with defaults
-    satelliteLayerVisible = true,
-    boundaryLinesVisible = true,
-    rasterOpacity = 0.65,
-  }, ref) => {
+  (
+    {
+      currentDataset,
+      onRegionClick,
+      selectedDate,
+      selectedLevel,
+      // NEW: Globe settings props with defaults
+      satelliteLayerVisible = true,
+      boundaryLinesVisible = true,
+      rasterOpacity = 0.65,
+    },
+    ref,
+  ) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const viewerRef = useRef<any>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -231,12 +234,12 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     const [cesiumInstance, setCesiumInstance] = useState<any>(null);
-    
+
     // NEW: Layer references for visibility control
     const satelliteLayerRef = useRef<any>(null);
     const boundaryEntitiesRef = useRef<any[]>([]);
     const rasterLayerRef = useRef<any[]>([]);
-    
+
     const rasterDataRef = useRef<RasterLayerData | undefined>(undefined);
     const rasterState = useRasterLayer({
       dataset: currentDataset,
@@ -252,7 +255,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       ) {
         if (Array.isArray(currentMarkerRef.current)) {
           currentMarkerRef.current.forEach((marker) =>
-            viewerRef.current.entities.remove(marker)
+            viewerRef.current.entities.remove(marker),
           );
         } else {
           viewerRef.current.entities.remove(currentMarkerRef.current);
@@ -273,8 +276,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         }
       };
 
-      window.addEventListener('resize', handleResize);
-      return () => window.removeEventListener('resize', handleResize);
+      window.addEventListener("resize", handleResize);
+      return () => window.removeEventListener("resize", handleResize);
     }, []);
 
     const calculateRadiusFromCameraHeight = (cameraHeight: number): number => {
@@ -290,7 +293,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const addClickMarker = (
       Cesium: any,
       latitude: number,
-      longitude: number
+      longitude: number,
     ) => {
       if (!viewerRef.current) return;
 
@@ -311,7 +314,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           position: Cesium.Cartesian3.fromDegrees(
             longitude,
             latitude,
-            1000 + i
+            1000 + i,
           ),
           ellipse: {
             semiMajorAxis: radius,
@@ -361,11 +364,11 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           setIsLoading(true);
           setError(null);
 
-          console.log('Loading Cesium from CDN...');
+          console.log("Loading Cesium from CDN...");
           const Cesium = await loadCesiumFromCDN();
           setCesiumInstance(Cesium);
 
-          console.log('Creating self-hosted Cesium viewer...');
+          console.log("Creating self-hosted Cesium viewer...");
 
           const viewer = new Cesium.Viewer(container, {
             homeButton: false,
@@ -384,11 +387,11 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
           const oceanMaterial = new Cesium.Material({
             fabric: {
-              type: 'ICharmOcean',
+              type: "ICharmOcean",
               uniforms: {
-                deepColor: Cesium.Color.fromCssColorString('#063a6b'),
-                polarColor: Cesium.Color.fromCssColorString('#0f4f7d'),
-                horizonColor: Cesium.Color.fromCssColorString('#0d658f'),
+                deepColor: Cesium.Color.fromCssColorString("#063a6b"),
+                polarColor: Cesium.Color.fromCssColorString("#0f4f7d"),
+                horizonColor: Cesium.Color.fromCssColorString("#0d658f"),
                 horizonIntensity: 0.15,
                 polarBlendStart: 0.65,
                 polarBlendEnd: 0.95,
@@ -423,7 +426,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           });
 
           viewer.scene.globe.material = oceanMaterial;
-          viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#061e34');
+          viewer.scene.globe.baseColor =
+            Cesium.Color.fromCssColorString("#061e34");
           viewer.scene.globe.enableLighting = false;
           viewer.scene.globe.dynamicAtmosphereLighting = false;
           viewer.scene.globe.dynamicAtmosphereLightingFromSun = false;
@@ -434,48 +438,57 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           viewer.scene.moon.show = true;
 
           try {
-            const satelliteProvider = new Cesium.ArcGisMapServerImageryProvider({
-              url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer',
-            });
+            const satelliteProvider = new Cesium.ArcGisMapServerImageryProvider(
+              {
+                url: "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer",
+              },
+            );
 
-            const baseLayer = viewer.scene.imageryLayers.addImageryProvider(satelliteProvider);
+            const baseLayer =
+              viewer.scene.imageryLayers.addImageryProvider(satelliteProvider);
             baseLayer.alpha = 1.0;
             baseLayer.brightness = 1.0;
             baseLayer.contrast = 1.0;
             viewer.scene.imageryLayers.lowerToBottom(baseLayer);
-            
+
             // NEW: Store satellite layer reference
             satelliteLayerRef.current = baseLayer;
-            console.log('Satellite base layer added and stored');
+            console.log("Satellite base layer added and stored");
           } catch (layerError) {
-            console.error('Failed to load satellite base layer', layerError);
+            console.error("Failed to load satellite base layer", layerError);
           }
 
-          viewer.canvas.style.width = '100%';
-          viewer.canvas.style.height = '100%';
+          viewer.canvas.style.width = "100%";
+          viewer.canvas.style.height = "100%";
 
-          const cesiumCredit = container.querySelector('.cesium-viewer-bottom');
+          const cesiumCredit = container.querySelector(".cesium-viewer-bottom");
           if (cesiumCredit) {
-            (cesiumCredit as HTMLElement).style.display = 'none';
+            (cesiumCredit as HTMLElement).style.display = "none";
           }
 
           viewer.camera.setView({
             destination: Cesium.Cartesian3.fromDegrees(0, 20, 25000000),
           });
 
-          console.log('Loading geographic boundaries...');
+          console.log("Loading geographic boundaries...");
           const boundaryData = await loadGeographicBoundaries();
-          
+
           // NEW: Store boundary entities
-          const boundaryEnts = addGeographicBoundaries(Cesium, viewer, boundaryData);
+          const boundaryEnts = addGeographicBoundaries(
+            Cesium,
+            viewer,
+            boundaryData,
+          );
           boundaryEntitiesRef.current = boundaryEnts;
-          console.log(`Stored ${boundaryEnts.length} boundary entities for visibility control`);
+          console.log(
+            `Stored ${boundaryEnts.length} boundary entities for visibility control`,
+          );
 
           viewer.cesiumWidget.screenSpaceEventHandler.setInputAction(
             (event: any) => {
               const pickedPosition = viewer.camera.pickEllipsoid(
                 event.position,
-                viewer.scene.globe.ellipsoid
+                viewer.scene.globe.ellipsoid,
               );
               if (pickedPosition) {
                 const cartographic =
@@ -486,13 +499,19 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
                 addClickMarker(Cesium, latitude, longitude);
 
                 if (onRegionClick) {
-                  const rasterValue = rasterDataRef.current?.sampleValue(latitude, longitude);
-                  const units = rasterDataRef.current?.units ?? currentDataset?.units ?? 'units';
+                  const rasterValue = rasterDataRef.current?.sampleValue(
+                    latitude,
+                    longitude,
+                  );
+                  const units =
+                    rasterDataRef.current?.units ??
+                    currentDataset?.units ??
+                    "units";
                   const regionData: RegionData = {
                     name: `${latitude.toFixed(2)}°, ${longitude.toFixed(2)}°`,
                     precipitation: rasterValue ?? Math.random() * 100,
                     temperature: -20 + Math.random() * 60,
-                    dataset: currentDataset?.name || 'Sample Dataset',
+                    dataset: currentDataset?.name || "Sample Dataset",
                     unit: units,
                   };
 
@@ -500,17 +519,17 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
                 }
               }
             },
-            Cesium.ScreenSpaceEventType.LEFT_CLICK
+            Cesium.ScreenSpaceEventType.LEFT_CLICK,
           );
 
           viewer.cesiumWidget.screenSpaceEventHandler.setInputAction(
             (event: any) => {
               const currentPosition = viewer.camera.positionCartographic;
               const currentLat = Cesium.Math.toDegrees(
-                currentPosition.latitude
+                currentPosition.latitude,
               );
               const currentLon = Cesium.Math.toDegrees(
-                currentPosition.longitude
+                currentPosition.longitude,
               );
               const currentHeight = currentPosition.height;
 
@@ -523,13 +542,13 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
                 destination: Cesium.Cartesian3.fromDegrees(
                   oppositeLon,
                   currentLat,
-                  currentHeight
+                  currentHeight,
                 ),
                 duration: 2.0,
                 easingFunction: Cesium.EasingFunction.CUBIC_IN_OUT,
               });
             },
-            Cesium.ScreenSpaceEventType.RIGHT_CLICK
+            Cesium.ScreenSpaceEventType.RIGHT_CLICK,
           );
 
           viewer.camera.changed.addEventListener(() => {
@@ -546,11 +565,11 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           viewerRef.current = viewer;
           setIsLoading(false);
 
-          console.log('Self-hosted Cesium viewer initialized successfully');
+          console.log("Self-hosted Cesium viewer initialized successfully");
         } catch (err) {
-          console.error('Failed to initialize Cesium:', err);
+          console.error("Failed to initialize Cesium:", err);
           setError(
-            err instanceof Error ? err.message : 'Failed to initialize globe'
+            err instanceof Error ? err.message : "Failed to initialize globe",
           );
           setIsLoading(false);
         }
@@ -569,7 +588,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
               try {
                 viewerRef.current.scene.imageryLayers.remove(layer, true);
               } catch (err) {
-                console.warn('Failed to remove raster layer during cleanup', err);
+                console.warn(
+                  "Failed to remove raster layer during cleanup",
+                  err,
+                );
               }
             });
             rasterLayerRef.current = [];
@@ -583,26 +605,26 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
     useEffect(() => {
       if (rasterState.error) {
-        console.warn('Raster pipeline error', rasterState.error);
+        console.warn("Raster pipeline error", rasterState.error);
       }
     }, [rasterState.error]);
 
     // NEW: Control satellite layer visibility
     useEffect(() => {
       if (!satelliteLayerRef.current) return;
-      
+
       satelliteLayerRef.current.show = satelliteLayerVisible;
-      console.log('Satellite layer visibility:', satelliteLayerVisible);
+      console.log("Satellite layer visibility:", satelliteLayerVisible);
     }, [satelliteLayerVisible]);
 
     // NEW: Control boundary lines visibility
     useEffect(() => {
       if (boundaryEntitiesRef.current.length === 0) return;
-      
-      boundaryEntitiesRef.current.forEach(entity => {
+
+      boundaryEntitiesRef.current.forEach((entity) => {
         entity.show = boundaryLinesVisible;
       });
-      console.log('Boundary lines visibility:', boundaryLinesVisible);
+      console.log("Boundary lines visibility:", boundaryLinesVisible);
     }, [boundaryLinesVisible]);
 
     // Raster texture rendering - UPDATED: Use dynamic opacity
@@ -619,20 +641,24 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           try {
             viewer.scene.imageryLayers.remove(layer, true);
           } catch (err) {
-            console.warn('Failed to remove raster layer', err);
+            console.warn("Failed to remove raster layer", err);
           }
         });
         rasterLayerRef.current = [];
       }
 
-      if (!rasterState.data || !rasterState.data.textures || rasterState.data.textures.length === 0) {
-        console.log('No raster data or textures to display');
+      if (
+        !rasterState.data ||
+        !rasterState.data.textures ||
+        rasterState.data.textures.length === 0
+      ) {
+        console.log("No raster data or textures to display");
         return;
       }
 
-      console.log('Adding raster textures:', rasterState.data.textures.length);
-      console.log('Raster opacity:', rasterOpacity);
-      
+      console.log("Adding raster textures:", rasterState.data.textures.length);
+      console.log("Raster opacity:", rasterOpacity);
+
       const newLayers: any[] = [];
       rasterState.data.textures.forEach((texture, index) => {
         try {
@@ -642,12 +668,12 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
               texture.rectangle.west,
               texture.rectangle.south,
               texture.rectangle.east,
-              texture.rectangle.north
+              texture.rectangle.north,
             ),
           });
 
           const layer = viewer.scene.imageryLayers.addImageryProvider(provider);
-          
+
           // NEW: Use dynamic opacity from props
           layer.alpha = rasterOpacity;
           layer.brightness = 1.0;
@@ -655,22 +681,28 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           layer.hue = 0.0;
           layer.saturation = 1.0;
           layer.gamma = 1.0;
-          
-          layer.minificationFilter = cesiumInstance.TextureMinificationFilter.NEAREST;
-          layer.magnificationFilter = cesiumInstance.TextureMagnificationFilter.NEAREST;
+
+          layer.minificationFilter =
+            cesiumInstance.TextureMinificationFilter.NEAREST;
+          layer.magnificationFilter =
+            cesiumInstance.TextureMagnificationFilter.NEAREST;
 
           viewer.scene.imageryLayers.raiseToTop(layer);
-          
+
           newLayers.push(layer);
-          console.log(`Successfully added texture layer ${index} with opacity ${rasterOpacity}`);
+          console.log(
+            `Successfully added texture layer ${index} with opacity ${rasterOpacity}`,
+          );
         } catch (err) {
           console.error(`Failed to add texture ${index}:`, err);
         }
       });
-      
+
       rasterLayerRef.current = newLayers;
-      console.log(`Successfully added ${newLayers.length} raster layers to globe`);
-      
+      console.log(
+        `Successfully added ${newLayers.length} raster layers to globe`,
+      );
+
       viewer.scene.requestRender();
 
       return () => {
@@ -679,7 +711,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             try {
               viewer.scene.imageryLayers.remove(layer, true);
             } catch (err) {
-              console.warn('Failed to remove raster texture layer', err);
+              console.warn("Failed to remove raster texture layer", err);
             }
           });
         }
@@ -716,9 +748,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         className="absolute inset-0 z-0 h-full w-full"
         style={{
           background:
-            'radial-gradient(ellipse at center, #1e3a8a 0%, #0f172a 50%, #000000 100%)',
-          minHeight: '100vh',
-          minWidth: '100vw',
+            "radial-gradient(ellipse at center, #1e3a8a 0%, #0f172a 50%, #000000 100%)",
+          minHeight: "100vh",
+          minWidth: "100vw",
         }}
       >
         {isLoading && (
@@ -737,9 +769,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           ref={containerRef}
           className="absolute inset-0 z-0 h-screen w-screen"
           style={{
-            minHeight: '100vh',
-            minWidth: '100vw',
-            overflow: 'hidden',
+            minHeight: "100vh",
+            minWidth: "100vw",
+            overflow: "hidden",
           }}
         />
 
@@ -760,7 +792,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             <div className="max-w-2xl rounded-lg bg-slate-800 p-6 text-white">
               <h2 className="mb-4 text-2xl font-bold">{currentDataset.name}</h2>
               <p className="mb-4">
-                {currentDataset.description || 'No description available'}
+                {currentDataset.description || "No description available"}
               </p>
               <button
                 onClick={() => setIsModalOpen(false)}
@@ -773,9 +805,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         )}
       </div>
     );
-  }
+  },
 );
 
-Globe.displayName = 'Globe';
+Globe.displayName = "Globe";
 
 export default Globe;

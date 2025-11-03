@@ -10,7 +10,7 @@
     "start": "next start",
     "lint": "biome check",
     "format": "biome format --write",
-    "format:fix": "prettier --write --ignore-path .gitignore .",
+    "format:fix": "prettier --write .",
     "copy-cesium-assets": "tsx src/components/Scripts/copyCesiumAssets.ts",
     "copyCesiumAssets": "tsx src/components/Scripts/copyCesiumAssets.ts",
     "clean-cesium": "rimraf public/cesium",

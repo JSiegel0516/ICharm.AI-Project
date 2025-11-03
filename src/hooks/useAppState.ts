@@ -1,1 +1,1 @@
-export { useAppState } from '@/context/HeaderContext';
+export { useAppState } from "@/context/HeaderContext";

@@ -1,8 +1,8 @@
 // AboutModal.tsx
-'use client';
+"use client";
 
-import { motion, AnimatePresence } from 'framer-motion';
-import { X, Globe, Users, BookOpen, Rocket } from 'lucide-react';
+import { motion, AnimatePresence } from "framer-motion";
+import { X, Globe, Users, BookOpen, Rocket } from "lucide-react";
 import {
   Card,
   CardAction,
@@ -11,7 +11,7 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
+} from "@/components/ui/card";
 
 interface AboutModalProps {
   isOpen: boolean; // Add this prop
@@ -33,7 +33,7 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
             initial={{ scale: 0.9, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.9, opacity: 0, y: 20 }}
-            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            transition={{ type: "spring", damping: 25, stiffness: 300 }}
             className="relative max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-xl border shadow-2xl backdrop-blur-lg"
             onClick={(e) => e.stopPropagation()}
           >
