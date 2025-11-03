@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
@@ -43,7 +43,7 @@ import {
   type DatasetInfo,
   type ProcessingInfo,
 } from "@/hooks/use-timeseries";
-import { X, RotateCcw } from "lucide-react";
+import { X } from "lucide-react";
 
 type NormalizationMode = "all" | "selected";
 
@@ -111,24 +111,6 @@ export function VisualizationPanel({
   const [tempLat, setTempLat] = useState("");
   const [tempLon, setTempLon] = useState("");
 
-  // NEW: Zoom state for X and Y axes
-  const [xAxisZoom, setXAxisZoom] = useState<[number, number]>([0, 100]);
-  const [yAxisZoom, setYAxisZoom] = useState<[number, number]>([0, 100]);
-
-  // DEBUG: Log chart data structure
-  useEffect(() => {
-    console.log("=== VisualizationPanel Debug ===");
-    console.log("chartData length:", chartData.length);
-    console.log("chartData sample:", chartData.slice(0, 3));
-    console.log(
-      "chartData keys:",
-      chartData.length > 0 ? Object.keys(chartData[0]) : [],
-    );
-    console.log("selectedDatasets:", selectedDatasets);
-    console.log("visibleDatasets:", Array.from(visibleDatasets));
-    console.log("processingInfo:", processingInfo);
-  }, [chartData, selectedDatasets, visibleDatasets, processingInfo]);
-
   const addCoordinate = () => {
     const lat = parseFloat(tempLat);
     const lon = parseFloat(tempLon);
@@ -144,29 +126,18 @@ export function VisualizationPanel({
     setSelectedCoordinates(selectedCoordinates.filter((_, i) => i !== index));
   };
 
-  // NEW: Reset zoom function
-  const resetZoom = () => {
-    setXAxisZoom([0, 100]);
-    setYAxisZoom([0, 100]);
-  };
+  // Calculate Y-axis domain dynamically based on visible datasets
+  const yDomain = useMemo(() => {
+    if (chartData.length === 0) return undefined;
 
-  // NEW: Calculate filtered data and Y domain based on zoom
-  const getFilteredData = () => {
-    if (chartData.length === 0) return { data: [], yDomain: undefined };
-
-    const startIdx = Math.floor((xAxisZoom[0] / 100) * chartData.length);
-    const endIdx = Math.ceil((xAxisZoom[1] / 100) * chartData.length);
-    const filteredData = chartData.slice(startIdx, endIdx);
-
-    // Calculate Y domain from filtered data
     const visibleDatasetIds = Array.from(visibleDatasets);
     let minY = Infinity;
     let maxY = -Infinity;
 
-    filteredData.forEach((point) => {
+    chartData.forEach((point) => {
       visibleDatasetIds.forEach((datasetId) => {
         const value = point[datasetId];
-        if (typeof value === "number" && !isNaN(value)) {
+        if (typeof value === "number" && !isNaN(value) && value !== null) {
           minY = Math.min(minY, value);
           maxY = Math.max(maxY, value);
         }
@@ -174,27 +145,15 @@ export function VisualizationPanel({
     });
 
     if (minY === Infinity || maxY === -Infinity) {
-      return { data: filteredData, yDomain: undefined };
+      return undefined;
     }
 
-    // Apply Y axis zoom
-    const yRange = maxY - minY;
-    const yStart = minY + (yAxisZoom[0] / 100) * yRange;
-    const yEnd = minY + (yAxisZoom[1] / 100) * yRange;
-
-    return {
-      data: filteredData,
-      yDomain: [yStart, yEnd] as [number, number],
-    };
-  };
-
-  const { data: filteredChartData, yDomain } = getFilteredData();
+    // Add 5% padding to top and bottom
+    const padding = (maxY - minY) * 0.05;
+    return [minY - padding, maxY + padding];
+  }, [chartData, visibleDatasets]);
 
   const renderChart = () => {
-    const visibleLines = selectedDatasets.filter((d) =>
-      visibleDatasets.has(d.id),
-    );
-
     const colors = [
       "#8884d8",
       "#82ca9d",
@@ -210,16 +169,20 @@ export function VisualizationPanel({
 
     const visibleDatasetIds = Array.from(visibleDatasets);
     const commonProps = {
-      data: filteredChartData,
+      data: chartData,
       margin: { top: 5, right: 30, left: 20, bottom: 5 },
     };
 
-    // DEBUG: Log what we're trying to render
-    console.log("Rendering chart with:", {
-      dataPoints: filteredChartData.length,
-      visibleDatasetIds,
-      samplePoint: filteredChartData[0],
-    });
+    // Custom Y-axis tick formatter for better readability
+    const formatYAxis = (value: number) => {
+      if (Math.abs(value) >= 1000) {
+        return (value / 1000).toFixed(1) + "k";
+      }
+      if (Math.abs(value) < 0.01) {
+        return value.toExponential(2);
+      }
+      return value.toFixed(2);
+    };
 
     switch (chartType) {
       case ChartType.LINE:
@@ -233,8 +196,17 @@ export function VisualizationPanel({
               textAnchor="end"
               height={80}
             />
-            <YAxis tick={{ fontSize: 12 }} domain={yDomain} />
-            <RechartsTooltip />
+            <YAxis
+              tick={{ fontSize: 12 }}
+              domain={yDomain}
+              tickFormatter={formatYAxis}
+              width={80}
+            />
+            <RechartsTooltip
+              formatter={(value: any) =>
+                typeof value === "number" ? value.toFixed(4) : value
+              }
+            />
             <Legend />
             {selectedDatasets.map(
               (dataset, idx) =>
@@ -265,8 +237,17 @@ export function VisualizationPanel({
               textAnchor="end"
               height={80}
             />
-            <YAxis tick={{ fontSize: 12 }} domain={yDomain} />
-            <RechartsTooltip />
+            <YAxis
+              tick={{ fontSize: 12 }}
+              domain={yDomain}
+              tickFormatter={formatYAxis}
+              width={80}
+            />
+            <RechartsTooltip
+              formatter={(value: any) =>
+                typeof value === "number" ? value.toFixed(4) : value
+              }
+            />
             <Legend />
             {selectedDatasets.map(
               (dataset, idx) =>
@@ -293,8 +274,17 @@ export function VisualizationPanel({
               textAnchor="end"
               height={80}
             />
-            <YAxis tick={{ fontSize: 12 }} domain={yDomain} />
-            <RechartsTooltip />
+            <YAxis
+              tick={{ fontSize: 12 }}
+              domain={yDomain}
+              tickFormatter={formatYAxis}
+              width={80}
+            />
+            <RechartsTooltip
+              formatter={(value: any) =>
+                typeof value === "number" ? value.toFixed(4) : value
+              }
+            />
             <Legend />
             {selectedDatasets.map(
               (dataset, idx) =>
@@ -324,8 +314,17 @@ export function VisualizationPanel({
               textAnchor="end"
               height={80}
             />
-            <YAxis tick={{ fontSize: 12 }} domain={yDomain} />
-            <RechartsTooltip />
+            <YAxis
+              tick={{ fontSize: 12 }}
+              domain={yDomain}
+              tickFormatter={formatYAxis}
+              width={80}
+            />
+            <RechartsTooltip
+              formatter={(value: any) =>
+                typeof value === "number" ? value.toFixed(4) : value
+              }
+            />
             <Legend />
             {selectedDatasets.map(
               (dataset, idx) =>
@@ -407,7 +406,7 @@ export function VisualizationPanel({
           <div className="space-y-3 border-t pt-4">
             <h4 className="text-md font-medium">Processing Options</h4>
 
-            <div className="flex flex-row justify-between">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-1">
                 <label className="text-sm font-medium">Analysis Model</label>
                 <Select
@@ -448,6 +447,30 @@ export function VisualizationPanel({
                 </Select>
               </div>
 
+              <div className="space-y-1">
+                <label className="text-sm font-medium">
+                  Resample Frequency
+                </label>
+                <Select
+                  value={resampleFreq || "none"}
+                  onValueChange={(v) =>
+                    setResampleFreq(v === "none" ? undefined : v)
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="No resampling" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No resampling</SelectItem>
+                    <SelectItem value="D">Daily</SelectItem>
+                    <SelectItem value="W">Weekly</SelectItem>
+                    <SelectItem value="M">Monthly</SelectItem>
+                    <SelectItem value="Q">Quarterly</SelectItem>
+                    <SelectItem value="Y">Yearly</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               {analysisModel === AnalysisModel.MOVING_AVG && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
@@ -465,30 +488,6 @@ export function VisualizationPanel({
                   />
                 </div>
               )}
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium">
-                  Resample Frequency
-                </label>
-                <Select
-                  value={resampleFreq || "none"}
-                  onValueChange={(v) =>
-                    setResampleFreq(v === "none" ? undefined : v)
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="No resampling" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No resampling</SelectItem>
-                    {["D", "W", "M", "Q", "Y"].map((freq) => (
-                      <SelectItem key={freq} value={freq}>
-                        {freq}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
 
             {/* Focus Coordinates */}
@@ -667,83 +666,23 @@ export function VisualizationPanel({
                     {processingInfo.totalPoints} data points •{" "}
                     {processingInfo.datasetsProcessed} datasets • Processed in{" "}
                     {processingInfo.processingTime}
-                    {normalize && (
+                    {yDomain && (
                       <>
                         {" "}
-                        • Normalization:{" "}
-                        {normalizationMode === "all"
-                          ? "All data"
-                          : `${selectedCoordinates.length} coordinate${
-                              selectedCoordinates.length !== 1 ? "s" : ""
-                            }`}
+                        • Y-axis range: {yDomain[0].toFixed(2)} to{" "}
+                        {yDomain[1].toFixed(2)}
                       </>
                     )}
                   </CardDescription>
                 )}
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={resetZoom}
-                className="gap-2"
-              >
-                <RotateCcw className="h-4 w-4" />
-                Reset Zoom
-              </Button>
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="h-[400px]">
+          <CardContent>
+            <div className="h-[500px]">
               <ResponsiveContainer width="100%" height="100%">
                 {renderChart()}
               </ResponsiveContainer>
-            </div>
-
-            {/* Zoom Controls */}
-            <div className="space-y-4 border-t pt-4">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">
-                    X-Axis Zoom (Time Range)
-                  </Label>
-                  <span className="text-muted-foreground text-xs">
-                    {xAxisZoom[0]}% - {xAxisZoom[1]}%
-                  </span>
-                </div>
-                <Slider
-                  value={xAxisZoom}
-                  onValueChange={(value) =>
-                    setXAxisZoom(value as [number, number])
-                  }
-                  min={0}
-                  max={100}
-                  step={1}
-                  minStepsBetweenThumbs={5}
-                  className="w-full"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">
-                    Y-Axis Zoom (Value Range)
-                  </Label>
-                  <span className="text-muted-foreground text-xs">
-                    {yAxisZoom[0]}% - {yAxisZoom[1]}%
-                  </span>
-                </div>
-                <Slider
-                  value={yAxisZoom}
-                  onValueChange={(value) =>
-                    setYAxisZoom(value as [number, number])
-                  }
-                  min={0}
-                  max={100}
-                  step={1}
-                  minStepsBetweenThumbs={5}
-                  className="w-full"
-                />
-              </div>
             </div>
           </CardContent>
         </Card>
