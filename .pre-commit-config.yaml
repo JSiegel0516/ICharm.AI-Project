@@ -15,7 +15,12 @@ repos:
     hooks:
       - id: mypy
         additional_dependencies:
-          ["types-requests", "pydantic>=2.9.2", "types-python-dateutil"]
+          [
+            "types-requests",
+            "pydantic>=2.9.2",
+            "types-python-dateutil",
+            "types-ujson",
+          ]
   # Small code formatter
   # - Some extra formatting
   - repo: https://github.com/pre-commit/pre-commit-hooks

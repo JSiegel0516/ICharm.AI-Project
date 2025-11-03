@@ -18,7 +18,7 @@ AI-powered climate data exploration combining interactive visualization, tutoria
 
 ## Installation
 
-1. Install [pro-commit](https://pre-commit.com) hooks
+1. Install [pro-commit](https://pre-commit.com) hook
 
    ```bash
    pre-commit install
@@ -63,9 +63,6 @@ Install Docker before attempting to run the database
 2. Start the database (and optional services):
 
    ```bash
-   # Navigate to docker directory
-   cd backend/docker
-
    # Start all services in the background
    docker compose up -d
 
@@ -80,8 +77,6 @@ Install Docker before attempting to run the database
    docker compose up -d
 
    ```bash
-   # Navigate back to root
-   cd ../../
 
    # Generate SQL migrations based on your Drizzle schema
    # Then apply those migrations to your database

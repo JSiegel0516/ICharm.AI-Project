@@ -5,6 +5,12 @@ dotenv.config({
   path: ".env.local",
 });
 
+// force .env.local to override .env
+dotenv.config({
+  path: ".env.local",
+  override: true,
+});
+
 export default defineConfig({
   schema: "./src/lib/db/schema.ts",
   out: "./src/lib/db/migrations",

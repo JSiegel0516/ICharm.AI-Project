@@ -4,12 +4,12 @@ Supports both local and cloud-based datasets with advanced processing capabiliti
 NOW WITH RASTER VISUALIZATION SUPPORT
 """
 
-from fastapi import FastAPI, APIRouter, HTTPException, Query, BackgroundTasks
+from fastapi import FastAPI, APIRouter, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, validator
-from typing import List, Optional, Dict, Any, Literal, Union
-from datetime import datetime, timedelta, timedelta
+from typing import List, Optional, Dict, Any, Literal
+from datetime import datetime, timedelta
 from enum import Enum
 import xarray as xr
 import pandas as pd
@@ -29,12 +29,11 @@ import warnings
 import ujson
 import kerchunk.hdf
 import kerchunk.combine
-from functools import lru_cache
 import cftime
 import s3fs
 
 # Import raster visualization module
-from raster import serialize_raster_array
+from icharm.services.data.app.raster import serialize_raster_array
 
 warnings.filterwarnings("ignore")
 
@@ -45,6 +44,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # CUSTOM JSON ENCODER FOR NaN/Inf VALUES
 # ============================================================================
+
 
 def clean_for_json(obj):
     """Recursively clean data structures to be JSON-compliant"""
@@ -68,8 +68,10 @@ def clean_for_json(obj):
         return None
     return obj
 
+
 class CustomJSONResponse(JSONResponse):
     """Custom JSON response that handles NaN and Inf values"""
+
     def render(self, content: Any) -> bytes:
         cleaned_content = clean_for_json(content)
         return json.dumps(
@@ -80,9 +82,10 @@ class CustomJSONResponse(JSONResponse):
             separators=(",", ":"),
         ).encode("utf-8")
 
+
 # Load environment variables from .env file in root folder
-ROOT_DIR = Path(__file__).resolve().parent.parent 
-env_path = ROOT_DIR / '.env.local'
+ROOT_DIR = Path(__file__).resolve().parent.parent
+env_path = ROOT_DIR / ".env.local"
 load_dotenv(dotenv_path=env_path)
 
 # ============================================================================
@@ -98,7 +101,9 @@ if not DATABASE_URL:
     )
 
 # File paths configuration
-LOCAL_DATASETS_PATH = (ROOT_DIR / os.getenv("LOCAL_DATASETS_PATH", "datasets")).resolve()
+LOCAL_DATASETS_PATH = (
+    ROOT_DIR / os.getenv("LOCAL_DATASETS_PATH", "datasets")
+).resolve()
 KERCHUNK_PATH = (ROOT_DIR / os.getenv("KERCHUNK_PATH", "kerchunk")).resolve()
 CACHE_DIR = Path(os.getenv("CACHE_DIR", "/tmp/climate_cache")).resolve()
 
@@ -119,36 +124,38 @@ executor = ThreadPoolExecutor(max_workers=4)
 # Create synchronous engine
 engine = create_engine(DATABASE_URL, poolclass=NullPool)
 
+
 def get_metadata_by_ids(dataset_ids: List[str]) -> pd.DataFrame:
     """Fetch metadata from database for specified dataset IDs (UUIDs)"""
     try:
         with engine.connect() as conn:
-            placeholders = ', '.join([f':id{i}' for i in range(len(dataset_ids))])
+            placeholders = ", ".join([f":id{i}" for i in range(len(dataset_ids))])
             # Query by UUID id column instead of datasetName
             query = text(f"""
-                SELECT * FROM metadata 
+                SELECT * FROM metadata
                 WHERE id IN ({placeholders})
             """)
-            
-            params = {f'id{i}': dataset_id for i, dataset_id in enumerate(dataset_ids)}
-            
+
+            params = {f"id{i}": dataset_id for i, dataset_id in enumerate(dataset_ids)}
+
             result = conn.execute(query, params)
             df = pd.DataFrame(result.fetchall(), columns=result.keys())
-            
+
             if df.empty:
                 logger.warning(f"No metadata found for dataset IDs: {dataset_ids}")
-            
+
             return df
     except Exception as e:
         logger.error(f"Database query failed: {e}")
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to fetch metadata from database: {str(e)}"
+            status_code=500, detail=f"Failed to fetch metadata from database: {str(e)}"
         )
+
 
 # ============================================================================
 # ENUMS AND MODELS
 # ============================================================================
+
 
 class AnalysisModel(str, Enum):
     RAW = "raw"
@@ -159,12 +166,14 @@ class AnalysisModel(str, Enum):
     CUMULATIVE = "cumulative"
     DERIVATIVE = "derivative"
 
+
 class ChartType(str, Enum):
     LINE = "line"
     BAR = "bar"
     AREA = "area"
     SCATTER = "scatter"
     HEATMAP = "heatmap"
+
 
 class AggregationMethod(str, Enum):
     MEAN = "mean"
@@ -174,26 +183,30 @@ class AggregationMethod(str, Enum):
     MEDIAN = "median"
     STD = "std"
 
+
 class TimeSeriesRequest(BaseModel):
     """Enhanced request model for time series data extraction"""
-    datasetIds: List[str] = Field(..., min_items=1, max_items=10)
+
+    datasetIds: List[str] = Field(..., min_length=1, max_length=10)
     startDate: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
     endDate: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
-    analysisModel: Optional[AnalysisModel] = AnalysisModel.RAW
+    analysisModel: AnalysisModel = AnalysisModel.RAW
     normalize: Optional[bool] = False
     chartType: Optional[ChartType] = ChartType.LINE
     spatialBounds: Optional[Dict[str, float]] = None
-    aggregation: Optional[AggregationMethod] = AggregationMethod.MEAN
+    aggregation: AggregationMethod = AggregationMethod.MEAN
     resampleFreq: Optional[str] = None
     includeStatistics: Optional[bool] = True
     includeMetadata: Optional[bool] = True
     smoothingWindow: Optional[int] = None
-    focusCoordinates: Optional[str] = None  # NEW: e.g., "40.7128,-74.0060; 34.0522,-118.2437"
-    
-    @validator('endDate')
+    focusCoordinates: Optional[str] = (
+        None  # NEW: e.g., "40.7128,-74.0060; 34.0522,-118.2437"
+    )
+
+    @validator("endDate")
     def validate_date_range(cls, v, values):
-        if 'startDate' in values:
-            start = datetime.strptime(values['startDate'], "%Y-%m-%d")
+        if "startDate" in values:
+            start = datetime.strptime(values["startDate"], "%Y-%m-%d")
             end = datetime.strptime(v, "%Y-%m-%d")
             if end < start:
                 raise ValueError("endDate must be after startDate")
@@ -201,21 +214,33 @@ class TimeSeriesRequest(BaseModel):
                 raise ValueError("Date range cannot exceed 50 years")
         return v
 
+
 class RasterRequest(BaseModel):
     """Request model for raster visualization"""
+
     datasetId: str = Field(..., description="Dataset UUID")
-    date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$", description="Date for visualization")
-    level: Optional[float] = Field(None, description="Atmospheric level (if applicable)")
-    cssColors: Optional[List[str]] = Field(None, description="CSS color strings from frontend ColorBar") 
+    date: str = Field(
+        ..., pattern=r"^\d{4}-\d{2}-\d{2}$", description="Date for visualization"
+    )
+    level: Optional[float] = Field(
+        None, description="Atmospheric level (if applicable)"
+    )
+    cssColors: Optional[List[str]] = Field(
+        None, description="CSS color strings from frontend ColorBar"
+    )
+
 
 class DataPoint(BaseModel):
     """Individual data point in time series"""
+
     date: str
     values: Dict[str, Optional[float]]
     timestamp: Optional[int] = None
 
+
 class Statistics(BaseModel):
     """Statistical summary for a dataset"""
+
     min: float
     max: float
     mean: float
@@ -226,8 +251,10 @@ class Statistics(BaseModel):
     missing: int
     percentiles: Dict[str, float]
 
+
 class DatasetMetadata(BaseModel):
     """Metadata for a dataset"""
+
     id: str
     slug: Optional[str] = None
     name: str
@@ -241,49 +268,55 @@ class DatasetMetadata(BaseModel):
     level: Optional[str] = None
     description: Optional[str] = None
 
+
 class TimeSeriesResponse(BaseModel):
     """Enhanced response model for time series data"""
+
     data: List[DataPoint]
     metadata: Optional[Dict[str, DatasetMetadata]] = None
     statistics: Optional[Dict[str, Statistics]] = None
     chartConfig: Optional[Dict[str, Any]] = None
     processingInfo: Dict[str, Any]
 
+
 # ============================================================================
 # CACHING
 # ============================================================================
 
+
 class DatasetCache:
     """Simple in-memory cache for opened datasets"""
+
     def __init__(self, max_size: int = 10):
-        self.cache = {}
+        self.cache: dict[str, Any] = {}
         self.max_size = max_size
-        self.access_times = {}
-    
+        self.access_times: dict[Any, Any] = {}
+
     def get(self, key: str) -> Optional[xr.Dataset]:
         if key in self.cache:
             self.access_times[key] = datetime.now()
             return self.cache[key]
         return None
-    
+
     def set(self, key: str, dataset: xr.Dataset):
         if len(self.cache) >= self.max_size:
             # Remove least recently used
-            oldest = min(self.access_times, key=self.access_times.get)
+            oldest = min(self.access_times, key=self.access_times.__getitem__)
             del self.cache[oldest]
             del self.access_times[oldest]
-        
+
         self.cache[key] = dataset
         self.access_times[key] = datetime.now()
-    
+
     def clear(self):
         for ds in self.cache.values():
             try:
                 ds.close()
-            except:
+            except:  # noqa E722
                 pass
         self.cache.clear()
         self.access_times.clear()
+
 
 # Global cache instance
 dataset_cache = DatasetCache()
@@ -291,6 +324,7 @@ dataset_cache = DatasetCache()
 # ============================================================================
 # DATA ACCESS FUNCTIONS
 # ============================================================================
+
 
 def _slugify(value: str) -> str:
     """
@@ -318,7 +352,9 @@ def _resolve_remote_asset(metadata: pd.Series, date_hint: datetime) -> str:
     """
     template = (metadata.get("inputFile") or "").strip()
     if not template:
-        raise ValueError(f"No inputFile configured for dataset {metadata.get('datasetName')}")
+        raise ValueError(
+            f"No inputFile configured for dataset {metadata.get('datasetName')}"
+        )
 
     formatted = template
     if "{" in formatted:
@@ -355,36 +391,36 @@ def _resolve_remote_asset(metadata: pd.Series, date_hint: datetime) -> str:
 def parse_focus_coordinates(coord_string: Optional[str]) -> List[Dict[str, float]]:
     """
     Parse focus coordinates string into list of lat/lon dicts
-    
+
     Format: "lat1,lon1; lat2,lon2; lat3,lon3"
     Example: "40.7128,-74.0060; 34.0522,-118.2437"
-    
+
     Returns: [{"lat": 40.7128, "lon": -74.0060}, {"lat": 34.0522, "lon": -118.2437}]
     """
     if not coord_string or not coord_string.strip():
         return []
-    
+
     coordinates = []
-    
+
     try:
         # Split by semicolon for multiple coordinate pairs
-        pairs = coord_string.split(';')
-        
+        pairs = coord_string.split(";")
+
         for pair in pairs:
             pair = pair.strip()
             if not pair:
                 continue
-            
+
             # Split by comma for lat,lon
-            parts = pair.split(',')
+            parts = pair.split(",")
             if len(parts) != 2:
                 logger.warning(f"Invalid coordinate pair format: {pair}")
                 continue
-            
+
             try:
                 lat = float(parts[0].strip())
                 lon = float(parts[1].strip())
-                
+
                 # Validate ranges
                 if -90 <= lat <= 90 and -180 <= lon <= 180:
                     coordinates.append({"lat": lat, "lon": lon})
@@ -393,14 +429,13 @@ def parse_focus_coordinates(coord_string: Optional[str]) -> List[Dict[str, float
             except ValueError:
                 logger.warning(f"Could not parse coordinates: {pair}")
                 continue
-        
+
         logger.info(f"Parsed {len(coordinates)} valid coordinate pairs")
         return coordinates
-        
+
     except Exception as e:
         logger.error(f"Error parsing focus coordinates: {e}")
         return []
-
 
 
 def _ensure_datetime_coordinates(ds: xr.Dataset) -> xr.Dataset:
@@ -468,6 +503,7 @@ def _coerce_time_value(target: datetime, coord: xr.DataArray) -> Any:
 
     return target
 
+
 def create_kerchunk_reference(url: str, output_path: str) -> str:
     """Create kerchunk reference file for cloud NetCDF/HDF5 data"""
     try:
@@ -479,34 +515,33 @@ def create_kerchunk_reference(url: str, output_path: str) -> str:
         with fs.open(normalized_url, "rb") as f:
             h5chunks = kerchunk.hdf.SingleHdf5ToZarr(f, normalized_url)
             refs = h5chunks.translate()
-        
+
         with destination.open("w") as f:
             json.dump(refs, f)
-        
+
         return str(destination)
     except Exception as e:
         logger.error(f"Failed to create kerchunk reference: {e}")
         raise
 
 
-
-def expand_date_pattern(url_pattern: str, start_date: datetime, end_date: datetime) -> List[str]:
+def expand_date_pattern(
+    url_pattern: str, start_date: datetime, end_date: datetime
+) -> List[str]:
     """Expand URL pattern with date wildcards into list of URLs"""
     urls = []
     current = start_date
-    
+
     while current <= end_date:
         url = url_pattern.format(
-            year=current.year,
-            month=current.month,
-            day=current.day
+            year=current.year, month=current.month, day=current.day
         )
         urls.append(url)
-        
+
         # Increment based on pattern granularity
-        if '{day' in url_pattern:
+        if "{day" in url_pattern:
             current += timedelta(days=1)
-        elif '{month' in url_pattern:
+        elif "{month" in url_pattern:
             # Move to first day of next month
             if current.month == 12:
                 current = datetime(current.year + 1, 1, 1)
@@ -514,31 +549,38 @@ def expand_date_pattern(url_pattern: str, start_date: datetime, end_date: dateti
                 current = datetime(current.year, current.month + 1, 1)
         else:
             current = datetime(current.year + 1, 1, 1)
-    
+
     return urls
+
 
 async def load_kerchunk_reference(kerchunk_path: str) -> Dict:
     """Load kerchunk reference file with multiple fallback methods"""
     try:
         # Try ujson first (fastest)
-        with open(kerchunk_path, 'r') as f:
+        with open(kerchunk_path, "r") as f:
             refs = ujson.load(f)
-            logger.info(f"Loaded kerchunk reference with ujson: {len(refs.get('refs', {}))} refs")
+            logger.info(
+                f"Loaded kerchunk reference with ujson: {len(refs.get('refs', {}))} refs"
+            )
             return refs
     except Exception as ujson_error:
         logger.warning(f"ujson failed, trying standard json: {ujson_error}")
         try:
             # Fallback to standard json
-            with open(kerchunk_path, 'r') as f:
+            with open(kerchunk_path, "r") as f:
                 refs = json.load(f)
-                logger.info(f"Loaded kerchunk reference with json: {len(refs.get('refs', {}))} refs")
+                logger.info(
+                    f"Loaded kerchunk reference with json: {len(refs.get('refs', {}))} refs"
+                )
                 return refs
         except Exception as e:
             logger.error(f"Failed to load kerchunk reference {kerchunk_path}: {e}")
             raise
 
 
-def _open_cmorph_dataset(metadata: pd.Series, start_date: datetime, end_date: datetime) -> xr.Dataset:
+def _open_cmorph_dataset(
+    metadata: pd.Series, start_date: datetime, end_date: datetime
+) -> xr.Dataset:
     """
     Open CMORPH precipitation data by mirroring the reference implementation in cmorph_test.py.
     Aggregates all daily NetCDF files for the requested month(s) and returns an in-memory dataset.
@@ -548,7 +590,7 @@ def _open_cmorph_dataset(metadata: pd.Series, start_date: datetime, end_date: da
         raise ValueError("CMORPH dataset inputFile is missing.")
 
     if base_path.startswith("s3://"):
-        glob_base = base_path[len("s3://") :]
+        glob_base = base_path[len("s3://") :]  # noqa E203
     else:
         glob_base = base_path
 
@@ -571,7 +613,9 @@ def _open_cmorph_dataset(metadata: pd.Series, start_date: datetime, end_date: da
         matches = fs.glob(pattern)
         if matches:
             for match in matches:
-                file_urls.append(match if match.startswith("s3://") else f"s3://{match}")
+                file_urls.append(
+                    match if match.startswith("s3://") else f"s3://{match}"
+                )
 
     if not file_urls:
         raise FileNotFoundError(
@@ -621,7 +665,7 @@ def _open_ndvi_dataset(metadata: pd.Series, target_date: datetime) -> xr.Dataset
     )
 
     if filled.startswith("s3://"):
-        glob_path = filled[len("s3://") :]
+        glob_path = filled[len("s3://") :]  # noqa E203
     else:
         glob_path = filled
 
@@ -647,19 +691,22 @@ def _open_ndvi_dataset(metadata: pd.Series, target_date: datetime) -> xr.Dataset
 
     return loaded
 
-async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date: datetime) -> xr.Dataset:
+
+async def open_cloud_dataset(
+    metadata: pd.Series, start_date: datetime, end_date: datetime
+) -> xr.Dataset:
     """Open cloud-based dataset using direct S3 access (simplified from working example)"""
-    
+
     cache_key = f"{metadata['id']}_{start_date.date()}_{end_date.date()}"
     cached = dataset_cache.get(cache_key)
     if cached is not None:
         logger.info(f"Using cached cloud dataset: {cache_key}")
         return cached
-    
+
     try:
         input_file = str(metadata["inputFile"])
         engine = str(metadata.get("engine", "h5netcdf")).lower()
-        
+
         logger.info(f"Opening cloud dataset: {metadata['datasetName']}")
         logger.info(f"Input file: {input_file}")
         logger.info(f"Engine: {engine}")
@@ -668,7 +715,9 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
 
         if normalized_name == "precipitation - cmorph cdr":
             logger.info("Using CMORPH-specific loader")
-            ds = await asyncio.to_thread(_open_cmorph_dataset, metadata, start_date, end_date)
+            ds = await asyncio.to_thread(
+                _open_cmorph_dataset, metadata, start_date, end_date
+            )
             dataset_cache.set(cache_key, ds)
             return ds
         if normalized_name == "normalized difference vegetation index cdr":
@@ -676,7 +725,7 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
             ds = await asyncio.to_thread(_open_ndvi_dataset, metadata, start_date)
             dataset_cache.set(cache_key, ds)
             return ds
-        
+
         # Resolve concrete object keys for the requested date range
         candidate_urls: List[str] = []
         if "{" in input_file:
@@ -688,10 +737,15 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
         for candidate in expanded:
             normalized = _normalize_s3_url(candidate)
             if "*" in normalized or "?" in normalized:
-                glob_target = normalized[5:] if normalized.startswith("s3://") else normalized
+                glob_target = (
+                    normalized[5:] if normalized.startswith("s3://") else normalized
+                )
                 matches = fs.glob(glob_target)
                 candidate_urls.extend(
-                    [match if match.startswith("s3://") else f"s3://{match}" for match in matches]
+                    [
+                        match if match.startswith("s3://") else f"s3://{match}"
+                        for match in matches
+                    ]
                 )
             else:
                 candidate_urls.append(normalized)
@@ -727,8 +781,8 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
                 return None
             cleaned = kerchunk_hint.lstrip("/\\")
             if cleaned.startswith("kerchunk/"):
-                cleaned = cleaned[len("kerchunk/") :]
-            
+                cleaned = cleaned[len("kerchunk/") :]  # noqa E203
+
             # TRY KERCHUNK_PATH first, fallback to CACHE_DIR if not writable
             try:
                 # Check if KERCHUNK_PATH exists and is writable
@@ -741,7 +795,7 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
                         return path
             except (OSError, PermissionError) as e:
                 logger.warning(f"KERCHUNK_PATH not writable: {e}")
-            
+
             # Fallback to writable cache directory
             path = CACHE_DIR / "kerchunk" / cleaned
             logger.info(f"Using CACHE_DIR for kerchunk: {path}")
@@ -758,7 +812,9 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
                         f"Kerchunk reference missing for {metadata['datasetName']}, creating: {local_ref}"
                     )
                     try:
-                        await asyncio.to_thread(create_kerchunk_reference, asset_url, str(local_ref))
+                        await asyncio.to_thread(
+                            create_kerchunk_reference, asset_url, str(local_ref)
+                        )
                     except (OSError, PermissionError) as e:
                         logger.error(f"Failed to create kerchunk reference: {e}")
                         logger.info("Falling back to direct S3 access without kerchunk")
@@ -804,7 +860,9 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
                     )
                     try:
                         # Use first resolved asset as representative for reference
-                        await asyncio.to_thread(create_kerchunk_reference, candidate_urls[0], str(local_ref))
+                        await asyncio.to_thread(
+                            create_kerchunk_reference, candidate_urls[0], str(local_ref)
+                        )
                     except (OSError, PermissionError) as e:
                         logger.error(f"Failed to create kerchunk reference: {e}")
                         logger.info("Falling back to direct S3 access without kerchunk")
@@ -830,6 +888,7 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
                     for url in candidate_urls:
                         logger.info(f"Opening S3 object {url}")
                         url_clean = url[5:] if url.startswith("s3://") else url
+
                         def _load():
                             with fs.open(url_clean, mode="rb") as s3_file:
                                 ds_single = xr.open_dataset(s3_file, engine="h5netcdf")
@@ -841,13 +900,18 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
                     if len(datasets) == 1:
                         ds = datasets[0]
                     else:
-                        logger.info(f"Concatenating {len(datasets)} netCDF parts for {metadata['datasetName']}")
-                        ds = await asyncio.to_thread(xr.concat, datasets, dim="time", combine_attrs="override")
+                        logger.info(
+                            f"Concatenating {len(datasets)} netCDF parts for {metadata['datasetName']}"
+                        )
+                        ds = await asyncio.to_thread(
+                            xr.concat, datasets, dim="time", combine_attrs="override"
+                        )
             else:
                 datasets = []
                 for url in candidate_urls:
                     logger.info(f"Opening S3 object {url}")
                     url_clean = url[5:] if url.startswith("s3://") else url
+
                     def _load():
                         with fs.open(url_clean, mode="rb") as s3_file:
                             ds_single = xr.open_dataset(s3_file, engine="h5netcdf")
@@ -859,8 +923,12 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
                 if len(datasets) == 1:
                     ds = datasets[0]
                 else:
-                    logger.info(f"Concatenating {len(datasets)} netCDF parts for {metadata['datasetName']}")
-                    ds = await asyncio.to_thread(xr.concat, datasets, dim="time", combine_attrs="override")
+                    logger.info(
+                        f"Concatenating {len(datasets)} netCDF parts for {metadata['datasetName']}"
+                    )
+                    ds = await asyncio.to_thread(
+                        xr.concat, datasets, dim="time", combine_attrs="override"
+                    )
 
         else:
             asset_url = candidate_urls[0]
@@ -870,46 +938,48 @@ async def open_cloud_dataset(metadata: pd.Series, start_date: datetime, end_date
                 engine=engine,
                 storage_options={"anon": S3_ANON},
             )
-        
+
         logger.info(f"✅ Successfully opened: {metadata['datasetName']}")
         logger.info(f"   Dimensions: {dict(ds.dims)}")
         logger.info(f"   Variables: {list(ds.data_vars)}")
-        
+
         # Cache the dataset
         dataset_cache.set(cache_key, ds)
         return ds
-        
+
     except Exception as e:
         logger.error(f"Failed to open cloud dataset {metadata['datasetName']}: {e}")
         logger.error(f"Error type: {type(e).__name__}")
         import traceback
+
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to access cloud dataset '{metadata['datasetName']}': {str(e)}"
+            detail=f"Failed to access cloud dataset '{metadata['datasetName']}': {str(e)}",
         )
+
 
 async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
     """Open local dataset with caching"""
-    
-    cache_key = metadata['datasetName']
+
+    cache_key = metadata["datasetName"]
     cached = dataset_cache.get(cache_key)
     if cached is not None:
         logger.info(f"Using cached dataset: {cache_key}")
         return cached
-    
+
     try:
         input_file = metadata["inputFile"]
         if input_file.startswith("datasets/"):
             input_file = input_file.replace("datasets/", "", 1)
-        
+
         file_path = os.path.join(LOCAL_DATASETS_PATH, input_file)
         logger.info(f"Attempting to open local dataset: {file_path}")
-        
+
         if not os.path.exists(file_path):
             logger.error(f"Dataset file not found: {file_path}")
             raise FileNotFoundError(f"Local dataset not found: {file_path}")
-        
+
         engine = (metadata.get("engine") or "h5netcdf").lower()
         path_obj = Path(file_path)
         dataset_name = metadata["datasetName"]
@@ -918,21 +988,25 @@ async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
             if path_obj.is_dir():
                 zmetadata = path_obj / ".zmetadata"
                 zarr_json = path_obj / "zarr.json"
-                
+
                 # Check for REAL Zarr store (has consolidated metadata)
                 if zmetadata.exists():
                     logger.info(f"Opening real Zarr v2 store: {dataset_name}")
-                    ds = await asyncio.to_thread(xr.open_zarr, str(path_obj), consolidated=True)
-                    
+                    ds = await asyncio.to_thread(
+                        xr.open_zarr, str(path_obj), consolidated=True
+                    )
+
                 # Check for Zarr v3 or Kerchunk reference
                 elif zarr_json.exists():
                     try:
-                        with open(zarr_json, 'r') as f:
+                        with open(zarr_json, "r") as f:
                             zarr_content = json.load(f)
-                        
+
                         # Kerchunk reference (Zarr v2 style with "refs")
                         if "refs" in zarr_content:
-                            logger.info(f"Opening Kerchunk reference (v2 style): {dataset_name}")
+                            logger.info(
+                                f"Opening Kerchunk reference (v2 style): {dataset_name}"
+                            )
                             ds = await asyncio.to_thread(
                                 xr.open_dataset,
                                 "reference://",
@@ -940,82 +1014,123 @@ async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
                                 backend_kwargs={"consolidated": False},
                                 storage_options={
                                     "fo": str(zarr_json),
-                                    "asynchronous": False
+                                    "asynchronous": False,
                                 },
                             )
                         # Zarr v3 metadata file (just metadata, no actual data)
-                        elif zarr_content.get("node_type") == "group" and zarr_content.get("zarr_format") == 3:
-                            logger.warning(f"Detected Zarr v3 metadata-only file for {dataset_name}")
-                            logger.warning("This appears to be a Kerchunk reference without data arrays")
+                        elif (
+                            zarr_content.get("node_type") == "group"
+                            and zarr_content.get("zarr_format") == 3
+                        ):
+                            logger.warning(
+                                f"Detected Zarr v3 metadata-only file for {dataset_name}"
+                            )
+                            logger.warning(
+                                "This appears to be a Kerchunk reference without data arrays"
+                            )
                             logger.info("Falling back to NetCDF file...")
-                            raise ValueError("Zarr v3 metadata-only file (no data arrays)")
+                            raise ValueError(
+                                "Zarr v3 metadata-only file (no data arrays)"
+                            )
                         else:
                             # Try as regular Zarr v3 store
                             logger.info(f"Attempting Zarr v3 store: {dataset_name}")
-                            ds = await asyncio.to_thread(xr.open_zarr, str(path_obj), consolidated=False)
-                            
+                            ds = await asyncio.to_thread(
+                                xr.open_zarr, str(path_obj), consolidated=False
+                            )
+
                     except (json.JSONDecodeError, ValueError) as e:
                         logger.warning(f"Failed to open as Zarr/Kerchunk: {e}")
                         raise
-                        
+
                 else:
                     # No metadata files - try unconsolidated Zarr
                     logger.info(f"Attempting unconsolidated Zarr: {dataset_name}")
-                    ds = await asyncio.to_thread(xr.open_zarr, str(path_obj), consolidated=False)
-                
+                    ds = await asyncio.to_thread(
+                        xr.open_zarr, str(path_obj), consolidated=False
+                    )
+
                 # Verify dataset has variables
                 if len(ds.data_vars) == 0:
                     logger.error(f"Zarr store {dataset_name} has no variables!")
                     raise ValueError("Empty Zarr store")
-                    
+
                 logger.info(f"✓ Successfully opened Zarr: {list(ds.data_vars)}")
-                
+
             else:
                 logger.warning(f"Zarr path is not a directory: {path_obj}")
                 raise ValueError("Not a Zarr directory")
         else:
             # NetCDF engine - TRY WITH decode_times=True first, fallback to False
             try:
-                ds = await asyncio.to_thread(xr.open_dataset, str(path_obj), engine=engine, decode_times=True)
-                logger.info(f"✓ Successfully opened with {engine} (decode_times=True): {list(ds.data_vars)}")
+                ds = await asyncio.to_thread(
+                    xr.open_dataset, str(path_obj), engine=engine, decode_times=True
+                )
+                logger.info(
+                    f"✓ Successfully opened with {engine} (decode_times=True): {list(ds.data_vars)}"
+                )
             except (ValueError, OSError) as time_error:
                 # Time decoding failed - try without decoding
-                if "decode time" in str(time_error).lower() or "cftime" in str(time_error).lower():
-                    logger.warning(f"Time decoding failed for {dataset_name}, retrying with decode_times=False")
-                    ds = await asyncio.to_thread(xr.open_dataset, str(path_obj), engine=engine, decode_times=False)
-                    
+                if (
+                    "decode time" in str(time_error).lower()
+                    or "cftime" in str(time_error).lower()
+                ):
+                    logger.warning(
+                        f"Time decoding failed for {dataset_name}, retrying with decode_times=False"
+                    )
+                    ds = await asyncio.to_thread(
+                        xr.open_dataset,
+                        str(path_obj),
+                        engine=engine,
+                        decode_times=False,
+                    )
+
                     # Manually decode time if needed
                     ds = _ensure_datetime_coordinates(ds)
-                    
-                    logger.info(f"✓ Successfully opened with {engine} (decode_times=False): {list(ds.data_vars)}")
+
+                    logger.info(
+                        f"✓ Successfully opened with {engine} (decode_times=False): {list(ds.data_vars)}"
+                    )
                 else:
                     raise
-        
+
         dataset_cache.set(cache_key, ds)
         return ds
-        
+
     except (ValueError, FileNotFoundError, KeyError) as e:
         # FALLBACK: Try NetCDF file
         logger.warning(f"Primary method failed for {metadata['datasetName']}: {e}")
-        
+
         # Find corresponding .nc file
         nc_path = path_obj.with_suffix(".nc")
-        
+
         logger.info(f"🔄 Attempting NetCDF fallback: {nc_path}")
-        
+
         if nc_path.exists():
             try:
                 # Try with time decoding first
-                ds = await asyncio.to_thread(xr.open_dataset, str(nc_path), engine="h5netcdf", decode_times=True)
+                ds = await asyncio.to_thread(
+                    xr.open_dataset, str(nc_path), engine="h5netcdf", decode_times=True
+                )
             except (ValueError, OSError) as time_error:
                 # Fallback to no time decoding
-                if "decode time" in str(time_error).lower() or "cftime" in str(time_error).lower():
-                    logger.warning(f"Time decoding failed for fallback, using decode_times=False")
-                    ds = await asyncio.to_thread(xr.open_dataset, str(nc_path), engine="h5netcdf", decode_times=False)
+                if (
+                    "decode time" in str(time_error).lower()
+                    or "cftime" in str(time_error).lower()
+                ):
+                    logger.warning(
+                        "Time decoding failed for fallback, using decode_times=False"
+                    )
+                    ds = await asyncio.to_thread(
+                        xr.open_dataset,
+                        str(nc_path),
+                        engine="h5netcdf",
+                        decode_times=False,
+                    )
                     ds = _ensure_datetime_coordinates(ds)
                 else:
                     raise
-                    
+
             logger.info(f"✅ Fallback successful! Variables: {list(ds.data_vars)}")
             dataset_cache.set(cache_key, ds)
             return ds
@@ -1023,40 +1138,45 @@ async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
             logger.error(f"❌ No NetCDF fallback found: {nc_path}")
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to open {metadata['datasetName']}: Zarr incomplete and no NetCDF fallback found"
+                detail=f"Failed to open {metadata['datasetName']}: Zarr incomplete and no NetCDF fallback found",
             )
-    
+
     except Exception as e:
         logger.error(f"❌ Unexpected error opening {metadata['datasetName']}: {e}")
         import traceback
+
         logger.error(traceback.format_exc())
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to access local dataset: {metadata['datasetName']} - {str(e)}"
+            detail=f"Failed to access local dataset: {metadata['datasetName']} - {str(e)}",
         )
+
+
 # ============================================================================
 # DATA PROCESSING FUNCTIONS
 # ============================================================================
 
+
 def normalize_coordinates(ds: xr.Dataset) -> tuple:
     """Find and normalize coordinate names"""
     coord_map = {c.lower(): c for c in ds.coords}
-    
+
     lat_name = (
-        coord_map.get("lat") or 
-        coord_map.get("latitude") or 
-        coord_map.get("lattitude") or
-        coord_map.get("ylat")
+        coord_map.get("lat")
+        or coord_map.get("latitude")
+        or coord_map.get("lattitude")
+        or coord_map.get("ylat")
     )
     lon_name = (
-        coord_map.get("lon") or 
-        coord_map.get("longitude") or 
-        coord_map.get("long") or
-        coord_map.get("xlon")
+        coord_map.get("lon")
+        or coord_map.get("longitude")
+        or coord_map.get("long")
+        or coord_map.get("xlon")
     )
     time_name = coord_map.get("time") or coord_map.get("date")
-    
+
     return lat_name, lon_name, time_name
+
 
 async def extract_time_series(
     ds: xr.Dataset,
@@ -1064,66 +1184,79 @@ async def extract_time_series(
     start_date: datetime,
     end_date: datetime,
     spatial_bounds: Optional[Dict[str, float]] = None,
-    aggregation: AggregationMethod = AggregationMethod.MEAN,
+    aggregation: Optional[AggregationMethod] = AggregationMethod.MEAN,
     level_value: Optional[float] = None,
-    focus_coordinates: Optional[List[Dict[str, float]]] = None  # NEW PARAMETER
+    focus_coordinates: Optional[List[Dict[str, float]]] = None,  # NEW PARAMETER
 ) -> pd.Series:
     """
     Extract time series with advanced spatial selection
-    
+
     NEW: If focus_coordinates are provided, extracts data from specific points
     instead of spatial aggregation
     """
-    
+
+    if aggregation is None:
+        aggregation = AggregationMethod.MEAN
+
     lat_name, lon_name, time_name = normalize_coordinates(ds)
-    
+
     # Time selection
     ds_time = ds.sel({time_name: slice(start_date, end_date)})
-    
+
     # Get variable
     var_name = metadata["keyVariable"]
     var = ds_time[var_name]
-    
+
     # Level selection if applicable
     if level_value is not None:
         level_dims = [d for d in var.dims if d not in (time_name, lat_name, lon_name)]
         if level_dims:
             var = var.sel({level_dims[0]: level_value}, method="nearest")
-    
+
     # NEW: Point-based extraction if focus coordinates provided
     if focus_coordinates and len(focus_coordinates) > 0:
-        logger.info(f"Extracting data from {len(focus_coordinates)} specific coordinate(s)")
-        
+        logger.info(
+            f"Extracting data from {len(focus_coordinates)} specific coordinate(s)"
+        )
+
         point_series = []
-        
+
         for coord in focus_coordinates:
             try:
                 # Select nearest point to the specified coordinate
                 if lat_name and lon_name:
                     point_data = var.sel(
                         {lat_name: coord["lat"], lon_name: coord["lon"]},
-                        method="nearest"
+                        method="nearest",
                     )
-                    
+
                     # Convert to pandas Series
                     point_series_data = point_data.to_pandas()
-                    
+
                     # Ensure datetime index
                     if not isinstance(point_series_data.index, pd.DatetimeIndex):
-                        point_series_data.index = pd.to_datetime(point_series_data.index)
-                    
+                        point_series_data.index = pd.to_datetime(
+                            point_series_data.index
+                        )
+
                     point_series.append(point_series_data)
-                    logger.info(f"Extracted data from point: lat={coord['lat']}, lon={coord['lon']}")
+                    logger.info(
+                        f"Extracted data from point: lat={coord['lat']}, lon={coord['lon']}"
+                    )
                 else:
-                    logger.warning(f"Cannot extract point data: lat/lon coordinates not found in dataset")
-                    
+                    logger.warning(
+                        "Cannot extract point data: lat/lon coordinates not found in dataset"
+                    )
+
             except Exception as e:
                 logger.error(f"Failed to extract data from coordinate {coord}: {e}")
                 continue
-        
+
         if not point_series:
-            raise ValueError("Failed to extract data from any of the specified coordinates")
-        
+            raise ValueError(
+                "Failed to extract data from any of the specified coordinates"
+            )
+
         # If multiple points, average them
         if len(point_series) > 1:
             logger.info(f"Averaging data from {len(point_series)} points")
@@ -1132,24 +1265,30 @@ async def extract_time_series(
             result = combined.mean(axis=1)
         else:
             result = point_series[0]
-        
+
         return result
-    
+
     # ORIGINAL: Spatial aggregation (used when no focus coordinates)
     else:
         # Spatial bounds selection
         if spatial_bounds:
             if lat_name and lon_name:
-                var = var.sel({
-                    lat_name: slice(spatial_bounds.get("lat_min", -90), 
-                                   spatial_bounds.get("lat_max", 90)),
-                    lon_name: slice(spatial_bounds.get("lon_min", -180), 
-                                   spatial_bounds.get("lon_max", 180))
-                })
-        
+                var = var.sel(
+                    {
+                        lat_name: slice(
+                            spatial_bounds.get("lat_min", -90),
+                            spatial_bounds.get("lat_max", 90),
+                        ),
+                        lon_name: slice(
+                            spatial_bounds.get("lon_min", -180),
+                            spatial_bounds.get("lon_max", 180),
+                        ),
+                    }
+                )
+
         # Spatial aggregation
         spatial_dims = [d for d in var.dims if d != time_name]
-        
+
         if aggregation == AggregationMethod.MEAN:
             result = var.mean(dim=spatial_dims)
         elif aggregation == AggregationMethod.MAX:
@@ -1162,89 +1301,96 @@ async def extract_time_series(
             result = var.median(dim=spatial_dims)
         elif aggregation == AggregationMethod.STD:
             result = var.std(dim=spatial_dims)
-        
+
         # Convert to pandas Series
         series = result.to_pandas()
-        
+
         # Ensure datetime index
         if not isinstance(series.index, pd.DatetimeIndex):
             series.index = pd.to_datetime(series.index)
-        
-        return series
 
+        return series
 
 
 def apply_analysis_model(
-    series: pd.Series, 
-    model: AnalysisModel,
-    window: Optional[int] = None
+    series: pd.Series, model: AnalysisModel, window: Optional[int] = None
 ) -> pd.Series:
     """Apply advanced analysis transformations"""
-    
+
     if model == AnalysisModel.RAW:
         return series
-    
+
     elif model == AnalysisModel.MOVING_AVG:
         window = window or 12
         return series.rolling(window=window, center=True, min_periods=1).mean()
-    
+
     elif model == AnalysisModel.TREND:
         # Detrend using linear regression
         x = np.arange(len(series))
         y = series.values
         valid_mask = ~np.isnan(y)
-        
+
         if valid_mask.sum() < 2:
             return series
-        
+
         coeffs = np.polyfit(x[valid_mask], y[valid_mask], 1)
         trend = np.polyval(coeffs, x)
         return pd.Series(trend, index=series.index)
-    
+
     elif model == AnalysisModel.ANOMALY:
         # Calculate anomalies from climatology
         climatology = series.groupby([series.index.month, series.index.day]).mean()
         anomalies = series.copy()
-        
+
         for idx in series.index:
             clim_key = (idx.month, idx.day)
             if clim_key in climatology:
                 anomalies[idx] = series[idx] - climatology[clim_key]
-        
+
         return anomalies
-    
+
     elif model == AnalysisModel.SEASONAL:
         # Simple seasonal decomposition
         if len(series) < 24:  # Need at least 2 years
             return series
-        
+
         from statsmodels.tsa.seasonal import seasonal_decompose
+
         try:
-            decomposition = seasonal_decompose(series.dropna(), model='additive', period=12)
+            decomposition = seasonal_decompose(
+                series.dropna(), model="additive", period=12
+            )
             return decomposition.seasonal
-        except:
+        except:  # noqa E722
             return series
-    
+
     elif model == AnalysisModel.CUMULATIVE:
         return series.cumsum()
-    
+
     elif model == AnalysisModel.DERIVATIVE:
         return series.diff()
-    
+
     return series
+
 
 def calculate_statistics(series: pd.Series) -> Statistics:
     """Calculate comprehensive statistics for a time series"""
-    
+
     valid_data = series.dropna()
-    
+
     if len(valid_data) == 0:
         return Statistics(
-            min=0, max=0, mean=0, median=0, std=0,
-            trend=0, count=0, missing=len(series),
-            percentiles={"25": 0, "50": 0, "75": 0}
+            min=0,
+            max=0,
+            mean=0,
+            median=0,
+            std=0,
+            trend=0,
+            count=0,
+            missing=len(series),
+            percentiles={"25": 0, "50": 0, "75": 0},
         )
-    
+
     # Calculate trend
     x = np.arange(len(valid_data))
     y = valid_data.values
@@ -1253,7 +1399,7 @@ def calculate_statistics(series: pd.Series) -> Statistics:
         trend = coeffs[0]
     else:
         trend = 0
-    
+
     return Statistics(
         min=float(valid_data.min()),
         max=float(valid_data.max()),
@@ -1266,32 +1412,36 @@ def calculate_statistics(series: pd.Series) -> Statistics:
         percentiles={
             "25": float(valid_data.quantile(0.25)),
             "50": float(valid_data.quantile(0.50)),
-            "75": float(valid_data.quantile(0.75))
-        }
+            "75": float(valid_data.quantile(0.75)),
+        },
     )
 
+
 def generate_chart_config(
-    datasets: List[str],
-    chart_type: ChartType,
-    metadata: Dict[str, DatasetMetadata]
+    datasets: List[str], chart_type: ChartType, metadata: Dict[str, DatasetMetadata]
 ) -> Dict[str, Any]:
     """Generate chart configuration for frontend visualization"""
-    
+
     colors = [
-        "#8884d8", "#82ca9d", "#ffc658", "#ff7c7c", "#8dd1e1",
-        "#d084d0", "#ffb347", "#67b7dc", "#a4de6c", "#ffd93d"
+        "#8884d8",
+        "#82ca9d",
+        "#ffc658",
+        "#ff7c7c",
+        "#8dd1e1",
+        "#d084d0",
+        "#ffb347",
+        "#67b7dc",
+        "#a4de6c",
+        "#ffd93d",
     ]
-    
-    config = {
+
+    config: dict[str, Any] = {
         "type": chart_type.value,
         "datasets": [],
         "options": {
             "responsive": True,
             "maintainAspectRatio": False,
-            "interaction": {
-                "mode": "index",
-                "intersect": False
-            },
+            "interaction": {"mode": "index", "intersect": False},
             "scales": {
                 "x": {
                     "type": "time",
@@ -1299,30 +1449,31 @@ def generate_chart_config(
                         "displayFormats": {
                             "day": "MMM DD",
                             "month": "MMM YYYY",
-                            "year": "YYYY"
+                            "year": "YYYY",
                         }
-                    }
+                    },
                 },
-                "y": {
-                    "beginAtZero": False
-                }
-            }
-        }
+                "y": {"beginAtZero": False},
+            },
+        },
     }
-    
+
     for i, dataset_id in enumerate(datasets):
         if dataset_id in metadata:
             meta = metadata[dataset_id]
-            config["datasets"].append({
-                "id": dataset_id,
-                "label": meta.name,
-                "color": colors[i % len(colors)],
-                "units": meta.units,
-                "borderWidth": 2 if chart_type == ChartType.LINE else 0,
-                "fill": chart_type == ChartType.AREA
-            })
-    
+            config["datasets"].append(
+                {
+                    "id": dataset_id,
+                    "label": meta.name,
+                    "color": colors[i % len(colors)],
+                    "units": meta.units,
+                    "borderWidth": 2 if chart_type == ChartType.LINE else 0,
+                    "fill": chart_type == ChartType.AREA,
+                }
+            )
+
     return config
+
 
 # ============================================================================
 # API ENDPOINTS
@@ -1333,7 +1484,7 @@ app = FastAPI(
     title="Enhanced Climate Time Series API",
     description="Advanced API for extracting and processing climate time series data",
     version="2.0.0",
-    default_response_class=CustomJSONResponse
+    default_response_class=CustomJSONResponse,
 )
 
 # Configure CORS
@@ -1342,7 +1493,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",  # Next.js dev server
         "http://127.0.0.1:3000",  # Alternative localhost
-        "*"  # Allow all in development
+        "*",  # Allow all in development
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -1351,96 +1502,115 @@ app.add_middleware(
 
 router = APIRouter(prefix="/api/v2")
 
-@router.post("/timeseries/extract", response_model=TimeSeriesResponse, response_class=CustomJSONResponse)
+
+@router.post(
+    "/timeseries/extract",
+    response_model=TimeSeriesResponse,
+    response_class=CustomJSONResponse,
+)
 async def extract_timeseries(request: TimeSeriesRequest):
     """
     Extract and process time series data from multiple datasets
-    
+
     NEW: Supports focusCoordinates parameter for point-based extraction
     Format: "lat1,lon1; lat2,lon2"
     Example: "40.7128,-74.0060; 34.0522,-118.2437"
-    
+
     When focusCoordinates are provided:
     - Extracts data from specific lat/lon points instead of spatial aggregation
     - If multiple coordinates provided, averages the values
     - Ignores spatialBounds and aggregation parameters
     """
-    
+
     start_time = datetime.now()
-    
+
     try:
         # Parse dates
         start_date = datetime.strptime(request.startDate, "%Y-%m-%d")
         end_date = datetime.strptime(request.endDate, "%Y-%m-%d")
-        
+
         # NEW: Parse focus coordinates if provided
         focus_coords = parse_focus_coordinates(request.focusCoordinates)
         if focus_coords:
-            logger.info(f"Processing request with {len(focus_coords)} focus coordinate(s)")
+            logger.info(
+                f"Processing request with {len(focus_coords)} focus coordinate(s)"
+            )
             for i, coord in enumerate(focus_coords):
-                logger.info(f"  Coordinate {i+1}: lat={coord['lat']}, lon={coord['lon']}")
-        
+                logger.info(
+                    f"  Coordinate {i + 1}: lat={coord['lat']}, lon={coord['lon']}"
+                )
+
         # Get metadata for requested datasets (UUIDs)
         metadata_df = get_metadata_by_ids(request.datasetIds)
-        
+
         if len(metadata_df) == 0:
             raise HTTPException(
-                status_code=404,
-                detail="No datasets found with provided IDs"
+                status_code=404, detail="No datasets found with provided IDs"
             )
-        
+
         # Process each dataset
-        all_series = {}
+        all_series: dict[str, pd.Series] = {}
         dataset_metadata = {}
-        statistics = {} if request.includeStatistics else None
-        
+        statistics: dict[str, Statistics] | None = (
+            {} if request.includeStatistics else None
+        )
+
         for _, meta_row in metadata_df.iterrows():
             try:
                 is_local = meta_row["Stored"] == "local"
-                
+
                 # Open dataset
                 if is_local:
                     ds = await open_local_dataset(meta_row)
                 else:
                     ds = await open_cloud_dataset(meta_row, start_date, end_date)
-                
+
                 # Determine level if multi-level
                 level_value = None
-                if meta_row.get("levelValues") and str(meta_row["levelValues"]).lower() != "none":
-                    level_vals = [float(x.strip()) for x in str(meta_row["levelValues"]).split(",")]
+                if (
+                    meta_row.get("levelValues")
+                    and str(meta_row["levelValues"]).lower() != "none"
+                ):
+                    level_vals = [
+                        float(x.strip())
+                        for x in str(meta_row["levelValues"]).split(",")
+                    ]
                     level_value = np.median(level_vals)
-                
+
                 # Extract time series - NOW WITH FOCUS COORDINATES
                 series = await extract_time_series(
-                    ds, meta_row, start_date, end_date,
-                    spatial_bounds=request.spatialBounds if not focus_coords else None,  # Ignore bounds if using coords
+                    ds,
+                    meta_row,
+                    start_date,
+                    end_date,
+                    spatial_bounds=request.spatialBounds
+                    if not focus_coords
+                    else None,  # Ignore bounds if using coords
                     aggregation=request.aggregation,
                     level_value=level_value,
-                    focus_coordinates=focus_coords  # NEW: Pass parsed coordinates
+                    focus_coordinates=focus_coords,  # NEW: Pass parsed coordinates
                 )
-                
+
                 # Apply analysis model
                 series = apply_analysis_model(
-                    series, 
-                    request.analysisModel,
-                    request.smoothingWindow
+                    series, request.analysisModel, request.smoothingWindow
                 )
-                
+
                 # Normalize if requested
                 if request.normalize:
                     series_min = series.min()
                     series_max = series.max()
                     if series_max > series_min:
                         series = (series - series_min) / (series_max - series_min)
-                
+
                 # Resample if requested
                 if request.resampleFreq:
                     series = series.resample(request.resampleFreq).mean()
-                
+
                 # Use ID as the key (what frontend sends)
                 dataset_id = str(meta_row["id"])
                 all_series[dataset_id] = series
-                
+
                 # Add metadata
                 if request.includeMetadata:
                     dataset_metadata[dataset_id] = DatasetMetadata(
@@ -1454,33 +1624,28 @@ async def extract_timeseries(request: TimeSeriesRequest):
                         startDate=meta_row["startDate"],
                         endDate=meta_row["endDate"],
                         isLocal=is_local,
-                        level=f"{level_value} {meta_row.get('levelUnits', '')}" if level_value else None,
-                        description=meta_row.get("description")
+                        level=f"{level_value} {meta_row.get('levelUnits', '')}"
+                        if level_value
+                        else None,
+                        description=meta_row.get("description"),
                     )
-                
+
                 # Calculate statistics
-                if request.includeStatistics:
+                if request.includeStatistics and statistics is not None:
                     statistics[dataset_id] = calculate_statistics(series)
-                
+
             except Exception as e:
                 logger.error(f"Error processing dataset {meta_row['datasetName']}: {e}")
                 # Continue with other datasets
                 continue
-        
+
         if not all_series:
             raise HTTPException(
-                status_code=500,
-                detail="Failed to extract data from any dataset"
+                status_code=500, detail="Failed to extract data from any dataset"
             )
-        
+
         # Align all series to common time index
-        common_index = None
-        for series in all_series.values():
-            if common_index is None:
-                common_index = series.index
-            else:
-                common_index = common_index.union(series.index)
-        
+        common_index = pd.concat(all_series.values(), axis=1).index
         common_index = common_index.sort_values()
 
         # Build response data
@@ -1489,27 +1654,27 @@ async def extract_timeseries(request: TimeSeriesRequest):
             point = DataPoint(
                 date=timestamp.strftime("%Y-%m-%d"),
                 values={},
-                timestamp=int(timestamp.timestamp())
+                timestamp=int(timestamp.timestamp()),
             )
-            
+
             for dataset_id, series in all_series.items():
                 if timestamp in series.index:
                     value = series[timestamp]
-                    point.values[dataset_id] = float(value) if not pd.isna(value) else None
+                    point.values[dataset_id] = (
+                        float(value) if not pd.isna(value) else None
+                    )
                 else:
                     point.values[dataset_id] = None
-                    
+
             data_points.append(point)
-        
+
         # Generate chart configuration
         chart_config = None
         if request.chartType and dataset_metadata:
             chart_config = generate_chart_config(
-                list(all_series.keys()),
-                request.chartType,
-                dataset_metadata
+                list(all_series.keys()), request.chartType, dataset_metadata
             )
-        
+
         # Processing info
         processing_time = (datetime.now() - start_time).total_seconds()
         processing_info = {
@@ -1517,111 +1682,123 @@ async def extract_timeseries(request: TimeSeriesRequest):
             "totalPoints": len(data_points),
             "datasetsProcessed": len(all_series),
             "dateRange": {
-                "start": common_index[0].strftime("%Y-%m-%d") if len(common_index) > 0 else None,
-                "end": common_index[-1].strftime("%Y-%m-%d") if len(common_index) > 0 else None
+                "start": common_index[0].strftime("%Y-%m-%d")
+                if len(common_index) > 0
+                else None,
+                "end": common_index[-1].strftime("%Y-%m-%d")
+                if len(common_index) > 0
+                else None,
             },
             "analysisModel": request.analysisModel.value,
             "aggregation": request.aggregation.value,
-            "focusCoordinates": len(focus_coords) if focus_coords else None,  # NEW: Include in response
-            "extractionMode": "point-based" if focus_coords else "spatial-aggregation"  # NEW: Show mode
+            "focusCoordinates": len(focus_coords)
+            if focus_coords
+            else None,  # NEW: Include in response
+            "extractionMode": "point-based"
+            if focus_coords
+            else "spatial-aggregation",  # NEW: Show mode
         }
-        
+
         return TimeSeriesResponse(
             data=data_points,
             metadata=dataset_metadata if request.includeMetadata else None,
             statistics=statistics,
             chartConfig=chart_config,
-            processingInfo=processing_info
+            processingInfo=processing_info,
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Unexpected error in extract_timeseries: {e}")
         import traceback
+
         logger.error(f"Traceback: {traceback.format_exc()}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal server error: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
     """
     Extract and process time series data from multiple datasets
-    
+
     This endpoint:
     - Fetches data from local or cloud sources based on metadata
     - Applies spatial and temporal filtering
     - Performs requested analysis (trend, anomaly, etc.)
     - Returns chart-ready data with statistics and metadata
     """
-    
+
     start_time = datetime.now()
-    
+
     try:
         # Parse dates
         start_date = datetime.strptime(request.startDate, "%Y-%m-%d")
         end_date = datetime.strptime(request.endDate, "%Y-%m-%d")
-        
+
         # Get metadata for requested datasets (UUIDs)
         metadata_df = get_metadata_by_ids(request.datasetIds)
-        
+
         if len(metadata_df) == 0:
             raise HTTPException(
-                status_code=404,
-                detail="No datasets found with provided IDs"
+                status_code=404, detail="No datasets found with provided IDs"
             )
-        
+
         # Process each dataset
         all_series = {}
         dataset_metadata = {}
         statistics = {} if request.includeStatistics else None
-        
+
         for _, meta_row in metadata_df.iterrows():
             try:
                 is_local = meta_row["Stored"] == "local"
-                
+
                 # Open dataset
                 if is_local:
                     ds = await open_local_dataset(meta_row)
                 else:
                     ds = await open_cloud_dataset(meta_row, start_date, end_date)
-                
+
                 # Determine level if multi-level
                 level_value = None
-                if meta_row.get("levelValues") and str(meta_row["levelValues"]).lower() != "none":
-                    level_vals = [float(x.strip()) for x in str(meta_row["levelValues"]).split(",")]
+                if (
+                    meta_row.get("levelValues")
+                    and str(meta_row["levelValues"]).lower() != "none"
+                ):
+                    level_vals = [
+                        float(x.strip())
+                        for x in str(meta_row["levelValues"]).split(",")
+                    ]
                     level_value = np.median(level_vals)
-                
+
                 # Extract time series
                 series = await extract_time_series(
-                    ds, meta_row, start_date, end_date,
+                    ds,
+                    meta_row,
+                    start_date,
+                    end_date,
                     spatial_bounds=request.spatialBounds,
                     aggregation=request.aggregation,
-                    level_value=level_value
+                    level_value=level_value,
                 )
-                
+
                 # Apply analysis model
                 series = apply_analysis_model(
-                    series, 
-                    request.analysisModel,
-                    request.smoothingWindow
+                    series, request.analysisModel, request.smoothingWindow
                 )
-                
+
                 # Normalize if requested
                 if request.normalize:
                     series_min = series.min()
                     series_max = series.max()
                     if series_max > series_min:
                         series = (series - series_min) / (series_max - series_min)
-                
+
                 # Resample if requested
                 if request.resampleFreq:
                     series = series.resample(request.resampleFreq).mean()
-                
+
                 # Use ID as the key (what frontend sends)
                 dataset_id = str(meta_row["id"])
                 all_series[dataset_id] = series
-                
+
                 # Add metadata
                 if request.includeMetadata:
                     dataset_metadata[dataset_id] = DatasetMetadata(
@@ -1635,25 +1812,26 @@ async def extract_timeseries(request: TimeSeriesRequest):
                         startDate=meta_row["startDate"],
                         endDate=meta_row["endDate"],
                         isLocal=is_local,
-                        level=f"{level_value} {meta_row.get('levelUnits', '')}" if level_value else None,
-                        description=meta_row.get("description")
+                        level=f"{level_value} {meta_row.get('levelUnits', '')}"
+                        if level_value
+                        else None,
+                        description=meta_row.get("description"),
                     )
-                
+
                 # Calculate statistics
                 if request.includeStatistics:
                     statistics[dataset_id] = calculate_statistics(series)
-                
+
             except Exception as e:
                 logger.error(f"Error processing dataset {meta_row['datasetName']}: {e}")
                 # Continue with other datasets
                 continue
-        
+
         if not all_series:
             raise HTTPException(
-                status_code=500,
-                detail="Failed to extract data from any dataset"
+                status_code=500, detail="Failed to extract data from any dataset"
             )
-        
+
         # Align all series to common time index
         common_index = None
         for series in all_series.values():
@@ -1661,32 +1839,32 @@ async def extract_timeseries(request: TimeSeriesRequest):
                 common_index = series.index
             else:
                 common_index = common_index.intersection(series.index)
-        
+
         # Build response data
         data_points = []
         for timestamp in common_index:
             point = DataPoint(
                 date=timestamp.strftime("%Y-%m-%d"),
                 values={},
-                timestamp=int(timestamp.timestamp())
+                timestamp=int(timestamp.timestamp()),
             )
-            
+
             for dataset_id, series in all_series.items():
                 if timestamp in series.index:
                     value = series[timestamp]
-                    point.values[dataset_id] = float(value) if not pd.isna(value) else None
-            
+                    point.values[dataset_id] = (
+                        float(value) if not pd.isna(value) else None
+                    )
+
             data_points.append(point)
-        
+
         # Generate chart configuration
         chart_config = None
         if request.chartType and dataset_metadata:
             chart_config = generate_chart_config(
-                list(all_series.keys()),
-                request.chartType,
-                dataset_metadata
+                list(all_series.keys()), request.chartType, dataset_metadata
             )
-        
+
         # Processing info
         processing_time = (datetime.now() - start_time).total_seconds()
         processing_info = {
@@ -1694,100 +1872,105 @@ async def extract_timeseries(request: TimeSeriesRequest):
             "totalPoints": len(data_points),
             "datasetsProcessed": len(all_series),
             "dateRange": {
-                "start": common_index[0].strftime("%Y-%m-%d") if len(common_index) > 0 else None,
-                "end": common_index[-1].strftime("%Y-%m-%d") if len(common_index) > 0 else None
+                "start": common_index[0].strftime("%Y-%m-%d")
+                if len(common_index) > 0
+                else None,
+                "end": common_index[-1].strftime("%Y-%m-%d")
+                if len(common_index) > 0
+                else None,
             },
             "analysisModel": request.analysisModel.value,
-            "aggregation": request.aggregation.value
+            "aggregation": request.aggregation.value,
         }
-        
+
         return TimeSeriesResponse(
             data=data_points,
             metadata=dataset_metadata if request.includeMetadata else None,
             statistics=statistics,
             chartConfig=chart_config,
-            processingInfo=processing_info
+            processingInfo=processing_info,
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Unexpected error in extract_timeseries: {e}")
         import traceback
+
         logger.error(f"Traceback: {traceback.format_exc()}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal server error: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.post("/raster/visualize", response_class=CustomJSONResponse)
 async def visualize_raster(request: RasterRequest):
     """
     Generate raster visualization for 3D globe display
-    
+
     Returns base64-encoded PNG textures and metadata for Cesium rendering
     Now supports CSS colors from frontend ColorBar for exact color matching
     """
     start_time = datetime.now()
-    
+
     try:
         # Parse date
         target_date = datetime.strptime(request.date, "%Y-%m-%d")
-        
+
         # Log CSS colors if provided
         if request.cssColors:
-            logger.info(f"[RasterViz] Received {len(request.cssColors)} CSS colors from frontend")
+            logger.info(
+                f"[RasterViz] Received {len(request.cssColors)} CSS colors from frontend"
+            )
             logger.info(f"[RasterViz] Colors: {request.cssColors}")
         else:
             logger.info("[RasterViz] No CSS colors provided, will use default colormap")
-        
+
         # Get metadata
         metadata_df = get_metadata_by_ids([request.datasetId])
-        
+
         if len(metadata_df) == 0:
             raise HTTPException(
-                status_code=404,
-                detail=f"Dataset not found: {request.datasetId}"
+                status_code=404, detail=f"Dataset not found: {request.datasetId}"
             )
-        
+
         meta_row = metadata_df.iloc[0]
-        
+
         # Open dataset
         is_local = meta_row["Stored"] == "local"
-        
+
         if is_local:
             ds = await open_local_dataset(meta_row)
         else:
             ds = await open_cloud_dataset(meta_row, target_date, target_date)
-        
+
         # Get the variable
         var_name = meta_row["keyVariable"]
         var = ds[var_name]
-        
+
         # Find time dimension
         lat_name, lon_name, time_name = normalize_coordinates(ds)
-        
+
         # Select the specific time
         if time_name in var.dims:
             selector_value = _coerce_time_value(target_date, ds[time_name])
             var = var.sel({time_name: selector_value}, method="nearest")
-        
+
         # Select level if specified
         if request.level is not None:
-            level_dims = [d for d in var.dims if d not in (time_name, lat_name, lon_name)]
+            level_dims = [
+                d for d in var.dims if d not in (time_name, lat_name, lon_name)
+            ]
             if level_dims:
                 var = var.sel({level_dims[0]: request.level}, method="nearest")
-        
+
         # CRITICAL: Pass CSS colors to serialize_raster_array
         logger.info(f"Generating raster visualization for {meta_row['datasetName']}")
         raster_data = serialize_raster_array(
-            var, 
-            meta_row, 
+            var,
+            meta_row,
             meta_row["datasetName"],
-            css_colors=request.cssColors  # THIS IS THE KEY LINE - ADD THIS!
+            css_colors=request.cssColors,  # THIS IS THE KEY LINE - ADD THIS!
         )
-        
+
         # Add processing info
         processing_time = (datetime.now() - start_time).total_seconds()
         raster_data["processingInfo"] = {
@@ -1795,20 +1978,23 @@ async def visualize_raster(request: RasterRequest):
             "date": request.date,
             "level": request.level,
             "datasetId": request.datasetId,
-            "colorSource": "CSS colors from ColorBar" if request.cssColors else "Default colormap"
+            "colorSource": "CSS colors from ColorBar"
+            if request.cssColors
+            else "Default colormap",
         }
-        
-        logger.info(f"Raster visualization generated successfully in {processing_time:.2f}s")
-        
+
+        logger.info(
+            f"Raster visualization generated successfully in {processing_time:.2f}s"
+        )
+
         return raster_data
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error generating raster visualization: {e}")
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate raster visualization: {str(e)}"
+            status_code=500, detail=f"Failed to generate raster visualization: {str(e)}"
         )
 
 
@@ -1816,7 +2002,7 @@ async def visualize_raster(request: RasterRequest):
 async def list_available_datasets(
     stored: Optional[Literal["local", "cloud", "all"]] = "all",
     source: Optional[str] = None,
-    search: Optional[str] = None
+    search: Optional[str] = None,
 ):
     """
     List all available datasets with filtering options
@@ -1827,65 +2013,63 @@ async def list_available_datasets(
             query = text("SELECT * FROM metadata")
             result = conn.execute(query)
             df = pd.DataFrame(result.fetchall(), columns=result.keys())
-        
+
         if df.empty:
-            return {
-                "total": 0,
-                "datasets": []
-            }
-        
+            return {"total": 0, "datasets": []}
+
         # Apply filters
-        if stored != "all":
+        if stored != "all" and stored is not None:
             df = df[df["Stored"].str.lower() == stored.lower()]
-        
+
         if source:
             df = df[df["sourceName"].str.contains(source, case=False, na=False)]
-        
+
         if search:
             df = df[
-                df["datasetName"].str.contains(search, case=False, na=False) |
-                df["layerParameter"].str.contains(search, case=False, na=False) |
-                df.get("slug", pd.Series(dtype=str)).str.contains(search, case=False, na=False)
+                df["datasetName"].str.contains(search, case=False, na=False)
+                | df["layerParameter"].str.contains(search, case=False, na=False)
+                | df.get("slug", pd.Series(dtype=str)).str.contains(
+                    search, case=False, na=False
+                )
             ]
-        
+
         # Convert to list of dicts
         datasets = []
         for _, row in df.iterrows():
-            datasets.append({
-                "id": str(row["id"]),
-                "slug": row.get("slug"),
-                "name": row["layerParameter"],
-                "datasetName": row["datasetName"],
-                "sourceName": row["sourceName"],
-                "source": row["sourceName"],
-                "type": row["datasetType"],
-                "stored": row["Stored"],
-                "startDate": row["startDate"],
-                "endDate": row["endDate"],
-                "units": row["units"],
-                "spatialResolution": row.get("spatialResolution"),
-                "levels": row.get("levels"),
-                "levelValues": row.get("levelValues"),
-                "levelUnits": row.get("levelUnits"),
-                "statistic": row.get("statistic"),
-                "inputFile": row.get("inputFile"),
-                "keyVariable": row.get("keyVariable"),
-                "colorMap": row.get("colorMap"),
-                "valueMin": row.get("valueMin"),
-                "valueMax": row.get("valueMax")
-            })
-        
-        return {
-            "total": len(datasets),
-            "datasets": datasets
-        }
-        
+            datasets.append(
+                {
+                    "id": str(row["id"]),
+                    "slug": row.get("slug"),
+                    "name": row["layerParameter"],
+                    "datasetName": row["datasetName"],
+                    "sourceName": row["sourceName"],
+                    "source": row["sourceName"],
+                    "type": row["datasetType"],
+                    "stored": row["Stored"],
+                    "startDate": row["startDate"],
+                    "endDate": row["endDate"],
+                    "units": row["units"],
+                    "spatialResolution": row.get("spatialResolution"),
+                    "levels": row.get("levels"),
+                    "levelValues": row.get("levelValues"),
+                    "levelUnits": row.get("levelUnits"),
+                    "statistic": row.get("statistic"),
+                    "inputFile": row.get("inputFile"),
+                    "keyVariable": row.get("keyVariable"),
+                    "colorMap": row.get("colorMap"),
+                    "valueMin": row.get("valueMin"),
+                    "valueMax": row.get("valueMax"),
+                }
+            )
+
+        return {"total": len(datasets), "datasets": datasets}
+
     except Exception as e:
         logger.error(f"Error listing datasets: {e}")
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to list datasets: {str(e)}"
+            status_code=500, detail=f"Failed to list datasets: {str(e)}"
         )
+
 
 @router.get("/health")
 async def health_check():
@@ -1899,9 +2083,10 @@ async def health_check():
             "timeseries": True,
             "rasterVisualization": True,
             "localDatasets": True,
-            "cloudDatasets": True
-        }
+            "cloudDatasets": True,
+        },
     }
+
 
 @router.post("/cache/clear")
 async def clear_cache():
@@ -1909,12 +2094,14 @@ async def clear_cache():
     dataset_cache.clear()
     return {"message": "Cache cleared successfully"}
 
+
 # Include router in app
 app.include_router(router)
 
 # ============================================================================
 # STARTUP AND SHUTDOWN
 # ============================================================================
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -1925,14 +2112,15 @@ async def startup_event():
     logger.info(f"Cache directory: {CACHE_DIR}")
     logger.info(f"Database connected: {DATABASE_URL is not None}")
     logger.info(f"S3 Anonymous access: {S3_ANON}")
-    
+
     # Check if kerchunk directory exists
     if KERCHUNK_PATH.exists():
         kerchunk_files = list(KERCHUNK_PATH.glob("**/*.json"))
         logger.info(f"Found {len(kerchunk_files)} kerchunk file(s)")
     else:
         logger.warning(f"Kerchunk directory not found: {KERCHUNK_PATH}")
-        logger.warning(f"Cloud datasets will use direct S3 access (slower)")
+        logger.warning("Cloud datasets will use direct S3 access (slower)")
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -1941,12 +2129,14 @@ async def shutdown_event():
     dataset_cache.clear()
     executor.shutdown(wait=True)
 
+
 # ============================================================================
 # MAIN
 # ============================================================================
 
 if __name__ == "__main__":
     import uvicorn
+
     print("🚀 Starting Enhanced Climate Time Series API...")
     print("📍 API will be available at: http://localhost:8000")
     print("📚 API docs at: http://localhost:8000/docs")

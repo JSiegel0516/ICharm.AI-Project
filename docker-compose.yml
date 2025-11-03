@@ -23,12 +23,10 @@ services:
 
   llm-service:
     build:
-      context: ./services/llm-service
-      dockerfile: Dockerfile
+      context: backend
+      dockerfile: Dockerfile.llm
     container_name: icharm-llm-service
     restart: unless-stopped
-    volumes:
-      - ./services/llm-service:/app
     environment:
       HF_TOKEN: ${HF_TOKEN:-}
       LLAMA_API_KEY: ${LLAMA_API_KEY:-}
@@ -42,18 +40,16 @@ services:
 
   data-api:
     build:
-      context: ./services/data-api
-      dockerfile: Dockerfile
+      context: backend
+      dockerfile: Dockerfile.data
     container_name: icharm-data-api
     restart: unless-stopped
     volumes:
-      - ./services/data-api/app:/app
-      - ../datasets:/app/datasets:ro
-      - ../kerchunk:/app/kerchunk:ro
+      - ./backend/datasets:/app/datasets:ro
       # IMPORTANT: Mount colorMaps.json if you have it (optional)
       #- ../src/data/colorMaps.json:/app/data/colorMaps.json:ro
     ports:
-      - "8000:8000"
+      - "${DATA_API_PORT:-8000}:8000"
     environment:
       DATABASE_URL: postgres://${ICHARM_DB_USER}:${ICHARM_DB_PASSWORD}@db:${ICHARM_DB_PORT}/${ICHARM_DB_NAME}
       TEST_CHAT_USER_EMAIL: ${TEST_CHAT_USER_EMAIL:-testuser@gmail.com}

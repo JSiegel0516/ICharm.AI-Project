@@ -90,7 +90,7 @@ def _extract_generated_text(result: Any, prompt: str) -> Optional[str]:
         text = result
 
     if isinstance(text, str) and prompt and text.startswith(prompt):
-        return text[len(prompt):].lstrip()
+        return text[len(prompt) :].lstrip()  # noqa E203
     return text
 
 
@@ -154,15 +154,22 @@ async def chat(payload: ChatRequest) -> ChatResponse:
                     await asyncio.sleep(backoff_seconds * (attempt + 1))
                     attempt += 1
                     continue
-                raise HTTPException(status_code=504, detail="Upstream LLM timed out") from exc
+                raise HTTPException(
+                    status_code=504, detail="Upstream LLM timed out"
+                ) from exc
             except httpx.HTTPError as exc:
                 if attempt < max_attempts - 1:
                     await asyncio.sleep(backoff_seconds * (attempt + 1))
                     attempt += 1
                     continue
-                raise HTTPException(status_code=502, detail="Upstream LLM request failed") from exc
+                raise HTTPException(
+                    status_code=502, detail="Upstream LLM request failed"
+                ) from exc
 
-            if response.status_code in TRANSIENT_STATUS_CODES and attempt < max_attempts - 1:
+            if (
+                response.status_code in TRANSIENT_STATUS_CODES
+                and attempt < max_attempts - 1
+            ):
                 await asyncio.sleep(backoff_seconds * (attempt + 1))
                 attempt += 1
                 continue
@@ -209,7 +216,9 @@ async def chat(payload: ChatRequest) -> ChatResponse:
 
     if is_chat_completion:
         if not isinstance(result, dict):
-            raise HTTPException(status_code=502, detail="Unexpected response format from LLM")
+            raise HTTPException(
+                status_code=502, detail="Unexpected response format from LLM"
+            )
 
         choices = result.get("choices") or []
         if not choices:

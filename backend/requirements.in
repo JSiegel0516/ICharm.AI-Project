@@ -1,39 +1,41 @@
 # FastAPI and server
 fastapi
-uvicorn[standard]
 pydantic
+uvicorn[standard]
 
 # Environment variables
 python-dotenv
 
 # Database
-sqlalchemy
 psycopg2-binary
+sqlalchemy
 
 # Data processing and analysis
-xarray
-zarr
-h5netcdf
-netCDF4
-pandas
-numpy
 cftime
 dask
+h5netcdf
+netCDF4
+numpy
+pandas
+xarray
+zarr
 
 # File system / S3 access
+aiohttp
 fsspec
 s3fs
-aiohttp
 
 # Scientific computing dependencies
-scipy
 matplotlib
 pillow
+scipy
 
 # Kerchunk for cloud-optimized data access
 kerchunk
+ujson
 
-# Additional utilities
+# Connection
+httpx
 requests
 
 # CORS support
@@ -45,10 +47,6 @@ xlsxwriter
 
 # Memory optimization
 psutil
-
-# Development and testing (optional)
-pytest
-pytest-asyncio
 
 # Logging
 loguru
