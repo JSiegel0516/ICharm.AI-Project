@@ -1017,21 +1017,22 @@ async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
                                     "asynchronous": False,
                                 },
                             )
-                        # Zarr v3 metadata file (just metadata, no actual data)
-                        elif (
-                            zarr_content.get("node_type") == "group"
-                            and zarr_content.get("zarr_format") == 3
-                        ):
-                            logger.warning(
-                                f"Detected Zarr v3 metadata-only file for {dataset_name}"
-                            )
-                            logger.warning(
-                                "This appears to be a Kerchunk reference without data arrays"
-                            )
-                            logger.info("Falling back to NetCDF file...")
-                            raise ValueError(
-                                "Zarr v3 metadata-only file (no data arrays)"
-                            )
+                        # Check if this is a true Zarr v3 store with consolidated metadata
+                        elif zarr_content.get("node_type") == "group" and zarr_content.get("zarr_format") == 3:
+                            # Check if it has consolidated_metadata with actual data arrays
+                            consolidated_meta = zarr_content.get("consolidated_metadata", {})
+                            metadata_info = consolidated_meta.get("metadata", {})
+                            
+                            # If it has consolidated metadata with array definitions, it's a real store
+                            if metadata_info and any("shape" in arr_info for arr_info in metadata_info.values()):
+                                logger.info(f"Opening Zarr v3 store with consolidated metadata: {dataset_name}")
+                                ds = await asyncio.to_thread(xr.open_zarr, str(path_obj), consolidated=True)
+                            else:
+                                # This is a metadata-only Kerchunk reference
+                                logger.warning(f"Detected Zarr v3 metadata-only file for {dataset_name}")
+                                logger.warning("This appears to be a Kerchunk reference without data arrays")
+                                logger.info("Falling back to NetCDF file...")
+                                raise ValueError("Zarr v3 metadata-only file (no data arrays)")
                         else:
                             # Try as regular Zarr v3 store
                             logger.info(f"Attempting Zarr v3 store: {dataset_name}")
