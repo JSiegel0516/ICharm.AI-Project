@@ -16,6 +16,16 @@ from scipy.ndimage import zoom
 PALETTE_RESOLUTION = 256
 _COLOR_MAP_CACHE: Dict[str, np.ndarray] = {}
 _COLOR_MAP_FALLBACK = "viridis"
+_OCEAN_MASK_CACHE: Optional[xr.Dataset] = None
+
+_FILL_ATTR_KEYS = (
+    "_FillValue",
+    "missing_value",
+    "missingValue",
+    "missingValues",
+    "fill_value",
+    "FillValue",
+)
 
 
 def _maybe_float(value: Any) -> Optional[float]:
@@ -28,6 +38,58 @@ def _maybe_float(value: Any) -> Optional[float]:
     if np.isnan(result):
         return None
     return result
+
+
+def _decode_fill_values(value: Any) -> List[float]:
+    """Coerce NetCDF/Zarr fill value metadata into floats."""
+    results: List[float] = []
+
+    if value is None:
+        return results
+
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            results.extend(_decode_fill_values(item))
+        return results
+
+    if isinstance(value, np.ndarray):
+        return [float(v) for v in value.ravel()]
+
+    if isinstance(value, (np.generic, float, int)):
+        return [float(value)]
+
+    if isinstance(value, (bytes, bytearray)):
+        for dtype in (np.float32, np.float64):
+            size = np.dtype(dtype).itemsize
+            if len(value) % size == 0:
+                try:
+                    arr = np.frombuffer(value, dtype=dtype)
+                    results.extend(arr.astype(float).tolist())
+                    return results
+                except ValueError:
+                    continue
+        return results
+
+    if isinstance(value, str):
+        try:
+            return [float(value)]
+        except ValueError:
+            try:
+                decoded = base64.b64decode(value)
+            except Exception:
+                return results
+            for dtype in (np.float32, np.float64):
+                size = np.dtype(dtype).itemsize
+                if len(decoded) == size:
+                    try:
+                        arr = np.frombuffer(decoded, dtype=dtype)
+                        results.extend(arr.astype(float).tolist())
+                        return results
+                    except ValueError:
+                        continue
+            return results
+
+    return results
 
 
 def _find_color_maps_file() -> Optional[Path]:
@@ -66,15 +128,11 @@ def _css_color_to_rgba(color: str) -> Tuple[int, int, int, int]:
     """Convert CSS color string (hex or rgb/rgba) to RGBA tuple"""
     color = color.strip()
 
-    # Handle hex colors
     if color.startswith("#"):
         return _hex_to_rgba(color)
 
-    # Handle rgb() or rgba() colors
     if color.startswith("rgb"):
-        # Extract numbers from rgb(r, g, b) or rgba(r, g, b, a)
         import re
-
         numbers = re.findall(r"[\d.]+", color)
         if len(numbers) >= 3:
             r = int(float(numbers[0]))
@@ -83,10 +141,8 @@ def _css_color_to_rgba(color: str) -> Tuple[int, int, int, int]:
             a = int(float(numbers[3]) * 255) if len(numbers) >= 4 else 255
             return (r, g, b, a)
 
-    # Fallback to matplotlib color parsing
     try:
         from matplotlib.colors import to_rgba
-
         rgba = to_rgba(color)
         return (
             int(rgba[0] * 255),
@@ -94,8 +150,7 @@ def _css_color_to_rgba(color: str) -> Tuple[int, int, int, int]:
             int(rgba[2] * 255),
             int(rgba[3] * 255),
         )
-    except:  # noqa E722
-        # Default to black if parsing fails
+    except:
         return (0, 0, 0, 255)
 
 
@@ -136,15 +191,11 @@ def _build_palette_from_css_colors(colors: List[str], resolution: int) -> np.nda
     if not colors:
         return _matplotlib_palette(_COLOR_MAP_FALLBACK, resolution)
 
-    # Convert CSS colors to RGBA tuples
     rgba_colors = [_css_color_to_rgba(c) for c in colors]
-
-    # Create gradient stops evenly distributed
     total = max(len(rgba_colors) - 1, 1)
     stops = [
         (min(max(idx / total, 0.0), 1.0), rgba) for idx, rgba in enumerate(rgba_colors)
     ]
-
     return _build_gradient(stops, resolution)
 
 
@@ -218,7 +269,6 @@ def _ensure_color_maps_loaded() -> None:
         palette = _build_palette(entry, PALETTE_RESOLUTION)
         if palette is not None:
             _COLOR_MAP_CACHE[name] = palette
-            print(f"[RasterViz] Loaded color map: {name}")
 
 
 def _get_color_palette(
@@ -226,18 +276,15 @@ def _get_color_palette(
 ) -> np.ndarray:
     """Get color palette, prioritizing CSS colors from frontend if provided"""
 
-    # PRIORITY 1: Use CSS colors directly from frontend ColorBar
     if css_colors and len(css_colors) > 0:
-        print(f"[RasterViz] Using CSS colors from frontend ColorBar: {css_colors}")
+        print(f"[RasterViz] Using CSS colors from frontend ColorBar")
         return _build_palette_from_css_colors(css_colors, PALETTE_RESOLUTION)
 
-    # PRIORITY 2: Use named colormap
     _ensure_color_maps_loaded()
     if name and isinstance(name, str) and name in _COLOR_MAP_CACHE:
         print(f"[RasterViz] Using color map: {name}")
         return _COLOR_MAP_CACHE[name]
 
-    # PRIORITY 3: Fallback
     print(f"[RasterViz] Color map '{name}' not found, using fallback")
     return _COLOR_MAP_CACHE.get("__fallback__")
 
@@ -246,6 +293,48 @@ def _stringify_palette_name(value: Any) -> Optional[str]:
     if isinstance(value, str) and value.strip():
         return value.strip()
     return None
+
+
+def _load_ocean_mask() -> Optional[xr.Dataset]:
+    """Load pre-generated ocean mask from disk (cached globally)"""
+    global _OCEAN_MASK_CACHE
+    
+    if _OCEAN_MASK_CACHE is not None:
+        return _OCEAN_MASK_CACHE
+    
+    # Find mask file relative to this module
+    base_path = Path(__file__).resolve().parent
+    
+    # Try .zarr first, then .nc
+    mask_path_zarr = base_path.parent.parent / "datasets" / "godas_ocean_mask.zarr"
+    mask_path_nc = base_path.parent.parent / "datasets" / "godas_ocean_mask.nc"
+    
+    mask_path = None
+    if mask_path_zarr.exists():
+        mask_path = mask_path_zarr
+    elif mask_path_nc.exists():
+        mask_path = mask_path_nc
+    else:
+        print(f"[RasterViz] Warning: Ocean mask not found")
+        print(f"[RasterViz]    Tried: {mask_path_zarr}")
+        print(f"[RasterViz]    Tried: {mask_path_nc}")
+        return None
+    
+    try:
+        if str(mask_path).endswith('.zarr'):
+            _OCEAN_MASK_CACHE = xr.open_zarr(mask_path)
+        else:
+            _OCEAN_MASK_CACHE = xr.open_dataset(mask_path)
+            
+        print(f"[RasterViz] ✅ Loaded ocean mask from {mask_path}")
+        print(f"[RasterViz]    Mask shape: {_OCEAN_MASK_CACHE['ocean_mask'].shape}")
+        print(f"[RasterViz]    Ocean coverage: {_OCEAN_MASK_CACHE['ocean_mask'].sum().values / _OCEAN_MASK_CACHE['ocean_mask'].size * 100:.1f}%")
+        return _OCEAN_MASK_CACHE
+    except Exception as e:
+        print(f"[RasterViz] Failed to load ocean mask: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 
 def _find_coord_name(da: xr.DataArray, candidates: List[str]) -> Optional[str]:
@@ -284,47 +373,60 @@ def _transpose_to_lat_lon(da: xr.DataArray) -> Tuple[xr.DataArray, str, str]:
     return da, lat_dim, lon_dim
 
 
+def _apply_land_ocean_mask(
+    data: np.ndarray,
+    mask: np.ndarray,
+    lat_values: np.ndarray,
+    lon_values: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Apply simple heuristic masking to remove land fill values
+    
+    Strategy: Detect fill values (0.0) that are suspiciously uniform
+    """
+    print(f"[RasterViz] Applying land fill value detection")
+    
+    # Get statistics on valid (non-NaN) data
+    valid_data = data[mask & np.isfinite(data)]
+    
+    if len(valid_data) == 0:
+        return data, mask
+    
+    data_min = np.min(valid_data)
+    data_max = np.max(valid_data)
+    data_std = np.std(valid_data)
+    
+    # Count occurrences of exact 0.0
+    zero_count = np.sum(data == 0.0)
+    total_count = data.size
+    zero_fraction = zero_count / total_count if total_count > 0 else 0
+    
+    print(f"[RasterViz] Data range: [{data_min:.6f}, {data_max:.6f}], std: {data_std:.6f}")
+    print(f"[RasterViz] Exact zeros: {zero_count} ({zero_fraction*100:.1f}% of total)")
+    
+    # If lots of exact 0.0 values and they're outside expected range, treat as fill
+    if zero_fraction > 0.2 and data_std > 0.0001:  # More than 20% zeros and non-trivial variance
+        print("[RasterViz] Detected 0.0 as land fill value, masking...")
+        fill_mask = data == 0.0
+        mask = mask & (~fill_mask)
+        print(f"[RasterViz] Masked {fill_mask.sum()} pixels with 0.0 fill value")
+    
+    print(f"[RasterViz] Final valid pixels: {mask.sum()} / {mask.size} ({mask.sum()/mask.size*100:.1f}%)")
+    
+    return data, mask
+
+
 def _extend_latitude_coverage(
     data: np.ndarray,
     mask: np.ndarray,
     lat_values: np.ndarray,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Extend latitude coverage to include poles by adding extra rows
-    NOTE: Extended polar rows are marked as INVALID in the mask to remain transparent
+    DON'T extend latitude - let GODAS data cover only its actual range
+    This prevents creating fake transparent polar regions
     """
-    lat_min = lat_values.min()
-    lat_max = lat_values.max()
-
-    # Check if we need to extend to poles
-    needs_south_pole = lat_min > -89  # Leave 1 degree buffer
-    needs_north_pole = lat_max < 89  # Leave 1 degree buffer
-
-    if not needs_south_pole and not needs_north_pole:
-        return data, mask, lat_values
-
-    print(
-        f"[RasterViz] Extending latitude coverage from [{lat_min}, {lat_max}] to [-90, 90]"
-    )
-
-    extended_data = []
-    extended_mask = []
-    extended_lat = []
-
-    # Add original data
-    extended_lat.extend(lat_values.tolist())
-    extended_data.extend([data[i, :] for i in range(data.shape[0])])
-    extended_mask.extend([mask[i, :] for i in range(mask.shape[0])])
-
-    print(
-        "[RasterViz] Added polar extension rows using edge values -> disabled for basin masking"
-    )
-
-    return (
-        np.array(extended_data, dtype=data.dtype),
-        np.array(extended_mask, dtype=mask.dtype),
-        np.array(extended_lat, dtype=lat_values.dtype),
-    )
+    # Return data as-is without any polar extension
+    return data, mask, lat_values
 
 
 def _encode_png(rgba: np.ndarray) -> str:
@@ -346,28 +448,33 @@ def _generate_textures(
     color_map_name: Optional[str],
     css_colors: Optional[List[str]] = None,
 ) -> Tuple[List[Dict[str, Any]], float]:
-    # Get palette with CSS colors prioritized
+    """
+    Generate PNG textures with proper latitude orientation and Cesium alignment
+    """
     palette = _get_color_palette(color_map_name, css_colors)
     if palette is None or len(palette) == 0:
         palette = _matplotlib_palette(_COLOR_MAP_FALLBACK, PALETTE_RESOLUTION)
 
     print(f"[RasterViz] Original data shape: {data.shape}")
-    print(
-        f"[RasterViz] Latitude range: [{lat_values.min():.2f}, {lat_values.max():.2f}]"
-    )
-    print(f"[RasterViz] Valid data points: {mask.sum()} / {mask.size}")
+    print(f"[RasterViz] Latitude range: [{lat_values.min():.2f}, {lat_values.max():.2f}]")
+    print(f"[RasterViz] Longitude range: [{lon_values.min():.2f}, {lon_values.max():.2f}]")
+    print(f"[RasterViz] Valid data points: {mask.sum()} / {mask.size} ({mask.sum()/mask.size*100:.1f}%)")
 
-    # Extend to poles BEFORE processing
+    # Ensure latitude is south-to-north BEFORE extension
+    if lat_values[0] > lat_values[-1]:
+        print(f"[RasterViz] Reversing latitude from north-to-south to south-to-north")
+        lat_values = lat_values[::-1]
+        data = data[::-1, :]
+        mask = mask[::-1, :]
+
+    # Extend to poles
     extended_data, extended_mask, extended_lat = _extend_latitude_coverage(
         data, mask, lat_values
     )
 
     print(f"[RasterViz] After pole extension shape: {extended_data.shape}")
-    print(
-        f"[RasterViz] Extended latitude range: [{extended_lat.min():.2f}, {extended_lat.max():.2f}]"
-    )
 
-    # Simple upsampling with nearest neighbor - no smoothing at all
+    # Upsampling
     upscale_factor = 2
     if upscale_factor > 1:
         upsampled = zoom(extended_data, zoom=upscale_factor, order=1)
@@ -380,14 +487,12 @@ def _generate_textures(
         mask_result = extended_mask
 
     print(f"[RasterViz] After upsampling shape: {upsampled.shape}")
-    print(
-        f"[RasterViz] Valid points after upsampling: {mask_result.sum()} / {mask_result.size}"
-    )
 
     textures: List[Dict[str, Any]] = []
 
     if not mask_result.any():
         empty = np.zeros(upsampled.shape + (4,), dtype=np.uint8)
+        empty = np.flipud(empty)
         textures = [
             {
                 "imageUrl": _encode_png(empty),
@@ -401,6 +506,7 @@ def _generate_textures(
         ]
         return textures, float(upsampled.shape[1] / max(data.shape[1], 1))
 
+    # Calculate value range
     finite_values = upsampled[mask_result]
     computed_min = float(np.nanmin(finite_values)) if finite_values.size > 0 else 0.0
     computed_max = float(np.nanmax(finite_values)) if finite_values.size > 0 else 1.0
@@ -409,18 +515,6 @@ def _generate_textures(
     vmax = max_value if max_value is not None else computed_max
 
     print(f"[RasterViz] Value range for color mapping: {vmin} to {vmax}")
-    print(f"[RasterViz] Actual data range: {computed_min} to {computed_max}")
-    print(f"[RasterViz] Palette size: {len(palette)}")
-
-    # Show what the palette looks like at key points
-    if len(palette) > 0:
-        print(f"[RasterViz] Palette color at index 0 (min): {palette[0]}")
-        print(
-            f"[RasterViz] Palette color at index {len(palette) // 2} (mid): {palette[len(palette) // 2]}"
-        )
-        print(
-            f"[RasterViz] Palette color at index {len(palette) - 1} (max): {palette[-1]}"
-        )
 
     if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
         vmin = computed_min if np.isfinite(computed_min) else 0.0
@@ -428,85 +522,51 @@ def _generate_textures(
         if vmin == vmax:
             vmax = vmin + 1.0
 
-    # Vectorized color mapping for better accuracy
-    # Initialize RGBA with transparent pixels
+    # Color mapping
     rgba = np.zeros(upsampled.shape + (4,), dtype=np.uint8)
-
-    # Only process valid data points
     valid_mask = mask_result & np.isfinite(upsampled)
 
     if valid_mask.any():
-        # Get valid data values
         valid_values = upsampled[valid_mask]
-
-        # Normalize only valid values
         norm_values = np.clip((valid_values - vmin) / max(vmax - vmin, 1e-9), 0.0, 1.0)
-
-        # Map to palette indices
         palette_indices = (norm_values * (len(palette) - 1)).astype(np.int32)
         palette_indices = np.clip(palette_indices, 0, len(palette) - 1)
-
-        # Apply palette only to valid pixels
         rgba[valid_mask] = palette[palette_indices]
 
-    # Explicitly ensure all invalid areas are fully transparent
     rgba[~valid_mask] = [0, 0, 0, 0]
-
-    # Verify a few samples
-    valid_points = np.where(valid_mask)
-    if len(valid_points[0]) > 0:
-        print("[RasterViz] Color mapping verification (first 5 valid points):")
-        for i in range(min(5, len(valid_points[0]))):
-            row, col = valid_points[0][i], valid_points[1][i]
-            value = upsampled[row, col]
-            norm_val = (value - vmin) / max(vmax - vmin, 1e-9)
-            idx = int(np.clip(norm_val * (len(palette) - 1), 0, len(palette) - 1))
-            print(
-                f"  Value: {value:.3f} -> Norm: {norm_val:.3f} -> Idx: {idx} -> RGBA: {rgba[row, col]}"
-            )
 
     texture_upscale = float(upsampled.shape[1] / max(data.shape[1], 1))
 
-    # Cesium expects the first row of the texture to map to the northernmost latitude.
-    # Our data arrays are stored from south-to-north after normalization, so flip vertically.
+    # Flip for Cesium (expects north-to-south in texture)
     rgba = np.flipud(rgba)
+    print("[RasterViz] Flipped texture vertically for Cesium")
 
-    # Gently reduce opacity so underlying basemap features remain visible.
+    # Adjust opacity
     if rgba.size:
         alpha_scale = 0.7
         alpha = rgba[..., 3].astype(np.float32) * alpha_scale
         rgba[..., 3] = np.clip(alpha, 0, 255).astype(np.uint8)
 
-    # Use extended latitude range
-    south = -90.0
-    north = 90.0
+    # Calculate bounds - use ACTUAL data bounds, not forced poles
+    south = float(np.min(lat_values))
+    north = float(np.max(lat_values))
 
-    # Generate SINGLE texture to avoid seams
-    print("[RasterViz] Generating single seamless texture")
-
-    # Check if this is a global dataset (spans ~360 degrees longitude)
     lon_range = lon_values[-1] - lon_values[0]
     lon_step = lon_values[1] - lon_values[0] if len(lon_values) > 1 else 1.0
-    is_global = lon_range > 350  # Nearly full globe coverage
+    is_global = lon_range > 350
 
-    print(f"[RasterViz] Longitude range: {lon_range:.2f} degrees, step: {lon_step:.2f}")
+    print(f"[RasterViz] Longitude range: {lon_range:.2f} degrees")
     print(f"[RasterViz] Is global dataset: {is_global}")
 
     if is_global:
-        # For global datasets, we need to handle the wrap-around at 180°/-180°
-        # Check if data already wraps (last column ~= first column)
-        # If not, we may need to add overlap or adjust the rectangle
-
-        # Ensure texture wraps seamlessly by duplicating the first and last column
+        # Wrap for seamless global coverage
         rgba = np.concatenate([rgba[:, -1:, :], rgba, rgba[:, :1, :]], axis=1)
         texture_upscale = float(rgba.shape[1] / max(data.shape[1], 1))
 
-        # Expand coverage to align with pixel edges
-        pixel_half = lon_step / 2.0 if len(lon_values) > 1 else 0.0
         west = -180.0
         east = 180.0
 
-        print(f"[RasterViz] Adjusted longitude bounds: [{west}, {east}]")
+        print(f"[RasterViz] Adjusted global longitude bounds: [{west}, {east}]")
 
         textures.append(
             {
@@ -520,9 +580,10 @@ def _generate_textures(
             }
         )
     else:
-        pixel_half = lon_step / 2.0 if len(lon_values) > 1 else 0.0
+        pixel_half = lon_step / 2.0
         west = float(lon_values[0]) - pixel_half
         east = float(lon_values[-1]) + pixel_half
+        
         textures.append(
             {
                 "imageUrl": _encode_png(rgba),
@@ -535,7 +596,7 @@ def _generate_textures(
             }
         )
 
-    print(f"[RasterViz] Generated {len(textures)} seamless texture(s)")
+    print(f"[RasterViz] Generated {len(textures)} texture(s)")
     return textures, texture_upscale
 
 
@@ -546,13 +607,7 @@ def serialize_raster_array(
     css_colors: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
-    Serialize raster array with optional CSS colors from frontend ColorBar
-
-    Args:
-        da: xarray DataArray containing the raster data
-        row: Metadata row from database
-        dataset_name: Name of the dataset
-        css_colors: Optional list of CSS color strings from frontend ColorBar
+    Serialize raster array with land/ocean masking and proper alignment
     """
     print(f"[RasterViz] Serializing raster for dataset: {dataset_name}")
     if css_colors:
@@ -576,21 +631,49 @@ def serialize_raster_array(
     if data.ndim != 2:
         raise ValueError("Raster slice is not 2-dimensional after selection.")
 
-    if lat_values[0] > lat_values[-1]:
-        lat_values = lat_values[::-1]
-        data = data[::-1, :]
+    # Remove known fill values (e.g., GODAS uses -9.96921e36)
+    fill_values: List[float] = []
+    for key in _FILL_ATTR_KEYS:
+        fill_values.extend(_decode_fill_values(array.attrs.get(key)))
+    fill_values.extend(_decode_fill_values(row.get("fillValue")))
+
+    if fill_values:
+        data = data.copy()
+        fill_values_arr = np.array(fill_values, dtype=np.float64)
+        fill_values_arr = fill_values_arr[np.isfinite(fill_values_arr)]
+        if fill_values_arr.size:
+            fill_mask = np.zeros_like(data, dtype=bool)
+            for value in fill_values_arr:
+                atol = max(1e-6, abs(value) * 1e-12)
+                fill_mask |= np.isclose(data, value, rtol=0.0, atol=atol)
+            if fill_mask.any():
+                print(
+                    f"[RasterViz] Applied fill mask using values: "
+                    f"{np.unique(fill_values_arr)[:5]}...",
+                )
+                data[fill_mask] = np.nan
+
+    # Handle longitude normalization (0-360 to -180-180)
     origin = "prime"
-    if lon_values[0] > lon_values[-1]:
-        lon_values = lon_values[::-1]
-        data = data[:, ::-1]
     if lon_values[-1] > 180 and lon_values[0] >= 0:
+        print(f"[RasterViz] Normalizing longitude from 0-{lon_values[-1]:.0f} to -180-180")
         shifted = ((lon_values + 180.0) % 360.0) - 180.0
         sort_idx = np.argsort(shifted)
         lon_values = shifted[sort_idx]
         data = data[:, sort_idx]
         origin = "prime_shifted"
 
+    # Initial mask: only NaN/Inf are invalid
     finite_mask = np.isfinite(data)
+    
+    # Apply fill value detection to remove land pixels (0.0 fill values)
+    data, finite_mask = _apply_land_ocean_mask(
+        data, 
+        finite_mask,
+        lat_values,
+        lon_values
+    )
+    
     data_min = float(data[finite_mask].min()) if finite_mask.any() else None
     data_max = float(data[finite_mask].max()) if finite_mask.any() else None
 
@@ -631,9 +714,9 @@ def serialize_raster_array(
         else None,
         "rectangle": {
             "west": float(np.min(lon_values)),
-            "south": -90.0,
+            "south": float(np.min(lat_values)),  # Use actual data bounds
             "east": float(np.max(lon_values)),
-            "north": 90.0,
+            "north": float(np.max(lat_values)),  # Use actual data bounds
             "origin": origin,
         },
         "textures": textures,

@@ -135,13 +135,26 @@ export const useRasterLayer = ({
     if (!dataset) {
       return null;
     }
-    return (
+
+    const candidate =
       dataset.backend?.id ??
       dataset.backendId ??
       dataset.backend?.slug ??
       dataset.backendSlug ??
-      dataset.id
-    );
+      (typeof dataset.id === "string" ? dataset.id : null);
+
+    if (!candidate) {
+      return null;
+    }
+
+    const looksLikeUuid =
+      candidate.length === 36 && candidate.split("-").length === 5;
+
+    if (dataset.backend || dataset.backendId || dataset.backendSlug) {
+      return candidate;
+    }
+
+    return looksLikeUuid ? candidate : null;
   }, [dataset]);
 
   const cssColors = useMemo(() => {

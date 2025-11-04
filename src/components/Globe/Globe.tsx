@@ -5,6 +5,7 @@ import React, {
   useRef,
   useEffect,
   useImperativeHandle,
+  useCallback,
   forwardRef,
 } from "react";
 import type { Dataset, RegionData, GlobeProps, GlobeRef } from "@/types";
@@ -234,6 +235,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     const [cesiumInstance, setCesiumInstance] = useState<any>(null);
+    const [viewerReady, setViewerReady] = useState(false);
 
     // NEW: Layer references for visibility control
     const satelliteLayerRef = useRef<any>(null);
@@ -332,6 +334,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       }
 
       currentMarkerRef.current = markers;
+      viewerRef.current.scene?.requestRender();
     };
 
     const updateMarkerRadius = (Cesium: any) => {
@@ -564,6 +567,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
           viewerRef.current = viewer;
           setIsLoading(false);
+          setViewerReady(true);
 
           console.log("Self-hosted Cesium viewer initialized successfully");
         } catch (err) {
@@ -572,6 +576,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             err instanceof Error ? err.message : "Failed to initialize globe",
           );
           setIsLoading(false);
+          setViewerReady(false);
         }
       };
 
@@ -580,6 +585,96 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     }, [onRegionClick, currentDataset]);
 
     // Cleanup
+    const applyRasterLayers = useCallback(
+      (layerData?: RasterLayerData) => {
+        const viewer = viewerRef.current;
+        if (!viewer || !cesiumInstance) {
+          console.log(
+            "[Globe] applyRasterLayers skipped - viewer or Cesium missing",
+            {
+              hasViewer: !!viewer,
+              hasCesium: !!cesiumInstance,
+              viewerReady,
+            },
+          );
+          return;
+        }
+
+        if (rasterLayerRef.current.length) {
+          rasterLayerRef.current.forEach((layer) => {
+            try {
+              viewer.scene.imageryLayers.remove(layer, true);
+            } catch (err) {
+              console.warn("Failed to remove raster layer", err);
+            }
+          });
+          rasterLayerRef.current = [];
+        }
+
+        if (
+          !layerData ||
+          !layerData.textures ||
+          layerData.textures.length === 0
+        ) {
+          console.log("[Globe] applyRasterLayers - no textures available");
+          viewer.scene.requestRender();
+          return;
+        }
+
+        console.log(
+          "[Globe] applyRasterLayers - adding textures",
+          layerData.textures.length,
+        );
+        console.log("Raster opacity:", rasterOpacity);
+
+        const newLayers: any[] = [];
+
+        layerData.textures.forEach((texture, index) => {
+          try {
+            const provider = new cesiumInstance.SingleTileImageryProvider({
+              url: texture.imageUrl,
+              rectangle: cesiumInstance.Rectangle.fromDegrees(
+                texture.rectangle.west,
+                texture.rectangle.south,
+                texture.rectangle.east,
+                texture.rectangle.north,
+              ),
+            });
+
+            const layer = viewer.scene.imageryLayers.addImageryProvider(
+              provider,
+            );
+            layer.alpha = rasterOpacity;
+            layer.brightness = 1.0;
+            layer.contrast = 1.0;
+            layer.hue = 0.0;
+            layer.saturation = 1.0;
+            layer.gamma = 1.0;
+
+            layer.minificationFilter =
+              cesiumInstance.TextureMinificationFilter.LINEAR;
+            layer.magnificationFilter =
+              cesiumInstance.TextureMagnificationFilter.LINEAR;
+
+            viewer.scene.imageryLayers.raiseToTop(layer);
+            newLayers.push(layer);
+            console.log(
+              `Successfully added texture layer ${index} with opacity ${rasterOpacity}`,
+            );
+          } catch (err) {
+            console.error(`Failed to add texture ${index}:`, err);
+          }
+        });
+
+        rasterLayerRef.current = newLayers;
+        console.log(
+          `Successfully added ${newLayers.length} raster layers to globe`,
+        );
+        viewer.scene.requestRender();
+      },
+      [cesiumInstance, rasterOpacity, viewerReady],
+    );
+
     useEffect(() => {
       return () => {
         if (viewerRef.current && !viewerRef.current.isDestroyed()) {
@@ -599,6 +694,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           clearMarker();
           viewerRef.current.destroy();
           viewerRef.current = null;
+          setViewerReady(false);
         }
       };
     }, []);
@@ -627,96 +723,21 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       console.log("Boundary lines visibility:", boundaryLinesVisible);
     }, [boundaryLinesVisible]);
 
-    // Raster texture rendering - UPDATED: Use dynamic opacity
+    // Raster texture rendering with viewer readiness guard
     useEffect(() => {
-      if (!viewerRef.current || !cesiumInstance) {
+      if (!viewerReady) {
+        console.log(
+          "[Globe] applyRasterLayers skip - viewer not ready",
+          rasterState.data?.textures?.length ?? 0,
+        );
         return;
       }
-
-      const viewer = viewerRef.current;
-
-      // Remove old layers
-      if (rasterLayerRef.current.length) {
-        rasterLayerRef.current.forEach((layer) => {
-          try {
-            viewer.scene.imageryLayers.remove(layer, true);
-          } catch (err) {
-            console.warn("Failed to remove raster layer", err);
-          }
-        });
-        rasterLayerRef.current = [];
-      }
-
-      if (
-        !rasterState.data ||
-        !rasterState.data.textures ||
-        rasterState.data.textures.length === 0
-      ) {
-        console.log("No raster data or textures to display");
-        return;
-      }
-
-      console.log("Adding raster textures:", rasterState.data.textures.length);
-      console.log("Raster opacity:", rasterOpacity);
-
-      const newLayers: any[] = [];
-      rasterState.data.textures.forEach((texture, index) => {
-        try {
-          const provider = new cesiumInstance.SingleTileImageryProvider({
-            url: texture.imageUrl,
-            rectangle: cesiumInstance.Rectangle.fromDegrees(
-              texture.rectangle.west,
-              texture.rectangle.south,
-              texture.rectangle.east,
-              texture.rectangle.north,
-            ),
-          });
-
-          const layer = viewer.scene.imageryLayers.addImageryProvider(provider);
-
-          // NEW: Use dynamic opacity from props
-          layer.alpha = rasterOpacity;
-          layer.brightness = 1.0;
-          layer.contrast = 1.0;
-          layer.hue = 0.0;
-          layer.saturation = 1.0;
-          layer.gamma = 1.0;
-
-          layer.minificationFilter =
-            cesiumInstance.TextureMinificationFilter.NEAREST;
-          layer.magnificationFilter =
-            cesiumInstance.TextureMagnificationFilter.NEAREST;
-
-          viewer.scene.imageryLayers.raiseToTop(layer);
-
-          newLayers.push(layer);
-          console.log(
-            `Successfully added texture layer ${index} with opacity ${rasterOpacity}`,
-          );
-        } catch (err) {
-          console.error(`Failed to add texture ${index}:`, err);
-        }
-      });
-
-      rasterLayerRef.current = newLayers;
       console.log(
-        `Successfully added ${newLayers.length} raster layers to globe`,
+        "[Globe] applyRasterLayers trigger",
+        rasterState.data?.textures?.length ?? 0,
       );
-
-      viewer.scene.requestRender();
-
-      return () => {
-        if (viewer && !viewer.isDestroyed()) {
-          newLayers.forEach((layer) => {
-            try {
-              viewer.scene.imageryLayers.remove(layer, true);
-            } catch (err) {
-              console.warn("Failed to remove raster texture layer", err);
-            }
-          });
-        }
-      };
-    }, [cesiumInstance, rasterState.data, rasterOpacity]); // NEW: Added rasterOpacity dependency
+      applyRasterLayers(rasterState.data);
+    }, [applyRasterLayers, rasterState.data, viewerReady]);
 
     useEffect(() => {
       rasterDataRef.current = rasterState.data;
