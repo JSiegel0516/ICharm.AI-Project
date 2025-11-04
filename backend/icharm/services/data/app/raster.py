@@ -17,6 +17,9 @@ PALETTE_RESOLUTION = 256
 _COLOR_MAP_CACHE: Dict[str, np.ndarray] = {}
 _COLOR_MAP_FALLBACK = "viridis"
 _OCEAN_MASK_CACHE: Optional[xr.Dataset] = None
+_ZERO_FILL_DATASETS = {
+    "NCEP Global Ocean Data Assimilation System (GODAS)",
+}
 
 _FILL_ATTR_KEYS = (
     "_FillValue",
@@ -374,6 +377,7 @@ def _transpose_to_lat_lon(da: xr.DataArray) -> Tuple[xr.DataArray, str, str]:
 
 
 def _apply_land_ocean_mask(
+    dataset_name: str,
     data: np.ndarray,
     mask: np.ndarray,
     lat_values: np.ndarray,
@@ -385,6 +389,9 @@ def _apply_land_ocean_mask(
     Strategy: Detect fill values (0.0) that are suspiciously uniform
     """
     print(f"[RasterViz] Applying land fill value detection")
+    if dataset_name not in _ZERO_FILL_DATASETS:
+        print("[RasterViz] Dataset not in zero-fill list; skipping land mask detection.")
+        return data, mask
     
     # Get statistics on valid (non-NaN) data
     valid_data = data[mask & np.isfinite(data)]
@@ -668,6 +675,7 @@ def serialize_raster_array(
     
     # Apply fill value detection to remove land pixels (0.0 fill values)
     data, finite_mask = _apply_land_ocean_mask(
+        dataset_name,
         data, 
         finite_mask,
         lat_values,
