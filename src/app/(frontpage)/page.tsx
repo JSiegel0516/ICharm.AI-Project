@@ -65,6 +65,7 @@ export default function HomePage() {
   const [globeSettings, setGlobeSettings] = useState<GlobeSettings>({
     satelliteLayerVisible: true,
     boundaryLinesVisible: true,
+    geographicLinesVisible: false,
     rasterOpacity: 0.65,
   });
 
@@ -112,6 +113,10 @@ export default function HomePage() {
     setGlobeSettings((prev) => ({ ...prev, boundaryLinesVisible: visible }));
   }, []);
 
+  const handleGeographicLinesToggle = useCallback((visible: boolean) => {
+    setGlobeSettings((prev) => ({ ...prev, geographicLinesVisible: visible }));
+  }, []);
+
   const handleRasterOpacityChange = useCallback((opacity: number) => {
     setGlobeSettings((prev) => ({ ...prev, rasterOpacity: opacity }));
   }, []);
@@ -129,6 +134,7 @@ export default function HomePage() {
         onRegionClick={handleRegionClick}
         satelliteLayerVisible={globeSettings.satelliteLayerVisible}
         boundaryLinesVisible={globeSettings.boundaryLinesVisible}
+        geographicLinesVisible={globeSettings.geographicLinesVisible}
         rasterOpacity={globeSettings.rasterOpacity}
       />
     ),
@@ -139,6 +145,7 @@ export default function HomePage() {
       selectedLevelValue,
       globeSettings.satelliteLayerVisible,
       globeSettings.boundaryLinesVisible,
+      globeSettings.geographicLinesVisible,
       globeSettings.rasterOpacity,
     ],
   );
@@ -157,6 +164,7 @@ export default function HomePage() {
           globeSettings={globeSettings}
           onSatelliteToggle={handleSatelliteToggle}
           onBoundaryToggle={handleBoundaryToggle}
+          onGeographicLinesToggle={handleGeographicLinesToggle}
           onRasterOpacityChange={handleRasterOpacityChange}
         />
 

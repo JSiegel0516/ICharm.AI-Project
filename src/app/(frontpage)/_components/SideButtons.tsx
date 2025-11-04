@@ -38,6 +38,7 @@ interface SideButtonsProps {
   globeSettings: GlobeSettings;
   onSatelliteToggle: (visible: boolean) => void;
   onBoundaryToggle: (visible: boolean) => void;
+  onGeographicLinesToggle: (visible: boolean) => void;
   onRasterOpacityChange: (opacity: number) => void;
 }
 
@@ -62,6 +63,7 @@ export function SideButtons({
   globeSettings,
   onSatelliteToggle,
   onBoundaryToggle,
+  onGeographicLinesToggle,
   onRasterOpacityChange,
 }: SideButtonsProps) {
   const { datasets, currentDataset, setCurrentDataset, isLoading, error } =
@@ -555,6 +557,8 @@ export function SideButtons({
         onSatelliteLayerToggle={onSatelliteToggle}
         boundaryLinesVisible={globeSettings.boundaryLinesVisible}
         onBoundaryLinesToggle={onBoundaryToggle}
+        geographicLinesVisible={globeSettings.geographicLinesVisible}
+        onGeographicLinesToggle={onGeographicLinesToggle}
         rasterOpacity={globeSettings.rasterOpacity}
         onRasterOpacityChange={onRasterOpacityChange}
       />

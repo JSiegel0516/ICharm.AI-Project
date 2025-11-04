@@ -115,6 +115,7 @@ export interface SettingsIconProps extends HTMLAttributes<HTMLDivElement> {
 export interface GlobeSettings {
   satelliteLayerVisible: boolean;
   boundaryLinesVisible: boolean;
+  geographicLinesVisible: boolean;
   rasterOpacity: number;
 }
 
@@ -196,6 +197,7 @@ export interface GlobeProps {
   // NEW: Globe settings props
   satelliteLayerVisible?: boolean;
   boundaryLinesVisible?: boolean;
+  geographicLinesVisible?: boolean;
   rasterOpacity?: number;
 }
 
@@ -300,6 +302,8 @@ export interface GlobeSettingsPanelProps {
   onSatelliteLayerToggle: (visible: boolean) => void;
   boundaryLinesVisible: boolean;
   onBoundaryLinesToggle: (visible: boolean) => void;
+  geographicLinesVisible: boolean;
+  onGeographicLinesToggle: (visible: boolean) => void;
   rasterOpacity: number;
   onRasterOpacityChange: (opacity: number) => void;
 }

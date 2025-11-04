@@ -11,6 +11,7 @@ import React, {
 import type { Dataset, RegionData, GlobeProps, GlobeRef } from "@/types";
 import { useRasterLayer } from "@/hooks/useRasterLayer";
 import type { RasterLayerData } from "@/hooks/useRasterLayer";
+import GlobeLoading from "./GlobeLoading";
 
 // Cesium setup function for CDN loading
 const loadCesiumFromCDN = async () => {
@@ -41,37 +42,43 @@ const loadCesiumFromCDN = async () => {
   });
 };
 
+type BoundaryDataset = {
+  name: string;
+  kind: "boundary" | "geographicLines";
+  data: any;
+};
+
 // Load geographic boundary data
-const loadGeographicBoundaries = async () => {
-  const files = [
-    "ne_110m_coastline.json",
-    "ne_110m_lakes.json",
-    "ne_110m_rivers_lake_centerlines.json",
+const loadGeographicBoundaries = async (): Promise<BoundaryDataset[]> => {
+  const files: Array<{ name: string; kind: BoundaryDataset["kind"] }> = [
+    { name: "ne_110m_coastline.json", kind: "boundary" },
+    { name: "ne_110m_lakes.json", kind: "boundary" },
+    { name: "ne_110m_rivers_lake_centerlines.json", kind: "boundary" },
   ];
 
-  const boundaryData = [];
+  const boundaryData: BoundaryDataset[] = [];
 
   for (const file of files) {
     try {
-      console.log(`Attempting to load: /_countries/${file}`);
-      const response = await fetch(`/_countries/${file}`);
-      console.log(`Response for ${file}:`, response.status, response.ok);
+      console.log(`Attempting to load: /_countries/${file.name}`);
+      const response = await fetch(`/_countries/${file.name}`);
+      console.log(`Response for ${file.name}:`, response.status, response.ok);
       if (response.ok) {
         const data = await response.json();
         console.log(
-          `Successfully loaded ${file}, type:`,
+          `Successfully loaded ${file.name}, type:`,
           data.type,
           "features:",
           data.features?.length,
         );
-        boundaryData.push({ name: file, data });
+        boundaryData.push({ name: file.name, kind: file.kind, data });
       } else {
         console.warn(
-          `Failed to fetch ${file}: ${response.status} ${response.statusText}`,
+          `Failed to fetch ${file.name}: ${response.status} ${response.statusText}`,
         );
       }
     } catch (error) {
-      console.error(`Error loading ${file}:`, error);
+      console.error(`Error loading ${file.name}:`, error);
     }
   }
 
@@ -79,17 +86,25 @@ const loadGeographicBoundaries = async () => {
   return boundaryData;
 };
 
-// Draw geographic boundaries on the globe - UPDATED: Returns entity array
+// Draw geographic boundaries on the globe - returns grouped entity arrays
 const addGeographicBoundaries = (
   Cesium: any,
   viewer: any,
-  boundaryData: any[],
-): any[] => {
+  boundaryData: BoundaryDataset[],
+) => {
   const boundaryEntities: any[] = [];
+  const geographicLineEntities: any[] = [];
   let totalLinesAdded = 0;
 
-  boundaryData.forEach(({ name, data }) => {
+  boundaryData.forEach(({ name, kind, data }) => {
     console.log(`Processing ${name}, type: ${data.type}`);
+
+    const isGeographicLines =
+      kind === "geographicLines" || name.includes("geographic_lines");
+
+    const targetCollection = isGeographicLines
+      ? geographicLineEntities
+      : boundaryEntities;
 
     if (data.type === "FeatureCollection" && data.features) {
       let color = Cesium.Color.fromCssColorString("#f8fafc").withAlpha(0.8);
@@ -98,15 +113,15 @@ const addGeographicBoundaries = (
       if (name.includes("coastline")) {
         width = 3;
         color = Cesium.Color.fromCssColorString("#e2e8f0").withAlpha(0.85);
-      } else if (name.includes("geographic_lines")) {
-        width = 2;
-        color = Cesium.Color.fromCssColorString("#94a3b8").withAlpha(0.6);
+      } else if (isGeographicLines) {
+        width = 1.5;
+        color = Cesium.Color.fromCssColorString("#64748b").withAlpha(0.45);
       } else if (name.includes("lakes")) {
         width = 2;
         color = Cesium.Color.fromCssColorString("#cbd5f5").withAlpha(0.7);
       } else if (name.includes("rivers")) {
         width = 2;
-        color = Cesium.Color.fromCssColorString("#94a3b8").withAlpha(0.55);
+        color = Cesium.Color.fromCssColorString("#9ca3af").withAlpha(0.55);
       } else if (name.includes("time_zones")) {
         width = 1.5;
         color = Cesium.Color.fromCssColorString("#64748b").withAlpha(0.5);
@@ -132,7 +147,7 @@ const addGeographicBoundaries = (
                 clampToGround: false,
               },
             });
-            boundaryEntities.push(entity);
+            targetCollection.push(entity);
             totalLinesAdded++;
           }
         };
@@ -168,6 +183,10 @@ const addGeographicBoundaries = (
         color = Cesium.Color.WHITE.withAlpha(0.3);
         width = 2;
       }
+      if (name.includes("rivers")) {
+        color = Cesium.Color.fromCssColorString("#9ca3af").withAlpha(0.5);
+        width = 2;
+      }
 
       for (let i = 0; i < data.Lon.length; i++) {
         if (data.Lon[i] !== null && data.Lat[i] !== null) {
@@ -183,7 +202,7 @@ const addGeographicBoundaries = (
               clampToGround: false,
             },
           });
-          boundaryEntities.push(entity);
+          targetCollection.push(entity);
           totalLinesAdded++;
           positions.length = 0;
         }
@@ -198,7 +217,7 @@ const addGeographicBoundaries = (
             clampToGround: false,
           },
         });
-        boundaryEntities.push(entity);
+        targetCollection.push(entity);
         totalLinesAdded++;
       }
     } else {
@@ -206,11 +225,54 @@ const addGeographicBoundaries = (
     }
   });
 
+  // Generate additional graticule lines (every 10 degrees) to ensure full grid
+  const addLatLine = (latitude: number) => {
+    const positions: any[] = [];
+    for (let lon = -180; lon <= 180; lon += 2) {
+      positions.push(Cesium.Cartesian3.fromDegrees(lon, latitude, 10000));
+    }
+    const entity = viewer.entities.add({
+      polyline: {
+        positions,
+        width: 1.2,
+        material: Cesium.Color.fromCssColorString("#64748b").withAlpha(0.35),
+        clampToGround: false,
+      },
+    });
+    geographicLineEntities.push(entity);
+    totalLinesAdded++;
+  };
+
+  const addLonLine = (longitude: number) => {
+    const positions: any[] = [];
+    for (let lat = -90; lat <= 90; lat += 2) {
+      positions.push(Cesium.Cartesian3.fromDegrees(longitude, lat, 10000));
+    }
+    const entity = viewer.entities.add({
+      polyline: {
+        positions,
+        width: 1.2,
+        material: Cesium.Color.fromCssColorString("#64748b").withAlpha(0.35),
+        clampToGround: false,
+      },
+    });
+    geographicLineEntities.push(entity);
+    totalLinesAdded++;
+  };
+
+  for (let lat = -80; lat <= 80; lat += 10) {
+    addLatLine(lat);
+  }
+
+  for (let lon = -170; lon <= 170; lon += 10) {
+    addLonLine(lon);
+  }
+
   console.log(
     `Geographic boundaries added: ${totalLinesAdded} lines from ${boundaryData.length} files`,
   );
 
-  return boundaryEntities;
+  return { boundaryEntities, geographicLineEntities };
 };
 
 const Globe = forwardRef<GlobeRef, GlobeProps>(
@@ -223,12 +285,14 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       // NEW: Globe settings props with defaults
       satelliteLayerVisible = true,
       boundaryLinesVisible = true,
+      geographicLinesVisible = false,
       rasterOpacity = 0.65,
     },
     ref,
   ) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const viewerRef = useRef<any>(null);
+    const initializingViewerRef = useRef(false);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const currentMarkerRef = useRef<any>(null);
@@ -236,10 +300,12 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
     const [cesiumInstance, setCesiumInstance] = useState<any>(null);
     const [viewerReady, setViewerReady] = useState(false);
+    const [isRasterTransitioning, setIsRasterTransitioning] = useState(false);
 
     // NEW: Layer references for visibility control
     const satelliteLayerRef = useRef<any>(null);
     const boundaryEntitiesRef = useRef<any[]>([]);
+    const geographicLineEntitiesRef = useRef<any[]>([]);
     const rasterLayerRef = useRef<any[]>([]);
 
     const rasterDataRef = useRef<RasterLayerData | undefined>(undefined);
@@ -281,6 +347,34 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       window.addEventListener("resize", handleResize);
       return () => window.removeEventListener("resize", handleResize);
     }, []);
+
+    useEffect(() => {
+      if (isLoading) {
+        setIsRasterTransitioning(false);
+        return;
+      }
+
+      if (rasterState.isLoading) {
+        setIsRasterTransitioning(true);
+        return;
+      }
+
+      if (rasterState.error) {
+        setIsRasterTransitioning(false);
+        return;
+      }
+
+      const timer = window.setTimeout(() => {
+        setIsRasterTransitioning(false);
+      }, 150);
+
+      return () => window.clearTimeout(timer);
+    }, [
+      isLoading,
+      rasterState.isLoading,
+      rasterState.error,
+      rasterState.requestKey,
+    ]);
 
     const calculateRadiusFromCameraHeight = (cameraHeight: number): number => {
       const referenceHeight = 10000000;
@@ -327,6 +421,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             outlineWidth: 3,
             height: 0,
             extrudedHeight: 0,
+            zIndex: 9999,
           },
         });
 
@@ -357,13 +452,15 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
     // Initialize Cesium viewer
     useEffect(() => {
-      if (!containerRef.current || viewerRef.current) return;
+      if (!containerRef.current || viewerRef.current || initializingViewerRef.current)
+        return;
 
       const initViewer = async () => {
         const container = containerRef.current;
         if (!container) return;
 
         try {
+          initializingViewerRef.current = true;
           setIsLoading(true);
           setError(null);
 
@@ -477,14 +574,20 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           const boundaryData = await loadGeographicBoundaries();
 
           // NEW: Store boundary entities
-          const boundaryEnts = addGeographicBoundaries(
-            Cesium,
-            viewer,
-            boundaryData,
-          );
-          boundaryEntitiesRef.current = boundaryEnts;
+          const { boundaryEntities, geographicLineEntities } =
+            addGeographicBoundaries(Cesium, viewer, boundaryData);
+          boundaryEntitiesRef.current = boundaryEntities;
+          geographicLineEntitiesRef.current = geographicLineEntities;
+
+          boundaryEntitiesRef.current.forEach((entity) => {
+            entity.show = boundaryLinesVisible;
+          });
+          geographicLineEntitiesRef.current.forEach((entity) => {
+            entity.show = geographicLinesVisible;
+          });
+
           console.log(
-            `Stored ${boundaryEnts.length} boundary entities for visibility control`,
+            `Stored ${boundaryEntities.length} boundary entities and ${geographicLineEntities.length} geographic grid entities`,
           );
 
           viewer.cesiumWidget.screenSpaceEventHandler.setInputAction(
@@ -568,6 +671,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           viewerRef.current = viewer;
           setIsLoading(false);
           setViewerReady(true);
+          initializingViewerRef.current = false;
 
           console.log("Self-hosted Cesium viewer initialized successfully");
         } catch (err) {
@@ -577,12 +681,13 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           );
           setIsLoading(false);
           setViewerReady(false);
+          initializingViewerRef.current = false;
         }
       };
 
       const timer = setTimeout(initViewer, 100);
       return () => clearTimeout(timer);
-    }, [onRegionClick, currentDataset]);
+    }, [onRegionClick, currentDataset, boundaryLinesVisible, geographicLinesVisible]);
 
     // Cleanup
     const applyRasterLayers = useCallback(
@@ -692,9 +797,12 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             rasterLayerRef.current = [];
           }
           clearMarker();
+          boundaryEntitiesRef.current = [];
+          geographicLineEntitiesRef.current = [];
           viewerRef.current.destroy();
           viewerRef.current = null;
           setViewerReady(false);
+          initializingViewerRef.current = false;
         }
       };
     }, []);
@@ -723,6 +831,16 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       console.log("Boundary lines visibility:", boundaryLinesVisible);
     }, [boundaryLinesVisible]);
 
+    // NEW: Control geographic grid visibility
+    useEffect(() => {
+      if (geographicLineEntitiesRef.current.length === 0) return;
+
+      geographicLineEntitiesRef.current.forEach((entity) => {
+        entity.show = geographicLinesVisible;
+      });
+      console.log("Geographic lines visibility:", geographicLinesVisible);
+    }, [geographicLinesVisible]);
+
     // Raster texture rendering with viewer readiness guard
     useEffect(() => {
       if (!viewerReady) {
@@ -732,16 +850,39 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         );
         return;
       }
-      console.log(
-        "[Globe] applyRasterLayers trigger",
-        rasterState.data?.textures?.length ?? 0,
-      );
+
+      const textureCount = rasterState.data?.textures?.length ?? 0;
+      if (textureCount === 0) {
+        console.warn(
+          "[Globe] No raster textures available for current dataset request",
+          rasterState.requestKey,
+        );
+        viewerRef.current?.scene?.requestRender();
+        return;
+      }
+
+      console.log("[Globe] applyRasterLayers trigger", {
+        requestKey: rasterState.requestKey,
+        textureCount,
+      });
       applyRasterLayers(rasterState.data);
-    }, [applyRasterLayers, rasterState.data, viewerReady]);
+    }, [
+      applyRasterLayers,
+      rasterState.data,
+      rasterState.requestKey,
+      viewerReady,
+    ]);
 
     useEffect(() => {
       rasterDataRef.current = rasterState.data;
     }, [rasterState.data]);
+
+    useEffect(() => {
+      if (!viewerReady) return;
+      if (!rasterDataRef.current) return;
+      console.log("[Globe] viewerReady effect re-applying raster");
+      applyRasterLayers(rasterDataRef.current);
+    }, [viewerReady, applyRasterLayers]);
 
     if (error) {
       return (
@@ -775,15 +916,21 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         }}
       >
         {isLoading && (
-          <div className="bg-opacity-75 absolute inset-0 z-10 flex items-center justify-center bg-slate-900">
-            <div className="text-center text-white">
-              <div className="mb-4 h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-              <p>Loading Globe with Geographic Boundaries...</p>
-              <p className="mt-1 text-xs text-gray-400">
-                Loading coastlines, rivers, lakes, and boundaries
-              </p>
-            </div>
-          </div>
+          <GlobeLoading
+            message="Loading globe…"
+            subtitle="Initializing Cesium and geographic boundaries"
+          />
+        )}
+
+        {!isLoading && isRasterTransitioning && (
+          <GlobeLoading
+            message="Rendering dataset…"
+            subtitle={
+              currentDataset
+                ? `Applying ${currentDataset.name}`
+                : "Fetching climate data"
+            }
+          />
         )}
 
         <div

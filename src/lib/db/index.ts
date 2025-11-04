@@ -3,15 +3,14 @@ import postgres from "postgres";
 import * as schema from "./schema";
 import dotenv from "dotenv";
 
-dotenv.config({
-  path: ".env.local",
-});
-
-if (!process.env.POSTGRES_URL) {
-  throw new Error("POSTRGRES_URL is not set");
-}
+dotenv.config({ path: ".env" });
+dotenv.config({ path: ".env.local", override: true });
 
 const connectionString = process.env.POSTGRES_URL;
+
+if (!connectionString) {
+  throw new Error("POSTGRES_URL is not set");
+}
 
 const queryClient = postgres(connectionString, {
   max: 10,

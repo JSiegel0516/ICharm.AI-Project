@@ -20,6 +20,8 @@ interface GlobeSettingsPanelProps {
   onSatelliteLayerToggle: (visible: boolean) => void;
   boundaryLinesVisible: boolean;
   onBoundaryLinesToggle: (visible: boolean) => void;
+  geographicLinesVisible: boolean;
+  onGeographicLinesToggle: (visible: boolean) => void;
   // Raster opacity control
   rasterOpacity: number;
   onRasterOpacityChange: (opacity: number) => void;
@@ -32,6 +34,8 @@ export function GlobeSettingsPanel({
   onSatelliteLayerToggle,
   boundaryLinesVisible,
   onBoundaryLinesToggle,
+  geographicLinesVisible,
+  onGeographicLinesToggle,
   rasterOpacity,
   onRasterOpacityChange,
 }: GlobeSettingsPanelProps) {
@@ -120,6 +124,27 @@ export function GlobeSettingsPanel({
                     id="boundary-toggle"
                     checked={boundaryLinesVisible}
                     onCheckedChange={onBoundaryLinesToggle}
+                    className="data-[state=checked]:bg-rose-500"
+                  />
+                </div>
+
+                {/* Geographic Grid Lines Toggle */}
+                <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-3">
+                  <div className="space-y-0.5">
+                    <Label
+                      htmlFor="geographic-lines-toggle"
+                      className="cursor-pointer text-sm font-medium text-white"
+                    >
+                      Geographic Grid
+                    </Label>
+                    <p className="text-xs text-slate-400">
+                      Show/hide latitude & longitude reference lines
+                    </p>
+                  </div>
+                  <Switch
+                    id="geographic-lines-toggle"
+                    checked={geographicLinesVisible}
+                    onCheckedChange={onGeographicLinesToggle}
                     className="data-[state=checked]:bg-rose-500"
                   />
                 </div>

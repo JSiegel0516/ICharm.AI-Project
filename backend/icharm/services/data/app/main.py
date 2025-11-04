@@ -85,8 +85,37 @@ class CustomJSONResponse(JSONResponse):
 
 # Load environment variables from .env file in root folder
 ROOT_DIR = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = ROOT_DIR.parent.parent
 env_path = ROOT_DIR / ".env.local"
 load_dotenv(dotenv_path=env_path)
+
+
+def _resolve_env_path(
+    value: Optional[str],
+    default: str,
+    ensure_exists: bool = False,
+) -> Path:
+    """Resolve environment paths relative to project structure when needed."""
+
+    candidate_str = (value or default).strip()
+    candidate = Path(candidate_str).expanduser()
+
+    if not candidate.is_absolute():
+        search_roots = [PROJECT_ROOT, ROOT_DIR, ROOT_DIR.parent]
+        resolved = None
+        for base in search_roots:
+            attempt = (base / candidate).resolve()
+            if attempt.exists():
+                resolved = attempt
+                break
+        if resolved is None:
+            resolved = (PROJECT_ROOT / candidate).resolve()
+        candidate = resolved
+
+    if ensure_exists:
+        candidate.mkdir(parents=True, exist_ok=True)
+
+    return candidate
 
 # ============================================================================
 # CONFIGURATION
@@ -101,11 +130,15 @@ if not POSTRGRES_URL:
     )
 
 # File paths configuration
-LOCAL_DATASETS_PATH = (
-    ROOT_DIR / os.getenv("LOCAL_DATASETS_PATH", "datasets")
-).resolve()
-KERCHUNK_PATH = (ROOT_DIR / os.getenv("KERCHUNK_PATH", "kerchunk")).resolve()
-CACHE_DIR = Path(os.getenv("CACHE_DIR", "/tmp/climate_cache")).resolve()
+LOCAL_DATASETS_PATH = _resolve_env_path(
+    os.getenv("LOCAL_DATASETS_PATH"), "datasets", ensure_exists=True
+)
+KERCHUNK_PATH = _resolve_env_path(
+    os.getenv("KERCHUNK_PATH"), "kerchunk", ensure_exists=True
+)
+CACHE_DIR = _resolve_env_path(
+    os.getenv("CACHE_DIR"), "/tmp/climate_cache", ensure_exists=True
+)
 
 # AWS S3 configuration (for cloud datasets)
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
@@ -707,11 +740,24 @@ async def open_cloud_dataset(
         input_file = str(metadata["inputFile"])
         engine = str(metadata.get("engine", "h5netcdf")).lower()
 
+        if engine == "zarr" and input_file.lower().endswith(".nc"):
+            logger.warning(
+                "Dataset %s declares engine=zarr but input is NetCDF; switching to h5netcdf",
+                metadata.get("datasetName"),
+            )
+            engine = "h5netcdf"
+
         logger.info(f"Opening cloud dataset: {metadata['datasetName']}")
         logger.info(f"Input file: {input_file}")
         logger.info(f"Engine: {engine}")
         dataset_name = str(metadata.get("datasetName") or "")
         normalized_name = dataset_name.lower()
+
+        if normalized_name == "mean layer temperature - noaa cdr":
+            logger.info(
+                "Using HDF5 loader for Mean Layer Temperature - NOAA CDR dataset"
+            )
+            engine = "h5netcdf"
 
         if normalized_name == "precipitation - cmorph cdr":
             logger.info("Using CMORPH-specific loader")
@@ -764,6 +810,47 @@ async def open_cloud_dataset(
                 seen.add(url)
                 unique_urls.append(url)
         candidate_urls = unique_urls
+
+        # Verify remote assets exist; drop any stale entries
+        verified_urls: List[str] = []
+        for url in candidate_urls:
+            check_path = url[5:] if url.startswith("s3://") else url
+            try:
+                fs.info(check_path)
+                verified_urls.append(url)
+            except FileNotFoundError:
+                logger.warning("Remote asset not found: %s", url)
+
+        candidate_urls = verified_urls
+
+        if not candidate_urls and normalized_name == "mean layer temperature - noaa cdr":
+            logger.info(
+                "No valid TLS assets resolved; listing bucket for latest available file"
+            )
+            try:
+                prefix = "noaa-cdr-mean-layer-temp-pds/data/"
+                entries = fs.ls(prefix)
+                tls_candidates = sorted(
+                    entry
+                    for entry in entries
+                    if entry.lower().endswith(".nc")
+                    and "tls" in entry.lower()
+                )
+                if tls_candidates:
+                    latest = tls_candidates[-1]
+                    logger.info(f"Using latest TLS asset: {latest}")
+                    candidate_urls = [
+                        latest if latest.startswith("s3://") else f"s3://{latest}"
+                    ]
+            except Exception as e:
+                logger.warning(
+                    "Failed to enumerate TLS assets in bucket: %s", e
+                )
+
+        if not candidate_urls:
+            raise FileNotFoundError(
+                f"No accessible remote assets located for dataset {metadata['datasetName']}"
+            )
 
         # Keep processing manageable
         max_files = 12
