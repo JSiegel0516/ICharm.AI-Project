@@ -11,7 +11,7 @@ import pandas as pd
 import xarray as xr
 from matplotlib import cm
 from PIL import Image
-from scipy.ndimage import zoom
+from scipy.ndimage import zoom, binary_dilation, distance_transform_edt
 
 PALETTE_RESOLUTION = 256
 _COLOR_MAP_CACHE: Dict[str, np.ndarray] = {}
@@ -19,6 +19,10 @@ _COLOR_MAP_FALLBACK = "viridis"
 _OCEAN_MASK_CACHE: Optional[xr.Dataset] = None
 _ZERO_FILL_DATASETS = {
     "NCEP Global Ocean Data Assimilation System (GODAS)",
+}
+
+_COASTAL_FILL_DATASETS = {
+    "NOAA Extended Reconstructed SST V5",
 }
 
 _FILL_ATTR_KEYS = (
@@ -423,6 +427,49 @@ def _apply_land_ocean_mask(
     return data, mask
 
 
+def _fill_coastal_gaps(
+    dataset_name: str, data: np.ndarray, mask: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Fill single-cell coastal NaN gaps for coarse SST datasets."""
+    if dataset_name not in _COASTAL_FILL_DATASETS:
+        return data, mask
+
+    valid = mask & np.isfinite(data)
+    if not valid.any():
+        return data, mask
+
+    # Identify missing cells adjacent to valid ocean cells
+    boundary = binary_dilation(valid, iterations=1) & (~valid)
+    if not boundary.any():
+        return data, mask
+
+    print(
+        f"[RasterViz] Filling {boundary.sum()} coastal cells for dataset {dataset_name}"
+    )
+
+    # Find nearest valid neighbour for each missing boundary cell
+    _, nearest_idx = distance_transform_edt(~valid, return_indices=True)
+    nearest_rows = nearest_idx[0][boundary]
+    nearest_cols = nearest_idx[1][boundary]
+    neighbour_values = data[nearest_rows, nearest_cols]
+
+    # Avoid propagating NaNs (shouldn't happen, but guard anyway)
+    valid_neighbour = np.isfinite(neighbour_values)
+    if not valid_neighbour.any():
+        return data, mask
+
+    filled_data = data.copy()
+    filled_mask = mask.copy()
+
+    target_rows, target_cols = np.where(boundary)
+    filled_data[target_rows[valid_neighbour], target_cols[valid_neighbour]] = neighbour_values[
+        valid_neighbour
+    ]
+    filled_mask[target_rows[valid_neighbour], target_cols[valid_neighbour]] = True
+
+    return filled_data, filled_mask
+
+
 def _extend_latitude_coverage(
     data: np.ndarray,
     mask: np.ndarray,
@@ -681,6 +728,8 @@ def serialize_raster_array(
         lat_values,
         lon_values
     )
+
+    data, finite_mask = _fill_coastal_gaps(dataset_name, data, finite_mask)
     
     data_min = float(data[finite_mask].min()) if finite_mask.any() else None
     data_max = float(data[finite_mask].max()) if finite_mask.any() else None
