@@ -117,6 +117,7 @@ def _resolve_env_path(
 
     return candidate
 
+
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
@@ -823,7 +824,10 @@ async def open_cloud_dataset(
 
         candidate_urls = verified_urls
 
-        if not candidate_urls and normalized_name == "mean layer temperature - noaa cdr":
+        if (
+            not candidate_urls
+            and normalized_name == "mean layer temperature - noaa cdr"
+        ):
             logger.info(
                 "No valid TLS assets resolved; listing bucket for latest available file"
             )
@@ -833,8 +837,7 @@ async def open_cloud_dataset(
                 tls_candidates = sorted(
                     entry
                     for entry in entries
-                    if entry.lower().endswith(".nc")
-                    and "tls" in entry.lower()
+                    if entry.lower().endswith(".nc") and "tls" in entry.lower()
                 )
                 if tls_candidates:
                     latest = tls_candidates[-1]
@@ -843,9 +846,7 @@ async def open_cloud_dataset(
                         latest if latest.startswith("s3://") else f"s3://{latest}"
                     ]
             except Exception as e:
-                logger.warning(
-                    "Failed to enumerate TLS assets in bucket: %s", e
-                )
+                logger.warning("Failed to enumerate TLS assets in bucket: %s", e)
 
         if not candidate_urls:
             raise FileNotFoundError(
@@ -1105,21 +1106,61 @@ async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
                                 },
                             )
                         # Check if this is a true Zarr v3 store with consolidated metadata
-                        elif zarr_content.get("node_type") == "group" and zarr_content.get("zarr_format") == 3:
+                        elif (
+                            zarr_content.get("node_type") == "group"
+                            and zarr_content.get("zarr_format") == 3
+                        ):
                             # Check if it has consolidated_metadata with actual data arrays
-                            consolidated_meta = zarr_content.get("consolidated_metadata", {})
+                            consolidated_meta = zarr_content.get(
+                                "consolidated_metadata", {}
+                            )
                             metadata_info = consolidated_meta.get("metadata", {})
-                            
+
                             # If it has consolidated metadata with array definitions, it's a real store
-                            if metadata_info and any("shape" in arr_info for arr_info in metadata_info.values()):
-                                logger.info(f"Opening Zarr v3 store with consolidated metadata: {dataset_name}")
-                                ds = await asyncio.to_thread(xr.open_zarr, str(path_obj), consolidated=True)
+                            if metadata_info and any(
+                                "shape" in arr_info
+                                for arr_info in metadata_info.values()
+                            ):
+                                logger.info(
+                                    f"Opening Zarr v3 store with consolidated metadata: {dataset_name}"
+                                )
+                                try:
+                                    ds = await asyncio.to_thread(
+                                        xr.open_zarr,
+                                        str(path_obj),
+                                        consolidated=True,
+                                        decode_times=True,
+                                    )
+                                except (ValueError, OSError) as time_error:
+                                    if (
+                                        "decode time" in str(time_error).lower()
+                                        or "time units" in str(time_error).lower()
+                                    ):
+                                        logger.warning(
+                                            f"Time decoding failed for {dataset_name}, retrying with decode_times=False"
+                                        )
+                                        ds = await asyncio.to_thread(
+                                            xr.open_zarr,
+                                            str(path_obj),
+                                            consolidated=True,
+                                            decode_times=False,
+                                        )
+                                        # Manually decode time if needed
+                                        ds = _ensure_datetime_coordinates(ds)
+                                    else:
+                                        raise
                             else:
                                 # This is a metadata-only Kerchunk reference
-                                logger.warning(f"Detected Zarr v3 metadata-only file for {dataset_name}")
-                                logger.warning("This appears to be a Kerchunk reference without data arrays")
+                                logger.warning(
+                                    f"Detected Zarr v3 metadata-only file for {dataset_name}"
+                                )
+                                logger.warning(
+                                    "This appears to be a Kerchunk reference without data arrays"
+                                )
                                 logger.info("Falling back to NetCDF file...")
-                                raise ValueError("Zarr v3 metadata-only file (no data arrays)")
+                                raise ValueError(
+                                    "Zarr v3 metadata-only file (no data arrays)"
+                                )
                         else:
                             # Try as regular Zarr v3 store
                             logger.info(f"Attempting Zarr v3 store: {dataset_name}")
@@ -2019,7 +2060,7 @@ async def visualize_raster(request: RasterRequest):
             raise HTTPException(
                 status_code=404, detail=f"Dataset not found: {request.datasetId}"
             )
-
+        metadata_df = metadata_df.reset_index(drop=True)
         meta_row = metadata_df.iloc[0]
 
         # Open dataset

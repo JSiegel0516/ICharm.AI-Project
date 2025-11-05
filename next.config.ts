@@ -41,27 +41,27 @@ const nextConfig: NextConfig = {
   // Image configuration for external domains
   images: {
     remotePatterns: [
-            {
-                protocol: 'https',
-                hostname: 'cesiumjs.org',
-                pathname: '**'
-            },
-            {
-                protocol: 'https',
-                hostname: 'cesium.com',
-                pathname: '**'
-            },
-            {
-                protocol: 'https',
-                hostname: 'assets.cesium.com',
-                pathname: '**'
-            },
-            {
-                protocol: 'https',
-                hostname: 'ion.cesium.com',
-                pathname: '**'
-            },
-        ],
+      {
+        protocol: "https",
+        hostname: "cesiumjs.org",
+        pathname: "**",
+      },
+      {
+        protocol: "https",
+        hostname: "cesium.com",
+        pathname: "**",
+      },
+      {
+        protocol: "https",
+        hostname: "assets.cesium.com",
+        pathname: "**",
+      },
+      {
+        protocol: "https",
+        hostname: "ion.cesium.com",
+        pathname: "**",
+      },
+    ],
   },
 };
 
