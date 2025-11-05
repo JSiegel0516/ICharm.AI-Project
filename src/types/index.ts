@@ -199,6 +199,13 @@ export interface GlobeProps {
   boundaryLinesVisible?: boolean;
   geographicLinesVisible?: boolean;
   rasterOpacity?: number;
+  onRasterMetadataChange?: (
+    meta: {
+      units?: string | null;
+      min?: number | null;
+      max?: number | null;
+    } | null,
+  ) => void;
 }
 
 export interface RegionData {
@@ -225,6 +232,11 @@ export interface ColorBarProps {
   onUnitChange?: (unit: TemperatureUnit) => void;
   onPositionChange?: (position: { x: number; y: number }) => void;
   collapsed?: boolean;
+  rasterMeta?: {
+    units?: string | null;
+    min?: number | null;
+    max?: number | null;
+  } | null;
 }
 
 export interface TimeBarProps {

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 import { ColorBarProps, TemperatureUnit } from "@/types";
 
@@ -11,17 +11,51 @@ const ColorBar: React.FC<ColorBarProps> = ({
   unit = "celsius",
   onUnitChange,
   onPositionChange,
+  collapsed = false,
+  rasterMeta = null,
 }) => {
   const [showDropdown, setShowDropdown] = useState(false);
   const [position, setPosition] = useState({ x: 24, y: 24 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(collapsed);
   const [previousPosition, setPreviousPosition] = useState({ x: 24, y: 24 });
   const colorBarRef = useRef<HTMLDivElement>(null);
 
-  const celsiusToFahrenheit = (celsius: number) => {
-    return Math.round((celsius * 9) / 5 + 32);
+  const baseUnitRaw = rasterMeta?.units ?? dataset.units ?? "";
+  const normalizedUnit = baseUnitRaw.trim();
+
+  const defaultUnitSymbol = useMemo(() => {
+    if (!normalizedUnit) return "";
+    const lower = normalizedUnit.toLowerCase();
+    if (lower.includes("degc") || lower.includes("celsius")) return "°C";
+    if (lower.includes("degf") || lower.includes("fahrenheit")) return "°F";
+    if (lower.includes("degk")) return "K";
+    return normalizedUnit;
+  }, [normalizedUnit]);
+
+  const allowUnitToggle = useMemo(() => {
+    return dataset.dataType === "temperature" && defaultUnitSymbol === "°C";
+  }, [dataset.dataType, defaultUnitSymbol]);
+
+  const resolvedMin = rasterMeta?.min ?? dataset.colorScale.min;
+  const resolvedMax = rasterMeta?.max ?? dataset.colorScale.max;
+  const safeMin = Number.isFinite(resolvedMin) ? Number(resolvedMin) : 0;
+  const safeMax = Number.isFinite(resolvedMax) ? Number(resolvedMax) : safeMin;
+  const labelCount = Math.max(
+    dataset.colorScale.labels.length || 0,
+    dataset.colorScale.colors.length || 0,
+    2,
+  );
+
+  const convertToFahrenheit = (value: number) => (value * 9) / 5 + 32;
+
+  const formatLabelValue = (value: number) => {
+    if (!Number.isFinite(value)) return "–";
+    const abs = Math.abs(value);
+    if (abs >= 100 || abs === 0) return value.toFixed(0);
+    if (abs >= 10) return value.toFixed(1);
+    return value.toFixed(2);
   };
 
   const getDefaultPosition = () => {
@@ -29,28 +63,34 @@ const ColorBar: React.FC<ColorBarProps> = ({
   };
 
   const getNumericLabels = () => {
-    return dataset.colorScale.labels.map((label) => {
-      const numericValue = parseFloat(label.replace(/[^\d.-]/g, ""));
-      return isNaN(numericValue) ? 0 : numericValue;
+    if (labelCount <= 1 || Math.abs(safeMax - safeMin) < 1e-9) {
+      return Array(labelCount).fill(safeMin);
+    }
+
+    return Array.from({ length: labelCount }, (_, index) => {
+      return safeMin + ((safeMax - safeMin) * index) / (labelCount - 1);
     });
   };
 
   const numericLabels = getNumericLabels();
 
   const getDisplayLabels = () => {
-    if (unit === "fahrenheit") {
-      return numericLabels.map((celsius) =>
-        celsiusToFahrenheit(celsius).toString(),
-      );
-    }
-    return dataset.colorScale.labels;
+    const values =
+      allowUnitToggle && unit === "fahrenheit"
+        ? numericLabels.map(convertToFahrenheit)
+        : numericLabels;
+    return values.map((val) => formatLabelValue(val));
   };
 
   const getUnitSymbol = () => {
-    return unit === "celsius" ? "°C" : "°F";
+    if (allowUnitToggle) {
+      return unit === "fahrenheit" ? "°F" : "°C";
+    }
+    return defaultUnitSymbol || "";
   };
 
   const handleUnitChange = (newUnit: TemperatureUnit) => {
+    if (!allowUnitToggle) return;
     if (onUnitChange) {
       onUnitChange(newUnit);
     }
@@ -95,6 +135,10 @@ const ColorBar: React.FC<ColorBarProps> = ({
     });
     setShowDropdown(false);
   };
+
+  useEffect(() => {
+    setIsCollapsed(collapsed);
+  }, [collapsed]);
 
   useEffect(() => {
     const initialPosition = getDefaultPosition();
@@ -164,7 +208,10 @@ const ColorBar: React.FC<ColorBarProps> = ({
 
   const handleDropdownToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!isDragging && !isCollapsed) {
+    if (!allowUnitToggle || isCollapsed) {
+      return;
+    }
+    if (!isDragging) {
       setShowDropdown(!showDropdown);
     }
   };
@@ -288,41 +335,50 @@ const ColorBar: React.FC<ColorBarProps> = ({
           </div>
 
           <div className="relative mt-2 mb-12">
-            <button
-              onClick={handleDropdownToggle}
-              className="flex w-full items-center justify-between text-sm font-medium text-blue-200 transition-colors hover:text-white focus:outline-none"
-              type="button"
-            >
-              <span>Unit of measurement</span>
-              <ChevronDown
-                className={`h-4 w-4 transition-transform ${showDropdown ? "rotate-180" : ""}`}
-              />
-            </button>
+            {allowUnitToggle ? (
+              <>
+                <button
+                  onClick={handleDropdownToggle}
+                  className="flex w-full items-center justify-between text-sm font-medium text-blue-200 transition-colors hover:text-white focus:outline-none"
+                  type="button"
+                >
+                  <span>Unit of measurement</span>
+                  <ChevronDown
+                    className={`h-4 w-4 transition-transform ${showDropdown ? "rotate-180" : ""}`}
+                  />
+                </button>
 
-            {showDropdown && !isDragging && (
-              <div className="absolute top-8 left-0 z-50 w-full rounded-md border border-gray-200 bg-white py-1 shadow-lg">
-                <button
-                  onClick={() => handleUnitChange("celsius")}
-                  className={`w-full px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 focus:outline-none ${
-                    unit === "celsius"
-                      ? "bg-blue-50 text-blue-600"
-                      : "text-gray-700"
-                  }`}
-                  type="button"
-                >
-                  Celsius (°C)
-                </button>
-                <button
-                  onClick={() => handleUnitChange("fahrenheit")}
-                  className={`w-full px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 focus:outline-none ${
-                    unit === "fahrenheit"
-                      ? "bg-blue-50 text-blue-600"
-                      : "text-gray-700"
-                  }`}
-                  type="button"
-                >
-                  Fahrenheit (°F)
-                </button>
+                {showDropdown && !isDragging && (
+                  <div className="absolute top-8 left-0 z-50 w-full rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+                    <button
+                      onClick={() => handleUnitChange("celsius")}
+                      className={`w-full px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 focus:outline-none ${
+                        unit === "celsius"
+                          ? "bg-blue-50 text-blue-600"
+                          : "text-gray-700"
+                      }`}
+                      type="button"
+                    >
+                      Celsius (°C)
+                    </button>
+                    <button
+                      onClick={() => handleUnitChange("fahrenheit")}
+                      className={`w-full px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 focus:outline-none ${
+                        unit === "fahrenheit"
+                          ? "bg-blue-50 text-blue-600"
+                          : "text-gray-700"
+                      }`}
+                      type="button"
+                    >
+                      Fahrenheit (°F)
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="flex w-full items-center justify-between text-sm font-medium text-blue-200">
+                <span>Unit of measurement</span>
+                <span className="text-blue-100">{unitSymbol || "–"}</span>
               </div>
             )}
           </div>

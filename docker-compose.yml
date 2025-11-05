@@ -52,7 +52,7 @@ services:
       - "${DATA_API_PORT:-8000}:8000"
     environment:
       TEST_CHAT_USER_EMAIL: ${TEST_CHAT_USER_EMAIL:-testuser@gmail.com}
-      POSTGRES_URL: ${POSTGRES_URL:-}
+      POSTGRES_URL: ${DATA_API_POSTGRES_URL:-postgresql://${ICHARM_DB_USER}:${ICHARM_DB_PASSWORD}@${DATA_API_POSTGRES_HOST:-db}:${ICHARM_DB_PORT:-5432}/${ICHARM_DB_NAME}}
       LOCAL_DATASETS_PATH: /app/datasets
       KERCHUNK_PATH: /app/kerchunk
       CACHE_DIR: /tmp/climate_cache

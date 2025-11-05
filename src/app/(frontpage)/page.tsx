@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useState, useRef, useMemo, useCallback } from "react";
+import React, {
+  useState,
+  useRef,
+  useMemo,
+  useCallback,
+  useEffect,
+} from "react";
 import Globe, { GlobeRef } from "@/components/Globe/Globe";
 import ColorBar from "@/components/ui/ColorBar";
 import TimeBar from "@/components/ui/TimeBar";
@@ -60,6 +66,11 @@ export default function HomePage() {
       label: "Surface",
       unit: "hPa",
     });
+  const [rasterMeta, setRasterMeta] = useState<{
+    units?: string | null;
+    min?: number | null;
+    max?: number | null;
+  } | null>(null);
 
   // Globe Settings State
   const [globeSettings, setGlobeSettings] = useState<GlobeSettings>({
@@ -121,6 +132,10 @@ export default function HomePage() {
     setGlobeSettings((prev) => ({ ...prev, rasterOpacity: opacity }));
   }, []);
 
+  useEffect(() => {
+    setRasterMeta(null);
+  }, [currentDataset]);
+
   // Memoized Globe
   const selectedLevelValue = selectedPressureLevel?.value ?? null;
 
@@ -136,6 +151,7 @@ export default function HomePage() {
         boundaryLinesVisible={globeSettings.boundaryLinesVisible}
         geographicLinesVisible={globeSettings.geographicLinesVisible}
         rasterOpacity={globeSettings.rasterOpacity}
+        onRasterMetadataChange={setRasterMeta}
       />
     ),
     [
@@ -184,6 +200,7 @@ export default function HomePage() {
           onPositionChange={setColorBarPosition}
           collapsed={colorBarCollapsed}
           onToggleCollapse={setColorBarCollapsed}
+          rasterMeta={rasterMeta}
         />
 
         {/* Region Info Panel */}

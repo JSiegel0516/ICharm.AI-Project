@@ -287,6 +287,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       boundaryLinesVisible = true,
       geographicLinesVisible = false,
       rasterOpacity = 0.65,
+      onRasterMetadataChange,
     },
     ref,
   ) => {
@@ -883,7 +884,18 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
     useEffect(() => {
       rasterDataRef.current = rasterState.data;
-    }, [rasterState.data]);
+      if (onRasterMetadataChange) {
+        if (rasterState.data) {
+          onRasterMetadataChange({
+            units: rasterState.data.units ?? null,
+            min: rasterState.data.min ?? null,
+            max: rasterState.data.max ?? null,
+          });
+        } else {
+          onRasterMetadataChange(null);
+        }
+      }
+    }, [rasterState.data, onRasterMetadataChange]);
 
     useEffect(() => {
       if (!viewerReady) return;

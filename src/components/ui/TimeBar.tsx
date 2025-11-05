@@ -35,6 +35,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [dateInput, setDateInput] = useState("");
   const [showCalendar, setShowCalendar] = useState(false);
+  const [previewDate, setPreviewDate] = useState(selectedDate);
 
   const sliderRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -57,6 +58,12 @@ const TimeBar: React.FC<TimeBarProps> = ({
     }
     return new Date();
   }, [currentDataset]);
+
+  useEffect(() => {
+    if (!isDragging) {
+      setPreviewDate(selectedDate);
+    }
+  }, [selectedDate, isDragging]);
 
   const minYear = minDate.getFullYear();
   const maxYear = maxDate.getFullYear();
@@ -153,26 +160,41 @@ const TimeBar: React.FC<TimeBarProps> = ({
           Math.min(100, ((clientX - rect.left) / rect.width) * 100),
         );
         const newYear = getYearFromPosition(percentage);
-        const newDate = new Date(
+
+        const baseDate = isDragging ? previewDate : selectedDate;
+        const tentative = new Date(
           newYear,
-          selectedDate.getMonth(),
-          selectedDate.getDate(),
+          baseDate.getMonth(),
+          baseDate.getDate(),
         );
-        setDate(newDate);
+
+        let clamped = tentative;
+        if (tentative < minDate) clamped = minDate;
+        if (tentative > maxDate) clamped = maxDate;
+
+        setPreviewDate(clamped);
         setTooltipPosition(percentage);
         rafRef.current = null;
       });
     },
-    [selectedDate, getYearFromPosition, setDate],
+    [
+      selectedDate,
+      previewDate,
+      isDragging,
+      getYearFromPosition,
+      minDate,
+      maxDate,
+    ],
   );
 
   const handleInteractionStart = useCallback(
     (clientX: number) => {
+      setPreviewDate(selectedDate);
       setIsDragging(true);
       setShowTooltip(true);
       updateYear(clientX);
     },
-    [updateYear],
+    [updateYear, selectedDate],
   );
 
   const handleInteractionMove = useCallback(
@@ -184,8 +206,9 @@ const TimeBar: React.FC<TimeBarProps> = ({
 
   const handleInteractionEnd = useCallback(() => {
     setIsDragging(false);
+    setDate(previewDate);
     setTimeout(() => setShowTooltip(false), 1500);
-  }, []);
+  }, [previewDate, setDate]);
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -277,7 +300,8 @@ const TimeBar: React.FC<TimeBarProps> = ({
   ]);
 
   const isActive = isHovered || isDragging || isPlaying;
-  const sliderPosition = getPositionFromYear(selectedDate.getFullYear());
+  const displayDate = isDragging ? previewDate : selectedDate;
+  const sliderPosition = getPositionFromYear(displayDate.getFullYear());
 
   const calendarData = useMemo(() => {
     const currentMonth = isEditing
@@ -565,7 +589,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
                 type="button"
                 aria-label="Edit date"
               >
-                <span>{formatDate(selectedDate)}</span>
+                <span>{formatDate(displayDate)}</span>
               </button>
             )}
           </div>
@@ -579,7 +603,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
             onTouchStart={handleTouchStart}
             role="slider"
             aria-label="Time slider"
-            aria-valuenow={selectedDate.getFullYear()}
+            aria-valuenow={displayDate.getFullYear()}
             aria-valuemin={minYear}
             aria-valuemax={maxYear}
           >
