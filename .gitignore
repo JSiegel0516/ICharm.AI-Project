@@ -10,6 +10,21 @@ node_modules
 !.yarn/releases
 !.yarn/versions
 
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+.idea
+
+
+*.zarr
+
+
+# python
+__pycache__/
+.mypy_cache/
+
 # testing
 /coverage
 
@@ -20,7 +35,7 @@ node_modules
 # cesium
 cesium/
 
-# embeddings 
+# embeddings
 /src/data/tutorial/tutorialIndex.json
 
 # production
@@ -48,3 +63,7 @@ next-env.d.ts
 
 # package-lock
 package-lock.json
+
+# datasets
+backend/datasets/*.nc
+**/*.nc
