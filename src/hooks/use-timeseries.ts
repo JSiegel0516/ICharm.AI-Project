@@ -176,6 +176,187 @@ export interface UseTimeSeriesAPI {
 // ============================================================================
 
 /**
+ * Unit conversion configuration
+ * Add new unit conversions here
+ */
+const UNIT_CONVERSIONS: Record<string, {
+  convert: (value: number) => { value: number; unit: string };
+  description: string;
+  alwaysConvert?: boolean;  // If true, always convert. If false, only convert when unreadable
+  readabilityThreshold?: { min?: number; max?: number };  // Values outside this are "unreadable"
+}> = {
+  "m/s": {
+    description: "Meters per second (velocity)",
+    alwaysConvert: false,  // Only convert if too small
+    readabilityThreshold: { min: 0.001 },  // Convert if < 0.001 m/s
+    convert: (value: number) => {
+      // Convert to cm/day
+      const cmPerDay = value * 86400 * 100; // seconds/day * cm/m
+      
+      // Use mm/day for very small values
+      if (Math.abs(cmPerDay) < 0.1) {
+        const mmPerDay = value * 86400 * 1000;
+        return { value: mmPerDay, unit: "mm/day" };
+      }
+      
+      return { value: cmPerDay, unit: "cm/day" };
+    }
+  },
+  "K": {
+    description: "Kelvin (temperature)",
+    alwaysConvert: true,  // Always convert K to °C
+    convert: (value: number) => ({
+      value: value - 273.15,
+      unit: "°C"
+    })
+  },
+  "Pa": {
+    description: "Pascal (pressure)",
+    alwaysConvert: false,
+    readabilityThreshold: { min: 1000 },  // Convert if > 1000 Pa
+    convert: (value: number) => ({
+      value: value / 100,
+      unit: "hPa"
+    })
+  },
+  "kg/m^3": {
+    description: "Density",
+    alwaysConvert: true,  // Always fix formatting
+    convert: (value: number) => ({
+      value: value,
+      unit: "kg/m³"  // Just fix formatting
+    })
+  },
+  "m": {
+    description: "Meters (distance/depth)",
+    alwaysConvert: false,
+    readabilityThreshold: { min: 0.01, max: 999 },  // Convert if < 0.01 or > 999
+    convert: (value: number) => {
+      // Use cm for small values
+      if (Math.abs(value) < 1) {
+        return { value: value * 100, unit: "cm" };
+      }
+      // Use km for large values
+      if (Math.abs(value) >= 1000) {
+        return { value: value / 1000, unit: "km" };
+      }
+      return { value, unit: "m" };
+    }
+  },
+  "kg/m^2/s": {
+    description: "Precipitation rate",
+    alwaysConvert: true,  // mm/day is more standard
+    convert: (value: number) => ({
+      value: value * 86400,  // Convert to mm/day
+      unit: "mm/day"
+    })
+  },
+  "W/m^2": {
+    description: "Power per unit area (radiation)",
+    alwaysConvert: true,  // Just fix formatting
+    convert: (value: number) => ({
+      value: value,
+      unit: "W/m²"
+    })
+  }
+};
+
+/**
+ * Check if a value is "readable" based on threshold
+ */
+function isReadable(value: number, threshold?: { min?: number; max?: number }): boolean {
+  if (!threshold) return true;
+  
+  const absValue = Math.abs(value);
+  
+  if (threshold.min !== undefined && absValue < threshold.min) {
+    return false;  // Too small
+  }
+  
+  if (threshold.max !== undefined && absValue > threshold.max) {
+    return false;  // Too large
+  }
+  
+  return true;  // Within readable range
+}
+
+/**
+ * Convert units for better visualization
+ * Automatically converts common scientific units to human-readable formats
+ * Only converts when necessary (values too small/large) unless alwaysConvert is true
+ */
+export function convertUnits(
+  value: number,
+  originalUnit: string,
+  preferredUnit?: string
+): { value: number; unit: string } {
+  // Handle null/undefined/NaN
+  if (value === null || value === undefined || isNaN(value)) {
+    return { value, unit: originalUnit };
+  }
+
+  // Check if we have a conversion for this unit
+  const conversion = UNIT_CONVERSIONS[originalUnit];
+  
+  if (conversion) {
+    // Decide whether to convert
+    const shouldConvert = 
+      conversion.alwaysConvert || 
+      !isReadable(value, conversion.readabilityThreshold);
+    
+    if (shouldConvert) {
+      try {
+        return conversion.convert(value);
+      } catch (error) {
+        console.warn(`Failed to convert ${originalUnit}:`, error);
+        return { value, unit: originalUnit };
+      }
+    }
+  }
+  
+  // No conversion needed - return as-is
+  return { value, unit: originalUnit };
+}
+
+/**
+ * Format value with appropriate precision and unit
+ */
+export function formatValue(
+  value: number,
+  unit: string,
+  includeUnit = true
+): string {
+  if (value === null || value === undefined || isNaN(value)) return "-";
+  
+  let formatted: string;
+  
+  // Scientific notation for very small/large numbers in original units
+  if (unit === "m/s" && (Math.abs(value) < 0.0001 || Math.abs(value) > 1000000)) {
+    formatted = value.toExponential(2);
+  }
+  // Regular formatting
+  else if (Math.abs(value) < 0.01) {
+    formatted = value.toFixed(4);
+  } else if (Math.abs(value) < 1) {
+    formatted = value.toFixed(3);
+  } else {
+    formatted = value.toFixed(2);
+  }
+  
+  return includeUnit ? `${formatted} ${unit}` : formatted;
+}
+
+/**
+ * Get display unit for a dataset (converted if needed)
+ */
+export function getDisplayUnit(originalUnit: string): string {
+  if (originalUnit === "m/s") {
+    return "cm/day"; // Default display unit for ocean velocity
+  }
+  return originalUnit;
+}
+
+/**
  * Format date for API request
  */
 export function formatDateForAPI(date: Date): string {
@@ -300,28 +481,13 @@ export function validateFocusCoordinates(coordString: string): {
 }
 
 /**
- * Format coordinates for display
+ * Export chart as PNG using html2canvas
  */
-export function formatCoordinates(
-  coords: Array<{ lat: number; lon: number }>,
-): string {
-  return coords
-    .map((c) => `(${c.lat.toFixed(4)}, ${c.lon.toFixed(4)})`)
-    .join(", ");
-}
-
-/**
- * Export chart as PNG image
- */
-export async function exportChartAsPNG(
-  chartElement: HTMLElement,
-): Promise<Blob> {
-  // Dynamically import html2canvas to avoid SSR issues
+async function exportChartAsPNG(element: HTMLElement): Promise<Blob> {
   const html2canvas = (await import("html2canvas")).default;
-
-  const canvas = await html2canvas(chartElement, {
+  const canvas = await html2canvas(element, {
     backgroundColor: "#ffffff",
-    scale: 2, // Higher quality
+    scale: 2,
   });
 
   return new Promise((resolve) => {
@@ -332,14 +498,15 @@ export async function exportChartAsPNG(
 }
 
 // ============================================================================
-// HOOK IMPLEMENTATION
+// MAIN HOOK
 // ============================================================================
 
-export function useTimeSeriesAPI(
-  baseURL: string = process.env.NEXT_PUBLIC_FASTAPI_URL ||
-    "http://localhost:8000",
-): UseTimeSeriesAPI {
-  // State
+/**
+ * Custom hook for time series data extraction and visualization
+ * with built-in unit conversion for better readability
+ */
+export function useTimeSeries(baseURL: string = ""): UseTimeSeriesAPI {
+  // State management
   const [rawData, setRawData] = useState<DataPoint[]>([]);
   const [metadata, setMetadata] = useState<Record<
     string,
@@ -353,14 +520,16 @@ export function useTimeSeriesAPI(
   const [processingInfo, setProcessingInfo] = useState<ProcessingInfo | null>(
     null,
   );
-  const [availableDatasets, setAvailableDatasets] = useState<DatasetInfo[]>([]);
+  const [availableDatasets, setAvailableDatasets] = useState<DatasetInfo[]>(
+    [],
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
 
-  // Refs
-  const cancelTokenRef = useRef<CancelTokenSource | null>(null);
+  // Refs for API client and request management
   const apiClientRef = useRef<AxiosInstance | null>(null);
+  const cancelTokenRef = useRef<CancelTokenSource | null>(null);
   const lastRequestRef = useRef<string>("");
 
   // Initialize API client
@@ -392,17 +561,36 @@ export function useTimeSeriesAPI(
     );
   }
 
-  // FIXED: Memoized chart-ready data with proper transformation
+  // Memoized chart-ready data with unit conversion
   const data = useMemo(() => {
-    if (!rawData || rawData.length === 0) return [];
+    if (!rawData || rawData.length === 0 || !metadata) return [];
 
-    // Transform API response format to chart format
-    return rawData.map((point) => ({
-      date: point.date,
-      timestamp: point.timestamp,
-      ...point.values, // Spread values to make dataset IDs top-level keys
-    }));
-  }, [rawData]);
+    // Transform API response format to chart format with unit conversion
+    return rawData.map((point) => {
+      const transformedPoint: any = {
+        date: point.date,
+        timestamp: point.timestamp,
+      };
+
+      // Convert units for each dataset value
+      Object.entries(point.values).forEach(([datasetId, value]) => {
+        if (value !== null && value !== undefined && !isNaN(value)) {
+          const originalUnit = metadata[datasetId]?.units || "";
+          const converted = convertUnits(value, originalUnit);
+          transformedPoint[datasetId] = converted.value;
+          
+          // Store display unit in metadata if not already there
+          if (metadata[datasetId] && !metadata[datasetId].displayUnit) {
+            (metadata[datasetId] as any).displayUnit = converted.unit;
+          }
+        } else {
+          transformedPoint[datasetId] = value;
+        }
+      });
+
+      return transformedPoint;
+    });
+  }, [rawData, metadata]);
 
   // Extract time series data with validation and debouncing
   const extractTimeSeries = useCallback(
@@ -483,7 +671,7 @@ export function useTimeSeriesAPI(
           processingTime: response.data.processingInfo.processingTime,
         });
 
-        // FIXED: Store raw data - transformation happens in useMemo
+        // Store raw data - transformation happens in useMemo
         setRawData(response.data.data);
         setMetadata(response.data.metadata || null);
         setStatistics(response.data.statistics || null);
@@ -643,7 +831,7 @@ export function useTimeSeriesAPI(
 
   return {
     // Data
-    data, // Chart-ready flattened data
+    data, // Chart-ready flattened data with converted units
     rawData, // Original API response
     metadata,
     statistics,

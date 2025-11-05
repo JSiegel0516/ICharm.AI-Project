@@ -7,13 +7,6 @@ import React, {
   useRef,
 } from "react";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
@@ -41,11 +34,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { toast } from "sonner"; // Add sonner for better toast notifications
-// Import the new API hook
+import { toast } from "sonner";
 import {
-  useTimeSeriesAPI,
+  useTimeSeries,
   AnalysisModel,
   ChartType,
   AggregationMethod,
@@ -56,10 +47,8 @@ import {
   type DatasetInfo,
   type SpatialBounds,
 } from "@/hooks/use-timeseries";
-// Import new components
 import { DatasetFilter } from "@/app/(dashboard)/dashboard/timeseries/_components/DatasetPanel";
 import { VisualizationPanel } from "@/app/(dashboard)/dashboard/timeseries/_components/VisualizationPanel";
-import { DataTable } from "@/app/(dashboard)/dashboard/timeseries/_components/DataTable";
 
 // ============================================================================
 // HELPER: Debounce function
@@ -84,7 +73,6 @@ export default function TimeSeriesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Use the new API hook
   const {
     data,
     metadata,
@@ -101,7 +89,7 @@ export default function TimeSeriesPage() {
     cancelRequest,
     clearCache,
     reset,
-  } = useTimeSeriesAPI();
+  } = useTimeSeries(process.env.DATA_BACKEND_URL ?? "http://localhost:8000");
 
   // Local state
   const [selectedDatasets, setSelectedDatasets] = useState<DatasetInfo[]>([]);
@@ -152,7 +140,7 @@ export default function TimeSeriesPage() {
     listDatasets({ stored: dataSourceFilter });
   }, [listDatasets, dataSourceFilter]);
 
-  // IMPROVED: Initialize from URL parameters (only once)
+  // Initialize from URL parameters (only once)
   useEffect(() => {
     if (initializedFromUrl.current || availableDatasets.length === 0) return;
 
@@ -168,7 +156,7 @@ export default function TimeSeriesPage() {
     if (model && Object.values(AnalysisModel).includes(model))
       setAnalysisModel(model);
 
-    // FIXED: Select datasets based on slugs from URL, map to UUIDs internally
+    // Select datasets based on slugs from URL, map to UUIDs internally
     if (datasetSlugs.length > 0) {
       const selected = availableDatasets.filter((d) =>
         datasetSlugs.includes(d.slug || d.id),
@@ -188,7 +176,7 @@ export default function TimeSeriesPage() {
     initializedFromUrl.current = true;
   }, [searchParams, availableDatasets]);
 
-  // IMPROVED: Create stable serialized values for URL update dependencies
+  // Create stable serialized values for URL update dependencies
   const selectedDatasetSlugs = useMemo(
     () => selectedDatasets.map((d) => d.slug || d.id).join(","),
     [selectedDatasets],
@@ -201,7 +189,7 @@ export default function TimeSeriesPage() {
   const debouncedChartType = useDebounce(chartType, 500);
   const debouncedAnalysisModel = useDebounce(analysisModel, 500);
 
-  // IMPROVED: Update URL when selections change (with debouncing)
+  // Update URL when selections change (with debouncing)
   useEffect(() => {
     if (!initializedFromUrl.current) return;
 
@@ -225,7 +213,7 @@ export default function TimeSeriesPage() {
     router,
   ]);
 
-  // IMPROVED: Validate focus coordinates in real-time
+  // Validate focus coordinates in real-time
   useEffect(() => {
     if (focusCoordinates.trim() === "") {
       setCoordinateValidation({ isValid: true, errors: [] });
@@ -239,12 +227,12 @@ export default function TimeSeriesPage() {
     });
   }, [focusCoordinates]);
 
-  // FIXED: Memoized chart data (already transformed in hook)
+  // Memoized chart data (already transformed in hook)
   const chartData = useMemo(() => {
     return data; // Data is already in chart-ready format from the hook
   }, [data]);
 
-  // IMPROVED: Handle Extract button click with validation
+  // Handle Extract button click with validation
   const handleExtract = useCallback(async () => {
     if (selectedDatasets.length === 0) {
       toast.error("Please select at least one dataset");
@@ -259,7 +247,7 @@ export default function TimeSeriesPage() {
       return;
     }
 
-    // FIXED: Send UUIDs to API (backend uses them for database lookup)
+    // Send UUIDs to API (backend uses them for database lookup)
     const datasetIds = selectedDatasets.map((d) => d.id);
     setVisibleDatasets(new Set(datasetIds));
 
@@ -316,7 +304,7 @@ export default function TimeSeriesPage() {
     extractTimeSeries,
   ]);
 
-  // IMPROVED: Handle export with better error handling
+  // Handle export with better error handling
   const handleExport = useCallback(
     async (format: "csv" | "json" | "png") => {
       if (!data || data.length === 0) {
@@ -345,7 +333,7 @@ export default function TimeSeriesPage() {
     [data, exportData, selectedDatasets, dateRange],
   );
 
-  // IMPROVED: Show error toast when API error occurs
+  // Show error toast when API error occurs
   useEffect(() => {
     if (error) {
       toast.error(error);
@@ -353,7 +341,7 @@ export default function TimeSeriesPage() {
   }, [error]);
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex flex-col">
       {/* Header */}
       <header className="bg-background border-b px-6 py-4">
         <div className="flex items-center justify-between">
@@ -562,11 +550,6 @@ export default function TimeSeriesPage() {
                 statistics={statistics}
                 metadata={metadata}
               />
-
-              {/* Data Table Component */}
-              {data && data.length > 0 && (
-                <DataTable data={data} selectedDatasets={selectedDatasets} />
-              )}
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>

@@ -18,8 +18,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   LineChart,
   Line,
@@ -42,8 +40,11 @@ import {
   AggregationMethod,
   type DatasetInfo,
   type ProcessingInfo,
+  formatValue,
+  getDisplayUnit,
+  convertUnits,
 } from "@/hooks/use-timeseries";
-import { X } from "lucide-react";
+import { DataTable } from "./DataTable";
 
 type NormalizationMode = "all" | "selected";
 
@@ -153,6 +154,14 @@ export function VisualizationPanel({
     return [minY - padding, maxY + padding];
   }, [chartData, visibleDatasets]);
 
+  // Get display unit for Y-axis label
+  const yAxisUnit = useMemo(() => {
+    if (!metadata || selectedDatasets.length === 0) return "";
+    const firstDataset = selectedDatasets[0];
+    const originalUnit = metadata[firstDataset.id]?.units || "";
+    return getDisplayUnit(originalUnit);
+  }, [metadata, selectedDatasets]);
+
   const renderChart = () => {
     const colors = [
       "#8884d8",
@@ -170,18 +179,39 @@ export function VisualizationPanel({
     const visibleDatasetIds = Array.from(visibleDatasets);
     const commonProps = {
       data: chartData,
-      margin: { top: 5, right: 30, left: 20, bottom: 5 },
+      margin: { top: 5, right: 30, left: 60, bottom: 5 },
     };
 
-    // Custom Y-axis tick formatter for better readability
+    // Enhanced Y-axis tick formatter
     const formatYAxis = (value: number) => {
+      // For very small numbers, use more precision
+      if (Math.abs(value) < 0.01) {
+        return value.toFixed(4);
+      }
+      // For moderate numbers
+      if (Math.abs(value) < 1) {
+        return value.toFixed(3);
+      }
+      // For large numbers, use k notation
       if (Math.abs(value) >= 1000) {
         return (value / 1000).toFixed(1) + "k";
       }
-      if (Math.abs(value) < 0.01) {
-        return value.toExponential(2);
-      }
       return value.toFixed(2);
+    };
+
+    // Enhanced tooltip formatter with unit display
+    const formatTooltipValue = (value: any, name: string) => {
+      if (typeof value !== "number" || isNaN(value) || value === null) {
+        return "-";
+      }
+
+      // Find the dataset to get the original unit
+      const dataset = selectedDatasets.find(
+        (d) => d.id === name || d.name === name,
+      );
+      const originalUnit = dataset ? metadata?.[dataset.id]?.units : "";
+
+      return formatValue(value, yAxisUnit, true);
     };
 
     switch (chartType) {
@@ -201,11 +231,17 @@ export function VisualizationPanel({
               domain={yDomain}
               tickFormatter={formatYAxis}
               width={80}
+              label={{
+                value: yAxisUnit,
+                angle: -90,
+                position: "insideLeft",
+                style: { textAnchor: "middle", fontSize: 12 },
+              }}
             />
             <RechartsTooltip
-              formatter={(value: any) =>
-                typeof value === "number" ? value.toFixed(4) : value
-              }
+              formatter={formatTooltipValue}
+              labelStyle={{ fontWeight: "bold" }}
+              contentStyle={{ fontSize: 12 }}
             />
             <Legend />
             {selectedDatasets.map(
@@ -242,11 +278,16 @@ export function VisualizationPanel({
               domain={yDomain}
               tickFormatter={formatYAxis}
               width={80}
+              label={{
+                value: yAxisUnit,
+                angle: -90,
+                position: "insideLeft",
+                style: { textAnchor: "middle", fontSize: 12 },
+              }}
             />
             <RechartsTooltip
-              formatter={(value: any) =>
-                typeof value === "number" ? value.toFixed(4) : value
-              }
+              formatter={formatTooltipValue}
+              contentStyle={{ fontSize: 12 }}
             />
             <Legend />
             {selectedDatasets.map(
@@ -266,6 +307,29 @@ export function VisualizationPanel({
       case ChartType.AREA:
         return (
           <AreaChart {...commonProps}>
+            <defs>
+              {selectedDatasets.map((dataset, idx) => (
+                <linearGradient
+                  key={`gradient-${dataset.id}`}
+                  id={`gradient-${dataset.id}`}
+                  x1="0"
+                  y1="0"
+                  x2="0"
+                  y2="1"
+                >
+                  <stop
+                    offset="5%"
+                    stopColor={colors[idx % colors.length]}
+                    stopOpacity={0.8}
+                  />
+                  <stop
+                    offset="95%"
+                    stopColor={colors[idx % colors.length]}
+                    stopOpacity={0}
+                  />
+                </linearGradient>
+              ))}
+            </defs>
             <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
             <XAxis
               dataKey="date"
@@ -279,11 +343,16 @@ export function VisualizationPanel({
               domain={yDomain}
               tickFormatter={formatYAxis}
               width={80}
+              label={{
+                value: yAxisUnit,
+                angle: -90,
+                position: "insideLeft",
+                style: { textAnchor: "middle", fontSize: 12 },
+              }}
             />
             <RechartsTooltip
-              formatter={(value: any) =>
-                typeof value === "number" ? value.toFixed(4) : value
-              }
+              formatter={formatTooltipValue}
+              contentStyle={{ fontSize: 12 }}
             />
             <Legend />
             {selectedDatasets.map(
@@ -295,8 +364,8 @@ export function VisualizationPanel({
                     dataKey={dataset.id}
                     name={(dataset as any).datasetName || dataset.name}
                     stroke={colors[idx % colors.length]}
-                    fill={colors[idx % colors.length]}
-                    fillOpacity={0.6}
+                    fillOpacity={1}
+                    fill={`url(#gradient-${dataset.id})`}
                   />
                 ),
             )}
@@ -319,11 +388,17 @@ export function VisualizationPanel({
               domain={yDomain}
               tickFormatter={formatYAxis}
               width={80}
+              label={{
+                value: yAxisUnit,
+                angle: -90,
+                position: "insideLeft",
+                style: { textAnchor: "middle", fontSize: 12 },
+              }}
             />
             <RechartsTooltip
-              formatter={(value: any) =>
-                typeof value === "number" ? value.toFixed(4) : value
-              }
+              formatter={formatTooltipValue}
+              cursor={{ strokeDasharray: "3 3" }}
+              contentStyle={{ fontSize: 12 }}
             />
             <Legend />
             {selectedDatasets.map(
@@ -341,22 +416,20 @@ export function VisualizationPanel({
         );
 
       default:
-        return null;
+        return <div>Chart type not supported</div>;
     }
   };
 
   return (
-    <div className="space-y-4">
-      {/* Visualization Controls */}
+    <div className="space-y-6">
+      {/* Controls */}
       <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-xl">Visualization Controls</CardTitle>
-          </div>
+        <CardHeader>
+          <CardTitle className="text-lg">Visualization Controls</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Date Range */}
-          <div className="flex items-center gap-4">
+          {/* Date Range & Chart Type */}
+          <div className="flex items-end gap-4">
             <div className="flex-1 space-y-1">
               <label className="text-sm font-medium">Start Date</label>
               <Input
@@ -383,7 +456,8 @@ export function VisualizationPanel({
                 }
               />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex-1 space-y-1">
+              <label className="text-sm font-medium">Chart Type</label>
               <Select
                 value={chartType}
                 onValueChange={(v) => setChartType(v as ChartType)}
@@ -471,6 +545,23 @@ export function VisualizationPanel({
                 </Select>
               </div>
 
+              {/* Normalization Options */}
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Normalization</label>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="normalize"
+                    checked={normalize}
+                    onCheckedChange={(checked) =>
+                      setNormalize(checked as boolean)
+                    }
+                  />
+                  <label htmlFor="normalize" className="text-sm">
+                    Normalize (0-1)
+                  </label>
+                </div>
+              </div>
+
               {analysisModel === AnalysisModel.MOVING_AVG && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
@@ -508,149 +599,6 @@ export function VisualizationPanel({
               </p>
             </div>
           </div>
-
-          {/* Normalization Options */}
-          <div className="space-y-3 border-t pt-4">
-            <h4 className="text-md font-medium">Normalization Options</h4>
-
-            <div className="space-y-4">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="normalize"
-                  checked={normalize}
-                  onCheckedChange={(checked) =>
-                    setNormalize(checked as boolean)
-                  }
-                />
-                <label htmlFor="normalize" className="text-sm">
-                  Normalize values (0-1)
-                </label>
-              </div>
-
-              {normalize && (
-                <div className="space-y-4 pl-6">
-                  <RadioGroup
-                    value={normalizationMode}
-                    onValueChange={(value) =>
-                      setNormalizationMode(value as NormalizationMode)
-                    }
-                  >
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="all" id="normalize-all" />
-                      <Label htmlFor="normalize-all" className="font-normal">
-                        Normalize all data
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem
-                        value="selected"
-                        id="normalize-selected"
-                      />
-                      <Label
-                        htmlFor="normalize-selected"
-                        className="font-normal"
-                      >
-                        Normalize specific coordinates only
-                      </Label>
-                    </div>
-                  </RadioGroup>
-
-                  {normalizationMode === "selected" && (
-                    <div className="border-muted space-y-3 border-l-2 pl-6">
-                      <div className="flex items-end gap-2">
-                        <div className="flex-1">
-                          <Label htmlFor="temp-lat" className="text-xs">
-                            Latitude
-                          </Label>
-                          <Input
-                            id="temp-lat"
-                            type="number"
-                            step="0.0001"
-                            placeholder="e.g., 40.7128"
-                            value={tempLat}
-                            onChange={(e) => setTempLat(e.target.value)}
-                            className="h-8"
-                          />
-                        </div>
-                        <div className="flex-1">
-                          <Label htmlFor="temp-lon" className="text-xs">
-                            Longitude
-                          </Label>
-                          <Input
-                            id="temp-lon"
-                            type="number"
-                            step="0.0001"
-                            placeholder="e.g., -74.0060"
-                            value={tempLon}
-                            onChange={(e) => setTempLon(e.target.value)}
-                            className="h-8"
-                          />
-                        </div>
-                        <Button
-                          onClick={addCoordinate}
-                          size="sm"
-                          className="h-8"
-                        >
-                          Add
-                        </Button>
-                      </div>
-
-                      {selectedCoordinates.length > 0 && (
-                        <div className="space-y-2">
-                          <Label className="text-xs font-medium">
-                            Selected Coordinates:
-                          </Label>
-                          <div className="space-y-1">
-                            {selectedCoordinates.map((coord, index) => (
-                              <div
-                                key={index}
-                                className="bg-muted/50 flex items-center justify-between rounded px-2 py-1 text-xs"
-                              >
-                                <span className="font-mono">
-                                  {coord.lat?.toFixed(4)},{" "}
-                                  {coord.lon?.toFixed(4)}
-                                </span>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => removeCoordinate(index)}
-                                  className="h-5 w-5 p-0"
-                                >
-                                  <X className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {selectedCoordinates.length === 0 && (
-                        <p className="text-muted-foreground text-xs italic">
-                          No coordinates selected. Add coordinates above to
-                          normalize specific locations.
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="text-muted-foreground rounded bg-blue-50 p-2 text-xs dark:bg-blue-950/20">
-                    {normalizationMode === "all" ? (
-                      <p>
-                        All data points will be normalized to a 0-1 scale based
-                        on the min/max values across all datasets.
-                      </p>
-                    ) : (
-                      <p>
-                        Only data from the selected coordinates will be
-                        normalized. Other data points will retain their original
-                        values.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
         </CardContent>
       </Card>
 
@@ -666,11 +614,11 @@ export function VisualizationPanel({
                     {processingInfo.totalPoints} data points •{" "}
                     {processingInfo.datasetsProcessed} datasets • Processed in{" "}
                     {processingInfo.processingTime}
-                    {yDomain && (
+                    {yDomain && yAxisUnit && (
                       <>
                         {" "}
                         • Y-axis range: {yDomain[0].toFixed(2)} to{" "}
-                        {yDomain[1].toFixed(2)}
+                        {yDomain[1].toFixed(2)} {yAxisUnit}
                       </>
                     )}
                   </CardDescription>
@@ -679,7 +627,7 @@ export function VisualizationPanel({
             </div>
           </CardHeader>
           <CardContent>
-            <div className="h-[500px]">
+            <div className="h-[500px]" data-chart-container>
               <ResponsiveContainer width="100%" height="100%">
                 {renderChart()}
               </ResponsiveContainer>
@@ -688,59 +636,96 @@ export function VisualizationPanel({
         </Card>
       )}
 
+      {/* Data Table */}
+      {chartData.length > 0 && (
+        <DataTable
+          data={chartData}
+          selectedDatasets={selectedDatasets}
+          metadata={metadata}
+          yAxisUnit={yAxisUnit}
+        />
+      )}
+
       {/* Statistics */}
       {statistics && Object.keys(statistics).length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="text-sm">Statistical Summary</CardTitle>
+            <CardDescription>
+              Statistics shown in {yAxisUnit || "original units"}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
               {Object.entries(statistics).map(
-                ([datasetId, stats]: [string, any]) => (
-                  <Card key={datasetId} className="p-3">
-                    <h4 className="mb-2 text-sm font-medium">
-                      {metadata?.[datasetId]?.name || datasetId}
-                    </h4>
-                    <div className="space-y-1 text-xs">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Min:</span>
-                        <span className="font-mono">
-                          {stats.min.toFixed(2)}
-                        </span>
+                ([datasetId, stats]: [string, any]) => {
+                  const originalUnit = metadata?.[datasetId]?.units || "";
+
+                  // Debug logging
+                  console.log("Statistics for", datasetId, {
+                    originalStats: stats,
+                    originalUnit,
+                    yAxisUnit,
+                  });
+
+                  // Convert statistics to display units
+                  const convertedStats = {
+                    min: convertUnits(stats.min || 0, originalUnit).value,
+                    max: convertUnits(stats.max || 0, originalUnit).value,
+                    mean: convertUnits(stats.mean || 0, originalUnit).value,
+                    std: convertUnits(stats.std || 0, originalUnit).value,
+                    trend: convertUnits(stats.trend || 0, originalUnit).value,
+                  };
+
+                  console.log("Converted stats:", convertedStats);
+
+                  return (
+                    <Card key={datasetId} className="p-3">
+                      <h4 className="mb-2 text-sm font-medium">
+                        {metadata?.[datasetId]?.name || datasetId}
+                      </h4>
+                      <div className="space-y-1 text-xs">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Min:</span>
+                          <span className="font-mono">
+                            {formatValue(convertedStats.min, yAxisUnit)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Max:</span>
+                          <span className="font-mono">
+                            {formatValue(convertedStats.max, yAxisUnit)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Mean:</span>
+                          <span className="font-mono">
+                            {formatValue(convertedStats.mean, yAxisUnit)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Std:</span>
+                          <span className="font-mono">
+                            {formatValue(convertedStats.std, yAxisUnit)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Trend:</span>
+                          <span
+                            className={`font-mono ${
+                              convertedStats.trend >= 0
+                                ? "text-green-600"
+                                : "text-red-600"
+                            }`}
+                          >
+                            {convertedStats.trend >= 0 ? "+" : ""}
+                            {formatValue(convertedStats.trend, yAxisUnit)}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Max:</span>
-                        <span className="font-mono">
-                          {stats.max.toFixed(2)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Mean:</span>
-                        <span className="font-mono">
-                          {stats.mean.toFixed(2)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Std:</span>
-                        <span className="font-mono">
-                          {stats.std.toFixed(2)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Trend:</span>
-                        <span
-                          className={`font-mono ${
-                            stats.trend >= 0 ? "text-green-600" : "text-red-600"
-                          }`}
-                        >
-                          {stats.trend >= 0 ? "+" : ""}
-                          {stats.trend.toFixed(4)}
-                        </span>
-                      </div>
-                    </div>
-                  </Card>
-                ),
+                    </Card>
+                  );
+                },
               )}
             </div>
           </CardContent>
