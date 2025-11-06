@@ -452,7 +452,11 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
     // Initialize Cesium viewer
     useEffect(() => {
-      if (!containerRef.current || viewerRef.current || initializingViewerRef.current)
+      if (
+        !containerRef.current ||
+        viewerRef.current ||
+        initializingViewerRef.current
+      )
         return;
 
       const initViewer = async () => {
@@ -687,7 +691,12 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
       const timer = setTimeout(initViewer, 100);
       return () => clearTimeout(timer);
-    }, [onRegionClick, currentDataset, boundaryLinesVisible, geographicLinesVisible]);
+    }, [
+      onRegionClick,
+      currentDataset,
+      boundaryLinesVisible,
+      geographicLinesVisible,
+    ]);
 
     // Cleanup
     const applyRasterLayers = useCallback(
@@ -746,9 +755,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
               ),
             });
 
-            const layer = viewer.scene.imageryLayers.addImageryProvider(
-              provider,
-            );
+            const layer =
+              viewer.scene.imageryLayers.addImageryProvider(provider);
             layer.alpha = rasterOpacity;
             layer.brightness = 1.0;
             layer.contrast = 1.0;

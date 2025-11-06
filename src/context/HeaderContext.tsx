@@ -34,6 +34,30 @@ type DatabaseDataset = {
   updatedAt: string;
 };
 
+type DatabaseDataset = {
+  id: string;
+  sourceName: string;
+  datasetName: string;
+  layerParameter: string;
+  statistic: string;
+  datasetType: string;
+  levels: string;
+  levelValues: string | null;
+  levelUnits: string | null;
+  stored: string;
+  inputFile: string;
+  keyVariable: string;
+  units: string;
+  spatialResolution: string;
+  engine: string;
+  kerchunkPath: string | null;
+  origLocation: string;
+  startDate: string;
+  endDate: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type AppStateContextType = ReturnType<typeof useAppStateInternal>;
 
 const AppStateContext = createContext<AppStateContextType | undefined>(

@@ -416,6 +416,35 @@ export function SideButtons({
           </motion.div>
         )}
       </AnimatePresence>
+      {/* Dataset Selection Card */}
+      <AnimatePresence>
+        {showDatasetCard && (
+          <motion.div
+            ref={datasetCardRef}
+            initial={{ x: -100, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: -100, opacity: 0 }}
+            transition={{ duration: 0.3, ease: 'easeInOut' }}
+            className="z-9999 pointer-events-auto fixed left-4 top-1/2 w-96 -translate-y-1/2"
+          >
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center justify-between text-lg">
+                  <span>Select Datasets</span>
+                  <Badge variant="secondary">
+                    {selectedDatasets.size} selected
+                  </Badge>
+                </CardTitle>
+                <CardDescription>
+                  Choose datasets to visualize on the globe
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="max-h-96 space-y-3 overflow-y-auto">
+                {isLoading && (
+                  <div className="rounded border border-neutral-600 bg-neutral-800/50 p-3 text-sm text-slate-300">
+                    Loading datasets...
+                  </div>
+                )}
 
       {/* Dataset Selection Card */}
       <AnimatePresence>
