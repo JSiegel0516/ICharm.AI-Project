@@ -22,47 +22,175 @@ const ColorBar: React.FC<ColorBarProps> = ({
   const [previousPosition, setPreviousPosition] = useState({ x: 24, y: 24 });
   const colorBarRef = useRef<HTMLDivElement>(null);
 
-  const baseUnitRaw = rasterMeta?.units ?? dataset.units ?? "";
-  const normalizedUnit = baseUnitRaw.trim();
-
   const defaultUnitSymbol = useMemo(() => {
-    if (!normalizedUnit) return "";
-    const lower = normalizedUnit.toLowerCase();
-    if (lower.includes("degc") || lower.includes("celsius")) return "°C";
-    if (lower.includes("degf") || lower.includes("fahrenheit")) return "°F";
-    if (lower.includes("degk")) return "K";
-    return normalizedUnit;
-  }, [normalizedUnit]);
+    const rawCandidates = [dataset.units, rasterMeta?.units].filter(
+      (value): value is string =>
+        typeof value === "string" && value.trim() !== "",
+    );
+
+    let fallback = "";
+
+    for (const raw of rawCandidates) {
+      const normalized = raw.trim();
+      const lower = normalized.toLowerCase();
+      const alphaOnly = lower.replace(/[^a-z]/g, "");
+
+      const isCelsius =
+        normalized.includes("℃") ||
+        lower.includes("celsius") ||
+        lower.includes("celcius") ||
+        lower.includes("°c") ||
+        lower.includes("degc") ||
+        alphaOnly === "c";
+      if (isCelsius) {
+        return "°C";
+      }
+
+      const isFahrenheit =
+        normalized.includes("℉") ||
+        lower.includes("fahrenheit") ||
+        lower.includes("°f") ||
+        lower.includes("degf") ||
+        alphaOnly === "f";
+      if (isFahrenheit) {
+        return "°F";
+      }
+
+      const isKelvin =
+        normalized.includes("K") ||
+        lower.includes("kelvin") ||
+        lower.includes("°k") ||
+        lower.includes("degk") ||
+        alphaOnly === "k";
+      if (isKelvin) {
+        return "K";
+      }
+
+      if (!fallback) {
+        fallback = normalized;
+      }
+    }
+
+    if (!fallback && typeof dataset.dataType === "string") {
+      const typeLower = dataset.dataType.toLowerCase();
+      if (typeLower === "temperature") {
+        return "°C";
+      }
+    }
+
+    return fallback;
+  }, [dataset.units, rasterMeta?.units, dataset.dataType]);
+
+  const hasTemperatureHints = useMemo(() => {
+    const parts: string[] = [];
+
+    const typeLower =
+      typeof dataset?.dataType === "string"
+        ? dataset.dataType.toLowerCase()
+        : "";
+    if (typeLower) {
+      parts.push(typeLower);
+    }
+
+    const possibleKeys: Array<string | undefined | null> = [
+      dataset?.name,
+      dataset?.description,
+      (dataset as any)?.category,
+      dataset?.backend?.datasetName,
+      dataset?.backend?.layerParameter,
+      dataset?.backend?.datasetType,
+    ];
+    possibleKeys.forEach((value) => {
+      if (typeof value === "string" && value.trim()) {
+        parts.push(value);
+      }
+    });
+
+    if (!parts.length) {
+      return false;
+    }
+
+    const combined = parts.join(" ").toLowerCase();
+    return (
+      combined.includes("temp") ||
+      combined.includes("°c") ||
+      combined.includes("degc") ||
+      combined.includes("sea surface") ||
+      combined.includes("sst") ||
+      combined.includes("surface temp")
+    );
+  }, [dataset]);
 
   const allowUnitToggle = useMemo(() => {
-    return dataset.dataType === "temperature" && defaultUnitSymbol === "°C";
-  }, [dataset.dataType, defaultUnitSymbol]);
+    return defaultUnitSymbol === "°C" && hasTemperatureHints;
+  }, [defaultUnitSymbol, hasTemperatureHints]);
 
   const resolvedMin = rasterMeta?.min ?? dataset.colorScale.min;
   const resolvedMax = rasterMeta?.max ?? dataset.colorScale.max;
   const safeMin = Number.isFinite(resolvedMin) ? Number(resolvedMin) : 0;
   const safeMax = Number.isFinite(resolvedMax) ? Number(resolvedMax) : safeMin;
-  const labelCount = Math.max(
-    dataset.colorScale.labels.length || 0,
-    dataset.colorScale.colors.length || 0,
-    2,
-  );
+  const numericColorScaleLabels = useMemo(() => {
+    const labels = dataset.colorScale.labels;
+    if (!Array.isArray(labels) || !labels.length) {
+      return null;
+    }
+
+    const parsed = labels.map((label) => {
+      if (typeof label === "number" && Number.isFinite(label)) {
+        return label;
+      }
+
+      if (typeof label === "string") {
+        const match = label.trim().match(/-?\d+(\.\d+)?/);
+        if (match) {
+          const numeric = Number(match[0]);
+          if (Number.isFinite(numeric)) {
+            return numeric;
+          }
+        }
+      }
+
+      return null;
+    });
+
+    if (parsed.every((value) => typeof value === "number")) {
+      return parsed as number[];
+    }
+    return null;
+  }, [dataset.colorScale.labels]);
+
+  const labelCount = useMemo(() => {
+    if (numericColorScaleLabels?.length) {
+      return numericColorScaleLabels.length;
+    }
+    return Math.max(
+      dataset.colorScale.labels.length || 0,
+      dataset.colorScale.colors.length || 0,
+      2,
+    );
+  }, [
+    dataset.colorScale.colors.length,
+    dataset.colorScale.labels.length,
+    numericColorScaleLabels,
+  ]);
 
   const convertToFahrenheit = (value: number) => (value * 9) / 5 + 32;
 
   const formatLabelValue = (value: number) => {
     if (!Number.isFinite(value)) return "–";
-    const abs = Math.abs(value);
-    if (abs >= 100 || abs === 0) return value.toFixed(0);
-    if (abs >= 10) return value.toFixed(1);
-    return value.toFixed(2);
+    const rounded = Math.round(value);
+    return (Object.is(rounded, -0) ? 0 : rounded).toString();
   };
 
   const getDefaultPosition = () => {
     return { x: 24, y: window.innerHeight - 180 };
   };
 
-  const getNumericLabels = () => {
+  const numericLabels = useMemo(() => {
+    if (numericColorScaleLabels?.length) {
+      return numericColorScaleLabels;
+    }
+
     if (labelCount <= 1 || Math.abs(safeMax - safeMin) < 1e-9) {
       return Array(labelCount).fill(safeMin);
     }
@@ -70,17 +198,15 @@ const ColorBar: React.FC<ColorBarProps> = ({
     return Array.from({ length: labelCount }, (_, index) => {
       return safeMin + ((safeMax - safeMin) * index) / (labelCount - 1);
     });
-  };
+  }, [labelCount, numericColorScaleLabels, safeMax, safeMin]);
 
-  const numericLabels = getNumericLabels();
-
-  const getDisplayLabels = () => {
+  const displayLabels = useMemo(() => {
     const values =
       allowUnitToggle && unit === "fahrenheit"
         ? numericLabels.map(convertToFahrenheit)
         : numericLabels;
     return values.map((val) => formatLabelValue(val));
-  };
+  }, [allowUnitToggle, unit, numericLabels]);
 
   const getUnitSymbol = () => {
     if (allowUnitToggle) {
@@ -260,7 +386,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     }
   }, [showDropdown]);
 
-  const displayLabels = getDisplayLabels();
   const unitSymbol = getUnitSymbol();
 
   return (
@@ -302,7 +427,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
           id="temperature"
           className="pointer-events-auto rounded-xl border border-gray-700/30 bg-neutral-800/60 px-6 py-6 text-blue-100 backdrop-blur-sm"
         >
-          <div className="-mt-2 mb-2 flex h-4 w-full items-center justify-between">
+          <div className="-mt-2 mb-2 flex w-full items-center justify-between gap-2">
             <button
               onClick={handleCollapseToggle}
               className="z-10 -m-1 flex cursor-pointer items-center p-1 text-blue-300 transition-colors hover:text-blue-200 focus:outline-none"
@@ -324,63 +449,66 @@ const ColorBar: React.FC<ColorBarProps> = ({
               </div>
             </div>
 
-            <button
-              onClick={handleResetPosition}
-              className="z-10 -m-1 flex cursor-pointer items-center p-1 text-blue-300 transition-colors hover:text-blue-200 focus:outline-none"
-              title="Reset to default position"
-              type="button"
-            >
-              <RotateCcw className="h-3 w-3" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleResetPosition}
+                className="z-10 -m-1 flex cursor-pointer items-center p-1 text-blue-300 transition-colors hover:text-blue-200 focus:outline-none"
+                title="Reset to default position"
+                type="button"
+              >
+                <RotateCcw className="h-3 w-3" />
+              </button>
+            </div>
           </div>
 
           <div className="relative mt-2 mb-12">
-            {allowUnitToggle ? (
-              <>
-                <button
-                  onClick={handleDropdownToggle}
-                  className="flex w-full items-center justify-between text-sm font-medium text-blue-200 transition-colors hover:text-white focus:outline-none"
-                  type="button"
-                >
-                  <span>Unit of measurement</span>
-                  <ChevronDown
-                    className={`h-4 w-4 transition-transform ${showDropdown ? "rotate-180" : ""}`}
-                  />
-                </button>
+            <div className="flex w-full items-center justify-between text-sm font-medium text-blue-200">
+              <span>Unit of measurement</span>
 
-                {showDropdown && !isDragging && (
-                  <div className="absolute top-8 left-0 z-50 w-full rounded-md border border-gray-200 bg-white py-1 shadow-lg">
-                    <button
-                      onClick={() => handleUnitChange("celsius")}
-                      className={`w-full px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 focus:outline-none ${
-                        unit === "celsius"
-                          ? "bg-blue-50 text-blue-600"
-                          : "text-gray-700"
-                      }`}
-                      type="button"
-                    >
-                      Celsius (°C)
-                    </button>
-                    <button
-                      onClick={() => handleUnitChange("fahrenheit")}
-                      className={`w-full px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 focus:outline-none ${
-                        unit === "fahrenheit"
-                          ? "bg-blue-50 text-blue-600"
-                          : "text-gray-700"
-                      }`}
-                      type="button"
-                    >
-                      Fahrenheit (°F)
-                    </button>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="flex w-full items-center justify-between text-sm font-medium text-blue-200">
-                <span>Unit of measurement</span>
+              {allowUnitToggle ? (
+                <div className="relative">
+                  <button
+                    onClick={handleDropdownToggle}
+                    className="flex items-center gap-1 rounded px-2 py-1 text-xs font-semibold text-blue-200 transition-colors hover:text-white focus:outline-none"
+                    type="button"
+                  >
+                    <span>{unitSymbol}</span>
+                    <ChevronDown
+                      className={`h-3 w-3 transition-transform ${showDropdown ? "rotate-180" : ""}`}
+                    />
+                  </button>
+
+                  {showDropdown && !isDragging && (
+                    <div className="absolute top-7 right-0 z-50 w-32 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+                      <button
+                        onClick={() => handleUnitChange("celsius")}
+                        className={`w-full px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 focus:outline-none ${
+                          unit === "celsius"
+                            ? "bg-blue-50 text-blue-600"
+                            : "text-gray-700"
+                        }`}
+                        type="button"
+                      >
+                        Celsius (°C)
+                      </button>
+                      <button
+                        onClick={() => handleUnitChange("fahrenheit")}
+                        className={`w-full px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 focus:outline-none ${
+                          unit === "fahrenheit"
+                            ? "bg-blue-50 text-blue-600"
+                            : "text-gray-700"
+                        }`}
+                        type="button"
+                      >
+                        Fahrenheit (°F)
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
                 <span className="text-blue-100">{unitSymbol || "–"}</span>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           <div className="relative">
@@ -390,10 +518,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
                 background: `linear-gradient(to right, ${dataset.colorScale.colors.join(", ")})`,
               }}
             />
-
-            <div className="absolute -top-[65px] right-6 text-xs">
-              <span className="font-medium text-blue-200">{unitSymbol}</span>
-            </div>
 
             <div className="absolute -top-4 left-0 flex w-60 justify-between text-xs">
               {displayLabels.map((label, index) => (
