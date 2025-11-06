@@ -179,58 +179,61 @@ export interface UseTimeSeriesAPI {
  * Unit conversion configuration
  * Add new unit conversions here
  */
-const UNIT_CONVERSIONS: Record<string, {
-  convert: (value: number) => { value: number; unit: string };
-  description: string;
-  alwaysConvert?: boolean;  // If true, always convert. If false, only convert when unreadable
-  readabilityThreshold?: { min?: number; max?: number };  // Values outside this are "unreadable"
-}> = {
+const UNIT_CONVERSIONS: Record<
+  string,
+  {
+    convert: (value: number) => { value: number; unit: string };
+    description: string;
+    alwaysConvert?: boolean; // If true, always convert. If false, only convert when unreadable
+    readabilityThreshold?: { min?: number; max?: number }; // Values outside this are "unreadable"
+  }
+> = {
   "m/s": {
     description: "Meters per second (velocity)",
-    alwaysConvert: false,  // Only convert if too small
-    readabilityThreshold: { min: 0.001 },  // Convert if < 0.001 m/s
+    alwaysConvert: false, // Only convert if too small
+    readabilityThreshold: { min: 0.001 }, // Convert if < 0.001 m/s
     convert: (value: number) => {
       // Convert to cm/day
       const cmPerDay = value * 86400 * 100; // seconds/day * cm/m
-      
+
       // Use mm/day for very small values
       if (Math.abs(cmPerDay) < 0.1) {
         const mmPerDay = value * 86400 * 1000;
         return { value: mmPerDay, unit: "mm/day" };
       }
-      
+
       return { value: cmPerDay, unit: "cm/day" };
-    }
+    },
   },
-  "K": {
+  K: {
     description: "Kelvin (temperature)",
-    alwaysConvert: true,  // Always convert K to °C
+    alwaysConvert: true, // Always convert K to °C
     convert: (value: number) => ({
       value: value - 273.15,
-      unit: "°C"
-    })
+      unit: "°C",
+    }),
   },
-  "Pa": {
+  Pa: {
     description: "Pascal (pressure)",
     alwaysConvert: false,
-    readabilityThreshold: { min: 1000 },  // Convert if > 1000 Pa
+    readabilityThreshold: { min: 1000 }, // Convert if > 1000 Pa
     convert: (value: number) => ({
       value: value / 100,
-      unit: "hPa"
-    })
+      unit: "hPa",
+    }),
   },
   "kg/m^3": {
     description: "Density",
-    alwaysConvert: true,  // Always fix formatting
+    alwaysConvert: true, // Always fix formatting
     convert: (value: number) => ({
       value: value,
-      unit: "kg/m³"  // Just fix formatting
-    })
+      unit: "kg/m³", // Just fix formatting
+    }),
   },
-  "m": {
+  m: {
     description: "Meters (distance/depth)",
     alwaysConvert: false,
-    readabilityThreshold: { min: 0.01, max: 999 },  // Convert if < 0.01 or > 999
+    readabilityThreshold: { min: 0.01, max: 999 }, // Convert if < 0.01 or > 999
     convert: (value: number) => {
       // Use cm for small values
       if (Math.abs(value) < 1) {
@@ -241,43 +244,46 @@ const UNIT_CONVERSIONS: Record<string, {
         return { value: value / 1000, unit: "km" };
       }
       return { value, unit: "m" };
-    }
+    },
   },
   "kg/m^2/s": {
     description: "Precipitation rate",
-    alwaysConvert: true,  // mm/day is more standard
+    alwaysConvert: true, // mm/day is more standard
     convert: (value: number) => ({
-      value: value * 86400,  // Convert to mm/day
-      unit: "mm/day"
-    })
+      value: value * 86400, // Convert to mm/day
+      unit: "mm/day",
+    }),
   },
   "W/m^2": {
     description: "Power per unit area (radiation)",
-    alwaysConvert: true,  // Just fix formatting
+    alwaysConvert: true, // Just fix formatting
     convert: (value: number) => ({
       value: value,
-      unit: "W/m²"
-    })
-  }
+      unit: "W/m²",
+    }),
+  },
 };
 
 /**
  * Check if a value is "readable" based on threshold
  */
-function isReadable(value: number, threshold?: { min?: number; max?: number }): boolean {
+function isReadable(
+  value: number,
+  threshold?: { min?: number; max?: number },
+): boolean {
   if (!threshold) return true;
-  
+
   const absValue = Math.abs(value);
-  
+
   if (threshold.min !== undefined && absValue < threshold.min) {
-    return false;  // Too small
+    return false; // Too small
   }
-  
+
   if (threshold.max !== undefined && absValue > threshold.max) {
-    return false;  // Too large
+    return false; // Too large
   }
-  
-  return true;  // Within readable range
+
+  return true; // Within readable range
 }
 
 /**
@@ -288,7 +294,7 @@ function isReadable(value: number, threshold?: { min?: number; max?: number }): 
 export function convertUnits(
   value: number,
   originalUnit: string,
-  preferredUnit?: string
+  preferredUnit?: string,
 ): { value: number; unit: string } {
   // Handle null/undefined/NaN
   if (value === null || value === undefined || isNaN(value)) {
@@ -297,13 +303,13 @@ export function convertUnits(
 
   // Check if we have a conversion for this unit
   const conversion = UNIT_CONVERSIONS[originalUnit];
-  
+
   if (conversion) {
     // Decide whether to convert
-    const shouldConvert = 
-      conversion.alwaysConvert || 
+    const shouldConvert =
+      conversion.alwaysConvert ||
       !isReadable(value, conversion.readabilityThreshold);
-    
+
     if (shouldConvert) {
       try {
         return conversion.convert(value);
@@ -313,7 +319,7 @@ export function convertUnits(
       }
     }
   }
-  
+
   // No conversion needed - return as-is
   return { value, unit: originalUnit };
 }
@@ -324,14 +330,17 @@ export function convertUnits(
 export function formatValue(
   value: number,
   unit: string,
-  includeUnit = true
+  includeUnit = true,
 ): string {
   if (value === null || value === undefined || isNaN(value)) return "-";
-  
+
   let formatted: string;
-  
+
   // Scientific notation for very small/large numbers in original units
-  if (unit === "m/s" && (Math.abs(value) < 0.0001 || Math.abs(value) > 1000000)) {
+  if (
+    unit === "m/s" &&
+    (Math.abs(value) < 0.0001 || Math.abs(value) > 1000000)
+  ) {
     formatted = value.toExponential(2);
   }
   // Regular formatting
@@ -342,7 +351,7 @@ export function formatValue(
   } else {
     formatted = value.toFixed(2);
   }
-  
+
   return includeUnit ? `${formatted} ${unit}` : formatted;
 }
 
@@ -520,9 +529,7 @@ export function useTimeSeries(baseURL: string = ""): UseTimeSeriesAPI {
   const [processingInfo, setProcessingInfo] = useState<ProcessingInfo | null>(
     null,
   );
-  const [availableDatasets, setAvailableDatasets] = useState<DatasetInfo[]>(
-    [],
-  );
+  const [availableDatasets, setAvailableDatasets] = useState<DatasetInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
@@ -578,7 +585,7 @@ export function useTimeSeries(baseURL: string = ""): UseTimeSeriesAPI {
           const originalUnit = metadata[datasetId]?.units || "";
           const converted = convertUnits(value, originalUnit);
           transformedPoint[datasetId] = converted.value;
-          
+
           // Store display unit in metadata if not already there
           if (metadata[datasetId] && !metadata[datasetId].displayUnit) {
             (metadata[datasetId] as any).displayUnit = converted.unit;
