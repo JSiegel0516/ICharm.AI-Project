@@ -1,3 +1,6 @@
 # Ignore artifacts:
+.venv
+.mypy_cache
 build
 coverage
+public

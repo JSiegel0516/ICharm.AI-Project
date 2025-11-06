@@ -8,6 +8,7 @@ AI-powered climate data exploration combining interactive visualization, tutoria
 - Chat assistant backed by the Hugging Face router and Meta Llama 3.1 Instruct model.
 - Lightweight RAG layer that injects tutorial context into the LLM.
 - Local embedding pipeline (via `@xenova/transformers`) for tutorial content.
+- Time series page for data set analysis
 
 ## Prerequisites
 
@@ -17,11 +18,19 @@ AI-powered climate data exploration combining interactive visualization, tutoria
 
 ## Installation
 
-1. Install dependencies:
+1. Install [pro-commit](https://pre-commit.com) hook
+
+   ```bash
+   pre-commit install
+   ```
+
+2. Install dependencies:
+
    ```bash
    npm install
    ```
-2. Create `.env.local` in the project root (same folder as `package.json`) and supply:
+
+3. Create `.env.local` in the project root (same folder as `package.json`) and supply:
 
    ```ini
    # Chat backend
@@ -34,7 +43,7 @@ AI-powered climate data exploration combining interactive visualization, tutoria
 
    Add any other app-specific settings you need (API base URL, etc.).
 
-3. To generate embeddings, run:
+4. To generate embeddings, run:
    node src/components/Scripts/embedTutorial.js
    This will train the chatbot to gain information about the icharm website
 
@@ -53,17 +62,34 @@ Install Docker before attempting to run the database
    ```
 2. Start the database (and optional services):
 
-   ```
-   docker compose -f docker/docker-compose.yml up -d
+   ```bash
+   # Start all services in the background
+   docker compose up -d
+
+   # Stop and remove all containers
+   docker compose down
    ```
 
-   After this, run
+   # IF YOU START TO GET API ERRORS FOR THE RASTERS, RUN:
 
-   ```
+   docker compose down -v
+   docker compose build
+   docker compose up -d
+
+   ```bash
+
+   # Generate SQL migrations based on your Drizzle schema
+   # Then apply those migrations to your database
    npx drizzle-kit generate && npx drizzle-kit migrate
+
+   # Populate the database with initial seed data
+   npm run db:seed
    ```
 
-   in project root to create correct table names in container
+   # If this gives an error, make sure the docker containers are running then try:
+
+   npm run db:push
+   npm run db:seed
 
 3. Verify connectivity from Node: (run from root)
 
@@ -75,8 +101,9 @@ Install Docker before attempting to run the database
    docker exec -it icharm-db psql -U icharm_user -d icharm
    to go into a psql terminal.
    Once in psql terminal, run:
-   SELECT \* FROM chat_messages ORDER BY created_at DESC LIMIT 10;
-   to if database successfully initialized
+   \dt
+   SELECT \* FROM metadata;
+   to if database tables are successfully initialized and metadata is seeded
 
 5. Update/confirm the `POSTGRES_URL` values in `.env.local` match the credentials you used in step 1. The defaults match the connection string shown above.
 

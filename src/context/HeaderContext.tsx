@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import React, {
   createContext,
@@ -6,9 +6,9 @@ import React, {
   useState,
   useCallback,
   useEffect,
-} from 'react';
-import type { Dataset, AppState, TemperatureUnit, RegionData } from '@/types';
-import { mockDatasets } from '@/utils/constants';
+} from "react";
+import type { Dataset, AppState, TemperatureUnit, RegionData } from "@/types";
+import { mockDatasets } from "@/utils/constants";
 
 type DatabaseDataset = {
   id: string;
@@ -37,16 +37,21 @@ type DatabaseDataset = {
 type AppStateContextType = ReturnType<typeof useAppStateInternal>;
 
 const AppStateContext = createContext<AppStateContextType | undefined>(
-  undefined
+  undefined,
 );
+
+// Certain datasets report "present" in metadata even though archives stop earlier.
+const DATASET_END_OVERRIDES: Record<string, string> = {
+  "Sea Surface Temperature – Optimum Interpolation CDR": "2015-12-31",
+};
 
 // Parse date strings from database (handles formats like "1854/1/1" or "9/1/2025" or "present")
 function parseDate(dateStr: string): Date {
-  if (!dateStr || dateStr === 'present' || dateStr.includes('present')) {
+  if (!dateStr || dateStr === "present" || dateStr.includes("present")) {
     return new Date();
   }
 
-  const parts = dateStr.split('/');
+  const parts = dateStr.split("/");
   if (parts.length === 3) {
     const [first, second, third] = parts.map((p) => parseInt(p));
 
@@ -73,62 +78,126 @@ function transformDataset(db: DatabaseDataset): Dataset {
     dataType: db.datasetType,
     units: db.units,
     // Add default colorScale based on parameter type
-    colorScale: generateColorScale(db.layerParameter, db.units),
+    colorScale: generateColorScale(db.datasetName, db.layerParameter, db.units),
     // Store full backend data for reference
     backend: {
       ...db,
       startDate: db.startDate,
-      endDate: db.endDate,
+      endDate: DATASET_END_OVERRIDES[db.datasetName] ?? db.endDate,
       spatialResolution: db.spatialResolution,
       datasetName: db.datasetName,
       datasetType: db.datasetType,
     },
     // Parse dates for easy use
     startDate: parseDate(db.startDate),
-    endDate: parseDate(db.endDate),
+    endDate: parseDate(DATASET_END_OVERRIDES[db.datasetName] ?? db.endDate),
   };
 }
 
-// Generate appropriate color scale based on parameter type
-function generateColorScale(parameter: string, units: string) {
+// Generate appropriate color scale based on dataset name and parameter type
+function generateColorScale(
+  datasetName: string,
+  parameter: string,
+  units: string,
+) {
+  const name = datasetName.toLowerCase();
   const param = parameter.toLowerCase();
 
-  // Temperature scales
+  // Check for Sea Surface Temperature first (more specific)
   if (
-    param.includes('temperature') ||
-    units.includes('degc') ||
-    units.includes('kelvin')
+    name.includes("sst") ||
+    name.includes("sea surface temperature") ||
+    name.includes("amsre") ||
+    name.includes("modis") ||
+    param.includes("sea surface")
   ) {
     return {
-      labels: ['-40°C', '-20°C', '0°C', '20°C', '40°C'],
-      colors: ['#0000ff', '#00ffff', '#00ff00', '#ffff00', '#ff0000'],
+      labels: ["-2°C", "5°C", "12°C", "18°C", "25°C", "32°C"],
+      colors: [
+        "#08306b", // Very dark blue (coldest)
+        "#2171b5", // Medium blue
+        "#6baed6", // Light blue
+        "#c6dbef", // Very pale blue
+        "#fcbba1", // Pale pink
+        "#fb6a4a", // Pink-red
+        "#ef3b2c", // Red
+        "#99000d", // Very dark red (warmest)
+      ],
+      min: -2,
+      max: 35,
+    };
+  }
+
+  // Air Temperature scales
+  if (
+    name.includes("air") ||
+    name.includes("airtemp") ||
+    param.includes("air temperature") ||
+    param.includes("temperature") ||
+    units.includes("degc") ||
+    units.includes("kelvin")
+  ) {
+    return {
+      labels: ["-40°C", "-20°C", "0°C", "20°C", "40°C"],
+      colors: [
+        "#313695", // Deep blue (coldest)
+        "#4575b4", // Blue
+        "#abd9e9", // Pale blue
+        "#ffffbf", // Pale yellow (neutral)
+        "#fdae61", // Orange
+        "#f46d43", // Red-orange
+        "#a50026", // Deep red (hottest)
+      ],
+      min: -40,
+      max: 40,
     };
   }
 
   // Precipitation scales
-  if (param.includes('precipitation') || units.includes('mm')) {
+  if (
+    name.includes("precip") ||
+    name.includes("precipitation") ||
+    name.includes("rain") ||
+    param.includes("precipitation") ||
+    units.includes("mm")
+  ) {
     return {
-      labels: ['0 mm', '5 mm', '10 mm', '15 mm', '20 mm'],
-      colors: ['#ffffff', '#a0d8ef', '#4682b4', '#1e3a8a', '#000080'],
+      labels: ["0", "100", "200", "300", "400", "500"],
+      colors: [
+        "#8B4513", // Saddle brown (very dry)
+        "#CD853F", // Peru/tan (dry)
+        "#F0E68C", // Khaki (slightly dry)
+        "#90EE90", // Light green (moderate)
+        "#00FA9A", // Medium spring green (wet)
+        "#48D1CC", // Medium turquoise (wetter)
+        "#4169E1", // Royal blue (extremely wet)
+        "#0000CD", // Medium blue (wettest)
+      ],
+      min: 0,
+      max: 500,
     };
   }
 
   // Wind/velocity scales
   if (
-    param.includes('velocity') ||
-    param.includes('wind') ||
-    units.includes('m/s')
+    param.includes("velocity") ||
+    param.includes("wind") ||
+    units.includes("m/s")
   ) {
     return {
-      labels: ['0 m/s', '2 m/s', '4 m/s', '6 m/s', '8 m/s'],
-      colors: ['#f0f0f0', '#90ee90', '#ffa500', '#ff4500', '#8b0000'],
+      labels: ["0 m/s", "2 m/s", "4 m/s", "6 m/s", "8 m/s"],
+      colors: ["#f0f0f0", "#90ee90", "#ffa500", "#ff4500", "#8b0000"],
+      min: 0,
+      max: 10,
     };
   }
 
   // Default scale
   return {
-    labels: ['Low', 'Medium-Low', 'Medium', 'Medium-High', 'High'],
-    colors: ['#440154', '#31688e', '#35b779', '#fde724', '#ff0000'],
+    labels: ["Low", "Medium-Low", "Medium", "Medium-High", "High"],
+    colors: ["#440154", "#31688e", "#35b779", "#fde724", "#ff0000"],
+    min: 0,
+    max: 100,
   };
 }
 
@@ -152,10 +221,10 @@ const useAppStateInternal = () => {
   });
 
   const [selectedYear, setSelectedYear] = useState<number>(
-    new Date().getFullYear()
+    new Date().getFullYear(),
   );
   const [temperatureUnit, setTemperatureUnit] =
-    useState<TemperatureUnit>('celsius');
+    useState<TemperatureUnit>("celsius");
   const [showRegionInfo, setShowRegionInfo] = useState<boolean>(false);
   const [regionInfoData, setRegionInfoData] = useState<{
     latitude: number;
@@ -165,10 +234,10 @@ const useAppStateInternal = () => {
     latitude: 21.25,
     longitude: -71.25,
     regionData: {
-      name: 'GPCP V2.3 Precipitation',
+      name: "GPCP V2.3 Precipitation",
       precipitation: 0.9,
       temperature: 24.5,
-      dataset: 'Global Precipitation Climatology Project',
+      dataset: "Global Precipitation Climatology Project",
     },
   });
 
@@ -200,14 +269,14 @@ const useAppStateInternal = () => {
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      const response = await fetch('/api/datasets', {
-        cache: 'no-store',
+      const response = await fetch("/api/datasets", {
+        cache: "no-store",
         signal,
       });
 
       if (!response.ok) {
         throw new Error(
-          `Dataset request failed with status ${response.status}`
+          `Dataset request failed with status ${response.status}`,
         );
       }
 
@@ -224,13 +293,13 @@ const useAppStateInternal = () => {
 
       setState((prev) => {
         if (!datasets.length) {
-          console.warn('No datasets returned from database, using mock data');
+          console.warn("No datasets returned from database, using mock data");
           return {
             ...prev,
             datasets: mockDatasets,
             currentDataset: mockDatasets[0],
             isLoading: false,
-            error: 'No datasets found in database',
+            error: "No datasets found in database",
           };
         }
 
@@ -253,7 +322,7 @@ const useAppStateInternal = () => {
         return false;
       }
 
-      console.error('Failed to fetch datasets from database:', error);
+      console.error("Failed to fetch datasets from database:", error);
 
       // Fallback to mock data on error
       setState((prev) => ({
@@ -262,7 +331,7 @@ const useAppStateInternal = () => {
         currentDataset: mockDatasets[0],
         isLoading: false,
         error:
-          error instanceof Error ? error.message : 'Failed to load datasets',
+          error instanceof Error ? error.message : "Failed to load datasets",
       }));
 
       return false;
@@ -320,7 +389,7 @@ export const AppStateProvider = ({
 export const useAppState = () => {
   const context = useContext(AppStateContext);
   if (!context) {
-    throw new Error('useAppState must be used within an AppStateProvider');
+    throw new Error("useAppState must be used within an AppStateProvider");
   }
   return context;
 };

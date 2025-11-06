@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Settings, X, Monitor, Globe, Eye, Zap, RotateCcw } from 'lucide-react';
-import { ModeToggle } from '@/components/ui/modetoggle';
+import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Settings, X, Monitor, Globe, Eye, Zap, RotateCcw } from "lucide-react";
+import { ModeToggle } from "@/components/ui/modetoggle";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -18,13 +18,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [settings, setSettings] = useState({
     // Appearance
-    theme: 'dark',
-    fontSize: 'medium',
-    colorContrast: 'default',
+    theme: "dark",
+    fontSize: "medium",
+    colorContrast: "default",
     reduceAnimations: false,
 
     // Accessibility
-    language: 'en',
+    language: "en",
     keyboardNavigation: true,
     screenReader: false,
     focusIndicators: true,
@@ -35,8 +35,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     highPrecision: false,
 
     // Performance
-    animationQuality: 'high',
-    cacheDuration: '6 hours',
+    animationQuality: "high",
+    cacheDuration: "6 hours",
   });
 
   const handleSave = () => {
@@ -46,19 +46,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const resetToDefaults = () => {
     setSettings({
-      theme: 'dark',
-      fontSize: 'medium',
-      colorContrast: 'default',
+      theme: "dark",
+      fontSize: "medium",
+      colorContrast: "default",
       reduceAnimations: false,
-      language: 'en',
+      language: "en",
       keyboardNavigation: true,
       screenReader: false,
       focusIndicators: true,
       autoRefresh: true,
       showDataPoints: true,
       highPrecision: false,
-      animationQuality: 'high',
-      cacheDuration: '6 hours',
+      animationQuality: "high",
+      cacheDuration: "6 hours",
     });
   };
 
@@ -70,43 +70,43 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const fontSizeOptions = [
-    { value: 'small', label: 'Small', size: 'text-sm' },
-    { value: 'medium', label: 'Medium', size: 'text-base' },
-    { value: 'large', label: 'Large', size: 'text-lg' },
-    { value: 'xlarge', label: 'Extra Large', size: 'text-xl' },
+    { value: "small", label: "Small", size: "text-sm" },
+    { value: "medium", label: "Medium", size: "text-base" },
+    { value: "large", label: "Large", size: "text-lg" },
+    { value: "xlarge", label: "Extra Large", size: "text-xl" },
   ];
 
   const languageOptions = [
-    { value: 'en', label: 'English' },
-    { value: 'es', label: 'Español' },
-    { value: 'fr', label: 'Français' },
-    { value: 'de', label: 'Deutsch' },
-    { value: 'zh', label: '中文' },
-    { value: 'ja', label: '日本語' },
-    { value: 'ko', label: '한국어' },
-    { value: 'ar', label: 'العربية' },
+    { value: "en", label: "English" },
+    { value: "es", label: "Español" },
+    { value: "fr", label: "Français" },
+    { value: "de", label: "Deutsch" },
+    { value: "zh", label: "中文" },
+    { value: "ja", label: "日本語" },
+    { value: "ko", label: "한국어" },
+    { value: "ar", label: "العربية" },
   ];
 
   const contrastOptions = [
     {
-      value: 'default',
-      label: 'Default',
-      preview: 'bg-linear-to-r from-blue-500 to-purple-600',
+      value: "default",
+      label: "Default",
+      preview: "bg-linear-to-r from-blue-500 to-purple-600",
     },
     {
-      value: 'high',
-      label: 'High Contrast',
-      preview: 'bg-linear-to-r from-yellow-400 to-red-600',
+      value: "high",
+      label: "High Contrast",
+      preview: "bg-linear-to-r from-yellow-400 to-red-600",
     },
     {
-      value: 'mono',
-      label: 'Monochrome',
-      preview: 'bg-linear-to-r from-gray-700 to-gray-900',
+      value: "mono",
+      label: "Monochrome",
+      preview: "bg-linear-to-r from-gray-700 to-gray-900",
     },
     {
-      value: 'inverted',
-      label: 'Inverted',
-      preview: 'bg-linear-to-r from-white to-gray-300',
+      value: "inverted",
+      label: "Inverted",
+      preview: "bg-linear-to-r from-white to-gray-300",
     },
   ];
 
@@ -124,7 +124,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             initial={{ scale: 0.9, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.9, opacity: 0, y: 20 }}
-            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            transition={{ type: "spring", damping: 25, stiffness: 300 }}
             className="relative max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-xl border border-gray-700/50 bg-gray-900/95 shadow-2xl backdrop-blur-lg"
             onClick={(e) => e.stopPropagation()}
           >
@@ -178,7 +178,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <select
                         value={settings.language}
                         onChange={(e) =>
-                          updateSetting('language', e.target.value)
+                          updateSetting("language", e.target.value)
                         }
                         className="rounded-lg bg-gray-700 px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                       >
@@ -206,12 +206,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           <button
                             key={option.value}
                             onClick={() =>
-                              updateSetting('fontSize', option.value)
+                              updateSetting("fontSize", option.value)
                             }
                             className={`rounded-lg p-2 transition-colors duration-200 ${
                               settings.fontSize === option.value
-                                ? 'bg-blue-500 text-white'
-                                : 'bg-gray-700 text-gray-400 hover:bg-gray-600 hover:text-white'
+                                ? "bg-blue-500 text-white"
+                                : "bg-gray-700 text-gray-400 hover:bg-gray-600 hover:text-white"
                             }`}
                           >
                             <span className={option.size}>A</span>
@@ -235,7 +235,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <select
                           value={settings.colorContrast}
                           onChange={(e) =>
-                            updateSetting('colorContrast', e.target.value)
+                            updateSetting("colorContrast", e.target.value)
                           }
                           className="rounded-lg bg-gray-700 px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                         >
@@ -253,12 +253,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           <div
                             key={option.value}
                             onClick={() =>
-                              updateSetting('colorContrast', option.value)
+                              updateSetting("colorContrast", option.value)
                             }
                             className={`cursor-pointer rounded-lg border-2 p-3 text-center text-xs transition-all duration-200 ${
                               settings.colorContrast === option.value
-                                ? 'border-blue-500 bg-blue-500/10'
-                                : 'border-transparent hover:border-gray-500'
+                                ? "border-blue-500 bg-blue-500/10"
+                                : "border-transparent hover:border-gray-500"
                             }`}
                           >
                             <div
@@ -266,9 +266,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             ></div>
                             <span
                               className={
-                                option.value === 'inverted'
-                                  ? 'text-black'
-                                  : 'text-white'
+                                option.value === "inverted"
+                                  ? "text-black"
+                                  : "text-white"
                               }
                             >
                               {option.label}
@@ -285,7 +285,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           type="checkbox"
                           checked={settings.reduceAnimations}
                           onChange={(e) =>
-                            updateSetting('reduceAnimations', e.target.checked)
+                            updateSetting("reduceAnimations", e.target.checked)
                           }
                           className="rounded bg-gray-700 text-blue-500 focus:ring-blue-500"
                         />
@@ -297,8 +297,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           checked={settings.keyboardNavigation}
                           onChange={(e) =>
                             updateSetting(
-                              'keyboardNavigation',
-                              e.target.checked
+                              "keyboardNavigation",
+                              e.target.checked,
                             )
                           }
                           className="rounded bg-gray-700 text-blue-500 focus:ring-blue-500"
@@ -310,7 +310,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           type="checkbox"
                           checked={settings.screenReader}
                           onChange={(e) =>
-                            updateSetting('screenReader', e.target.checked)
+                            updateSetting("screenReader", e.target.checked)
                           }
                           className="rounded bg-gray-700 text-blue-500 focus:ring-blue-500"
                         />
@@ -323,7 +323,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           type="checkbox"
                           checked={settings.focusIndicators}
                           onChange={(e) =>
-                            updateSetting('focusIndicators', e.target.checked)
+                            updateSetting("focusIndicators", e.target.checked)
                           }
                           className="rounded bg-gray-700 text-blue-500 focus:ring-blue-500"
                         />
@@ -362,7 +362,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         type="checkbox"
                         checked={settings.autoRefresh}
                         onChange={(e) =>
-                          updateSetting('autoRefresh', e.target.checked)
+                          updateSetting("autoRefresh", e.target.checked)
                         }
                         className="rounded bg-gray-700 text-blue-500 focus:ring-blue-500"
                       />
@@ -373,7 +373,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         type="checkbox"
                         checked={settings.showDataPoints}
                         onChange={(e) =>
-                          updateSetting('showDataPoints', e.target.checked)
+                          updateSetting("showDataPoints", e.target.checked)
                         }
                         className="rounded bg-gray-700 text-blue-500 focus:ring-blue-500"
                       />
@@ -386,7 +386,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         type="checkbox"
                         checked={settings.highPrecision}
                         onChange={(e) =>
-                          updateSetting('highPrecision', e.target.checked)
+                          updateSetting("highPrecision", e.target.checked)
                         }
                         className="rounded bg-gray-700 text-blue-500 focus:ring-blue-500"
                       />
@@ -410,7 +410,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <select
                         value={settings.animationQuality}
                         onChange={(e) =>
-                          updateSetting('animationQuality', e.target.value)
+                          updateSetting("animationQuality", e.target.value)
                         }
                         className="rounded-lg bg-gray-700 px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                       >
@@ -424,7 +424,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <select
                         value={settings.cacheDuration}
                         onChange={(e) =>
-                          updateSetting('cacheDuration', e.target.value)
+                          updateSetting("cacheDuration", e.target.value)
                         }
                         className="rounded-lg bg-gray-700 px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                       >

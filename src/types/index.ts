@@ -1,6 +1,8 @@
-import type { HTMLAttributes } from 'react';
+import type { HTMLAttributes } from "react";
 
 export interface DatasetBackendDetails {
+  id?: string | null;
+  slug?: string | null;
   sourceName: string | null;
   datasetName: string;
   layerParameter: string | null;
@@ -9,7 +11,7 @@ export interface DatasetBackendDetails {
   levels: string | null;
   levelValues: number[];
   levelUnits: string | null;
-  stored: 'local' | 'cloud' | null;
+  stored: "local" | "cloud" | null;
   inputFile: string | null;
   keyVariable: string | null;
   units: string | null;
@@ -23,13 +25,17 @@ export interface DatasetBackendDetails {
 
 export interface Dataset {
   id: string;
+  backendId?: string | null;
+  backendSlug?: string | null;
   name: string;
   description: string;
   units: string;
   colorScale: ColorScale;
-  dataType: 'temperature' | 'precipitation' | 'wind' | 'pressure' | 'humidity';
-  temporalResolution: 'hourly' | 'daily' | 'monthly' | 'yearly';
+  dataType: "temperature" | "precipitation" | "wind" | "pressure" | "humidity";
+  temporalResolution: "hourly" | "daily" | "monthly" | "yearly";
   backend?: DatasetBackendDetails;
+  startDate: Date;
+  endDate: Date;
 }
 
 export interface ControlPanelProps {
@@ -45,7 +51,7 @@ export interface ColorScale {
 
 export interface ChatMessage {
   id: string;
-  type: 'user' | 'bot';
+  type: "user" | "bot";
   message: string;
   timestamp: Date;
   sources?: Array<{
@@ -101,9 +107,16 @@ export interface SettingsIconHandle {
   stopAnimation: () => void;
 }
 
-
 export interface SettingsIconProps extends HTMLAttributes<HTMLDivElement> {
   size?: number;
+}
+
+// NEW: Globe settings interface
+export interface GlobeSettings {
+  satelliteLayerVisible: boolean;
+  boundaryLinesVisible: boolean;
+  geographicLinesVisible: boolean;
+  rasterOpacity: number;
 }
 
 export interface AppState {
@@ -123,12 +136,13 @@ export interface AppState {
   globePosition: GlobePosition;
   isLoading: boolean;
   error: string | null;
+  globeSettings?: GlobeSettings; // NEW
 }
 
 export interface TooltipProps {
   content: string;
   children: React.ReactNode;
-  position?: 'top' | 'bottom' | 'left' | 'right';
+  position?: "top" | "bottom" | "left" | "right";
   delay?: number;
   disabled?: boolean;
   className?: string;
@@ -141,9 +155,10 @@ export interface HeaderProps {
   onShowAbout: () => void;
   onShowChat: () => void;
   onSetDataset: (dataset: Dataset) => void;
-  onShowSidebarPanel?: (panel: 'datasets' | 'history' | 'about') => void;
-  activeSidebarPanel?: 'datasets' | 'history' | 'about' | null;
+  onShowSidebarPanel?: (panel: "datasets" | "history" | "about") => void;
+  activeSidebarPanel?: "datasets" | "history" | "about" | null;
 }
+
 export interface ChatInputProps {
   onSendMessage: (message: string) => void;
   disabled?: boolean;
@@ -155,23 +170,35 @@ export interface NavigationIconsProps {
   onShowAbout: () => void;
   onShowChat: () => void;
   onSetDataset: (dataset: any) => void;
-  onShowSidebarPanel?: (panel: 'datasets' | 'history' | 'about') => void;
-  activeSidebarPanel?: 'datasets' | 'history' | 'about' | null;
+  onShowSidebarPanel?: (panel: "datasets" | "history" | "about") => void;
+  activeSidebarPanel?: "datasets" | "history" | "about" | null;
 }
 
 export interface CollapsibleSidebarProps {
   onShowSettings: () => void;
-  activePanel?: 'datasets' | 'history' | 'about' | null;
-  onPanelChange?: (panel: 'datasets' | 'history' | 'about' | null) => void;
+  activePanel?: "datasets" | "history" | "about" | null;
+  onPanelChange?: (panel: "datasets" | "history" | "about" | null) => void;
 }
 
+// UPDATED: GlobeProps with new settings
 export interface GlobeProps {
-  currentDataset?: { name: string };
+  currentDataset?: Dataset;
+  selectedDate?: Date;
+  selectedLevel?: number | null;
   position?: { latitude: number; longitude: number; zoom: number };
-  onPositionChange?: (pos: { latitude: number; longitude: number; zoom: number }) => void;
+  onPositionChange?: (pos: {
+    latitude: number;
+    longitude: number;
+    zoom: number;
+  }) => void;
   onRegionClick?: (lat: number, lon: number, data: RegionData) => void;
-  customDataUrl?: string; // URL to your self-hosted GeoJSON/custom data
-  tileServerUrl?: string; // Optional custom tile server URL
+  customDataUrl?: string;
+  tileServerUrl?: string;
+  // NEW: Globe settings props
+  satelliteLayerVisible?: boolean;
+  boundaryLinesVisible?: boolean;
+  geographicLinesVisible?: boolean;
+  rasterOpacity?: number;
 }
 
 export interface RegionData {
@@ -186,16 +213,16 @@ export interface GlobeRef {
   clearMarker: () => void;
 }
 
-export type TemperatureUnit = 'celsius' | 'fahrenheit';
+export type TemperatureUnit = "celsius" | "fahrenheit";
 
-export type SidebarPanel = 'datasets' | 'history' | 'about' | null;
+export type SidebarPanel = "datasets" | "history" | "about" | null;
 
 export interface ColorBarProps {
   show: boolean;
   onToggle: () => void;
   dataset: Dataset;
-  unit?: TemperatureUnit; // Add unit prop
-  onUnitChange?: (unit: TemperatureUnit) => void; // Add unit change handler
+  unit?: TemperatureUnit;
+  onUnitChange?: (unit: TemperatureUnit) => void;
   onPositionChange?: (position: { x: number; y: number }) => void;
   collapsed?: boolean;
 }
@@ -232,31 +259,10 @@ export interface PressureLevelsSelectorProps {
   className?: string;
 }
 
-
 export interface YearSelectorProps {
   selectedYear?: number;
   onYearChange?: (year: number) => void;
   className?: string;
-}
-
-
-export interface RegionInfoPanelProps {
-  show: boolean;
-  onClose: () => void;
-  latitude?: number;
-  longitude?: number;
-  regionData?: {
-    name?: string;
-    precipitation?: number;
-    temperature?: number;
-    dataset?: string;
-    unit?: string;
-  };
-  colorBarPosition?: { x: number; y: number };
-  colorBarCollapsed?: boolean;
-  className?: string;
-  currentDataset?: Dataset;
-  selectedDate?: Date;
 }
 
 export interface TutorialSection {
@@ -287,3 +293,17 @@ export interface AboutModalProps extends ModalProps {
 export interface SettingsModalProps extends ModalProps {}
 
 export interface TutorialModalProps extends ModalProps {}
+
+// NEW: Globe settings panel props
+export interface GlobeSettingsPanelProps {
+  isOpen: boolean;
+  onClose: () => void;
+  satelliteLayerVisible: boolean;
+  onSatelliteLayerToggle: (visible: boolean) => void;
+  boundaryLinesVisible: boolean;
+  onBoundaryLinesToggle: (visible: boolean) => void;
+  geographicLinesVisible: boolean;
+  onGeographicLinesToggle: (visible: boolean) => void;
+  rasterOpacity: number;
+  onRasterOpacityChange: (opacity: number) => void;
+}

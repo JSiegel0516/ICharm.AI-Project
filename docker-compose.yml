@@ -1,0 +1,71 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: icharm-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${ICHARM_DB_USER:-icharm_user}
+      POSTGRES_PASSWORD: ${ICHARM_DB_PASSWORD:-icharm_dev_password}
+      POSTGRES_DB: ${ICHARM_DB_NAME:-icharm}
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=en_US.UTF-8
+    ports:
+      - "${ICHARM_DB_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "${ICHARM_DB_USER:-icharm_user}" -d "${ICHARM_DB_NAME:-icharm}"
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  llm-service:
+    build:
+      context: backend
+      dockerfile: Dockerfile.llm
+    container_name: icharm-llm-service
+    restart: unless-stopped
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      LLAMA_API_KEY: ${LLAMA_API_KEY:-}
+      LLAMA_MODEL: ${LLAMA_MODEL:-meta-llama/Llama-3.1-8B-Instruct}
+      HF_CHAT_URL: ${HF_CHAT_URL:-https://router.huggingface.co/v1/chat/completions}
+    ports:
+      - "${LLM_SERVICE_PORT:-8001}:8000"
+    depends_on:
+      db:
+        condition: service_started
+
+  data-api:
+    build:
+      context: backend
+      dockerfile: Dockerfile.data
+    container_name: icharm-data-api
+    restart: unless-stopped
+    volumes:
+      - ./backend/datasets:/app/datasets:ro
+      # IMPORTANT: Mount colorMaps.json if you have it (optional)
+      #- ../src/data/colorMaps.json:/app/data/colorMaps.json:ro
+    ports:
+      - "${DATA_API_PORT:-8000}:8000"
+    environment:
+      TEST_CHAT_USER_EMAIL: ${TEST_CHAT_USER_EMAIL:-testuser@gmail.com}
+      POSTGRES_URL: ${POSTGRES_URL:-}
+      LOCAL_DATASETS_PATH: /app/datasets
+      KERCHUNK_PATH: /app/kerchunk
+      CACHE_DIR: /tmp/climate_cache
+    depends_on:
+      db:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v2/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  postgres-data:
+    driver: local

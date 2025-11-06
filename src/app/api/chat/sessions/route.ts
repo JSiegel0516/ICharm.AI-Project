@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { ChatDB, type ChatSession } from '@/lib/db';
+import { NextRequest, NextResponse } from "next/server";
+import { ChatDB, type ChatSession } from "@/lib/db";
 
 const TEST_USER_EMAIL =
-  process.env.TEST_CHAT_USER_EMAIL ?? 'test-user@icharm.local';
+  process.env.TEST_CHAT_USER_EMAIL ?? "test-user@icharm.local";
 
 type NormalizedSession = {
   id: string;
@@ -16,12 +16,14 @@ function normalizeSession(session: ChatSession): NormalizedSession {
     id: session.id,
     title: session.title ?? null,
     // Drizzle returns camelCase fields
-    createdAt: session.createdAt instanceof Date
-      ? session.createdAt.toISOString()
-      : new Date(session.createdAt).toISOString(),
-    updatedAt: session.updatedAt instanceof Date
-      ? session.updatedAt.toISOString()
-      : new Date(session.updatedAt).toISOString(),
+    createdAt:
+      session.createdAt instanceof Date
+        ? session.createdAt.toISOString()
+        : new Date(session.createdAt).toISOString(),
+    updatedAt:
+      session.updatedAt instanceof Date
+        ? session.updatedAt.toISOString()
+        : new Date(session.updatedAt).toISOString(),
   };
 }
 
@@ -33,10 +35,10 @@ export async function GET() {
       sessions: sessions.map(normalizeSession),
     });
   } catch (error) {
-    console.error('Failed to fetch chat sessions', error);
+    console.error("Failed to fetch chat sessions", error);
     return NextResponse.json(
-      { error: 'Failed to fetch chat sessions' },
-      { status: 500 }
+      { error: "Failed to fetch chat sessions" },
+      { status: 500 },
     );
   }
 }
@@ -53,17 +55,20 @@ export async function POST(request: NextRequest) {
 
     const created = await ChatDB.createSession(
       user.id,
-      payload.title?.trim() ? payload.title.trim() : undefined
+      payload.title?.trim() ? payload.title.trim() : undefined,
     );
 
-    return NextResponse.json({
-      session: normalizeSession(created),
-    }, { status: 201 });
-  } catch (error) {
-    console.error('Failed to create chat session', error);
     return NextResponse.json(
-      { error: 'Failed to create chat session' },
-      { status: 500 }
+      {
+        session: normalizeSession(created),
+      },
+      { status: 201 },
+    );
+  } catch (error) {
+    console.error("Failed to create chat session", error);
+    return NextResponse.json(
+      { error: "Failed to create chat session" },
+      { status: 500 },
     );
   }
 }

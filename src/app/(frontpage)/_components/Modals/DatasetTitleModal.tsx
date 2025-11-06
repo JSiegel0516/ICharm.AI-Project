@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React from "react";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface DatasetModalProps {
   isOpen: boolean;
@@ -14,7 +14,7 @@ const DatasetTitleModal: React.FC<DatasetModalProps> = ({
   isOpen,
   onClose,
   datasetName,
-  datasetDescription = 'This dataset contains geographic and environmental data visualized on the 3D globe.',
+  datasetDescription = "This dataset contains geographic and environmental data visualized on the 3D globe.",
 }) => {
   return (
     <AnimatePresence>

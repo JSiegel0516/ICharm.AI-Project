@@ -1,30 +1,30 @@
-'use client';
+"use client";
 
-import React, { useState, useRef, useEffect } from 'react';
-import { Send, Paperclip } from 'lucide-react';
-import { ChatInputProps } from '@/types';
+import React, { useState, useRef, useEffect } from "react";
+import { Send, Paperclip } from "lucide-react";
+import { ChatInputProps } from "@/types";
 
 const ChatInput: React.FC<ChatInputProps> = ({
   onSendMessage,
   disabled = false,
-  placeholder = 'Ask me about climate data...',
+  placeholder = "Ask me about climate data...",
 }) => {
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (message.trim() && !disabled) {
       onSendMessage(message.trim());
-      setMessage('');
+      setMessage("");
       if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
+        textareaRef.current.style.height = "auto";
       }
     }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e);
     }
@@ -35,7 +35,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
     // Auto-resize textarea
     if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = "auto";
       textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
     }
   };
@@ -70,7 +70,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             onKeyPress={handleKeyPress}
             placeholder={placeholder}
             disabled={disabled}
-            className="max-h-[120px] min-h-[44px] w-full resize-none rounded-2xl border border-gray-300 bg-white px-4 py-3 pr-12 text-gray-900 placeholder-gray-500 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
+            className="max-h-[120px] min-h-[44px] w-full resize-none rounded-2xl border border-gray-300 bg-white px-4 py-3 pr-12 text-gray-900 placeholder-gray-500 focus:border-transparent focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
             rows={1}
           />
 
@@ -99,15 +99,15 @@ const ChatInput: React.FC<ChatInputProps> = ({
             <div className="flex gap-1">
               <div
                 className="h-1 w-1 animate-bounce rounded-full bg-gray-400"
-                style={{ animationDelay: '0ms' }}
+                style={{ animationDelay: "0ms" }}
               ></div>
               <div
                 className="h-1 w-1 animate-bounce rounded-full bg-gray-400"
-                style={{ animationDelay: '150ms' }}
+                style={{ animationDelay: "150ms" }}
               ></div>
               <div
                 className="h-1 w-1 animate-bounce rounded-full bg-gray-400"
-                style={{ animationDelay: '300ms' }}
+                style={{ animationDelay: "300ms" }}
               ></div>
             </div>
             Assistant is thinking...

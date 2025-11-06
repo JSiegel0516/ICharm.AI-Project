@@ -1,44 +1,44 @@
-'use client';
+"use client";
 
-import { GalleryVerticalEnd } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
+import { GalleryVerticalEnd } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import {
   Field,
   FieldDescription,
   FieldGroup,
   FieldLabel,
   FieldSeparator,
-} from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
-import { authClient } from '@/lib/auth-client';
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { authClient } from "@/lib/auth-client";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 export function SignupForm({
   className,
   ...props
-}: React.ComponentProps<'div'>) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [name, setName] = useState('');
-  const [error, setError] = useState('');
+}: React.ComponentProps<"div">) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
 
     // Validation
     if (password !== confirmPassword) {
-      setError('Passwords do not match');
+      setError("Passwords do not match");
       return;
     }
 
     if (password.length < 8) {
-      setError('Password must be at least 8 characters');
+      setError("Password must be at least 8 characters");
       return;
     }
 
@@ -49,16 +49,16 @@ export function SignupForm({
         email,
         password,
         name,
-        callbackURL: '/dashboard',
+        callbackURL: "/dashboard",
       });
 
       if (result.error) {
-        setError(result.error.message || 'Failed to create account');
+        setError(result.error.message || "Failed to create account");
       } else {
-        router.push('/dashboard');
+        router.push("/dashboard");
       }
     } catch (err) {
-      setError('An error occurred during sign up');
+      setError("An error occurred during sign up");
     } finally {
       setLoading(false);
     }
@@ -68,11 +68,11 @@ export function SignupForm({
     setLoading(true);
     try {
       await authClient.signIn.social({
-        provider: 'google',
-        callbackURL: '/dashboard',
+        provider: "google",
+        callbackURL: "/dashboard",
       });
     } catch (err) {
-      setError('Failed to sign up with Google');
+      setError("Failed to sign up with Google");
       setLoading(false);
     }
   };
@@ -81,17 +81,17 @@ export function SignupForm({
     setLoading(true);
     try {
       await authClient.signIn.social({
-        provider: 'github',
-        callbackURL: '/dashboard',
+        provider: "github",
+        callbackURL: "/dashboard",
       });
     } catch (err) {
-      setError('Failed to sign up with GitHub');
+      setError("Failed to sign up with GitHub");
       setLoading(false);
     }
   };
 
   return (
-    <div className={cn('flex flex-col gap-6', className)} {...props}>
+    <div className={cn("flex flex-col gap-6", className)} {...props}>
       <form onSubmit={handleSignup}>
         <FieldGroup>
           <div className="flex flex-col items-center gap-2 text-center">
@@ -172,17 +172,17 @@ export function SignupForm({
 
           <Field>
             <Button type="submit" disabled={loading}>
-              {loading ? 'Creating Account...' : 'Create Account'}
+              {loading ? "Creating Account..." : "Create Account"}
             </Button>
           </Field>
 
           <FieldSeparator>Or</FieldSeparator>
 
           {/* Social Sign Up - Only show if credentials are configured */}
-          {(process.env.NEXT_PUBLIC_GOOGLE_ENABLED === 'true' ||
-            process.env.NEXT_PUBLIC_GITHUB_ENABLED === 'true') && (
+          {(process.env.NEXT_PUBLIC_GOOGLE_ENABLED === "true" ||
+            process.env.NEXT_PUBLIC_GITHUB_ENABLED === "true") && (
             <Field className="grid gap-4 sm:grid-cols-2">
-              {process.env.NEXT_PUBLIC_GOOGLE_ENABLED === 'true' && (
+              {process.env.NEXT_PUBLIC_GOOGLE_ENABLED === "true" && (
                 <Button
                   variant="outline"
                   type="button"
@@ -199,7 +199,7 @@ export function SignupForm({
                 </Button>
               )}
 
-              {process.env.NEXT_PUBLIC_GITHUB_ENABLED === 'true' && (
+              {process.env.NEXT_PUBLIC_GITHUB_ENABLED === "true" && (
                 <Button
                   variant="outline"
                   type="button"
@@ -221,8 +221,8 @@ export function SignupForm({
         </FieldGroup>
       </form>
       <FieldDescription className="px-6 text-center">
-        By clicking continue, you agree to our{' '}
-        <a href="/terms">Terms of Service</a> and{' '}
+        By clicking continue, you agree to our{" "}
+        <a href="/terms">Terms of Service</a> and{" "}
         <a href="/privacy">Privacy Policy</a>.
       </FieldDescription>
     </div>

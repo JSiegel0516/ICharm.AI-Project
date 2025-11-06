@@ -1,18 +1,16 @@
 // src/lib/auth-client.ts
-import { createAuthClient } from "better-auth/react"
+import { createAuthClient } from "better-auth/react";
 
 // Create a single shared instance of the Better Auth client
 export const authClient = createAuthClient({
   baseURL: "http://localhost:3000",
-})
+});
 
 // Export session hooks and sign-out function
-export const { useSession, signOut } = authClient
+export const { useSession, signOut } = authClient;
 
 // Define supported social providers (extend as needed)
-export type SocialProvider =
-  | "github"
-  | "google"
+export type SocialProvider = "github" | "google";
 
 // Generic, type-safe helper for social sign-in
 export const signInSocial = async (provider: SocialProvider) => {
@@ -22,12 +20,11 @@ export const signInSocial = async (provider: SocialProvider) => {
     errorCallbackURL: "/error",
     newUserCallbackURL: "/welcome",
     disableRedirect: true,
-  })
+  });
 
-  return data
-}
+  return data;
+};
 
 // Optional: if you want explicit aliases for readability
-export const signInGithub = () => signInSocial("github")
-export const signInGoogle = () => signInSocial("google")
-
+export const signInGithub = () => signInSocial("github");
+export const signInGoogle = () => signInSocial("google");

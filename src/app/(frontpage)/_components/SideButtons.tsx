@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import React, {
   useState,
@@ -6,43 +6,50 @@ import React, {
   useCallback,
   useMemo,
   useRef,
-} from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { SettingsIcon } from '@/components/ui/settings';
-import { FileTextIcon } from '@/components/ui/file-text';
-import { DownloadIcon } from '@/components/ui/download';
-import { EarthIcon } from '@/components/ui/earth';
-import { CalendarDaysIcon } from '@/components/ui/calendar-days';
-import { Maximize2Icon } from '@/components/ui/maximize-2';
-import { CircleHelpIcon } from '@/components/ui/circle-help';
+} from "react";
+import { motion, AnimatePresence } from "motion/react";
+import { SettingsIcon } from "@/components/ui/settings";
+import { FileTextIcon } from "@/components/ui/file-text";
+import { DownloadIcon } from "@/components/ui/download";
+import { EarthIcon } from "@/components/ui/earth";
+import { CalendarDaysIcon } from "@/components/ui/calendar-days";
+import { Maximize2Icon } from "@/components/ui/maximize-2";
+import { CircleHelpIcon } from "@/components/ui/circle-help";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Calendar } from '@/components/ui/calendar';
-import { useAppState } from '@/context/HeaderContext';
-import type { Dataset } from '@/types';
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Calendar } from "@/components/ui/calendar";
+import { GlobeSettingsPanel } from "@/components/GlobeSettingsPanel";
+import { useAppState } from "@/context/HeaderContext";
+import type { Dataset, GlobeSettings } from "@/types";
 
 interface SideButtonsProps {
   selectedDate: Date;
   onDateChange: (date: Date) => void;
   onShowTutorial: () => void;
-  onShowSidebarPanel: (panel: 'datasets' | 'history' | 'about' | null) => void;
+  onShowSidebarPanel: (panel: "datasets" | "history" | "about" | null) => void;
+  // NEW: Globe settings props
+  globeSettings: GlobeSettings;
+  onSatelliteToggle: (visible: boolean) => void;
+  onBoundaryToggle: (visible: boolean) => void;
+  onGeographicLinesToggle: (visible: boolean) => void;
+  onRasterOpacityChange: (opacity: number) => void;
 }
 
 const formatDisplayDate = (value?: string | null | Date) => {
   if (!value) {
-    return 'Unknown';
+    return "Unknown";
   }
 
   const parsed = value instanceof Date ? value : new Date(value);
   if (!Number.isNaN(parsed.getTime())) {
-    return parsed.toISOString().split('T')[0];
+    return parsed.toISOString().split("T")[0];
   }
 
   return String(value);
@@ -53,6 +60,11 @@ export function SideButtons({
   onDateChange,
   onShowTutorial,
   onShowSidebarPanel,
+  globeSettings,
+  onSatelliteToggle,
+  onBoundaryToggle,
+  onGeographicLinesToggle,
+  onRasterOpacityChange,
 }: SideButtonsProps) {
   const { datasets, currentDataset, setCurrentDataset, isLoading, error } =
     useAppState();
@@ -60,8 +72,9 @@ export function SideButtons({
   const [isExpanded, setIsExpanded] = useState(true);
   const [showCalendar, setShowCalendar] = useState(false);
   const [showDatasetCard, setShowDatasetCard] = useState(false);
+  const [showGlobeSettings, setShowGlobeSettings] = useState(false); // NEW
   const [selectedDatasets, setSelectedDatasets] = useState<Set<string>>(() =>
-    currentDataset ? new Set([currentDataset.id]) : new Set()
+    currentDataset ? new Set([currentDataset.id]) : new Set(),
   );
   const [calendarMonth, setCalendarMonth] = useState(selectedDate);
 
@@ -88,16 +101,16 @@ export function SideButtons({
 
   const handleFileTextClick = useCallback(() => {
     setShowDatasetCard(true);
-    onShowSidebarPanel('datasets');
+    onShowSidebarPanel("datasets");
   }, [onShowSidebarPanel]);
 
   const handleDownloadClick = useCallback(() => {
-    console.log('Download clicked');
+    console.log("Download clicked");
   }, []);
 
   const handlePreferencesClick = useCallback(() => {
-    onShowSidebarPanel('about');
-  }, [onShowSidebarPanel]);
+    setShowGlobeSettings(true); // UPDATED: Open settings panel instead
+  }, []);
 
   const handleFullscreenClick = useCallback(() => {
     if (document.fullscreenElement) {
@@ -121,6 +134,10 @@ export function SideButtons({
     onShowSidebarPanel(null);
   }, [onShowSidebarPanel]);
 
+  const closeGlobeSettings = useCallback(() => {
+    setShowGlobeSettings(false);
+  }, []); // NEW
+
   const toggleDatasetSelection = useCallback(
     (datasetId: string) => {
       setSelectedDatasets((prev) => {
@@ -128,16 +145,14 @@ export function SideButtons({
           return prev;
         }
 
-        const newSelection = new Set(prev);
-        if (newSelection.has(datasetId)) {
-          newSelection.delete(datasetId);
+        if (prev.has(datasetId)) {
+          return new Set();
         } else {
-          newSelection.add(datasetId);
+          return new Set([datasetId]);
         }
-        return newSelection;
       });
     },
-    [datasets]
+    [datasets],
   );
 
   const handleApplyDatasets = useCallback(() => {
@@ -147,7 +162,6 @@ export function SideButtons({
       if (dataset) {
         setCurrentDataset(dataset);
 
-        // Clamp selected date to new dataset's range
         let newDate = selectedDate;
         if (selectedDate < dataset.startDate) {
           newDate = dataset.startDate;
@@ -173,7 +187,6 @@ export function SideButtons({
   const handleDateSelect = useCallback(
     (date: Date | undefined) => {
       if (date) {
-        // Clamp date to valid range
         let clampedDate = date;
         if (date < dateRange.minDate) {
           clampedDate = dateRange.minDate;
@@ -187,20 +200,20 @@ export function SideButtons({
           clampedDate.getDate(),
           selectedDate.getHours(),
           selectedDate.getMinutes(),
-          selectedDate.getSeconds()
+          selectedDate.getSeconds(),
         );
         onDateChange(newDate);
         closeCalendar();
       }
     },
-    [selectedDate, onDateChange, closeCalendar, dateRange]
+    [selectedDate, onDateChange, closeCalendar, dateRange],
   );
 
   const handleMonthChange = useCallback((newMonth: Date) => {
     setCalendarMonth(newMonth);
   }, []);
 
-  // Click-outside handler
+  // Click-outside handler - UPDATED to include globe settings
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -218,14 +231,13 @@ export function SideButtons({
     };
 
     if (showCalendar || showDatasetCard) {
-      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener("mousedown", handleClickOutside);
       return () => {
-        document.removeEventListener('mousedown', handleClickOutside);
+        document.removeEventListener("mousedown", handleClickOutside);
       };
     }
   }, [showCalendar, showDatasetCard, closeCalendar, closeDatasetCard]);
 
-  // Sync calendar month with selected date when calendar opens
   useEffect(() => {
     if (showCalendar) {
       setCalendarMonth(selectedDate);
@@ -240,7 +252,7 @@ export function SideButtons({
 
     setSelectedDatasets((prev) => {
       const validIds = Array.from(prev).filter((id) =>
-        datasets.some((dataset) => dataset.id === id)
+        datasets.some((dataset) => dataset.id === id),
       );
 
       if (currentDataset && !validIds.includes(currentDataset.id)) {
@@ -263,48 +275,47 @@ export function SideButtons({
     });
   }, [datasets, currentDataset]);
 
-  // Button configurations
   const buttonConfigs = useMemo(
     () => [
       {
-        id: 'tutorial',
+        id: "tutorial",
         icon: <CircleHelpIcon size={18} />,
-        label: 'Show Tutorial',
+        label: "Show Tutorial",
         onClick: onShowTutorial,
         delay: 0.15,
       },
       {
-        id: 'dataset',
+        id: "dataset",
         icon: <FileTextIcon size={18} />,
-        label: 'Select Dataset',
+        label: "Select Dataset",
         onClick: handleFileTextClick,
         delay: 0,
       },
       {
-        id: 'calendar',
+        id: "calendar",
         icon: <CalendarDaysIcon size={18} />,
-        label: 'Set Date',
+        label: "Set Date",
         onClick: handleCalendarClick,
         delay: 0.05,
       },
       {
-        id: 'download',
+        id: "download",
         icon: <DownloadIcon size={18} />,
-        label: 'Download Dataset',
+        label: "Download Dataset",
         onClick: handleDownloadClick,
         delay: 0.1,
       },
       {
-        id: 'preferences',
+        id: "preferences",
         icon: <EarthIcon size={18} />,
-        label: 'Globe Settings',
+        label: "Globe Settings",
         onClick: handlePreferencesClick,
         delay: 0.2,
       },
       {
-        id: 'fullscreen',
+        id: "fullscreen",
         icon: <Maximize2Icon size={18} />,
-        label: 'Fullscreen',
+        label: "Fullscreen",
         onClick: handleFullscreenClick,
         delay: 0.25,
       },
@@ -316,21 +327,20 @@ export function SideButtons({
       handleDownloadClick,
       handlePreferencesClick,
       handleFullscreenClick,
-    ]
+    ],
   );
 
   return (
     <>
       {/* Side Menu */}
       <AnimatePresence>
-        {!showCalendar && !showDatasetCard && (
+        {!showCalendar && !showDatasetCard && !showGlobeSettings && (
           <motion.div
             initial={{ x: 0 }}
             exit={{ x: -100, opacity: 0 }}
-            transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="z-9999 pointer-events-auto fixed left-4 top-0 flex h-screen flex-col items-center justify-center gap-2"
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            className="pointer-events-auto fixed top-0 left-4 z-9999 flex h-screen flex-col items-center justify-center gap-2"
           >
-            {/* Dynamic Buttons */}
             {buttonConfigs.map(({ id, icon, label, onClick, delay }) => (
               <motion.div
                 key={id}
@@ -352,7 +362,6 @@ export function SideButtons({
               </motion.div>
             ))}
 
-            {/* Settings Toggle */}
             <motion.div
               initial={false}
               animate={{ opacity: isExpanded ? 1 : 0.8, scale: 1, y: 1 }}
@@ -361,7 +370,7 @@ export function SideButtons({
               <div className="btn-icon group">
                 <SettingsIcon size={18} onClick={toggleMenu} />
                 <div className="btn-hover group-hover:opacity-100">
-                  {isExpanded ? 'Hide Settings' : 'Show Settings'}
+                  {isExpanded ? "Hide Settings" : "Show Settings"}
                 </div>
               </div>
             </motion.div>
@@ -377,8 +386,8 @@ export function SideButtons({
             initial={{ x: -100, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -100, opacity: 0 }}
-            transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="z-9999 pointer-events-auto fixed left-4 top-1/2 w-80 -translate-y-1/2"
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            className="pointer-events-auto fixed top-1/2 left-4 z-9999 w-80 -translate-y-1/2"
           >
             <Calendar
               mode="single"
@@ -389,11 +398,10 @@ export function SideButtons({
                 const newDate = new Date(
                   newMonth.getFullYear(),
                   newMonth.getMonth(),
-                  selectedDate.getDate()
+                  selectedDate.getDate(),
                 );
                 onDateChange(newDate);
               }}
-              // Add date range restrictions
               disabled={(date) => {
                 if (!currentDataset) return false;
                 const start = currentDataset.startDate;
@@ -408,6 +416,7 @@ export function SideButtons({
           </motion.div>
         )}
       </AnimatePresence>
+
       {/* Dataset Selection Card */}
       <AnimatePresence>
         {showDatasetCard && (
@@ -416,19 +425,19 @@ export function SideButtons({
             initial={{ x: -100, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -100, opacity: 0 }}
-            transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="z-9999 pointer-events-auto fixed left-4 top-1/2 w-96 -translate-y-1/2"
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            className="pointer-events-auto fixed top-1/2 left-4 z-9999 w-96 -translate-y-1/2"
           >
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center justify-between text-lg">
-                  <span>Select Datasets</span>
+                  <span>Select Dataset</span>
                   <Badge variant="secondary">
                     {selectedDatasets.size} selected
                   </Badge>
                 </CardTitle>
                 <CardDescription>
-                  Choose datasets to visualize on the globe
+                  Choose a dataset to visualize on the globe
                 </CardDescription>
               </CardHeader>
               <CardContent className="max-h-96 space-y-3 overflow-y-auto">
@@ -454,9 +463,9 @@ export function SideButtons({
                   const isSelected = selectedDatasets.has(dataset.id);
                   const category =
                     dataset.backend?.datasetType ?? dataset.dataType;
-                  const resolution = dataset.backend?.spatialResolution ?? '';
+                  const resolution = dataset.backend?.spatialResolution ?? "";
                   const lastUpdated = formatDisplayDate(
-                    dataset.backend?.endDate
+                    dataset.backend?.endDate,
                   );
 
                   return (
@@ -464,8 +473,8 @@ export function SideButtons({
                       key={dataset.id}
                       className={`cursor-pointer rounded-lg border p-3 transition-all ${
                         isSelected
-                          ? 'border-neutral-300/50 bg-neutral-300/20'
-                          : 'border-neutral-600 bg-neutral-700/50 hover:bg-neutral-700/70'
+                          ? "border-neutral-300/50 bg-neutral-300/20"
+                          : "border-neutral-600 bg-neutral-700/50 hover:bg-neutral-700/70"
                       }`}
                       onClick={() => toggleDatasetSelection(dataset.id)}
                     >
@@ -494,8 +503,8 @@ export function SideButtons({
                         <div
                           className={`ml-2 flex h-4 w-4 items-center justify-center rounded border ${
                             isSelected
-                              ? 'border-rose-500 bg-rose-500'
-                              : 'border-slate-400'
+                              ? "border-rose-500 bg-rose-500"
+                              : "border-slate-400"
                           }`}
                         >
                           {isSelected && (
@@ -539,6 +548,20 @@ export function SideButtons({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* NEW: Globe Settings Panel */}
+      <GlobeSettingsPanel
+        isOpen={showGlobeSettings}
+        onClose={closeGlobeSettings}
+        satelliteLayerVisible={globeSettings.satelliteLayerVisible}
+        onSatelliteLayerToggle={onSatelliteToggle}
+        boundaryLinesVisible={globeSettings.boundaryLinesVisible}
+        onBoundaryLinesToggle={onBoundaryToggle}
+        geographicLinesVisible={globeSettings.geographicLinesVisible}
+        onGeographicLinesToggle={onGeographicLinesToggle}
+        rasterOpacity={globeSettings.rasterOpacity}
+        onRasterOpacityChange={onRasterOpacityChange}
+      />
     </>
   );
 }

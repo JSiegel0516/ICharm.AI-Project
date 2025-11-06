@@ -21,27 +21,27 @@ This document describes how the dataset FastAPI service fits into the project, h
 
 ## Core Utility Functions
 
-| Function | Responsibility |
-| --- | --- |
-| `load_metadata` | Read and validate the CSV; raises if missing or malformed. |
-| `iso_times_from_coord` | Normalize time coordinates (xarray, numpy, pandas, or cftime) to ISO strings. |
+| Function               | Responsibility                                                                                                 |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `load_metadata`        | Read and validate the CSV; raises if missing or malformed.                                                     |
+| `iso_times_from_coord` | Normalize time coordinates (xarray, numpy, pandas, or cftime) to ISO strings.                                  |
 | `choose_best_variable` | Heuristic that favours anomaly, temperature, precipitation or wind variables when a user does not specify one. |
-| `is_multilevel` | Detects whether a dataset has vertical levels (`level`, `plev`). |
-| `select_time_safe` | Select the nearest timestep; falls back to the first record if parsing fails. |
-| `load_dataset` | Open a dataset (local or S3) and return an `xarray.DataArray`. This is the gateway used by every endpoint. |
+| `is_multilevel`        | Detects whether a dataset has vertical levels (`level`, `plev`).                                               |
+| `select_time_safe`     | Select the nearest timestep; falls back to the first record if parsing fails.                                  |
+| `load_dataset`         | Open a dataset (local or S3) and return an `xarray.DataArray`. This is the gateway used by every endpoint.     |
 
 ## Standard API Endpoints
 
 These routes are primarily used by the frontend helper scripts and the (future) analysis dashboard.
 
-| Route | Method | Description |
-| --- | --- | --- |
-| `/datasets` | `GET` | Returns an array of dataset rows derived from `metadata.csv`. NaN/Infinity are normalised to `null` before serialization. |
-| `/point_timeseries` | `POST` | Body contains `dataset_name`, `lat`, `lon`, optional `variable`, `level`, `year`, `month`, `day`. Returns a time-ordered series of values around the requested location. |
-| `/point_statistics` | `POST` | Same payload as above, but returns descriptive statistics (min, max, quartiles, mean, std, variance, skewness, kurtosis). |
-| `/monthly_mean_std` | `POST` | Computes monthly mean and std for a specific year. |
-| `/monthly_mean_yearly_std` | `POST` | For the requested year, returns the monthly mean plus the standard deviation calculated across all available years. |
-| `/seasonal_timeseries` | `POST` | Returns a year-over-year series for a specific month (useful for seasonal comparisons). |
+| Route                      | Method | Description                                                                                                                                                              |
+| -------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/datasets`                | `GET`  | Returns an array of dataset rows derived from `metadata.csv`. NaN/Infinity are normalised to `null` before serialization.                                                |
+| `/point_timeseries`        | `POST` | Body contains `dataset_name`, `lat`, `lon`, optional `variable`, `level`, `year`, `month`, `day`. Returns a time-ordered series of values around the requested location. |
+| `/point_statistics`        | `POST` | Same payload as above, but returns descriptive statistics (min, max, quartiles, mean, std, variance, skewness, kurtosis).                                                |
+| `/monthly_mean_std`        | `POST` | Computes monthly mean and std for a specific year.                                                                                                                       |
+| `/monthly_mean_yearly_std` | `POST` | For the requested year, returns the monthly mean plus the standard deviation calculated across all available years.                                                      |
+| `/seasonal_timeseries`     | `POST` | Returns a year-over-year series for a specific month (useful for seasonal comparisons).                                                                                  |
 
 All endpoints normalise infinities to `null` to keep the JSON encoder happy.
 
@@ -53,13 +53,13 @@ The notebook `CDR.ipynb` inspired a dedicated endpoint for daily precipitation.
 - **Expected JSON body**:
   ```json
   {
-    "dataset_name": "Precipitation - CMORPH CDR", // optional – defaults to the CMORPH metadata row
+    "dataset_name": "Precipitation - CMORPH CDR", // optional ï¿½ defaults to the CMORPH metadata row
     "year": 2024,
     "month": "01",
     "lat": 32.7,
     "lon": -117.2,
-    "comparison_year": 2023,     // optional
-    "comparison_month": "01"     // optional
+    "comparison_year": 2023, // optional
+    "comparison_month": "01" // optional
   }
   ```
 - **Process**:
@@ -73,6 +73,7 @@ The notebook `CDR.ipynb` inspired a dedicated endpoint for daily precipitation.
 ### Dependencies
 
 When the container image is built, the following packages enable CMORPH:
+
 - `s3fs` for anonymous S3 access.
 - `h5netcdf` so `xarray` can read h5netcdf NetCDF files served by NOAA.
 - `dask[array]` (installed as `dask==2024.5.0`) so `open_mfdataset` can operate on the remote tiles.
@@ -87,13 +88,13 @@ To avoid CORS and keep secrets server-side, the frontend talks to `/api/cdr/prec
 
 ## Region Info Panel Integration
 
-Within the globe (`src/components/UI/RegionInfoPanel.tsx`):
+Within the globe (`src/components/ui/RegionInfoPanel.tsx`):
 
 1. When the user clicks a location, the panel shows precipitation, coordinates, and dataset name with correct units (derived from `currentDataset.units`).
 2. Clicking **Time Series** opens a modal. The component:
    - Clamps the requested date to the dataset coverage window (`currentDataset.backend.startDate`/`endDate`).
    - Calls the Next.js proxy endpoint with lat/lon/month/year.
-   - Renders the returned series using Recharts. If the dataset isn’t CMORPH, a friendly error explains that timeseries are available for CMORPH only (for now).
+   - Renders the returned series using Recharts. If the dataset isnï¿½t CMORPH, a friendly error explains that timeseries are available for CMORPH only (for now).
 3. Loading and error states are surfaced in the modal so users know what happened.
 
 ## Local Development & Tips

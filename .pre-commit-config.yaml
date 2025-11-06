@@ -1,0 +1,72 @@
+repos:
+  # Code Formatter for Python
+  # - Ruff does the same thing as black and isort together in one package
+  # - It's also much faster as it's written in rust
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.3
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+  # Enforce type hint
+  # - By enforcing type hints you'll find more bugs in your code
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.18.2
+    hooks:
+      - id: mypy
+        additional_dependencies:
+          [
+            "types-requests",
+            "pydantic>=2.9.2",
+            "types-python-dateutil",
+            "types-ujson",
+          ]
+  # Small code formatter
+  # - Some extra formatting
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-ast
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+  - repo: https://github.com/PyCQA/flake8
+    rev: 7.3.0
+    hooks:
+      - id: flake8
+  # This will protect us from accidentally commiting secrets to the repo
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args:
+          - --baseline
+          - .secrets.baseline
+          - --exclude-files
+          - '\.ipynb$' # Unfortunately, notebooks can have weird strings in them
+        additional_dependencies:
+          - gibberish-detector
+  # To be able to run prettier
+  # Unfortunately we have to run this via local as the pre-commit hook
+  # is currently broken: https://github.com/pre-commit/mirrors-prettier
+  - repo: local
+    hooks:
+      - id: biome-format
+        name: biome format
+        language: system
+        entry: npx --no-install biome format --write .
+        #entry: npm run format
+        pass_filenames: true
+        # exclude where biome will run to avoid double-formatting
+        types_or: [javascript, ts, json, markdown]
+        exclude: '\.ipynb$'
+
+      - id: prettier-tailwind
+        name: prettier (tailwind class sort)
+        language: system
+        entry: npx --no-install prettier --write .
+        #entry: npm run format:fix
+        pass_filenames: true
+        #files: '\.(jsx|tsx|css|scss|html)$'
+        exclude: '\.ipynb$'
