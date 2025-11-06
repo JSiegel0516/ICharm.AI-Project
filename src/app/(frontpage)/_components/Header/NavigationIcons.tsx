@@ -13,7 +13,12 @@ import AboutModal from "@/app/(frontpage)/_components/Modals/AboutModal";
 type ActiveDropdown = "datasets" | "settings" | null;
 
 const NavigationIcons: React.FC = () => {
-  const { setCurrentDataset, currentDataset } = useAppState();
+  const {
+    setCurrentDataset,
+    currentDataset,
+    colorBarOrientation,
+    setColorBarOrientation,
+  } = useAppState();
 
   const [activeDropdown, setActiveDropdown] = useState<ActiveDropdown>(null);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -167,6 +172,8 @@ const NavigationIcons: React.FC = () => {
           console.log("Saving settings:", settings);
           closeSettingsModal();
         }}
+        colorBarOrientation={colorBarOrientation}
+        onColorBarOrientationChange={setColorBarOrientation}
       />
 
       {/* About Modal */}

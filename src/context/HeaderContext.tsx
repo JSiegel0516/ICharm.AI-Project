@@ -7,7 +7,13 @@ import React, {
   useCallback,
   useEffect,
 } from "react";
-import type { Dataset, AppState, TemperatureUnit, RegionData } from "@/types";
+import type {
+  Dataset,
+  AppState,
+  TemperatureUnit,
+  RegionData,
+  ColorBarOrientation,
+} from "@/types";
 import { mockDatasets } from "@/utils/constants";
 
 type DatabaseDataset = {
@@ -242,6 +248,7 @@ const useAppStateInternal = () => {
     },
     isLoading: true, // Start as loading
     error: null,
+    colorBarOrientation: "horizontal",
   });
 
   const [selectedYear, setSelectedYear] = useState<number>(
@@ -284,6 +291,13 @@ const useAppStateInternal = () => {
   const toggleColorbar = useCallback(() => {
     setState((prev) => ({ ...prev, showColorbar: !prev.showColorbar }));
   }, []);
+
+  const setColorBarOrientation = useCallback(
+    (orientation: ColorBarOrientation) => {
+      setState((prev) => ({ ...prev, colorBarOrientation: orientation }));
+    },
+    [],
+  );
 
   const setCurrentDataset = useCallback((dataset: Dataset) => {
     setState((prev) => ({ ...prev, currentDataset: dataset }));
@@ -391,6 +405,7 @@ const useAppStateInternal = () => {
     setShowTutorial,
     setShowChat,
     toggleColorbar,
+    setColorBarOrientation,
     setCurrentDataset,
     refreshDatasets,
   };

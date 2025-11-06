@@ -137,6 +137,7 @@ export interface AppState {
   isLoading: boolean;
   error: string | null;
   globeSettings?: GlobeSettings; // NEW
+  colorBarOrientation: ColorBarOrientation;
 }
 
 export interface TooltipProps {
@@ -221,6 +222,7 @@ export interface GlobeRef {
 }
 
 export type TemperatureUnit = "celsius" | "fahrenheit";
+export type ColorBarOrientation = "horizontal" | "vertical";
 
 export type SidebarPanel = "datasets" | "history" | "about" | null;
 
@@ -237,6 +239,7 @@ export interface ColorBarProps {
     min?: number | null;
     max?: number | null;
   } | null;
+  orientation?: ColorBarOrientation;
 }
 
 export interface TimeBarProps {
