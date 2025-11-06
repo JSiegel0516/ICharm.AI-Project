@@ -1,22 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Settings, X, Monitor, Globe, Eye, Zap, RotateCcw } from "lucide-react";
+import {
+  Settings,
+  X,
+  Monitor,
+  Globe,
+  Eye,
+  Zap,
+  RotateCcw,
+  LayoutList,
+} from "lucide-react";
 import { ModeToggle } from "@/components/ui/modetoggle";
+import type { ColorBarOrientation } from "@/types";
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (settings: any) => void;
+  colorBarOrientation: ColorBarOrientation;
+  onColorBarOrientationChange: (orientation: ColorBarOrientation) => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   onClose,
   onSave,
+  colorBarOrientation,
+  onColorBarOrientationChange,
 }) => {
-  const [settings, setSettings] = useState({
+  const [settings, setSettings] = useState(() => ({
     // Appearance
     theme: "dark",
     fontSize: "medium",
@@ -37,12 +51,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     // Performance
     animationQuality: "high",
     cacheDuration: "6 hours",
-  });
+    colorBarOrientation,
+  }));
 
   const handleSave = () => {
     onSave(settings);
     onClose();
   };
+
+  useEffect(() => {
+    setSettings((prev) => ({
+      ...prev,
+      colorBarOrientation,
+    }));
+  }, [colorBarOrientation]);
 
   const resetToDefaults = () => {
     setSettings({
@@ -59,7 +81,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       highPrecision: false,
       animationQuality: "high",
       cacheDuration: "6 hours",
+      colorBarOrientation: "horizontal",
     });
+    onColorBarOrientationChange("horizontal");
   };
 
   const updateSetting = (key: string, value: any) => {
@@ -329,6 +353,58 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         />
                         <span className="text-white">Focus indicators</span>
                       </label>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Visualization Section */}
+                <section className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <LayoutList className="h-5 w-5 text-blue-400" />
+                    <h3 className="text-lg font-medium text-white">
+                      Visualization
+                    </h3>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-lg bg-gray-800/30 p-4">
+                    <div className="flex items-center gap-3">
+                      <LayoutList className="h-4 w-4 text-gray-400" />
+                      <div>
+                        <span className="text-white">
+                          Color Bar Orientation
+                        </span>
+                        <div className="text-sm text-gray-400">
+                          Choose how the temperature scale is displayed
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          onColorBarOrientationChange("horizontal");
+                          updateSetting("colorBarOrientation", "horizontal");
+                        }}
+                        className={`rounded-lg px-3 py-2 text-sm transition-colors duration-200 ${
+                          colorBarOrientation === "horizontal"
+                            ? "bg-blue-500 text-white"
+                            : "bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white"
+                        }`}
+                      >
+                        Horizontal
+                      </button>
+                      <button
+                        onClick={() => {
+                          onColorBarOrientationChange("vertical");
+                          updateSetting("colorBarOrientation", "vertical");
+                        }}
+                        className={`rounded-lg px-3 py-2 text-sm transition-colors duration-200 ${
+                          colorBarOrientation === "vertical"
+                            ? "bg-blue-500 text-white"
+                            : "bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white"
+                        }`}
+                      >
+                        Vertical
+                      </button>
                     </div>
                   </div>
                 </section>

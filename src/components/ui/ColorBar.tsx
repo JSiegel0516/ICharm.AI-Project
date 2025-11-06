@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useMemo,
+  useCallback,
+} from "react";
 import { ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 import { ColorBarProps, TemperatureUnit } from "@/types";
 
@@ -13,6 +19,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
   onPositionChange,
   collapsed = false,
   rasterMeta = null,
+  orientation = "horizontal",
 }) => {
   const [showDropdown, setShowDropdown] = useState(false);
   const [position, setPosition] = useState({ x: 24, y: 24 });
@@ -182,9 +189,35 @@ const ColorBar: React.FC<ColorBarProps> = ({
     return (Object.is(rounded, -0) ? 0 : rounded).toString();
   };
 
-  const getDefaultPosition = () => {
-    return { x: 24, y: window.innerHeight - 180 };
-  };
+  const isVertical = orientation === "vertical";
+
+  const getDefaultPosition = useCallback(() => {
+    if (typeof window === "undefined") {
+      return isVertical ? { x: 24, y: 120 } : { x: 24, y: 180 };
+    }
+
+    const margin = 24;
+
+    if (isVertical) {
+      const cardWidth = 200;
+      const cardHeight = 360;
+      const x = Math.max(margin, window.innerWidth - cardWidth - margin);
+      const targetTop = Math.round(window.innerHeight * 0.25) - cardHeight / 2;
+      const y = Math.max(
+        margin,
+        Math.min(targetTop, window.innerHeight - cardHeight - margin),
+      );
+      return { x, y };
+    }
+
+    const cardHeight = 220;
+    const x = margin;
+    const y = Math.max(
+      margin,
+      window.innerHeight - cardHeight - Math.max(12, margin / 2),
+    );
+    return { x, y };
+  }, [isVertical]);
 
   const numericLabels = useMemo(() => {
     if (numericColorScaleLabels?.length) {
@@ -207,6 +240,17 @@ const ColorBar: React.FC<ColorBarProps> = ({
         : numericLabels;
     return values.map((val) => formatLabelValue(val));
   }, [allowUnitToggle, unit, numericLabels]);
+
+  const verticalLabels = useMemo(
+    () => [...displayLabels].reverse(),
+    [displayLabels],
+  );
+
+  const gradientBackground = useMemo(
+    () =>
+      `linear-gradient(${isVertical ? "to top" : "to right"}, ${dataset.colorScale.colors.join(", ")})`,
+    [isVertical, dataset.colorScale.colors],
+  );
 
   const getUnitSymbol = () => {
     if (allowUnitToggle) {
@@ -267,10 +311,14 @@ const ColorBar: React.FC<ColorBarProps> = ({
   }, [collapsed]);
 
   useEffect(() => {
-    const initialPosition = getDefaultPosition();
-    setPosition(initialPosition);
-    setPreviousPosition(initialPosition);
-  }, []);
+    const defaultPosition = getDefaultPosition();
+    if (isCollapsed) {
+      setPreviousPosition(defaultPosition);
+      return;
+    }
+    setPosition(defaultPosition);
+    setPreviousPosition(defaultPosition);
+  }, [getDefaultPosition, isCollapsed]);
 
   // Notify parent of position changes
   useEffect(() => {
@@ -368,6 +416,25 @@ const ColorBar: React.FC<ColorBarProps> = ({
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, [isCollapsed]);
+
+  useEffect(() => {
+    if (isCollapsed) {
+      return;
+    }
+
+    const colorBarElement = colorBarRef.current;
+    if (!colorBarElement) {
+      return;
+    }
+
+    const maxX = window.innerWidth - colorBarElement.offsetWidth;
+    const maxY = window.innerHeight - colorBarElement.offsetHeight;
+
+    setPosition((prevPosition) => ({
+      x: Math.max(0, Math.min(prevPosition.x, maxX)),
+      y: Math.max(0, Math.min(prevPosition.y, maxY)),
+    }));
+  }, [orientation, isCollapsed]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -512,20 +579,37 @@ const ColorBar: React.FC<ColorBarProps> = ({
           </div>
 
           <div className="relative">
-            <div
-              className="mx-auto h-8 w-60 rounded-md"
-              style={{
-                background: `linear-gradient(to right, ${dataset.colorScale.colors.join(", ")})`,
-              }}
-            />
-
-            <div className="absolute -top-4 left-0 flex w-60 justify-between text-xs">
-              {displayLabels.map((label, index) => (
-                <span key={index} className="leading-none text-blue-200">
-                  {label}
-                </span>
-              ))}
-            </div>
+            {isVertical ? (
+              <div className="flex w-full items-center justify-center">
+                <div className="relative flex">
+                  <div
+                    className="h-64 w-14 rounded-lg border border-white/10 shadow-inner"
+                    style={{ background: gradientBackground }}
+                  />
+                  <div className="absolute inset-y-4 left-full ml-4 flex flex-col justify-between text-right text-xs text-blue-200">
+                    {verticalLabels.map((label, index) => (
+                      <span key={index} className="leading-none">
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="relative mx-auto w-60">
+                <div
+                  className="h-8 w-full rounded-md"
+                  style={{ background: gradientBackground }}
+                />
+                <div className="absolute -top-4 left-0 flex w-full justify-between text-xs">
+                  {displayLabels.map((label, index) => (
+                    <span key={index} className="leading-none text-blue-200">
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

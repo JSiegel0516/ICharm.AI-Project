@@ -25,7 +25,8 @@ import { Tutorial } from "./_components/Tutorial";
 type SidebarPanel = "datasets" | "history" | "about" | null;
 
 export default function HomePage() {
-  const { showColorbar, currentDataset, toggleColorbar } = useAppState();
+  const { showColorbar, currentDataset, toggleColorbar, colorBarOrientation } =
+    useAppState();
   const globeRef = useRef<GlobeRef>(null);
 
   // Date & Time State
@@ -201,6 +202,7 @@ export default function HomePage() {
           collapsed={colorBarCollapsed}
           onToggleCollapse={setColorBarCollapsed}
           rasterMeta={rasterMeta}
+          orientation={colorBarOrientation}
         />
 
         {/* Region Info Panel */}
