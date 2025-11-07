@@ -156,9 +156,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
-              className="data-[slot=sidebar-menu-button]:!p-1.5"
+              className="data-[slot=sidebar-menu-button]:p-1.5!"
             >
-              <Link href="/" className="flex items-center gap-6">
+              <Link href="/" className="flex items-center gap-4">
                 <img
                   src="/images/4DVD.png"
                   alt="IC Logo"
