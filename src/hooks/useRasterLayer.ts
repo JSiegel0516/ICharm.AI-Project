@@ -24,6 +24,7 @@ type UseRasterLayerOptions = {
   dataset?: Dataset;
   date?: Date;
   level?: number | null;
+  maskZeroValues?: boolean;
 };
 
 export type UseRasterLayerResult = {
@@ -125,6 +126,7 @@ export const useRasterLayer = ({
   dataset,
   date,
   level,
+  maskZeroValues = false,
 }: UseRasterLayerOptions): UseRasterLayerResult => {
   const [data, setData] = useState<RasterLayerData | undefined>();
   const [isLoading, setIsLoading] = useState(false);
@@ -174,8 +176,9 @@ export const useRasterLayer = ({
       return undefined;
     }
     const colorKey = cssColors ? cssColors.join("|") : "default";
-    return `${backendDatasetId}::${dateKey}::${level ?? "surface"}::${colorKey}`;
-  }, [backendDatasetId, date, level, cssColors]);
+    const maskKey = maskZeroValues ? "mask" : "nomask";
+    return `${backendDatasetId}::${dateKey}::${level ?? "surface"}::${colorKey}::${maskKey}`;
+  }, [backendDatasetId, date, level, cssColors, maskZeroValues]);
 
   useEffect(() => {
     if (!backendDatasetId || !date) {
@@ -207,6 +210,7 @@ export const useRasterLayer = ({
             date: formatDateForApi(date),
             level: level ?? undefined,
             cssColors,
+            maskZeroValues: maskZeroValues || undefined,
           }),
           signal: controller.signal,
         });
@@ -263,7 +267,7 @@ export const useRasterLayer = ({
         controllerRef.current = null;
       }
     };
-  }, [backendDatasetId, dataset?.units, date, level]);
+  }, [backendDatasetId, dataset?.units, date, level, maskZeroValues]);
 
   return { data, isLoading, error, requestKey };
 };

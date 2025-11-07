@@ -117,6 +117,7 @@ export interface GlobeSettings {
   boundaryLinesVisible: boolean;
   geographicLinesVisible: boolean;
   rasterOpacity: number;
+  hideZeroPrecipitation: boolean;
 }
 
 export interface AppState {
@@ -200,6 +201,7 @@ export interface GlobeProps {
   boundaryLinesVisible?: boolean;
   geographicLinesVisible?: boolean;
   rasterOpacity?: number;
+  hideZeroPrecipitation?: boolean;
   onRasterMetadataChange?: (
     meta: {
       units?: string | null;
@@ -325,4 +327,6 @@ export interface GlobeSettingsPanelProps {
   onGeographicLinesToggle: (visible: boolean) => void;
   rasterOpacity: number;
   onRasterOpacityChange: (opacity: number) => void;
+  hideZeroPrecipitation: boolean;
+  onHideZeroPrecipitationToggle: (enabled: boolean) => void;
 }

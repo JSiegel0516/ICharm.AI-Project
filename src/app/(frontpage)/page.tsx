@@ -216,6 +216,7 @@ export default function HomePage() {
     boundaryLinesVisible: true,
     geographicLinesVisible: false,
     rasterOpacity: 0.65,
+    hideZeroPrecipitation: false,
   });
 
   // Event Handlers
@@ -274,6 +275,13 @@ export default function HomePage() {
     setGlobeSettings((prev) => ({ ...prev, rasterOpacity: opacity }));
   }, []);
 
+  const handleHideZeroPrecipToggle = useCallback((enabled: boolean) => {
+    setGlobeSettings((prev) => ({
+      ...prev,
+      hideZeroPrecipitation: enabled,
+    }));
+  }, []);
+
   useEffect(() => {
     setRasterMeta(null);
   }, [currentDataset]);
@@ -329,6 +337,7 @@ export default function HomePage() {
         currentDataset={currentDataset}
         selectedDate={selectedDate}
         selectedLevel={selectedLevelValue}
+        hideZeroPrecipitation={globeSettings.hideZeroPrecipitation}
         onRegionClick={handleRegionClick}
         satelliteLayerVisible={globeSettings.satelliteLayerVisible}
         boundaryLinesVisible={globeSettings.boundaryLinesVisible}
@@ -346,6 +355,7 @@ export default function HomePage() {
       globeSettings.boundaryLinesVisible,
       globeSettings.geographicLinesVisible,
       globeSettings.rasterOpacity,
+      globeSettings.hideZeroPrecipitation,
     ],
   );
 
@@ -365,6 +375,7 @@ export default function HomePage() {
           onBoundaryToggle={handleBoundaryToggle}
           onGeographicLinesToggle={handleGeographicLinesToggle}
           onRasterOpacityChange={handleRasterOpacityChange}
+          onHideZeroPrecipToggle={handleHideZeroPrecipToggle}
         />
 
         {/* Tutorial Modal */}
