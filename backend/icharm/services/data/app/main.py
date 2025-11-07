@@ -8,7 +8,7 @@ from fastapi import FastAPI, APIRouter, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, validator
-from typing import List, Optional, Dict, Any, Literal
+from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 from enum import Enum
 import xarray as xr
@@ -40,6 +40,24 @@ warnings.filterwarnings("ignore")
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _is_precipitation_dataset(row: pd.Series) -> bool:
+    """Heuristic to determine if dataset represents precipitation."""
+    keywords = ("precip", "rain", "cmorph", "gpcp", "ppt", "hydro")
+    fields = [
+        row.get("datasetName"),
+        row.get("layerParameter"),
+        row.get("datasetType"),
+        row.get("description"),
+        row.get("units"),
+        row.get("sourceName"),
+    ]
+    combined = " ".join(
+        str(value).lower() for value in fields if isinstance(value, str)
+    )
+    return any(keyword in combined for keyword in keywords)
+
 
 # ============================================================================
 # CUSTOM JSON ENCODER FOR NaN/Inf VALUES
@@ -261,6 +279,10 @@ class RasterRequest(BaseModel):
     )
     cssColors: Optional[List[str]] = Field(
         None, description="CSS color strings from frontend ColorBar"
+    )
+    maskZeroValues: Optional[bool] = Field(
+        False,
+        description="When true, zero precipitation values are masked from visualization",
     )
 
 
@@ -2091,13 +2113,63 @@ async def visualize_raster(request: RasterRequest):
             if level_dims:
                 var = var.sel({level_dims[0]: request.level}, method="nearest")
 
-        # CRITICAL: Pass CSS colors to serialize_raster_array
+        # DEBUG: Log variable stats BEFORE masking
+        logger.info(f"[RasterViz DEBUG] Variable name: {var_name}")
+        logger.info(f"[RasterViz DEBUG] Variable shape: {var.shape}")
+        logger.info(f"[RasterViz DEBUG] Variable dims: {var.dims}")
+        var_data = var.values
+        logger.info(f"[RasterViz DEBUG] Data min: {np.nanmin(var_data)}")
+        logger.info(f"[RasterViz DEBUG] Data max: {np.nanmax(var_data)}")
+        logger.info(f"[RasterViz DEBUG] Data mean: {np.nanmean(var_data)}")
+        zero_count_before = np.sum(var_data == 0.0)
+        total_count = var_data.size
+        logger.info(
+            f"[RasterViz DEBUG] Exact zeros BEFORE masking: {zero_count_before} / {total_count}"
+        )
+        logger.info(
+            f"[RasterViz DEBUG] NaN count BEFORE masking: {np.sum(np.isnan(var_data))}"
+        )
+        logger.info(
+            f"[RasterViz DEBUG] maskZeroValues parameter: {request.maskZeroValues}"
+        )
+
+        # Optionally mask zero precipitation values - BEFORE serialization
+        if request.maskZeroValues:
+            logger.info("[RasterViz DEBUG] Zero masking is ENABLED")
+            logger.info("[RasterViz DEBUG] Applying var.where(var > tolerance)")
+            # Use a small tolerance to catch floating point zeros
+            tolerance = 1e-8
+            var = var.where(var > tolerance)
+
+            # DEBUG: Log stats AFTER masking
+            var_data_after = var.values
+            logger.info(
+                f"[RasterViz DEBUG] Data min AFTER masking: {np.nanmin(var_data_after)}"
+            )
+            logger.info(
+                f"[RasterViz DEBUG] Data max AFTER masking: {np.nanmax(var_data_after)}"
+            )
+            zero_count_after = np.sum(var_data_after == 0.0)
+            nan_count_after = np.sum(np.isnan(var_data_after))
+            logger.info(
+                f"[RasterViz DEBUG] Exact zeros AFTER masking: {zero_count_after}"
+            )
+            logger.info(f"[RasterViz DEBUG] NaN count AFTER masking: {nan_count_after}")
+            logger.info(
+                f"[RasterViz DEBUG] Expected: zeros should be NaN, NaN count should increase by {zero_count_before}"
+            )
+        else:
+            logger.info(
+                "[RasterViz DEBUG] Zero masking is DISABLED - no filtering applied"
+            )
+
+        # Generate raster visualization
         logger.info(f"Generating raster visualization for {meta_row['datasetName']}")
         raster_data = serialize_raster_array(
             var,
             meta_row,
             meta_row["datasetName"],
-            css_colors=request.cssColors,  # THIS IS THE KEY LINE - ADD THIS!
+            css_colors=request.cssColors,
         )
 
         # Add processing info
@@ -2110,6 +2182,7 @@ async def visualize_raster(request: RasterRequest):
             "colorSource": "CSS colors from ColorBar"
             if request.cssColors
             else "Default colormap",
+            "zeroMasking": request.maskZeroValues,
         }
 
         logger.info(
@@ -2124,79 +2197,6 @@ async def visualize_raster(request: RasterRequest):
         logger.error(f"Error generating raster visualization: {e}")
         raise HTTPException(
             status_code=500, detail=f"Failed to generate raster visualization: {str(e)}"
-        )
-
-
-@router.get("/timeseries/datasets", response_class=CustomJSONResponse)
-async def list_available_datasets(
-    stored: Optional[Literal["local", "cloud", "all"]] = "all",
-    source: Optional[str] = None,
-    search: Optional[str] = None,
-):
-    """
-    List all available datasets with filtering options
-    """
-    try:
-        # Load metadata from database using 'metadata' table
-        with engine.connect() as conn:
-            query = text("SELECT * FROM metadata")
-            result = conn.execute(query)
-            df = pd.DataFrame(result.fetchall(), columns=result.keys())
-
-        if df.empty:
-            return {"total": 0, "datasets": []}
-
-        # Apply filters
-        if stored != "all" and stored is not None:
-            df = df[df["Stored"].str.lower() == stored.lower()]
-
-        if source:
-            df = df[df["sourceName"].str.contains(source, case=False, na=False)]
-
-        if search:
-            df = df[
-                df["datasetName"].str.contains(search, case=False, na=False)
-                | df["layerParameter"].str.contains(search, case=False, na=False)
-                | df.get("slug", pd.Series(dtype=str)).str.contains(
-                    search, case=False, na=False
-                )
-            ]
-
-        # Convert to list of dicts
-        datasets = []
-        for _, row in df.iterrows():
-            datasets.append(
-                {
-                    "id": str(row["id"]),
-                    "slug": row.get("slug"),
-                    "name": row["layerParameter"],
-                    "datasetName": row["datasetName"],
-                    "sourceName": row["sourceName"],
-                    "source": row["sourceName"],
-                    "type": row["datasetType"],
-                    "stored": row["Stored"],
-                    "startDate": row["startDate"],
-                    "endDate": row["endDate"],
-                    "units": row["units"],
-                    "spatialResolution": row.get("spatialResolution"),
-                    "levels": row.get("levels"),
-                    "levelValues": row.get("levelValues"),
-                    "levelUnits": row.get("levelUnits"),
-                    "statistic": row.get("statistic"),
-                    "inputFile": row.get("inputFile"),
-                    "keyVariable": row.get("keyVariable"),
-                    "colorMap": row.get("colorMap"),
-                    "valueMin": row.get("valueMin"),
-                    "valueMax": row.get("valueMax"),
-                }
-            )
-
-        return {"total": len(datasets), "datasets": datasets}
-
-    except Exception as e:
-        logger.error(f"Error listing datasets: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to list datasets: {str(e)}"
         )
 
 
