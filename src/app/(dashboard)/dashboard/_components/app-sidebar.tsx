@@ -18,6 +18,7 @@ import {
   SettingsIcon,
   UsersIcon,
 } from "lucide-react";
+import { ModeToggle, ThemeToggle } from "@/components/ui/theme-toggle";
 
 import Link from "next/link";
 
@@ -175,6 +176,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavMain items={data.navMain} />
         <NavDocuments items={data.documents} />
         <NavSecondary items={data.navSecondary} className="mt-auto" />
+        <ThemeToggle />
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={data.user} />
