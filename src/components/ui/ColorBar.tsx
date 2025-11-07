@@ -197,12 +197,14 @@ const ColorBar: React.FC<ColorBarProps> = ({
     }
 
     const margin = 24;
+    const offset = Math.round(window.innerHeight * 0.05);
 
     if (isVertical) {
       const cardWidth = 200;
       const cardHeight = 360;
       const x = Math.max(margin, window.innerWidth - cardWidth - margin);
-      const targetTop = Math.round(window.innerHeight * 0.25) - cardHeight / 2;
+      const targetTop =
+        Math.round(window.innerHeight * 0.25) - cardHeight / 2 + offset;
       const y = Math.max(
         margin,
         Math.min(targetTop, window.innerHeight - cardHeight - margin),
@@ -212,9 +214,11 @@ const ColorBar: React.FC<ColorBarProps> = ({
 
     const cardHeight = 220;
     const x = margin;
+    const baseY =
+      window.innerHeight - cardHeight - Math.max(12, margin / 2) + offset;
     const y = Math.max(
       margin,
-      window.innerHeight - cardHeight - Math.max(12, margin / 2),
+      Math.min(baseY, window.innerHeight - cardHeight - margin),
     );
     return { x, y };
   }, [isVertical]);

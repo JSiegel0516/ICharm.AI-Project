@@ -19,10 +19,99 @@ import {
   PressureLevel,
   GlobeSettings,
 } from "@/types";
+import { pressureLevels } from "@/utils/constants";
 import { SideButtons } from "./_components/SideButtons";
 import { Tutorial } from "./_components/Tutorial";
 
 type SidebarPanel = "datasets" | "history" | "about" | null;
+
+const normalizeLevelUnit = (
+  unit?: string | null,
+  descriptor?: string | null,
+) => {
+  const normalized = unit?.trim().toLowerCase();
+  if (normalized) {
+    if (
+      normalized === "mb" ||
+      normalized.includes("millibar") ||
+      normalized.includes("mbar")
+    ) {
+      return "millibar";
+    }
+    if (normalized === "hpa" || normalized.includes("hectopascal")) {
+      return "hPa";
+    }
+    if (normalized === "pa" || normalized.includes("pascal")) {
+      return "Pa";
+    }
+    if (normalized === "m" || normalized.includes("meter")) {
+      return "m";
+    }
+    if (normalized === "km" || normalized.includes("kilometer")) {
+      return "km";
+    }
+    return unit.trim();
+  }
+
+  const descriptorText = descriptor?.toLowerCase() ?? "";
+  if (
+    descriptorText.includes("pressure") ||
+    descriptorText.includes("millibar") ||
+    descriptorText.includes("mbar")
+  ) {
+    return "millibar";
+  }
+  if (
+    descriptorText.includes("height") ||
+    descriptorText.includes("altitude")
+  ) {
+    return "m";
+  }
+  return "level";
+};
+
+const isPressureUnit = (unit: string) => {
+  const normalized = unit.toLowerCase();
+  return (
+    normalized === "millibar" || normalized === "hpa" || normalized === "pa"
+  );
+};
+
+const formatLevelValue = (value: number) => {
+  if (Number.isInteger(value)) {
+    return value.toString();
+  }
+  const fixed = value.toFixed(1);
+  return fixed.endsWith(".0") ? fixed.slice(0, -2) : fixed;
+};
+
+const formatPressureLevelLabel = (value: number, unit: string) => {
+  const formattedValue = formatLevelValue(value);
+  if (unit === "level") {
+    return formattedValue;
+  }
+  return `${formattedValue} ${unit}`;
+};
+
+const parseNumericList = (input: unknown): number[] => {
+  if (!input) return [];
+  if (Array.isArray(input)) {
+    return input
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value));
+  }
+  if (typeof input === "string") {
+    const matches = input.match(/-?\d+(\.\d+)?/g);
+    if (!matches) return [];
+    return matches
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value));
+  }
+  if (typeof input === "number" && Number.isFinite(input)) {
+    return [input];
+  }
+  return [];
+};
 
 export default function HomePage() {
   const { showColorbar, currentDataset, toggleColorbar, colorBarOrientation } =
@@ -41,6 +130,59 @@ export default function HomePage() {
   const [tutorialOpen, setTutorialOpen] = useState(false);
   const [colorBarCollapsed, setColorBarCollapsed] = useState(false);
   const [colorBarPosition, setColorBarPosition] = useState({ x: 24, y: 300 });
+
+  const datasetPressureLevels = useMemo<PressureLevel[] | null>(() => {
+    const backend = currentDataset?.backend;
+    if (!backend) {
+      return null;
+    }
+
+    let rawValues = parseNumericList(backend.levelValues);
+    if (!rawValues.length) {
+      rawValues = parseNumericList(backend.levels);
+    }
+
+    const normalizedUnit = normalizeLevelUnit(
+      backend.levelUnits,
+      backend.levels,
+    );
+
+    const isLikelyPressureDataset =
+      isPressureUnit(normalizedUnit) ||
+      backend.datasetName?.toLowerCase().includes("pressure") ||
+      backend.layerParameter?.toLowerCase().includes("pressure") ||
+      currentDataset?.description?.toLowerCase().includes("pressure") ||
+      backend.levels?.toLowerCase().includes("pressure");
+
+    if (!rawValues.length && isLikelyPressureDataset) {
+      return pressureLevels.map((level) => ({
+        ...level,
+        id: `${
+          backend.id ?? currentDataset?.id ?? "dataset"
+        }-default-${level.id}`,
+      }));
+    }
+
+    if (!rawValues.length) {
+      return null;
+    }
+
+    const shouldSortDescending = isPressureUnit(normalizedUnit);
+    const sortedValues = [...rawValues].sort((a, b) =>
+      shouldSortDescending ? b - a : a - b,
+    );
+
+    return sortedValues.map((value, index) => ({
+      id: `${
+        backend.id ?? currentDataset?.id ?? "dataset"
+      }-level-${index}-${value}`,
+      value,
+      unit: normalizedUnit,
+      label: formatPressureLevelLabel(value, normalizedUnit),
+    }));
+  }, [currentDataset]);
+
+  const hasPressureLevels = Boolean(datasetPressureLevels?.length);
 
   // Region Info State
   const [showRegionInfo, setShowRegionInfo] = useState(false);
@@ -61,12 +203,7 @@ export default function HomePage() {
 
   // Pressure Level State
   const [selectedPressureLevel, setSelectedPressureLevel] =
-    useState<PressureLevel>({
-      id: "surface",
-      value: 1000,
-      label: "Surface",
-      unit: "hPa",
-    });
+    useState<PressureLevel | null>(null);
   const [rasterMeta, setRasterMeta] = useState<{
     units?: string | null;
     min?: number | null;
@@ -90,9 +227,13 @@ export default function HomePage() {
     setIsTimebarPlaying(isPlaying);
   }, []);
 
-  const handlePressureLevelChange = useCallback((level: PressureLevel) => {
-    setSelectedPressureLevel(level);
-  }, []);
+  const handlePressureLevelChange = useCallback(
+    (level: PressureLevel) => {
+      setSelectedPressureLevel(level);
+      setRasterMeta(null);
+    },
+    [setRasterMeta],
+  );
 
   const handleRegionClick = useCallback(
     (latitude: number, longitude: number, data?: RegionData) => {
@@ -137,8 +278,49 @@ export default function HomePage() {
     setRasterMeta(null);
   }, [currentDataset]);
 
+  useEffect(() => {
+    if (!hasPressureLevels || !datasetPressureLevels) {
+      setSelectedPressureLevel(null);
+      return;
+    }
+
+    setSelectedPressureLevel((prev) => {
+      if (prev) {
+        const match = datasetPressureLevels.find(
+          (level) => level.value === prev.value,
+        );
+        if (match) {
+          return match;
+        }
+      }
+      return datasetPressureLevels[0];
+    });
+  }, [
+    hasPressureLevels,
+    datasetPressureLevels,
+    currentDataset?.id,
+    currentDataset?.backend?.id,
+  ]);
+
+  useEffect(() => {
+    if (!hasPressureLevels) {
+      return;
+    }
+    setRasterMeta(null);
+  }, [selectedPressureLevel, hasPressureLevels]);
+
   // Memoized Globe
-  const selectedLevelValue = selectedPressureLevel?.value ?? null;
+  const selectedLevelValue =
+    hasPressureLevels && selectedPressureLevel
+      ? selectedPressureLevel.value
+      : null;
+
+  const pressureLevelHelperText = selectedPressureLevel
+    ? `Current: ${formatPressureLevelLabel(
+        selectedPressureLevel.value,
+        selectedPressureLevel.unit,
+      )}`
+    : undefined;
 
   const memoizedGlobe = useMemo(
     () => (
@@ -232,16 +414,23 @@ export default function HomePage() {
             </div>
 
             {/* Pressure Levels Selector */}
-            <div
-              id="pressure"
-              className="pointer-events-auto absolute bottom-0 flex items-center gap-4"
-              style={{ left: "calc(50% + 300px)", transform: "translateX(0)" }}
-            >
-              <PressureLevelsSelector
-                selectedLevel={selectedPressureLevel}
-                onLevelChange={handlePressureLevelChange}
-              />
-            </div>
+            {hasPressureLevels && datasetPressureLevels && (
+              <div
+                id="pressure"
+                className="pointer-events-auto absolute bottom-0 flex items-center gap-4"
+                style={{
+                  left: "calc(50% + 300px)",
+                  transform: "translateX(0)",
+                }}
+              >
+                <PressureLevelsSelector
+                  selectedLevel={selectedPressureLevel}
+                  onLevelChange={handlePressureLevelChange}
+                  levels={datasetPressureLevels}
+                  helperText={pressureLevelHelperText}
+                />
+              </div>
+            )}
           </div>
         </div>
       </div>

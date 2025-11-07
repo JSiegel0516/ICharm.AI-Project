@@ -269,9 +269,13 @@ export interface PressureLevelsDropdownProps {
 }
 
 export interface PressureLevelsSelectorProps {
-  selectedLevel?: PressureLevel;
+  selectedLevel?: PressureLevel | null;
   onLevelChange?: (level: PressureLevel) => void;
   className?: string;
+  levels?: PressureLevel[];
+  disabled?: boolean;
+  label?: string;
+  helperText?: string;
 }
 
 export interface YearSelectorProps {
