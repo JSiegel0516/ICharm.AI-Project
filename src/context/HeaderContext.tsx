@@ -249,6 +249,13 @@ const useAppStateInternal = () => {
     isLoading: true, // Start as loading
     error: null,
     colorBarOrientation: "horizontal",
+    globeSettings: {
+      satelliteLayerVisible: true,
+      boundaryLinesVisible: true,
+      geographicLinesVisible: false,
+      rasterOpacity: 0.65,
+      hideZeroPrecipitation: false,
+    },
   });
 
   const [selectedYear, setSelectedYear] = useState<number>(
