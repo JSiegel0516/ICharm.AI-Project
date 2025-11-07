@@ -310,6 +310,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
     }
 
     const margin = 24;
+    const offset = Math.round(window.innerHeight * 0.05);
 
     if (isVertical) {
       const offset = Math.round(window.innerHeight * 0.05);
