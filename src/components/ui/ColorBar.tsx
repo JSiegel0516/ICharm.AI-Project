@@ -8,7 +8,20 @@ import React, {
   useCallback,
 } from "react";
 import { ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
-import { ColorBarProps, TemperatureUnit } from "@/types";
+
+// Mock types for the example
+type TemperatureUnit = "celsius" | "fahrenheit";
+interface ColorBarProps {
+  show: boolean;
+  onToggle?: () => void;
+  dataset: any;
+  unit?: TemperatureUnit;
+  onUnitChange?: (unit: TemperatureUnit) => void;
+  onPositionChange?: (position: { x: number; y: number }) => void;
+  collapsed?: boolean;
+  rasterMeta?: any;
+  orientation?: "horizontal" | "vertical";
+}
 
 const ColorBar: React.FC<ColorBarProps> = ({
   show,
@@ -28,6 +41,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
   const [isCollapsed, setIsCollapsed] = useState(collapsed);
   const [previousPosition, setPreviousPosition] = useState({ x: 24, y: 24 });
   const colorBarRef = useRef<HTMLDivElement>(null);
+  const [hasInitialized, setHasInitialized] = useState(false);
 
   const defaultUnitSymbol = useMemo(() => {
     const rawCandidates = [dataset.units, rasterMeta?.units].filter(
@@ -64,7 +78,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
       }
 
       const isKelvin =
-        normalized.includes("K") ||
+        normalized.includes("K") ||
         lower.includes("kelvin") ||
         lower.includes("°k") ||
         lower.includes("degk") ||
@@ -191,15 +205,16 @@ const ColorBar: React.FC<ColorBarProps> = ({
 
   const isVertical = orientation === "vertical";
 
+  // NEW: Function that uses ACTUAL measured height
   const getDefaultPosition = useCallback(() => {
     if (typeof window === "undefined") {
       return isVertical ? { x: 24, y: 120 } : { x: 24, y: 180 };
     }
 
     const margin = 24;
-    const offset = Math.round(window.innerHeight * 0.05);
 
     if (isVertical) {
+      const offset = Math.round(window.innerHeight * 0.05);
       const cardWidth = 200;
       const cardHeight = 360;
       const x = Math.max(margin, window.innerWidth - cardWidth - margin);
@@ -212,14 +227,13 @@ const ColorBar: React.FC<ColorBarProps> = ({
       return { x, y };
     }
 
-    const cardHeight = 220;
+    // For horizontal: use ACTUAL measured height from DOM
+    const colorBarElement = colorBarRef.current;
+    const actualHeight = colorBarElement ? colorBarElement.offsetHeight : 220;
+
     const x = margin;
-    const baseY =
-      window.innerHeight - cardHeight - Math.max(12, margin / 2) + offset;
-    const y = Math.max(
-      margin,
-      Math.min(baseY, window.innerHeight - cardHeight - margin),
-    );
+    const y = window.innerHeight - actualHeight - margin;
+
     return { x, y };
   }, [isVertical]);
 
@@ -282,20 +296,15 @@ const ColorBar: React.FC<ColorBarProps> = ({
     }
   };
 
-  // FIX: Simplified collapse toggle with better event handling
   const handleCollapseToggle = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
-    console.log("ColorBar collapse clicked", { isDragging, isCollapsed });
-
     if (isDragging) {
-      console.log("Blocked: currently dragging");
       return;
     }
 
     setIsCollapsed((prev) => {
-      console.log("ColorBar toggle: from", prev, "to", !prev);
       if (prev) {
         // Expanding
         setPosition(previousPosition);
@@ -314,17 +323,30 @@ const ColorBar: React.FC<ColorBarProps> = ({
     setIsCollapsed(collapsed);
   }, [collapsed]);
 
+  // NEW: Initialize position after component mounts and measures itself
   useEffect(() => {
-    const defaultPosition = getDefaultPosition();
-    if (isCollapsed) {
-      setPreviousPosition(defaultPosition);
-      return;
-    }
-    setPosition(defaultPosition);
-    setPreviousPosition(defaultPosition);
-  }, [getDefaultPosition, isCollapsed]);
+    if (!hasInitialized && colorBarRef.current && !isCollapsed) {
+      // Small delay to ensure DOM has rendered
+      const timer = setTimeout(() => {
+        const defaultPosition = getDefaultPosition();
+        setPosition(defaultPosition);
+        setPreviousPosition(defaultPosition);
+        setHasInitialized(true);
+      }, 0);
 
-  // Notify parent of position changes
+      return () => clearTimeout(timer);
+    }
+  }, [hasInitialized, getDefaultPosition, isCollapsed]);
+
+  // Update position when orientation changes
+  useEffect(() => {
+    if (hasInitialized && !isCollapsed) {
+      const defaultPosition = getDefaultPosition();
+      setPosition(defaultPosition);
+      setPreviousPosition(defaultPosition);
+    }
+  }, [orientation, hasInitialized, isCollapsed, getDefaultPosition]);
+
   useEffect(() => {
     if (onPositionChange) {
       onPositionChange(position);
@@ -344,7 +366,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     });
   };
 
-  // FIX: Remove position from dependency array to prevent infinite loop
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDragging || isCollapsed) return;
@@ -382,7 +403,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [isDragging, dragStart, isCollapsed]); // Removed position from deps
+  }, [isDragging, dragStart, isCollapsed]);
 
   const handleDropdownToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -400,12 +421,10 @@ const ColorBar: React.FC<ColorBarProps> = ({
         setPosition({ x: 24, y: window.innerHeight - 60 });
       } else {
         const colorBarElement = colorBarRef.current;
-        const colorBarWidth = colorBarElement
-          ? colorBarElement.offsetWidth
-          : 320;
-        const colorBarHeight = colorBarElement
-          ? colorBarElement.offsetHeight
-          : 200;
+        if (!colorBarElement) return;
+
+        const colorBarWidth = colorBarElement.offsetWidth;
+        const colorBarHeight = colorBarElement.offsetHeight;
 
         const maxX = window.innerWidth - colorBarWidth;
         const maxY = window.innerHeight - colorBarHeight;
@@ -420,25 +439,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, [isCollapsed]);
-
-  useEffect(() => {
-    if (isCollapsed) {
-      return;
-    }
-
-    const colorBarElement = colorBarRef.current;
-    if (!colorBarElement) {
-      return;
-    }
-
-    const maxX = window.innerWidth - colorBarElement.offsetWidth;
-    const maxY = window.innerHeight - colorBarElement.offsetHeight;
-
-    setPosition((prevPosition) => ({
-      x: Math.max(0, Math.min(prevPosition.x, maxX)),
-      y: Math.max(0, Math.min(prevPosition.y, maxY)),
-    }));
-  }, [orientation, isCollapsed]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -471,11 +471,8 @@ const ColorBar: React.FC<ColorBarProps> = ({
     >
       {isCollapsed ? (
         <div
-          className="pointer-events-auto cursor-pointer rounded-xl border border-blue-500/20 bg-linear-to-br from-blue-900/95 to-purple-900/95 backdrop-blur-sm transition-all duration-200 hover:shadow-lg"
-          onClick={(e) => {
-            console.log("Collapsed div clicked");
-            handleCollapseToggle(e);
-          }}
+          className="pointer-events-auto cursor-pointer rounded-xl border border-blue-500/20 bg-gradient-to-br from-blue-900/95 to-purple-900/95 backdrop-blur-sm transition-all duration-200 hover:shadow-lg"
+          onClick={handleCollapseToggle}
           style={{ transform: "scale(1)" }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = "scale(1.05)";
@@ -620,5 +617,4 @@ const ColorBar: React.FC<ColorBarProps> = ({
     </div>
   );
 };
-
 export default ColorBar;
