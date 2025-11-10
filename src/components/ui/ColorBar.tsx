@@ -146,8 +146,17 @@ const ColorBar: React.FC<ColorBarProps> = ({
     return defaultUnitSymbol === "°C" && hasTemperatureHints;
   }, [defaultUnitSymbol, hasTemperatureHints]);
 
-  const resolvedMin = rasterMeta?.min ?? dataset.colorScale.min;
-  const resolvedMax = rasterMeta?.max ?? dataset.colorScale.max;
+  const metaMin =
+    typeof rasterMeta?.min === "number" && Number.isFinite(rasterMeta.min)
+      ? rasterMeta.min
+      : null;
+  const metaMax =
+    typeof rasterMeta?.max === "number" && Number.isFinite(rasterMeta.max)
+      ? rasterMeta.max
+      : null;
+
+  const resolvedMin = metaMin ?? dataset.colorScale.min;
+  const resolvedMax = metaMax ?? dataset.colorScale.max;
   const safeMin = Number.isFinite(resolvedMin) ? Number(resolvedMin) : 0;
   const safeMax = Number.isFinite(resolvedMax) ? Number(resolvedMax) : safeMin;
   const numericColorScaleLabels = useMemo(() => {
@@ -217,7 +226,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
       const offset = Math.round(window.innerHeight * 0.05);
       const cardWidth = 200;
       const cardHeight = 360;
-      const x = Math.max(margin, window.innerWidth - cardWidth - margin);
+      const x = Math.max(margin, window.innerWidth - cardWidth - margin - 12);
       const targetTop =
         Math.round(window.innerHeight * 0.25) - cardHeight / 2 + offset;
       const y = Math.max(
@@ -237,10 +246,15 @@ const ColorBar: React.FC<ColorBarProps> = ({
     return { x, y };
   }, [isVertical]);
 
+  const dynamicRangeActive = metaMin !== null && metaMax !== null;
   const forceDynamicLabels = defaultUnitSymbol === "K";
 
   const numericLabels = useMemo(() => {
-    if (numericColorScaleLabels?.length && !forceDynamicLabels) {
+    if (
+      numericColorScaleLabels?.length &&
+      !forceDynamicLabels &&
+      !dynamicRangeActive
+    ) {
       return numericColorScaleLabels;
     }
 
@@ -257,6 +271,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
     safeMax,
     safeMin,
     forceDynamicLabels,
+    dynamicRangeActive,
   ]);
 
   const displayLabels = useMemo(() => {
@@ -538,7 +553,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
           </div>
 
           <div className="relative mt-2 mb-12">
-            <div className="flex w-full items-center justify-between text-sm font-medium text-blue-200">
+            <div className="flex w-full items-center justify-between gap-2 text-sm font-medium text-blue-200">
               <span>Unit of measurement</span>
 
               {allowUnitToggle ? (
@@ -582,7 +597,9 @@ const ColorBar: React.FC<ColorBarProps> = ({
                   )}
                 </div>
               ) : (
-                <span className="text-blue-100">{unitSymbol || "–"}</span>
+                <span className="ml-2 min-w-[2rem] text-right text-blue-100">
+                  {unitSymbol || "–"}
+                </span>
               )}
             </div>
           </div>
@@ -591,10 +608,12 @@ const ColorBar: React.FC<ColorBarProps> = ({
             {isVertical ? (
               <div className="flex w-full items-center justify-center">
                 <div className="relative flex">
-                  <div
-                    className="h-64 w-14 rounded-lg border border-white/10 shadow-inner"
-                    style={{ background: gradientBackground }}
-                  />
+                  <div className="h-64 w-14 rounded-lg bg-white/10 p-[1px] shadow-inner">
+                    <div
+                      className="h-full w-full overflow-hidden rounded-[10px]"
+                      style={{ background: gradientBackground }}
+                    />
+                  </div>
                   <div className="absolute inset-y-4 left-full ml-4 flex flex-col justify-between text-right text-xs text-blue-200">
                     {verticalLabels.map((label, index) => (
                       <span key={index} className="leading-none">
