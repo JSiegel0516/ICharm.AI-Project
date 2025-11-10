@@ -329,6 +329,8 @@ const ColorBar: React.FC<ColorBarProps> = ({
     return { x: margin, y: window.innerHeight - actualHeight - margin };
   }, [isVertical]);
 
+  const forceDynamicLabels = defaultUnitSymbol === "K";
+
   const clampPosition = useCallback((pos: Position): Position => {
     const element = colorBarRef.current;
     if (!element) return pos;
