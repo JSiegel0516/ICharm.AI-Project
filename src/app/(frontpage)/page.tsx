@@ -167,7 +167,10 @@ export default function HomePage() {
       return null;
     }
 
-    const shouldSortDescending = isPressureUnit(normalizedUnit);
+    const shouldSortDescending =
+      isPressureUnit(normalizedUnit) ||
+      normalizedUnit === "m" ||
+      normalizedUnit === "km";
     const sortedValues = [...rawValues].sort((a, b) =>
       shouldSortDescending ? b - a : a - b,
     );

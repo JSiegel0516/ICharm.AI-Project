@@ -46,8 +46,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./backend/datasets:/app/datasets:ro
-      # IMPORTANT: Mount colorMaps.json if you have it (optional)
-      #- ../src/data/colorMaps.json:/app/data/colorMaps.json:ro
+      - ./public:/app/public:ro
     ports:
       - "${DATA_API_PORT:-8000}:8000"
     environment:
