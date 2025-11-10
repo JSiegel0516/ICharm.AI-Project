@@ -18,7 +18,7 @@ import {
   SettingsIcon,
   UsersIcon,
 } from "lucide-react";
-import { ModeToggle, ThemeToggle } from "@/components/ui/theme-toggle";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 import Link from "next/link";
 
