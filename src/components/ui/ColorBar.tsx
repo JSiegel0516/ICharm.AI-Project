@@ -237,8 +237,10 @@ const ColorBar: React.FC<ColorBarProps> = ({
     return { x, y };
   }, [isVertical]);
 
+  const forceDynamicLabels = defaultUnitSymbol === "K";
+
   const numericLabels = useMemo(() => {
-    if (numericColorScaleLabels?.length) {
+    if (numericColorScaleLabels?.length && !forceDynamicLabels) {
       return numericColorScaleLabels;
     }
 
@@ -249,7 +251,13 @@ const ColorBar: React.FC<ColorBarProps> = ({
     return Array.from({ length: labelCount }, (_, index) => {
       return safeMin + ((safeMax - safeMin) * index) / (labelCount - 1);
     });
-  }, [labelCount, numericColorScaleLabels, safeMax, safeMin]);
+  }, [
+    labelCount,
+    numericColorScaleLabels,
+    safeMax,
+    safeMin,
+    forceDynamicLabels,
+  ]);
 
   const displayLabels = useMemo(() => {
     const values =
