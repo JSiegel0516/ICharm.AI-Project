@@ -2,7 +2,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
-  X,
   Send,
   Bot,
   User,
@@ -381,9 +380,9 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
             <button
               onClick={onClose}
               className="rounded-full p-1.5 text-gray-400 transition hover:bg-neutral-700/40 hover:text-gray-200"
-              aria-label="Close chat"
+              aria-label="Collapse chat"
             >
-              <X size={16} />
+              <ChevronDown size={16} />
             </button>
           </div>
           <div className="mt-3 flex items-center gap-2">

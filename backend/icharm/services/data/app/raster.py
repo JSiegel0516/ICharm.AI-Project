@@ -554,10 +554,15 @@ def serialize_raster_array(
 ) -> Dict[str, Any]:
     """
     Serialize raster array - STRICTLY respects original data boundaries
+
+    Note: Zero-value masking should be done via .where() in the calling code
+    before passing the DataArray to this function.
     """
-    print(f"[RasterViz] Serializing raster for dataset: {dataset_name}")
+    print(f"[RasterViz DEBUG] Serializing raster for dataset: {dataset_name}")
     if css_colors:
-        print(f"[RasterViz] Using CSS colors from frontend: {css_colors}")
+        print(f"[RasterViz DEBUG] Using CSS colors from frontend: {css_colors}")
+    else:
+        print("[RasterViz DEBUG] No CSS colors provided")
 
     array = da.squeeze()
     if array.ndim > 2:
@@ -573,6 +578,12 @@ def serialize_raster_array(
     lat_values = np.asarray(array.coords[lat_coord_name].values, dtype=np.float64)
     lon_values = np.asarray(array.coords[lon_coord_name].values, dtype=np.float64)
     data = np.asarray(array.values, dtype=np.float32)
+
+    print(f"[RasterViz DEBUG] Data array shape after conversion to numpy: {data.shape}")
+    print(f"[RasterViz DEBUG] Data min in serialize: {np.nanmin(data)}")
+    print(f"[RasterViz DEBUG] Data max in serialize: {np.nanmax(data)}")
+    print(f"[RasterViz DEBUG] Zero count in serialize: {np.sum(data == 0.0)}")
+    print(f"[RasterViz DEBUG] NaN count in serialize: {np.sum(np.isnan(data))}")
 
     if data.ndim != 2:
         raise ValueError("Raster slice is not 2-dimensional after selection.")
@@ -610,10 +621,19 @@ def serialize_raster_array(
         data = data[:, sort_idx]
 
     # Initial mask: only NaN/Inf are invalid
+    # (Zero masking is handled by .where() before this function is called)
     finite_mask = np.isfinite(data)
+
+    print(
+        f"[RasterViz DEBUG] Initial finite_mask - valid pixels: {finite_mask.sum()} / {finite_mask.size}"
+    )
 
     # Apply land mask detection ONLY for GODAS
     data, finite_mask = _apply_land_ocean_mask(dataset_name, data, finite_mask)
+
+    print(
+        f"[RasterViz DEBUG] After land/ocean mask - valid pixels: {finite_mask.sum()} / {finite_mask.size}"
+    )
 
     data_min = float(data[finite_mask].min()) if finite_mask.any() else None
     data_max = float(data[finite_mask].max()) if finite_mask.any() else None

@@ -25,6 +25,8 @@ interface GlobeSettingsPanelProps {
   // Raster opacity control
   rasterOpacity: number;
   onRasterOpacityChange: (opacity: number) => void;
+  hideZeroPrecipitation: boolean;
+  onHideZeroPrecipitationToggle: (enabled: boolean) => void;
 }
 
 export function GlobeSettingsPanel({
@@ -38,6 +40,8 @@ export function GlobeSettingsPanel({
   onGeographicLinesToggle,
   rasterOpacity,
   onRasterOpacityChange,
+  hideZeroPrecipitation,
+  onHideZeroPrecipitationToggle,
 }: GlobeSettingsPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -183,6 +187,32 @@ export function GlobeSettingsPanel({
                     <span>Transparent</span>
                     <span>Opaque</span>
                   </div>
+                </div>
+              </div>
+
+              {/* Precipitation Display */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-white">
+                  Precipitation Display
+                </h3>
+                <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-3">
+                  <div className="space-y-0.5">
+                    <Label
+                      htmlFor="precip-zero-toggle"
+                      className="cursor-pointer text-sm font-medium text-white"
+                    >
+                      Only Display Nonzero Data
+                    </Label>
+                    <p className="text-xs text-slate-400">
+                      Hide zero precipitation areas (CMORPH & local datasets)
+                    </p>
+                  </div>
+                  <Switch
+                    id="precip-zero-toggle"
+                    checked={hideZeroPrecipitation}
+                    onCheckedChange={onHideZeroPrecipitationToggle}
+                    className="data-[state=checked]:bg-rose-500"
+                  />
                 </div>
               </div>
 

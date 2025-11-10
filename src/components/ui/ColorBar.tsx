@@ -1,8 +1,27 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useMemo,
+  useCallback,
+} from "react";
 import { ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
-import { ColorBarProps, TemperatureUnit } from "@/types";
+
+// Mock types for the example
+type TemperatureUnit = "celsius" | "fahrenheit";
+interface ColorBarProps {
+  show: boolean;
+  onToggle?: () => void;
+  dataset: any;
+  unit?: TemperatureUnit;
+  onUnitChange?: (unit: TemperatureUnit) => void;
+  onPositionChange?: (position: { x: number; y: number }) => void;
+  collapsed?: boolean;
+  rasterMeta?: any;
+  orientation?: "horizontal" | "vertical";
+}
 
 const ColorBar: React.FC<ColorBarProps> = ({
   show,
@@ -13,6 +32,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
   onPositionChange,
   collapsed = false,
   rasterMeta = null,
+  orientation = "horizontal",
 }) => {
   const [showDropdown, setShowDropdown] = useState(false);
   const [position, setPosition] = useState({ x: 24, y: 24 });
@@ -21,48 +41,223 @@ const ColorBar: React.FC<ColorBarProps> = ({
   const [isCollapsed, setIsCollapsed] = useState(collapsed);
   const [previousPosition, setPreviousPosition] = useState({ x: 24, y: 24 });
   const colorBarRef = useRef<HTMLDivElement>(null);
-
-  const baseUnitRaw = rasterMeta?.units ?? dataset.units ?? "";
-  const normalizedUnit = baseUnitRaw.trim();
+  const [hasInitialized, setHasInitialized] = useState(false);
 
   const defaultUnitSymbol = useMemo(() => {
-    if (!normalizedUnit) return "";
-    const lower = normalizedUnit.toLowerCase();
-    if (lower.includes("degc") || lower.includes("celsius")) return "°C";
-    if (lower.includes("degf") || lower.includes("fahrenheit")) return "°F";
-    if (lower.includes("degk")) return "K";
-    return normalizedUnit;
-  }, [normalizedUnit]);
+    const rawCandidates = [dataset.units, rasterMeta?.units].filter(
+      (value): value is string =>
+        typeof value === "string" && value.trim() !== "",
+    );
+
+    let fallback = "";
+
+    for (const raw of rawCandidates) {
+      const normalized = raw.trim();
+      const lower = normalized.toLowerCase();
+      const alphaOnly = lower.replace(/[^a-z]/g, "");
+
+      const isCelsius =
+        normalized.includes("℃") ||
+        lower.includes("celsius") ||
+        lower.includes("celcius") ||
+        lower.includes("°c") ||
+        lower.includes("degc") ||
+        alphaOnly === "c";
+      if (isCelsius) {
+        return "°C";
+      }
+
+      const isFahrenheit =
+        normalized.includes("℉") ||
+        lower.includes("fahrenheit") ||
+        lower.includes("°f") ||
+        lower.includes("degf") ||
+        alphaOnly === "f";
+      if (isFahrenheit) {
+        return "°F";
+      }
+
+      const isKelvin =
+        normalized.includes("K") ||
+        lower.includes("kelvin") ||
+        lower.includes("°k") ||
+        lower.includes("degk") ||
+        alphaOnly === "k";
+      if (isKelvin) {
+        return "K";
+      }
+
+      if (!fallback) {
+        fallback = normalized;
+      }
+    }
+
+    if (!fallback && typeof dataset.dataType === "string") {
+      const typeLower = dataset.dataType.toLowerCase();
+      if (typeLower === "temperature") {
+        return "°C";
+      }
+    }
+
+    return fallback;
+  }, [dataset.units, rasterMeta?.units, dataset.dataType]);
+
+  const hasTemperatureHints = useMemo(() => {
+    const parts: string[] = [];
+
+    const typeLower =
+      typeof dataset?.dataType === "string"
+        ? dataset.dataType.toLowerCase()
+        : "";
+    if (typeLower) {
+      parts.push(typeLower);
+    }
+
+    const possibleKeys: Array<string | undefined | null> = [
+      dataset?.name,
+      dataset?.description,
+      (dataset as any)?.category,
+      dataset?.backend?.datasetName,
+      dataset?.backend?.layerParameter,
+      dataset?.backend?.datasetType,
+    ];
+    possibleKeys.forEach((value) => {
+      if (typeof value === "string" && value.trim()) {
+        parts.push(value);
+      }
+    });
+
+    if (!parts.length) {
+      return false;
+    }
+
+    const combined = parts.join(" ").toLowerCase();
+    return (
+      combined.includes("temp") ||
+      combined.includes("°c") ||
+      combined.includes("degc") ||
+      combined.includes("sea surface") ||
+      combined.includes("sst") ||
+      combined.includes("surface temp")
+    );
+  }, [dataset]);
 
   const allowUnitToggle = useMemo(() => {
-    return dataset.dataType === "temperature" && defaultUnitSymbol === "°C";
-  }, [dataset.dataType, defaultUnitSymbol]);
+    return defaultUnitSymbol === "°C" && hasTemperatureHints;
+  }, [defaultUnitSymbol, hasTemperatureHints]);
 
-  const resolvedMin = rasterMeta?.min ?? dataset.colorScale.min;
-  const resolvedMax = rasterMeta?.max ?? dataset.colorScale.max;
+  const metaMin =
+    typeof rasterMeta?.min === "number" && Number.isFinite(rasterMeta.min)
+      ? rasterMeta.min
+      : null;
+  const metaMax =
+    typeof rasterMeta?.max === "number" && Number.isFinite(rasterMeta.max)
+      ? rasterMeta.max
+      : null;
+
+  const resolvedMin = metaMin ?? dataset.colorScale.min;
+  const resolvedMax = metaMax ?? dataset.colorScale.max;
   const safeMin = Number.isFinite(resolvedMin) ? Number(resolvedMin) : 0;
   const safeMax = Number.isFinite(resolvedMax) ? Number(resolvedMax) : safeMin;
-  const labelCount = Math.max(
-    dataset.colorScale.labels.length || 0,
-    dataset.colorScale.colors.length || 0,
-    2,
-  );
+  const numericColorScaleLabels = useMemo(() => {
+    const labels = dataset.colorScale.labels;
+    if (!Array.isArray(labels) || !labels.length) {
+      return null;
+    }
+
+    const parsed = labels.map((label) => {
+      if (typeof label === "number" && Number.isFinite(label)) {
+        return label;
+      }
+
+      if (typeof label === "string") {
+        const match = label.trim().match(/-?\d+(\.\d+)?/);
+        if (match) {
+          const numeric = Number(match[0]);
+          if (Number.isFinite(numeric)) {
+            return numeric;
+          }
+        }
+      }
+
+      return null;
+    });
+
+    if (parsed.every((value) => typeof value === "number")) {
+      return parsed as number[];
+    }
+    return null;
+  }, [dataset.colorScale.labels]);
+
+  const labelCount = useMemo(() => {
+    if (numericColorScaleLabels?.length) {
+      return numericColorScaleLabels.length;
+    }
+    return Math.max(
+      dataset.colorScale.labels.length || 0,
+      dataset.colorScale.colors.length || 0,
+      2,
+    );
+  }, [
+    dataset.colorScale.colors.length,
+    dataset.colorScale.labels.length,
+    numericColorScaleLabels,
+  ]);
 
   const convertToFahrenheit = (value: number) => (value * 9) / 5 + 32;
 
   const formatLabelValue = (value: number) => {
     if (!Number.isFinite(value)) return "–";
-    const abs = Math.abs(value);
-    if (abs >= 100 || abs === 0) return value.toFixed(0);
-    if (abs >= 10) return value.toFixed(1);
-    return value.toFixed(2);
+    const rounded = Math.round(value);
+    return (Object.is(rounded, -0) ? 0 : rounded).toString();
   };
 
-  const getDefaultPosition = () => {
-    return { x: 24, y: window.innerHeight - 180 };
-  };
+  const isVertical = orientation === "vertical";
 
-  const getNumericLabels = () => {
+  // NEW: Function that uses ACTUAL measured height
+  const getDefaultPosition = useCallback(() => {
+    if (typeof window === "undefined") {
+      return isVertical ? { x: 24, y: 120 } : { x: 24, y: 180 };
+    }
+
+    const margin = 24;
+
+    if (isVertical) {
+      const offset = Math.round(window.innerHeight * 0.05);
+      const cardWidth = 200;
+      const cardHeight = 360;
+      const x = Math.max(margin, window.innerWidth - cardWidth - margin - 12);
+      const targetTop =
+        Math.round(window.innerHeight * 0.25) - cardHeight / 2 + offset;
+      const y = Math.max(
+        margin,
+        Math.min(targetTop, window.innerHeight - cardHeight - margin),
+      );
+      return { x, y };
+    }
+
+    // For horizontal: use ACTUAL measured height from DOM
+    const colorBarElement = colorBarRef.current;
+    const actualHeight = colorBarElement ? colorBarElement.offsetHeight : 220;
+
+    const x = margin;
+    const y = window.innerHeight - actualHeight - margin;
+
+    return { x, y };
+  }, [isVertical]);
+
+  const dynamicRangeActive = metaMin !== null && metaMax !== null;
+  const forceDynamicLabels = defaultUnitSymbol === "K";
+
+  const numericLabels = useMemo(() => {
+    if (
+      numericColorScaleLabels?.length &&
+      !forceDynamicLabels &&
+      !dynamicRangeActive
+    ) {
+      return numericColorScaleLabels;
+    }
+
     if (labelCount <= 1 || Math.abs(safeMax - safeMin) < 1e-9) {
       return Array(labelCount).fill(safeMin);
     }
@@ -70,17 +265,33 @@ const ColorBar: React.FC<ColorBarProps> = ({
     return Array.from({ length: labelCount }, (_, index) => {
       return safeMin + ((safeMax - safeMin) * index) / (labelCount - 1);
     });
-  };
+  }, [
+    labelCount,
+    numericColorScaleLabels,
+    safeMax,
+    safeMin,
+    forceDynamicLabels,
+    dynamicRangeActive,
+  ]);
 
-  const numericLabels = getNumericLabels();
-
-  const getDisplayLabels = () => {
+  const displayLabels = useMemo(() => {
     const values =
       allowUnitToggle && unit === "fahrenheit"
         ? numericLabels.map(convertToFahrenheit)
         : numericLabels;
     return values.map((val) => formatLabelValue(val));
-  };
+  }, [allowUnitToggle, unit, numericLabels]);
+
+  const verticalLabels = useMemo(
+    () => [...displayLabels].reverse(),
+    [displayLabels],
+  );
+
+  const gradientBackground = useMemo(
+    () =>
+      `linear-gradient(${isVertical ? "to top" : "to right"}, ${dataset.colorScale.colors.join(", ")})`,
+    [isVertical, dataset.colorScale.colors],
+  );
 
   const getUnitSymbol = () => {
     if (allowUnitToggle) {
@@ -108,20 +319,15 @@ const ColorBar: React.FC<ColorBarProps> = ({
     }
   };
 
-  // FIX: Simplified collapse toggle with better event handling
   const handleCollapseToggle = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
-    console.log("ColorBar collapse clicked", { isDragging, isCollapsed });
-
     if (isDragging) {
-      console.log("Blocked: currently dragging");
       return;
     }
 
     setIsCollapsed((prev) => {
-      console.log("ColorBar toggle: from", prev, "to", !prev);
       if (prev) {
         // Expanding
         setPosition(previousPosition);
@@ -140,13 +346,30 @@ const ColorBar: React.FC<ColorBarProps> = ({
     setIsCollapsed(collapsed);
   }, [collapsed]);
 
+  // NEW: Initialize position after component mounts and measures itself
   useEffect(() => {
-    const initialPosition = getDefaultPosition();
-    setPosition(initialPosition);
-    setPreviousPosition(initialPosition);
-  }, []);
+    if (!hasInitialized && colorBarRef.current && !isCollapsed) {
+      // Small delay to ensure DOM has rendered
+      const timer = setTimeout(() => {
+        const defaultPosition = getDefaultPosition();
+        setPosition(defaultPosition);
+        setPreviousPosition(defaultPosition);
+        setHasInitialized(true);
+      }, 0);
 
-  // Notify parent of position changes
+      return () => clearTimeout(timer);
+    }
+  }, [hasInitialized, getDefaultPosition, isCollapsed]);
+
+  // Update position when orientation changes
+  useEffect(() => {
+    if (hasInitialized && !isCollapsed) {
+      const defaultPosition = getDefaultPosition();
+      setPosition(defaultPosition);
+      setPreviousPosition(defaultPosition);
+    }
+  }, [orientation, hasInitialized, isCollapsed, getDefaultPosition]);
+
   useEffect(() => {
     if (onPositionChange) {
       onPositionChange(position);
@@ -166,7 +389,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     });
   };
 
-  // FIX: Remove position from dependency array to prevent infinite loop
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDragging || isCollapsed) return;
@@ -204,7 +426,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [isDragging, dragStart, isCollapsed]); // Removed position from deps
+  }, [isDragging, dragStart, isCollapsed]);
 
   const handleDropdownToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -222,12 +444,10 @@ const ColorBar: React.FC<ColorBarProps> = ({
         setPosition({ x: 24, y: window.innerHeight - 60 });
       } else {
         const colorBarElement = colorBarRef.current;
-        const colorBarWidth = colorBarElement
-          ? colorBarElement.offsetWidth
-          : 320;
-        const colorBarHeight = colorBarElement
-          ? colorBarElement.offsetHeight
-          : 200;
+        if (!colorBarElement) return;
+
+        const colorBarWidth = colorBarElement.offsetWidth;
+        const colorBarHeight = colorBarElement.offsetHeight;
 
         const maxX = window.innerWidth - colorBarWidth;
         const maxY = window.innerHeight - colorBarHeight;
@@ -260,7 +480,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     }
   }, [showDropdown]);
 
-  const displayLabels = getDisplayLabels();
   const unitSymbol = getUnitSymbol();
 
   return (
@@ -275,11 +494,8 @@ const ColorBar: React.FC<ColorBarProps> = ({
     >
       {isCollapsed ? (
         <div
-          className="pointer-events-auto cursor-pointer rounded-xl border border-blue-500/20 bg-linear-to-br from-blue-900/95 to-purple-900/95 backdrop-blur-sm transition-all duration-200 hover:shadow-lg"
-          onClick={(e) => {
-            console.log("Collapsed div clicked");
-            handleCollapseToggle(e);
-          }}
+          className="pointer-events-auto cursor-pointer rounded-xl border border-blue-500/20 bg-gradient-to-br from-blue-900/95 to-purple-900/95 backdrop-blur-sm transition-all duration-200 hover:shadow-lg"
+          onClick={handleCollapseToggle}
           style={{ transform: "scale(1)" }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = "scale(1.05)";
@@ -302,7 +518,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
           id="temperature"
           className="pointer-events-auto rounded-xl border border-gray-700/30 bg-neutral-800/60 px-6 py-6 text-blue-100 backdrop-blur-sm"
         >
-          <div className="-mt-2 mb-2 flex h-4 w-full items-center justify-between">
+          <div className="-mt-2 mb-2 flex w-full items-center justify-between gap-2">
             <button
               onClick={handleCollapseToggle}
               className="z-10 -m-1 flex cursor-pointer items-center p-1 text-blue-300 transition-colors hover:text-blue-200 focus:outline-none"
@@ -324,89 +540,108 @@ const ColorBar: React.FC<ColorBarProps> = ({
               </div>
             </div>
 
-            <button
-              onClick={handleResetPosition}
-              className="z-10 -m-1 flex cursor-pointer items-center p-1 text-blue-300 transition-colors hover:text-blue-200 focus:outline-none"
-              title="Reset to default position"
-              type="button"
-            >
-              <RotateCcw className="h-3 w-3" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleResetPosition}
+                className="z-10 -m-1 flex cursor-pointer items-center p-1 text-blue-300 transition-colors hover:text-blue-200 focus:outline-none"
+                title="Reset to default position"
+                type="button"
+              >
+                <RotateCcw className="h-3 w-3" />
+              </button>
+            </div>
           </div>
 
           <div className="relative mt-2 mb-12">
-            {allowUnitToggle ? (
-              <>
-                <button
-                  onClick={handleDropdownToggle}
-                  className="flex w-full items-center justify-between text-sm font-medium text-blue-200 transition-colors hover:text-white focus:outline-none"
-                  type="button"
-                >
-                  <span>Unit of measurement</span>
-                  <ChevronDown
-                    className={`h-4 w-4 transition-transform ${showDropdown ? "rotate-180" : ""}`}
-                  />
-                </button>
+            <div className="flex w-full items-center justify-between gap-2 text-sm font-medium text-blue-200">
+              <span>Unit of measurement</span>
 
-                {showDropdown && !isDragging && (
-                  <div className="absolute top-8 left-0 z-50 w-full rounded-md border border-gray-200 bg-white py-1 shadow-lg">
-                    <button
-                      onClick={() => handleUnitChange("celsius")}
-                      className={`w-full px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 focus:outline-none ${
-                        unit === "celsius"
-                          ? "bg-blue-50 text-blue-600"
-                          : "text-gray-700"
-                      }`}
-                      type="button"
-                    >
-                      Celsius (°C)
-                    </button>
-                    <button
-                      onClick={() => handleUnitChange("fahrenheit")}
-                      className={`w-full px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 focus:outline-none ${
-                        unit === "fahrenheit"
-                          ? "bg-blue-50 text-blue-600"
-                          : "text-gray-700"
-                      }`}
-                      type="button"
-                    >
-                      Fahrenheit (°F)
-                    </button>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="flex w-full items-center justify-between text-sm font-medium text-blue-200">
-                <span>Unit of measurement</span>
-                <span className="text-blue-100">{unitSymbol || "–"}</span>
-              </div>
-            )}
+              {allowUnitToggle ? (
+                <div className="relative">
+                  <button
+                    onClick={handleDropdownToggle}
+                    className="flex items-center gap-1 rounded px-2 py-1 text-xs font-semibold text-blue-200 transition-colors hover:text-white focus:outline-none"
+                    type="button"
+                  >
+                    <span>{unitSymbol}</span>
+                    <ChevronDown
+                      className={`h-3 w-3 transition-transform ${showDropdown ? "rotate-180" : ""}`}
+                    />
+                  </button>
+
+                  {showDropdown && !isDragging && (
+                    <div className="absolute top-7 right-0 z-50 w-32 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+                      <button
+                        onClick={() => handleUnitChange("celsius")}
+                        className={`w-full px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 focus:outline-none ${
+                          unit === "celsius"
+                            ? "bg-blue-50 text-blue-600"
+                            : "text-gray-700"
+                        }`}
+                        type="button"
+                      >
+                        Celsius (°C)
+                      </button>
+                      <button
+                        onClick={() => handleUnitChange("fahrenheit")}
+                        className={`w-full px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 focus:outline-none ${
+                          unit === "fahrenheit"
+                            ? "bg-blue-50 text-blue-600"
+                            : "text-gray-700"
+                        }`}
+                        type="button"
+                      >
+                        Fahrenheit (°F)
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <span className="ml-2 min-w-[2rem] text-right text-blue-100">
+                  {unitSymbol || "–"}
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="relative">
-            <div
-              className="mx-auto h-8 w-60 rounded-md"
-              style={{
-                background: `linear-gradient(to right, ${dataset.colorScale.colors.join(", ")})`,
-              }}
-            />
-
-            <div className="absolute -top-[65px] right-6 text-xs">
-              <span className="font-medium text-blue-200">{unitSymbol}</span>
-            </div>
-
-            <div className="absolute -top-4 left-0 flex w-60 justify-between text-xs">
-              {displayLabels.map((label, index) => (
-                <span key={index} className="leading-none text-blue-200">
-                  {label}
-                </span>
-              ))}
-            </div>
+            {isVertical ? (
+              <div className="flex w-full items-center justify-center">
+                <div className="relative flex">
+                  <div className="h-64 w-14 rounded-lg bg-white/10 p-[1px] shadow-inner">
+                    <div
+                      className="h-full w-full overflow-hidden rounded-[10px]"
+                      style={{ background: gradientBackground }}
+                    />
+                  </div>
+                  <div className="absolute inset-y-4 left-full ml-4 flex flex-col justify-between text-right text-xs text-blue-200">
+                    {verticalLabels.map((label, index) => (
+                      <span key={index} className="leading-none">
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="relative mx-auto w-60">
+                <div
+                  className="h-8 w-full rounded-md"
+                  style={{ background: gradientBackground }}
+                />
+                <div className="absolute -top-4 left-0 flex w-full justify-between text-xs">
+                  {displayLabels.map((label, index) => (
+                    <span key={index} className="leading-none text-blue-200">
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
     </div>
   );
 };
-
 export default ColorBar;

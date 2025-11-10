@@ -117,6 +117,7 @@ export interface GlobeSettings {
   boundaryLinesVisible: boolean;
   geographicLinesVisible: boolean;
   rasterOpacity: number;
+  hideZeroPrecipitation: boolean;
 }
 
 export interface AppState {
@@ -137,6 +138,7 @@ export interface AppState {
   isLoading: boolean;
   error: string | null;
   globeSettings?: GlobeSettings; // NEW
+  colorBarOrientation: ColorBarOrientation;
 }
 
 export interface TooltipProps {
@@ -199,6 +201,7 @@ export interface GlobeProps {
   boundaryLinesVisible?: boolean;
   geographicLinesVisible?: boolean;
   rasterOpacity?: number;
+  hideZeroPrecipitation?: boolean;
   onRasterMetadataChange?: (
     meta: {
       units?: string | null;
@@ -221,6 +224,7 @@ export interface GlobeRef {
 }
 
 export type TemperatureUnit = "celsius" | "fahrenheit";
+export type ColorBarOrientation = "horizontal" | "vertical";
 
 export type SidebarPanel = "datasets" | "history" | "about" | null;
 
@@ -237,6 +241,7 @@ export interface ColorBarProps {
     min?: number | null;
     max?: number | null;
   } | null;
+  orientation?: ColorBarOrientation;
 }
 
 export interface TimeBarProps {
@@ -266,9 +271,13 @@ export interface PressureLevelsDropdownProps {
 }
 
 export interface PressureLevelsSelectorProps {
-  selectedLevel?: PressureLevel;
+  selectedLevel?: PressureLevel | null;
   onLevelChange?: (level: PressureLevel) => void;
   className?: string;
+  levels?: PressureLevel[];
+  disabled?: boolean;
+  label?: string;
+  helperText?: string;
 }
 
 export interface YearSelectorProps {
@@ -318,4 +327,6 @@ export interface GlobeSettingsPanelProps {
   onGeographicLinesToggle: (visible: boolean) => void;
   rasterOpacity: number;
   onRasterOpacityChange: (opacity: number) => void;
+  hideZeroPrecipitation: boolean;
+  onHideZeroPrecipitationToggle: (enabled: boolean) => void;
 }

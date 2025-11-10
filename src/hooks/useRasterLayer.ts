@@ -24,6 +24,7 @@ type UseRasterLayerOptions = {
   dataset?: Dataset;
   date?: Date;
   level?: number | null;
+  maskZeroValues?: boolean;
 };
 
 export type UseRasterLayerResult = {
@@ -125,6 +126,7 @@ export const useRasterLayer = ({
   dataset,
   date,
   level,
+  maskZeroValues = false,
 }: UseRasterLayerOptions): UseRasterLayerResult => {
   const [data, setData] = useState<RasterLayerData | undefined>();
   const [isLoading, setIsLoading] = useState(false);
@@ -174,25 +176,63 @@ export const useRasterLayer = ({
       return undefined;
     }
     const colorKey = cssColors ? cssColors.join("|") : "default";
-    return `${backendDatasetId}::${dateKey}::${level ?? "surface"}::${colorKey}`;
-  }, [backendDatasetId, date, level, cssColors]);
+    const maskKey = maskZeroValues ? "mask" : "nomask";
+    return `${backendDatasetId}::${dateKey}::${level ?? "surface"}::${colorKey}::${maskKey}`;
+  }, [backendDatasetId, date, level, cssColors, maskZeroValues]);
+
+  const requiresExplicitLevel = useMemo(() => {
+    if (!dataset?.backend) {
+      return false;
+    }
+
+    const levelValues = dataset.backend.levelValues;
+    if (Array.isArray(levelValues) && levelValues.length > 0) {
+      return true;
+    }
+
+    const levelsText = (dataset.backend.levels ?? "").trim().toLowerCase();
+    if (!levelsText || levelsText === "none") {
+      return false;
+    }
+
+    const containsNumber = /\d/.test(levelsText);
+    const mentionsVerticalAxis =
+      levelsText.includes("pressure") ||
+      levelsText.includes("height") ||
+      levelsText.includes("altitude");
+
+    return containsNumber || mentionsVerticalAxis;
+  }, [dataset]);
+
+  const waitingForLevel =
+    requiresExplicitLevel && (level === null || level === undefined);
 
   useEffect(() => {
-    if (!backendDatasetId || !date) {
-      setData(undefined);
-      setError(null);
-      setIsLoading(false);
+    const abortOngoingRequest = () => {
       if (controllerRef.current) {
         controllerRef.current.abort();
         controllerRef.current = null;
       }
-      return;
+    };
+
+    if (!backendDatasetId || !date) {
+      setData(undefined);
+      setError(null);
+      setIsLoading(false);
+      abortOngoingRequest();
+      return () => abortOngoingRequest();
+    }
+
+    if (waitingForLevel) {
+      abortOngoingRequest();
+      setData(undefined);
+      setError(null);
+      setIsLoading(true);
+      return () => abortOngoingRequest();
     }
 
     const run = async () => {
-      if (controllerRef.current) {
-        controllerRef.current.abort();
-      }
+      abortOngoingRequest();
       const controller = new AbortController();
       controllerRef.current = controller;
       setIsLoading(true);
@@ -207,6 +247,7 @@ export const useRasterLayer = ({
             date: formatDateForApi(date),
             level: level ?? undefined,
             cssColors,
+            maskZeroValues: maskZeroValues || undefined,
           }),
           signal: controller.signal,
         });
@@ -258,12 +299,16 @@ export const useRasterLayer = ({
     void run();
 
     return () => {
-      if (controllerRef.current) {
-        controllerRef.current.abort();
-        controllerRef.current = null;
-      }
+      abortOngoingRequest();
     };
-  }, [backendDatasetId, dataset?.units, date, level]);
+  }, [
+    backendDatasetId,
+    dataset?.units,
+    date,
+    level,
+    maskZeroValues,
+    waitingForLevel,
+  ]);
 
   return { data, isLoading, error, requestKey };
 };

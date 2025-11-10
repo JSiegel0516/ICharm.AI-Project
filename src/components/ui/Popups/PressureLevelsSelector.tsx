@@ -6,20 +6,27 @@ import { PressureLevel, PressureLevelsSelectorProps } from "@/types";
 import { pressureLevels, altitudeDescriptions } from "@/utils/constants";
 
 const PressureLevelsSelector: React.FC<PressureLevelsSelectorProps> = ({
-  selectedLevel = pressureLevels[0],
+  selectedLevel,
   onLevelChange,
   className = "",
+  levels,
+  disabled = false,
+  label = "Pressure Levels",
+  helperText,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [currentLevel, setCurrentLevel] = useState(selectedLevel);
   const [searchTerm, setSearchTerm] = useState("");
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
+  const availableLevels = levels && levels.length > 0 ? levels : pressureLevels;
+  const activeLevel = selectedLevel ?? availableLevels[0] ?? null;
+  const buttonDisabled = disabled || !activeLevel;
+
   // Filter levels based on search term
-  const filteredLevels = pressureLevels.filter(
+  const filteredLevels = availableLevels.filter(
     (level) =>
       level.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
       level.value.toString().includes(searchTerm),
@@ -27,7 +34,6 @@ const PressureLevelsSelector: React.FC<PressureLevelsSelectorProps> = ({
 
   // Handle level selection
   const handleLevelSelect = (level: PressureLevel) => {
-    setCurrentLevel(level);
     setIsOpen(false);
     setSearchTerm("");
     onLevelChange?.(level);
@@ -70,17 +76,26 @@ const PressureLevelsSelector: React.FC<PressureLevelsSelectorProps> = ({
       {/* Button */}
       <button
         ref={buttonRef}
-        onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-all duration-200 hover:scale-105 focus:outline-none ${
-          isOpen
-            ? "border-white/30 bg-neutral-700 text-white"
-            : "border-gray-500/30 bg-neutral-800 text-gray-400 hover:border-white/20 hover:bg-neutral-700 hover:text-white"
+        onClick={() => {
+          if (!buttonDisabled) {
+            setIsOpen((prev) => !prev);
+          }
+        }}
+        className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-all duration-200 focus:outline-none ${
+          buttonDisabled
+            ? "cursor-not-allowed border-gray-600/30 bg-neutral-800 text-gray-600"
+            : isOpen
+              ? "border-white/30 bg-neutral-700 text-white"
+              : "border-gray-500/30 bg-neutral-800 text-gray-400 hover:scale-105 hover:border-white/20 hover:bg-neutral-700 hover:text-white"
         }`}
         title="Select Pressure Level"
         type="button"
+        disabled={buttonDisabled}
       >
         <Gauge size={14} />
-        <span className="min-w-[70px] text-left">{currentLevel.label}</span>
+        <span className="min-w-[70px] text-left">
+          {activeLevel ? activeLevel.label : "No levels"}
+        </span>
         <ChevronDown
           size={14}
           className={`transition-transform duration-200 ${
@@ -89,8 +104,12 @@ const PressureLevelsSelector: React.FC<PressureLevelsSelectorProps> = ({
         />
       </button>
 
+      {!buttonDisabled && helperText && (
+        <p className="mt-2 text-xs text-gray-400">{helperText}</p>
+      )}
+
       {/* Dropdown */}
-      {isOpen && (
+      {isOpen && !buttonDisabled && (
         <div
           ref={dropdownRef}
           className="absolute right-0 bottom-full z-50 mb-2 w-72 rounded-xl border border-white/20 bg-neutral-800/95 p-4 shadow-2xl backdrop-blur-md"
@@ -101,9 +120,7 @@ const PressureLevelsSelector: React.FC<PressureLevelsSelectorProps> = ({
         >
           {/* Header */}
           <div className="mb-3">
-            <h3 className="mb-2 text-lg font-semibold text-white">
-              Pressure Levels
-            </h3>
+            <h3 className="mb-2 text-lg font-semibold text-white">{label}</h3>
 
             {/* Search Input */}
             <input
@@ -120,8 +137,10 @@ const PressureLevelsSelector: React.FC<PressureLevelsSelectorProps> = ({
           <div className="custom-scrollbar max-h-64 space-y-1 overflow-y-auto">
             {filteredLevels.length > 0 ? (
               filteredLevels.map((level) => {
-                const isSelected = level.id === currentLevel.id;
-                const altitude = altitudeDescriptions[level.id] || "";
+                const isSelected = level.id === activeLevel?.id;
+                const description =
+                  altitudeDescriptions[level.id] ||
+                  (level.unit ? `${level.value} ${level.unit}` : "");
 
                 return (
                   <button
@@ -141,9 +160,9 @@ const PressureLevelsSelector: React.FC<PressureLevelsSelectorProps> = ({
                           <Check size={16} className="text-green-400" />
                         )}
                       </div>
-                      {altitude && (
+                      {description && (
                         <span className="text-xs text-gray-400">
-                          {altitude}
+                          {description}
                         </span>
                       )}
                     </div>
@@ -161,18 +180,18 @@ const PressureLevelsSelector: React.FC<PressureLevelsSelectorProps> = ({
           </div>
 
           {/* Footer Info */}
-          <div className="mt-4 border-t border-white/10 pt-3">
-            <div className="text-xs text-gray-400">
+          {activeLevel && (
+            <div className="mt-4 border-t border-white/10 pt-3 text-xs text-gray-400">
               <div className="mb-1">
                 <strong className="text-gray-300">Current:</strong>{" "}
-                {currentLevel.label}
+                {activeLevel.label}
               </div>
               <div>
-                <strong className="text-gray-300">Altitude:</strong>{" "}
-                {altitudeDescriptions[currentLevel.id] || "N/A"}
+                <strong className="text-gray-300">Value:</strong>{" "}
+                {activeLevel.value} {activeLevel.unit}
               </div>
             </div>
-          </div>
+          )}
 
           {/* Rainbow bar at bottom */}
           <div className="mt-4 h-1 w-full rounded-full bg-linear-to-r from-red-500 via-blue-500 via-green-500 via-indigo-500 via-yellow-500 to-purple-500"></div>
