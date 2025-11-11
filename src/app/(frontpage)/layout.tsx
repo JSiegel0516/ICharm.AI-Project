@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   },
   keywords:
     "weather, climate, data visualization, AI, globe, temperature, precipitation",
-  authors: [{ name: "Your Team" }],
+  authors: [{ name: "SCIL" }],
   creator: "SCIL",
   publisher: "SCIL",
 };
@@ -32,9 +32,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${inter.className} dark scroll-smooth`}>
-      <body
-        className={`min-h-screen w-full bg-white antialiased dark:bg-black`}
-      >
+      <body className={`min-h-screen w-full bg-black antialiased`}>
         <ThemeProvider
           attribute="class"
           defaultTheme="system"

@@ -1,24 +1,10 @@
 "use client";
 
 import React from "react";
-import { Settings, Info, MessageCircle, Camera } from "lucide-react";
 import NavigationIcons from "./NavigationIcons";
 import Link from "next/link";
-import { HeaderProps } from "@/types";
-import { useAppState } from "@/hooks/useAppState";
 
 const Header: React.FC = () => {
-  const {
-    setShowSettings,
-    setShowAbout,
-    setShowChat,
-    setCurrentDataset,
-    showSettings,
-    showAbout,
-    showChat,
-    currentDataset,
-  } = useAppState();
-
   return (
     <>
       {/* Logo and Title - Top Left */}
