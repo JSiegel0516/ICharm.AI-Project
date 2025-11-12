@@ -14,6 +14,102 @@ import {
   Legend,
 } from "recharts";
 
+type TemperatureUnitInfo = {
+  type: "celsius" | "fahrenheit" | "kelvin" | null;
+  symbol: string;
+};
+
+const normalizeTemperatureUnit = (
+  rawUnit?: string | null,
+): TemperatureUnitInfo => {
+  if (!rawUnit || !rawUnit.trim()) {
+    return { type: null, symbol: "units" };
+  }
+
+  const normalized = rawUnit.trim();
+  const lower = normalized.toLowerCase();
+  const alphaOnly = lower.replace(/[^a-z]/g, "");
+
+  const celsiusHints =
+    normalized.includes("℃") ||
+    lower.includes("celsius") ||
+    lower.includes("celcius") ||
+    lower.includes("°c") ||
+    lower.includes("degc") ||
+    alphaOnly === "c";
+  if (celsiusHints) {
+    return { type: "celsius", symbol: "°C" };
+  }
+
+  const fahrenheitHints =
+    normalized.includes("℉") ||
+    lower.includes("fahrenheit") ||
+    lower.includes("°f") ||
+    lower.includes("degf") ||
+    alphaOnly === "f";
+  if (fahrenheitHints) {
+    return { type: "fahrenheit", symbol: "°F" };
+  }
+
+  const kelvinHints =
+    normalized.includes("K") ||
+    lower.includes("kelvin") ||
+    lower.includes("°k") ||
+    lower.includes("degk") ||
+    alphaOnly === "k";
+  if (kelvinHints) {
+    return { type: "kelvin", symbol: "K" };
+  }
+
+  return { type: null, symbol: normalized };
+};
+
+const hasTemperatureHints = (
+  dataset?: RegionInfoPanelProps["currentDataset"],
+): boolean => {
+  if (!dataset) {
+    return false;
+  }
+
+  const parts: string[] = [];
+  const typeLower =
+    typeof dataset.dataType === "string" ? dataset.dataType.toLowerCase() : "";
+  if (typeLower) {
+    parts.push(typeLower);
+  }
+
+  const possibleKeys: Array<string | undefined | null> = [
+    dataset.name,
+    dataset.description,
+    (dataset as any)?.category,
+    dataset.backend?.datasetName,
+    dataset.backend?.layerParameter,
+    dataset.backend?.datasetType,
+  ];
+
+  possibleKeys.forEach((value) => {
+    if (typeof value === "string" && value.trim()) {
+      parts.push(value);
+    }
+  });
+
+  if (!parts.length) {
+    return false;
+  }
+
+  const combined = parts.join(" ").toLowerCase();
+  return (
+    combined.includes("temp") ||
+    combined.includes("°c") ||
+    combined.includes("degc") ||
+    combined.includes("sea surface") ||
+    combined.includes("sst") ||
+    combined.includes("surface temp")
+  );
+};
+
+const celsiusToFahrenheit = (value: number) => (value * 9) / 5 + 32;
+
 type SeriesPoint = {
   date: string;
   value: number | null;
@@ -44,6 +140,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   className = "",
   currentDataset,
   selectedDate,
+  temperatureUnit = "celsius",
 }) => {
   const getDefaultPosition = () => {
     if (typeof window !== "undefined") {
@@ -78,6 +175,68 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     currentDataset?.name ??
     regionData.dataset ??
     "";
+
+  const datasetUnitInfo = useMemo(
+    () => normalizeTemperatureUnit(datasetUnit),
+    [datasetUnit],
+  );
+
+  const datasetLooksTemperature = useMemo(
+    () => hasTemperatureHints(currentDataset),
+    [currentDataset],
+  );
+
+  const useFahrenheit =
+    datasetLooksTemperature &&
+    datasetUnitInfo.type === "celsius" &&
+    temperatureUnit === "fahrenheit";
+
+  const displayUnitLabel = useMemo(
+    () =>
+      useFahrenheit ? "°F" : datasetUnitInfo.symbol || datasetUnit || "units",
+    [useFahrenheit, datasetUnitInfo.symbol, datasetUnit],
+  );
+
+  const resolvedTimeseriesUnit = useMemo(
+    () =>
+      useFahrenheit
+        ? "°F"
+        : (timeseriesUnits ?? datasetUnitInfo.symbol ?? datasetUnit ?? "units"),
+    [useFahrenheit, timeseriesUnits, datasetUnitInfo.symbol, datasetUnit],
+  );
+
+  const primaryValueSource =
+    typeof regionData.precipitation === "number"
+      ? regionData.precipitation
+      : typeof regionData.temperature === "number"
+        ? regionData.temperature
+        : 0;
+
+  const convertedPrimaryValue = useFahrenheit
+    ? celsiusToFahrenheit(primaryValueSource)
+    : primaryValueSource;
+
+  const formattedPrimaryValue = Number.isFinite(convertedPrimaryValue)
+    ? convertedPrimaryValue.toFixed(2)
+    : "0.00";
+
+  const chartData = useMemo(() => {
+    return timeseriesSeries.map((entry) => {
+      if (entry.value == null || !Number.isFinite(entry.value)) {
+        return { date: entry.date, value: null };
+      }
+
+      const numericValue = Number(entry.value);
+      const convertedValue = useFahrenheit
+        ? celsiusToFahrenheit(numericValue)
+        : numericValue;
+
+      return {
+        date: entry.date,
+        value: Number(convertedValue.toFixed(2)),
+      };
+    });
+  }, [timeseriesSeries, useFahrenheit]);
 
   // Get the dataset ID - try multiple possible locations
   const datasetId = useMemo(() => {
@@ -225,16 +384,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       document.removeEventListener("mouseup", handleMouseUp);
     };
   }, [isDragging, dragStart, isCollapsed]);
-
-  const chartData = useMemo(() => {
-    return timeseriesSeries.map((entry) => ({
-      date: entry.date,
-      value:
-        entry.value != null && Number.isFinite(entry.value)
-          ? Number(entry.value.toFixed(2))
-          : null,
-    }));
-  }, [timeseriesSeries]);
 
   // Calculate date range based on selected option
   const calculateDateRange = (): { start: Date; end: Date } => {
@@ -611,9 +760,9 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
             <div className="rounded-lg border border-gray-700/50 bg-gray-900/50 p-3">
               <div className="text-center">
                 <div className="mb-1 font-mono text-2xl font-bold text-white">
-                  {(regionData.precipitation ?? 0).toFixed(2)}{" "}
+                  {formattedPrimaryValue}{" "}
                   <span className="text-base font-normal text-gray-400">
-                    {datasetUnit}
+                    {displayUnitLabel}
                   </span>
                 </div>
                 <div className="text-sm text-gray-400">
@@ -770,7 +919,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                       stroke="#94a3b8"
                       tick={{ fontSize: 12 }}
                       label={{
-                        value: timeseriesUnits ?? datasetUnit,
+                        value: resolvedTimeseriesUnit,
                         angle: -90,
                         position: "insideLeft",
                         fill: "#94a3b8",

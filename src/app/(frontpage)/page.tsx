@@ -412,6 +412,7 @@ export default function HomePage() {
           colorBarCollapsed={colorBarCollapsed}
           currentDataset={currentDataset}
           selectedDate={selectedDate}
+          temperatureUnit={temperatureUnit}
         />
 
         {/* Bottom Controls */}
