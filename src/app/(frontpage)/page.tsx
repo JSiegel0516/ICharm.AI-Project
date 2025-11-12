@@ -20,6 +20,7 @@ import {
   GlobeSettings,
 } from "@/types";
 import { pressureLevels } from "@/utils/constants";
+import { isSeaSurfaceTemperatureDataset } from "@/utils/datasetGuards";
 import { SideButtons } from "./_components/SideButtons";
 import { Tutorial } from "./_components/Tutorial";
 
@@ -132,6 +133,10 @@ export default function HomePage() {
   const [colorBarPosition, setColorBarPosition] = useState({ x: 24, y: 300 });
 
   const datasetPressureLevels = useMemo<PressureLevel[] | null>(() => {
+    if (isSeaSurfaceTemperatureDataset(currentDataset)) {
+      return null;
+    }
+
     const backend = currentDataset?.backend;
     if (!backend) {
       return null;
