@@ -70,6 +70,8 @@ const AppStateContext = createContext<AppStateContextType | undefined>(
   undefined,
 );
 
+const COLOR_BAR_ORIENTATION_STORAGE_KEY = "icharm_colorBarOrientation";
+
 // Certain datasets report "present" in metadata even though archives stop earlier.
 const DATASET_END_OVERRIDES: Record<string, string> = {
   "Sea Surface Temperature – Optimum Interpolation CDR": "2015-12-31",
@@ -279,6 +281,35 @@ const useAppStateInternal = () => {
     },
   });
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const storedOrientation = window.localStorage.getItem(
+        COLOR_BAR_ORIENTATION_STORAGE_KEY,
+      );
+      if (
+        storedOrientation === "horizontal" ||
+        storedOrientation === "vertical"
+      ) {
+        const normalizedOrientation = storedOrientation as ColorBarOrientation;
+        setState((prev) => {
+          if (prev.colorBarOrientation === normalizedOrientation) {
+            return prev;
+          }
+          return {
+            ...prev,
+            colorBarOrientation: normalizedOrientation,
+          };
+        });
+      }
+    } catch (error) {
+      console.warn("Failed to load color bar orientation preference:", error);
+    }
+  }, []);
+
   const setShowSettings = useCallback((show: boolean) => {
     setState((prev) => ({ ...prev, showSettings: show }));
   }, []);
@@ -302,6 +333,19 @@ const useAppStateInternal = () => {
   const setColorBarOrientation = useCallback(
     (orientation: ColorBarOrientation) => {
       setState((prev) => ({ ...prev, colorBarOrientation: orientation }));
+      if (typeof window !== "undefined") {
+        try {
+          window.localStorage.setItem(
+            COLOR_BAR_ORIENTATION_STORAGE_KEY,
+            orientation,
+          );
+        } catch (error) {
+          console.warn(
+            "Failed to persist color bar orientation preference:",
+            error,
+          );
+        }
+      }
     },
     [],
   );
