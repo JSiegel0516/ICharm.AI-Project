@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Buffer } from "buffer";
 import type { Dataset } from "@/types";
+import { isSeaSurfaceTemperatureDataset } from "@/utils/datasetGuards";
 
 export type RasterLayerTexture = {
   imageUrl: string;
@@ -182,6 +183,10 @@ export const useRasterLayer = ({
 
   const requiresExplicitLevel = useMemo(() => {
     if (!dataset?.backend) {
+      return false;
+    }
+
+    if (isSeaSurfaceTemperatureDataset(dataset)) {
       return false;
     }
 
