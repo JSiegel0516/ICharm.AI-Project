@@ -151,6 +151,11 @@ Path(CACHE_DIR).mkdir(parents=True, exist_ok=True)
 # Thread pool for parallel processing
 executor = ThreadPoolExecutor(max_workers=4)
 
+try:
+    ZERO_PRECIP_MASK_TOLERANCE = float(os.getenv("ZERO_PRECIP_MASK_TOLERANCE", "1e-6"))
+except ValueError:
+    ZERO_PRECIP_MASK_TOLERANCE = 1e-6
+
 # ============================================================================
 # DATABASE CONNECTION
 # ============================================================================
@@ -184,6 +189,19 @@ def get_metadata_by_ids(dataset_ids: List[str]) -> pd.DataFrame:
         raise HTTPException(
             status_code=500, detail=f"Failed to fetch metadata from database: {str(e)}"
         )
+
+
+def dataset_supports_zero_mask(metadata: pd.Series) -> bool:
+    """Return True when dataset represents precipitation-style fields (e.g., CMORPH)."""
+    target_fields = [
+        str(metadata.get("datasetName") or ""),
+        str(metadata.get("datasetType") or ""),
+        str(metadata.get("layerParameter") or ""),
+        str(metadata.get("keyVariable") or ""),
+        str(metadata.get("slug") or ""),
+    ]
+    combined = " ".join(target_fields).lower()
+    return "cmorph" in combined or "precip" in combined
 
 
 # ============================================================================
@@ -261,6 +279,10 @@ class RasterRequest(BaseModel):
     )
     cssColors: Optional[List[str]] = Field(
         None, description="CSS color strings from frontend ColorBar"
+    )
+    maskZeroValues: bool = Field(
+        False,
+        description="Hide exact zero values (used for CMORPH/local precipitation datasets)",
     )
 
 
@@ -2091,6 +2113,43 @@ async def visualize_raster(request: RasterRequest):
             if level_dims:
                 var = var.sel({level_dims[0]: request.level}, method="nearest")
 
+        zero_mask_applied = False
+        zero_mask_pixels = 0
+
+        if request.maskZeroValues:
+            if dataset_supports_zero_mask(meta_row):
+                zero_mask = var.notnull() & (np.abs(var) <= ZERO_PRECIP_MASK_TOLERANCE)
+                total_pixels = int(zero_mask.size) if zero_mask.size else 0
+                if total_pixels:
+                    zero_mask_pixels = int(zero_mask.sum().values.item())
+                else:
+                    zero_mask_pixels = 0
+
+                if zero_mask_pixels > 0:
+                    zero_fraction = (
+                        zero_mask_pixels / total_pixels if total_pixels else 0.0
+                    )
+                    logger.info(
+                        "[RasterViz] maskZeroValues enabled - masking %s zero-value "
+                        "pixels (%.1f%% of slice)",
+                        zero_mask_pixels,
+                        zero_fraction * 100.0,
+                    )
+                    var = var.where(~zero_mask)
+                    zero_mask_applied = True
+                else:
+                    logger.info(
+                        "[RasterViz] maskZeroValues requested but no zero-value pixels "
+                        "detected for %s",
+                        meta_row["datasetName"],
+                    )
+            else:
+                logger.info(
+                    "[RasterViz] maskZeroValues requested but dataset %s is not "
+                    "precipitation-focused; skipping zero mask",
+                    meta_row["datasetName"],
+                )
+
         # CRITICAL: Pass CSS colors to serialize_raster_array
         logger.info(f"Generating raster visualization for {meta_row['datasetName']}")
         raster_data = serialize_raster_array(
@@ -2110,6 +2169,8 @@ async def visualize_raster(request: RasterRequest):
             "colorSource": "CSS colors from ColorBar"
             if request.cssColors
             else "Default colormap",
+            "maskZeroValuesApplied": zero_mask_applied,
+            "maskedZeroPixels": zero_mask_pixels if zero_mask_applied else 0,
         }
 
         logger.info(

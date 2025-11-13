@@ -311,7 +311,11 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const rasterLayerRef = useRef<any[]>([]);
 
     const rasterDataRef = useRef<RasterLayerData | undefined>(undefined);
-    const shouldHideZero = hideZeroPrecipitation;
+    const datasetName = (currentDataset?.name ?? "").toLowerCase();
+    const datasetSupportsZeroMask =
+      currentDataset?.dataType === "precipitation" ||
+      datasetName.includes("cmorph");
+    const shouldHideZero = datasetSupportsZeroMask && hideZeroPrecipitation;
     const rasterState = useRasterLayer({
       dataset: currentDataset,
       date: selectedDate,
