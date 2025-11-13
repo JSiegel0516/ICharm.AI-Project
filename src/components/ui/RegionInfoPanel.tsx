@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useMemo,
+  useCallback,
+} from "react";
 import { ChevronDown, X, MapPin, Calendar } from "lucide-react";
 import { RegionInfoPanelProps } from "@/types";
 import {
@@ -237,6 +243,81 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       };
     });
   }, [timeseriesSeries, useFahrenheit]);
+
+  const [zoomWindow, setZoomWindow] = useState<[number, number] | null>(null);
+
+  useEffect(() => {
+    setZoomWindow(null);
+  }, [chartData]);
+
+  const displayedChartData = useMemo(() => {
+    if (!zoomWindow || chartData.length === 0) {
+      return chartData;
+    }
+    const [start, end] = zoomWindow;
+    return chartData.slice(start, Math.min(end + 1, chartData.length));
+  }, [chartData, zoomWindow]);
+
+  const yAxisDomain = useMemo(() => {
+    const values = displayedChartData
+      .map((point) => point.value)
+      .filter((value): value is number => typeof value === "number");
+    if (!values.length) {
+      return undefined;
+    }
+    let min = Math.min(...values);
+    let max = Math.max(...values);
+    if (!Number.isFinite(min) || !Number.isFinite(max)) {
+      return undefined;
+    }
+    if (min === max) {
+      const padding = Math.abs(min) * 0.05 || 1;
+      min -= padding;
+      max += padding;
+    } else {
+      const padding = (max - min) * 0.1;
+      min -= padding;
+      max += padding;
+    }
+    return [min, max] as [number, number];
+  }, [displayedChartData]);
+
+  const handleChartWheel = useCallback(
+    (event: React.WheelEvent<HTMLDivElement>) => {
+      if (chartData.length === 0) {
+        return;
+      }
+      event.preventDefault();
+      const directionIn = event.deltaY < 0;
+      setZoomWindow((current) => {
+        const total = chartData.length;
+        const currentWindow = current ?? [0, total - 1];
+        let [start, end] = currentWindow;
+        const windowSize = end - start + 1;
+        const minWindow = Math.max(5, Math.ceil(total * 0.05));
+        const zoomStep = Math.max(1, Math.ceil(windowSize * 0.1));
+
+        if (directionIn) {
+          if (windowSize <= minWindow) {
+            return currentWindow;
+          }
+          start = Math.min(start + zoomStep, end - minWindow + 1);
+          end = Math.max(end - zoomStep, start + minWindow - 1);
+          return [start, end];
+        }
+
+        start = Math.max(0, start - zoomStep);
+        end = Math.min(total - 1, end + zoomStep);
+
+        if (start === 0 && end === total - 1) {
+          return null;
+        }
+
+        return [start, end];
+      });
+    },
+    [chartData],
+  );
 
   // Get the dataset ID - try multiple possible locations
   const datasetId = useMemo(() => {
@@ -897,7 +978,18 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
               </div>
             )}
 
-            <div className="relative h-80 w-full overflow-hidden rounded-lg border border-gray-700/50 bg-gray-900/50">
+            <div
+              className="relative h-80 w-full overflow-hidden rounded-lg border border-gray-700/50 bg-gray-900/50"
+              onWheel={handleChartWheel}
+            >
+              {zoomWindow && (
+                <button
+                  onClick={() => setZoomWindow(null)}
+                  className="absolute top-3 right-3 z-10 rounded-md border border-slate-600 bg-slate-800/80 px-3 py-1 text-xs text-slate-200 transition-colors hover:border-slate-400 hover:bg-slate-700/80"
+                >
+                  Reset zoom
+                </button>
+              )}
               {timeseriesLoading ? (
                 <div className="flex h-full w-full items-center justify-center text-sm text-gray-400">
                   Loading timeseries...
@@ -906,18 +998,20 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                 <div className="flex h-full w-full items-center justify-center p-4 text-center text-sm text-red-400">
                   {timeseriesError}
                 </div>
-              ) : chartData.length > 0 ? (
+              ) : displayedChartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData}>
+                  <LineChart data={displayedChartData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                     <XAxis
                       dataKey="date"
                       stroke="#94a3b8"
                       tick={{ fontSize: 12 }}
+                      allowDuplicatedCategory={false}
                     />
                     <YAxis
                       stroke="#94a3b8"
                       tick={{ fontSize: 12 }}
+                      domain={yAxisDomain ?? ["auto", "auto"]}
                       label={{
                         value: resolvedTimeseriesUnit,
                         angle: -90,
