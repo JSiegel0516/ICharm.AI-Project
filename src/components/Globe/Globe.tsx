@@ -972,6 +972,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
               onClick={() => setIsModalOpen(true)}
               className="rounded-lg px-6 py-3 text-2xl font-semibold text-gray-300 transition hover:rounded-xl hover:bg-slate-800/50"
               title="Click for dataset details"
+              id="dataset-title"
             >
               {currentDataset.name}
             </button>
