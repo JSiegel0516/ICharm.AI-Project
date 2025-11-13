@@ -134,7 +134,16 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+@layer components {
+  .sidebtn {
+    @apply relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-xl bg-card/90 text-muted-foreground transition-all;
+  }
 
+  .sidebtn:hover {
+    @apply scale-105 bg-muted-foreground/50 text-card-foreground;
+  }
+  
+}
 
 
 /* -------------------------
