@@ -346,14 +346,10 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }, [currentDataset]);
 
-  // Determine if this is a high-frequency dataset (CMORPH or NDVI)
+  // Determine if this dataset should use the legacy single-month range (e.g., NDVI)
   const isHighFrequencyDataset = useMemo(() => {
     const datasetName = (currentDataset?.name || "").toLowerCase();
-    return (
-      datasetName.includes("cmorph") ||
-      datasetName.includes("vegetation") ||
-      datasetName.includes("ndvi")
-    );
+    return datasetName.includes("vegetation") || datasetName.includes("ndvi");
   }, [currentDataset]);
 
   useEffect(() => {
