@@ -116,7 +116,7 @@ const NavigationIcons: React.FC = () => {
             <IconWrapper>
               <ChartSplineIcon size={ICON_SIZE} />
             </IconWrapper>
-            <div className="btn-hover pointer-events-none absolute -bottom-10 left-1/2 -translate-x-1/2 group-hover:-bottom-12 group-hover:opacity-100">
+            <div className="btn-hover -bottom-10 left-1/2 -translate-x-1/2 group-hover:-bottom-12 group-hover:opacity-100">
               Time Series Analysis
               <div className="absolute -top-1 left-1/2 -translate-x-1/2 transform border-r-4 border-b-4 border-l-4 border-transparent border-b-gray-900/95" />
             </div>

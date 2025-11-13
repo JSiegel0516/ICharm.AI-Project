@@ -32,25 +32,20 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${inter.className} dark scroll-smooth`}>
-      <body className={`min-h-screen w-full bg-black antialiased`}>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
-          <AppStateProvider>
-            <div className="flex min-h-screen flex-col">
-              <Header />
-              <main id="root" className="flex-1 overflow-y-auto">
-                {children}
-              </main>
-              <div className="pointer-events-auto fixed top-0 right-0 z-20 h-full">
-                <ChatBot />
-              </div>
+      <body
+        className={`min-h-screen w-full bg-white antialiased dark:bg-black`}
+      >
+        <AppStateProvider>
+          <div className="flex min-h-screen flex-col">
+            <Header />
+            <main id="root" className="flex-1 overflow-y-auto">
+              {children}
+            </main>
+            <div className="pointer-events-auto fixed top-0 right-0 z-20 h-full">
+              <ChatBot />
             </div>
-          </AppStateProvider>
-        </ThemeProvider>
+          </div>
+        </AppStateProvider>
       </body>
     </html>
   );

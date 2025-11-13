@@ -1,17 +1,8 @@
-/* -------------------------
-   Tailwind Imports & Plugins
--------------------------- */
 @import "tailwindcss";
 @plugin "tailwindcss-animate";
 
-/* -------------------------
-   Variants
--------------------------- */
 @custom-variant dark (&:is(.dark *));
 
-/* -------------------------
-   Theme Variables
--------------------------- */
 @theme {
   /* Radii */
   --radius-sm: calc(var(--radius) - 4px);
@@ -74,13 +65,10 @@
   }
 }
 
-/* -------------------------
-   Root Variables
--------------------------- */
 :root {
   --radius: 0.625rem;
-
-  /* Light mode */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
@@ -102,8 +90,6 @@
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-
-  /* Sidebar */
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -112,8 +98,6 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
 }
 
 .dark {
@@ -140,8 +124,6 @@
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-
-  /* Sidebar dark */
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
@@ -152,6 +134,9 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+
+
+
 /* -------------------------
    Utilities
 -------------------------- */
@@ -161,14 +146,6 @@
 
 @utility tooltip {
   @apply pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 transform rounded bg-gray-800 px-2 py-1 text-xs whitespace-nowrap text-white opacity-0 transition-opacity group-hover:opacity-100;
-}
-
-@utility modal-overlay {
-  @apply fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs;
-}
-
-@utility modal {
-  @apply mx-4 max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white;
 }
 
 @utility chat-bubble-user {
@@ -184,7 +161,7 @@
 }
 
 @utility btn-icon {
-  @apply relative flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl bg-neutral-800/50 text-gray-400 transition-all hover:scale-105 hover:bg-neutral-700/90 hover:text-gray-100;
+  @apply relative flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl bg-card/90 text-gray-400 transition-all hover:scale-105 hover:bg-card/50 hover:text-gray-100;
 }
 
 @utility btn-hover {

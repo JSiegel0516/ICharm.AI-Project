@@ -25,7 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
-import { GlobeSettingsPanel } from "@/components/GlobeSettingsPanel";
+import { GlobeSettingsPanel } from "@/app/(frontpage)/_components/GlobeSettingsPanel";
 import { useAppState } from "@/context/HeaderContext";
 import type { Dataset, GlobeSettings } from "@/types";
 
