@@ -12,6 +12,19 @@ import type { Dataset, RegionData, GlobeProps, GlobeRef } from "@/types";
 import { useRasterLayer } from "@/hooks/useRasterLayer";
 import type { RasterLayerData } from "@/hooks/useRasterLayer";
 import GlobeLoading from "./GlobeLoading";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 // Cesium setup function for CDN loading
 const loadCesiumFromCDN = async () => {
@@ -967,33 +980,57 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         />
 
         {currentDataset && (
-          <div className="absolute inset-x-0 top-4 z-30 mx-auto max-w-max">
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="rounded-lg px-6 py-3 text-2xl font-semibold text-gray-300 transition hover:rounded-xl hover:bg-slate-800/50"
-              title="Click for dataset details"
-              id="dataset-title"
-            >
-              {currentDataset.name}
-            </button>
-          </div>
-        )}
-
-        {currentDataset && isModalOpen && (
-          <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/50">
-            <div className="max-w-2xl rounded-lg bg-slate-800 p-6 text-white">
-              <h2 className="mb-4 text-2xl font-bold">{currentDataset.name}</h2>
-              <p className="mb-4">
-                {currentDataset.description || "No description available"}
-              </p>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="rounded bg-blue-600 px-4 py-2 transition-colors hover:bg-blue-700"
-              >
-                Close
-              </button>
-            </div>
-          </div>
+          <Dialog>
+            <DialogTrigger asChild>
+              <div className="absolute inset-x-0 top-4 z-30 mx-auto max-w-max">
+                <button
+                  onClick={() => setIsModalOpen(true)}
+                  className="hover:bg-muted/70 rounded-md px-6 py-3 text-2xl font-semibold text-gray-300 transition hover:rounded-xl"
+                  title="Click for dataset details"
+                  id="dataset-title"
+                >
+                  {currentDataset.name}
+                </button>
+              </div>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[625px]">
+              <DialogHeader>
+                <DialogTitle className="mb-2 text-2xl font-semibold">
+                  {currentDataset.name}
+                </DialogTitle>
+                <DialogDescription className="text-lg">
+                  <span className="text-xl">{currentDataset.description}</span>
+                  <br />
+                  <br />
+                  <span>
+                    Date Range:{" "}
+                    {currentDataset?.startDate && currentDataset?.endDate
+                      ? `${new Date(
+                          currentDataset.startDate,
+                        ).toLocaleDateString("en-US", {
+                          year: "numeric",
+                          month: "numeric",
+                          day: "numeric",
+                        })} - ${new Date(
+                          currentDataset.endDate,
+                        ).toLocaleDateString("en-US", {
+                          year: "numeric",
+                          month: "numeric",
+                          day: "numeric",
+                        })}`
+                      : "Date information not available"}
+                  </span>
+                  <br />
+                  <span>Units: {currentDataset.units} </span>
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline">Close</Button>
+                </DialogClose>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         )}
       </div>
     );
