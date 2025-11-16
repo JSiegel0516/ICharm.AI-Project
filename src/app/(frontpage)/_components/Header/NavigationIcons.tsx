@@ -1,17 +1,7 @@
 "use client";
 
 import * as React from "react";
-import {
-  ArchiveIcon,
-  ArrowLeftIcon,
-  CalendarPlusIcon,
-  ClockIcon,
-  ListFilterPlusIcon,
-  MailCheckIcon,
-  MoreHorizontalIcon,
-  TagIcon,
-  Trash2Icon,
-} from "lucide-react";
+import { Eye, Globe, LayoutList, Monitor, RotateCcw, Zap } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
@@ -26,19 +16,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -48,9 +25,117 @@ import Link from "next/link";
 import { ChartSplineIcon } from "@/components/ui/chart-spline";
 import { SettingsGearIcon } from "@/components/ui/settings-gear";
 import { Info } from "lucide-react";
+import { ModeToggle } from "@/components/ui/modetoggle";
+import { useAppState } from "@/context/HeaderContext";
 
 export default function NavigationIcons() {
-  const [label, setLabel] = React.useState("personal");
+  const { colorBarOrientation, setColorBarOrientation } = useAppState();
+  const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
+
+  const [settings, setSettings] = React.useState(() => ({
+    // Appearance
+    theme: "dark",
+    fontSize: "medium",
+    colorContrast: "default",
+    reduceAnimations: false,
+
+    // Accessibility
+    language: "en",
+    keyboardNavigation: true,
+    screenReader: false,
+    focusIndicators: true,
+
+    // Data Preferences
+    autoRefresh: true,
+    showDataPoints: true,
+    highPrecision: false,
+
+    // Performance
+    animationQuality: "high",
+    cacheDuration: "6 hours",
+    colorBarOrientation,
+  }));
+
+  React.useEffect(() => {
+    setSettings((prev) => ({
+      ...prev,
+      colorBarOrientation,
+    }));
+  }, [colorBarOrientation]);
+
+  const updateSetting = (key: string, value: any) => {
+    setSettings((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  };
+
+  const handleSave = () => {
+    // Save settings logic here
+    console.log("Saving settings:", settings);
+    setIsSettingsOpen(false);
+  };
+
+  const resetToDefaults = () => {
+    setSettings({
+      theme: "dark",
+      fontSize: "medium",
+      colorContrast: "default",
+      reduceAnimations: false,
+      language: "en",
+      keyboardNavigation: true,
+      screenReader: false,
+      focusIndicators: true,
+      autoRefresh: true,
+      showDataPoints: true,
+      highPrecision: false,
+      animationQuality: "high",
+      cacheDuration: "6 hours",
+      colorBarOrientation: "horizontal",
+    });
+    setColorBarOrientation("horizontal");
+  };
+
+  const fontSizeOptions = [
+    { value: "small", label: "Small", size: "text-sm" },
+    { value: "medium", label: "Medium", size: "text-base" },
+    { value: "large", label: "Large", size: "text-lg" },
+    { value: "xlarge", label: "Extra Large", size: "text-xl" },
+  ];
+
+  const languageOptions = [
+    { value: "en", label: "English" },
+    { value: "es", label: "Español" },
+    { value: "fr", label: "Français" },
+    { value: "de", label: "Deutsch" },
+    { value: "zh", label: "中文" },
+    { value: "ja", label: "日本語" },
+    { value: "ko", label: "한국어" },
+    { value: "ar", label: "العربية" },
+  ];
+
+  const contrastOptions = [
+    {
+      value: "default",
+      label: "Default",
+      preview: "bg-linear-to-r from-blue-500 to-purple-600",
+    },
+    {
+      value: "high",
+      label: "High Contrast",
+      preview: "bg-linear-to-r from-yellow-400 to-red-600",
+    },
+    {
+      value: "mono",
+      label: "Monochrome",
+      preview: "bg-linear-to-r from-gray-700 to-gray-900",
+    },
+    {
+      value: "inverted",
+      label: "Inverted",
+      preview: "bg-linear-to-r from-white to-gray-300",
+    },
+  ];
 
   return (
     <ButtonGroup>
@@ -128,7 +213,7 @@ export default function NavigationIcons() {
         </Dialog>
       </ButtonGroup>
       <ButtonGroup>
-        <Dialog>
+        <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
           <Tooltip>
             <TooltipTrigger asChild>
               <DialogTrigger asChild>
@@ -146,19 +231,376 @@ export default function NavigationIcons() {
               <p>Settings</p>
             </TooltipContent>
           </Tooltip>
-          <DialogContent className="sm:max-w-[925px]">
+          <DialogContent className="max-h-[90vh] sm:max-w-4xl">
             <DialogHeader>
-              <DialogTitle className="text-center">Settings</DialogTitle>
-              <DialogDescription>
-                Make changes to your profile here. Click save when you&apos;re
-                done.
+              <DialogTitle className="text-center">Site Settings</DialogTitle>
+              <DialogDescription className="text-center">
+                Configure your iCharm experience
               </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4">asd</div>
+
+            {/* Content */}
+            <div className="max-h-[60vh] overflow-y-auto px-1">
+              <div className="space-y-8">
+                {/* Accessibility Section */}
+                <section className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Eye className="h-5 w-5 text-blue-400" />
+                    <h3 className="text-lg font-medium">Accessibility</h3>
+                  </div>
+
+                  {/* Language */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between rounded-lg bg-gray-800/30 p-4">
+                      <div className="flex items-center gap-3">
+                        <Globe className="h-4 w-4 text-gray-400" />
+                        <div>
+                          <span className="text-sm font-medium">Language</span>
+                          <div className="text-xs text-gray-400">
+                            Interface language
+                          </div>
+                        </div>
+                      </div>
+                      <select
+                        value={settings.language}
+                        onChange={(e) =>
+                          updateSetting("language", e.target.value)
+                        }
+                        className="rounded-lg bg-gray-700 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      >
+                        {languageOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Font Size */}
+                    <div className="flex items-center justify-between rounded-lg bg-gray-800/30 p-4">
+                      <div className="flex items-center gap-3">
+                        <Monitor className="h-4 w-4 text-gray-400" />
+                        <div>
+                          <span className="text-sm font-medium">Font Size</span>
+                          <div className="text-xs text-gray-400">
+                            Adjust text size
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {fontSizeOptions.map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() =>
+                              updateSetting("fontSize", option.value)
+                            }
+                            className={`rounded-lg p-2 transition-colors duration-200 ${
+                              settings.fontSize === option.value
+                                ? "bg-blue-500 text-white"
+                                : "bg-gray-700 text-gray-400 hover:bg-gray-600 hover:text-white"
+                            }`}
+                          >
+                            <span className={option.size}>A</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Color Contrast */}
+                    <div className="rounded-lg bg-gray-800/30 p-4">
+                      <div className="mb-3 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <Eye className="h-4 w-4 text-gray-400" />
+                          <div>
+                            <span className="text-sm font-medium">
+                              Color Contrast
+                            </span>
+                            <div className="text-xs text-gray-400">
+                              Enhance color visibility
+                            </div>
+                          </div>
+                        </div>
+                        <select
+                          value={settings.colorContrast}
+                          onChange={(e) =>
+                            updateSetting("colorContrast", e.target.value)
+                          }
+                          className="rounded-lg bg-gray-700 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        >
+                          {contrastOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Color Contrast Preview */}
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        {contrastOptions.map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() =>
+                              updateSetting("colorContrast", option.value)
+                            }
+                            className={`cursor-pointer rounded-lg border-2 p-3 text-center text-xs transition-all duration-200 ${
+                              settings.colorContrast === option.value
+                                ? "border-blue-500 bg-blue-500/10"
+                                : "border-transparent hover:border-gray-500"
+                            }`}
+                          >
+                            <div
+                              className={`mb-2 h-12 rounded ${option.preview}`}
+                            ></div>
+                            <span
+                              className={
+                                option.value === "inverted" ? "text-black" : ""
+                              }
+                            >
+                              {option.label}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Additional Accessibility Options */}
+                    <div className="space-y-2">
+                      <label className="flex cursor-pointer items-center gap-3 rounded-lg bg-gray-800/30 p-4 transition-colors duration-200 hover:bg-gray-700/40">
+                        <input
+                          type="checkbox"
+                          checked={settings.reduceAnimations}
+                          onChange={(e) =>
+                            updateSetting("reduceAnimations", e.target.checked)
+                          }
+                          className="rounded bg-gray-700 text-blue-500 focus:ring-blue-500"
+                        />
+                        <span className="text-sm">Reduce animations</span>
+                      </label>
+                      <label className="flex cursor-pointer items-center gap-3 rounded-lg bg-gray-800/30 p-4 transition-colors duration-200 hover:bg-gray-700/40">
+                        <input
+                          type="checkbox"
+                          checked={settings.keyboardNavigation}
+                          onChange={(e) =>
+                            updateSetting(
+                              "keyboardNavigation",
+                              e.target.checked,
+                            )
+                          }
+                          className="rounded bg-gray-700 text-blue-500 focus:ring-blue-500"
+                        />
+                        <span className="text-sm">Keyboard navigation</span>
+                      </label>
+                      <label className="flex cursor-pointer items-center gap-3 rounded-lg bg-gray-800/30 p-4 transition-colors duration-200 hover:bg-gray-700/40">
+                        <input
+                          type="checkbox"
+                          checked={settings.screenReader}
+                          onChange={(e) =>
+                            updateSetting("screenReader", e.target.checked)
+                          }
+                          className="rounded bg-gray-700 text-blue-500 focus:ring-blue-500"
+                        />
+                        <span className="text-sm">Screen reader support</span>
+                      </label>
+                      <label className="flex cursor-pointer items-center gap-3 rounded-lg bg-gray-800/30 p-4 transition-colors duration-200 hover:bg-gray-700/40">
+                        <input
+                          type="checkbox"
+                          checked={settings.focusIndicators}
+                          onChange={(e) =>
+                            updateSetting("focusIndicators", e.target.checked)
+                          }
+                          className="rounded bg-gray-700 text-blue-500 focus:ring-blue-500"
+                        />
+                        <span className="text-sm">Focus indicators</span>
+                      </label>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Visualization Section */}
+                <section className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <LayoutList className="h-5 w-5 text-blue-400" />
+                    <h3 className="text-lg font-medium">Visualization</h3>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-lg bg-gray-800/30 p-4">
+                    <div className="flex items-center gap-3">
+                      <LayoutList className="h-4 w-4 text-gray-400" />
+                      <div>
+                        <span className="text-sm font-medium">
+                          Color Bar Orientation
+                        </span>
+                        <div className="text-xs text-gray-400">
+                          Choose how the temperature scale is displayed
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setColorBarOrientation("horizontal");
+                          updateSetting("colorBarOrientation", "horizontal");
+                        }}
+                        className={`rounded-lg px-3 py-2 text-sm transition-colors duration-200 ${
+                          colorBarOrientation === "horizontal"
+                            ? "bg-blue-500 text-white"
+                            : "bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white"
+                        }`}
+                      >
+                        Horizontal
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setColorBarOrientation("vertical");
+                          updateSetting("colorBarOrientation", "vertical");
+                        }}
+                        className={`rounded-lg px-3 py-2 text-sm transition-colors duration-200 ${
+                          colorBarOrientation === "vertical"
+                            ? "bg-blue-500 text-white"
+                            : "bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white"
+                        }`}
+                      >
+                        Vertical
+                      </button>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Appearance Section */}
+                <section className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Monitor className="h-5 w-5 text-blue-400" />
+                    <h3 className="text-lg font-medium">Appearance</h3>
+                  </div>
+
+                  <div className="rounded-lg bg-gray-800/30 p-4">
+                    <ModeToggle />
+                  </div>
+                </section>
+
+                {/* Data Preferences Section */}
+                <section className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Globe className="h-5 w-5 text-blue-400" />
+                    <h3 className="text-lg font-medium">Data Preferences</h3>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="flex cursor-pointer items-center gap-3 rounded-lg bg-gray-800/30 p-4 transition-colors duration-200 hover:bg-gray-700/40">
+                      <input
+                        type="checkbox"
+                        checked={settings.autoRefresh}
+                        onChange={(e) =>
+                          updateSetting("autoRefresh", e.target.checked)
+                        }
+                        className="rounded bg-gray-700 text-blue-500 focus:ring-blue-500"
+                      />
+                      <span className="text-sm">Auto-refresh data</span>
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-3 rounded-lg bg-gray-800/30 p-4 transition-colors duration-200 hover:bg-gray-700/40">
+                      <input
+                        type="checkbox"
+                        checked={settings.showDataPoints}
+                        onChange={(e) =>
+                          updateSetting("showDataPoints", e.target.checked)
+                        }
+                        className="rounded bg-gray-700 text-blue-500 focus:ring-blue-500"
+                      />
+                      <span className="text-sm">Show data points on hover</span>
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-3 rounded-lg bg-gray-800/30 p-4 transition-colors duration-200 hover:bg-gray-700/40">
+                      <input
+                        type="checkbox"
+                        checked={settings.highPrecision}
+                        onChange={(e) =>
+                          updateSetting("highPrecision", e.target.checked)
+                        }
+                        className="rounded bg-gray-700 text-blue-500 focus:ring-blue-500"
+                      />
+                      <span className="text-sm">High precision mode</span>
+                    </label>
+                  </div>
+                </section>
+
+                {/* Performance Section */}
+                <section className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Zap className="h-5 w-5 text-blue-400" />
+                    <h3 className="text-lg font-medium">Performance</h3>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between rounded-lg bg-gray-800/30 p-4">
+                      <span className="text-sm font-medium">
+                        Animation Quality
+                      </span>
+                      <select
+                        value={settings.animationQuality}
+                        onChange={(e) =>
+                          updateSetting("animationQuality", e.target.value)
+                        }
+                        className="rounded-lg bg-gray-700 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      >
+                        <option value="high">High</option>
+                        <option value="medium">Medium</option>
+                        <option value="low">Low</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg bg-gray-800/30 p-4">
+                      <span className="text-sm font-medium">
+                        Cache Duration
+                      </span>
+                      <select
+                        value={settings.cacheDuration}
+                        onChange={(e) =>
+                          updateSetting("cacheDuration", e.target.value)
+                        }
+                        className="rounded-lg bg-gray-700 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      >
+                        <option value="1 hour">1 hour</option>
+                        <option value="6 hours">6 hours</option>
+                        <option value="24 hours">24 hours</option>
+                      </select>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Reset Section */}
+                <section className="border-t border-gray-700/50 pt-6">
+                  <div className="flex items-center justify-between rounded-lg border border-red-600/20 bg-red-600/10 p-4">
+                    <div className="flex items-center gap-3">
+                      <RotateCcw className="h-4 w-4 text-red-400" />
+                      <div>
+                        <span className="text-sm font-medium text-white">
+                          Reset to Defaults
+                        </span>
+                        <div className="text-xs text-red-400">
+                          Restore all settings to factory defaults
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={resetToDefaults}
+                      className="rounded-lg bg-red-600/20 px-4 py-2 text-sm text-red-400 transition-colors hover:bg-red-600/30 hover:text-red-300"
+                    >
+                      Reset All
+                    </button>
+                  </div>
+                </section>
+              </div>
+            </div>
+
             <DialogFooter>
               <DialogClose asChild>
-                <Button variant="outline">Save</Button>
+                <Button variant="outline">Cancel</Button>
               </DialogClose>
+              <Button onClick={handleSave}>Save Settings</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
