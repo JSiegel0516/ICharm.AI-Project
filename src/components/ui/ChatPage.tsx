@@ -11,6 +11,7 @@ import {
   Loader2,
   Trash2,
 } from "lucide-react";
+import { useAppState } from "@/context/HeaderContext";
 import { ChatMessage, ChatPageProps } from "@/types";
 import ChatSearchButton from "@/components/Chat/ChatSearchButton";
 import ChatSearchDropdown, {
@@ -45,6 +46,7 @@ const formatUpdatedAt = (date: Date) =>
   });
 
 const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
+  const { requestLocationFocus } = useAppState();
   const [messages, setMessages] = useState<ChatMessage[]>([
     createGreetingMessage(),
   ]);
@@ -60,7 +62,6 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
   const historyButtonRef = useRef<HTMLButtonElement>(null);
   const historyMenuRef = useRef<HTMLDivElement>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const searchDropdownRef = useRef<HTMLDivElement>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<LocationSearchResult[]>(
@@ -68,33 +69,53 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
   );
   const [isSearchLoading, setIsSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [autoFocusPending, setAutoFocusPending] = useState(false);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
+  const resetSearchState = useCallback(() => {
+    setSearchQuery("");
+    setSearchResults([]);
+    setIsSearchLoading(false);
+    setSearchError(null);
+    setAutoFocusPending(false);
+  }, []);
+
   const handleSearchToggle = useCallback(() => {
     setIsSearchOpen((prev) => {
-      const next = !prev;
-      if (next) {
-        setIsHistoryOpen(false);
+      if (prev) {
+        resetSearchState();
+        return false;
       }
-      return next;
+      setIsHistoryOpen(false);
+      return true;
     });
-  }, []);
+  }, [resetSearchState]);
 
   const handleSearchClose = useCallback(() => {
     setIsSearchOpen(false);
-  }, []);
+    resetSearchState();
+  }, [resetSearchState]);
 
   const handleSearchChange = useCallback((value: string) => {
+    setAutoFocusPending(false);
     setSearchQuery(value);
   }, []);
 
-  const handleSelectLocation = useCallback((result: LocationSearchResult) => {
-    setSearchQuery(result.label);
-    console.log("Selected location:", result);
-  }, []);
+  const handleSelectLocation = useCallback(
+    (result: LocationSearchResult) => {
+      setSearchQuery(result.label);
+      setAutoFocusPending(false);
+      requestLocationFocus({
+        latitude: result.latitude,
+        longitude: result.longitude,
+        name: result.label,
+      });
+    },
+    [requestLocationFocus],
+  );
 
   useEffect(() => {
     scrollToBottom();
@@ -389,7 +410,9 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
   };
 
   const handleSearchSubmit = useCallback((value: string) => {
+    const trimmed = value.trim();
     setSearchQuery(value);
+    setAutoFocusPending(trimmed.length >= 2);
   }, []);
 
   useEffect(() => {
@@ -402,6 +425,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
       setSearchResults([]);
       setSearchError(null);
       setIsSearchLoading(false);
+      setAutoFocusPending(false);
       return;
     }
 
@@ -454,6 +478,22 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
       window.clearTimeout(timer);
     };
   }, [searchQuery, isSearchOpen]);
+
+  useEffect(() => {
+    if (!autoFocusPending) {
+      return;
+    }
+    if (!searchResults.length) {
+      return;
+    }
+    const target = searchResults[0];
+    requestLocationFocus({
+      latitude: target.latitude,
+      longitude: target.longitude,
+      name: target.label,
+    });
+    setAutoFocusPending(false);
+  }, [autoFocusPending, searchResults, requestLocationFocus]);
 
   return (
     <>

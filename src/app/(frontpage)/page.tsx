@@ -115,8 +115,14 @@ const parseNumericList = (input: unknown): number[] => {
 };
 
 export default function HomePage() {
-  const { showColorbar, currentDataset, toggleColorbar, colorBarOrientation } =
-    useAppState();
+  const {
+    showColorbar,
+    currentDataset,
+    toggleColorbar,
+    colorBarOrientation,
+    locationFocusRequest,
+    clearLocationFocusRequest,
+  } = useAppState();
   const globeRef = useRef<GlobeRef>(null);
 
   // Date & Time State
@@ -366,6 +372,15 @@ export default function HomePage() {
       globeSettings.hideZeroPrecipitation,
     ],
   );
+
+  useEffect(() => {
+    if (!locationFocusRequest || !globeRef.current) {
+      return;
+    }
+
+    globeRef.current.focusOnLocation(locationFocusRequest);
+    clearLocationFocusRequest();
+  }, [locationFocusRequest, clearLocationFocusRequest]);
 
   return (
     <section className="bg-background fixed inset-0 h-screen w-screen overflow-hidden">

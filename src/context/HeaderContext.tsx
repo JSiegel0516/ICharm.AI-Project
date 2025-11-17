@@ -258,6 +258,7 @@ const useAppStateInternal = () => {
       rasterOpacity: 0.65,
       hideZeroPrecipitation: false,
     },
+    locationFocusRequest: null,
   });
 
   const [selectedYear, setSelectedYear] = useState<number>(
@@ -324,6 +325,23 @@ const useAppStateInternal = () => {
 
   const setShowChat = useCallback((show: boolean) => {
     setState((prev) => ({ ...prev, showChat: show }));
+  }, []);
+
+  const requestLocationFocus = useCallback(
+    (target: { latitude: number; longitude: number; name?: string }) => {
+      setState((prev) => ({
+        ...prev,
+        locationFocusRequest: {
+          id: Date.now(),
+          ...target,
+        },
+      }));
+    },
+    [],
+  );
+
+  const clearLocationFocusRequest = useCallback(() => {
+    setState((prev) => ({ ...prev, locationFocusRequest: null }));
   }, []);
 
   const toggleColorbar = useCallback(() => {
@@ -459,6 +477,8 @@ const useAppStateInternal = () => {
     setColorBarOrientation,
     setCurrentDataset,
     refreshDatasets,
+    requestLocationFocus,
+    clearLocationFocusRequest,
   };
 };
 

@@ -140,6 +140,12 @@ export interface AppState {
   error: string | null;
   globeSettings?: GlobeSettings; // NEW
   colorBarOrientation: ColorBarOrientation;
+  locationFocusRequest?: {
+    id: number;
+    latitude: number;
+    longitude: number;
+    name?: string;
+  } | null;
 }
 
 export interface TooltipProps {
@@ -222,6 +228,11 @@ export interface RegionData {
 
 export interface GlobeRef {
   clearMarker: () => void;
+  focusOnLocation: (target: {
+    latitude: number;
+    longitude: number;
+    name?: string;
+  }) => void;
 }
 
 export type TemperatureUnit = "celsius" | "fahrenheit";

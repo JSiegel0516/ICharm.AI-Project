@@ -298,6 +298,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const currentMarkerRef = useRef<any>(null);
+    const searchMarkerRef = useRef<any>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     const [cesiumInstance, setCesiumInstance] = useState<any>(null);
@@ -323,7 +324,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       maskZeroValues: shouldHideZero,
     });
 
-    const clearMarker = () => {
+    const clearMarker = useCallback(() => {
       if (
         currentMarkerRef.current &&
         viewerRef.current &&
@@ -338,11 +339,94 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         }
         currentMarkerRef.current = null;
       }
-    };
+    }, []);
 
-    useImperativeHandle(ref, () => ({
-      clearMarker,
-    }));
+    const clearSearchMarker = useCallback(() => {
+      if (
+        searchMarkerRef.current &&
+        viewerRef.current &&
+        !viewerRef.current.isDestroyed()
+      ) {
+        viewerRef.current.entities.remove(searchMarkerRef.current);
+        searchMarkerRef.current = null;
+      }
+    }, []);
+
+    const addSearchMarker = useCallback(
+      (latitude: number, longitude: number, label?: string) => {
+        if (!viewerRef.current || !cesiumInstance) {
+          return;
+        }
+
+        clearSearchMarker();
+
+        const entity = viewerRef.current.entities.add({
+          position: cesiumInstance.Cartesian3.fromDegrees(
+            longitude,
+            latitude,
+            1000,
+          ),
+          point: {
+            pixelSize: 14,
+            color: cesiumInstance.Color.fromCssColorString("#38bdf8"),
+            outlineColor: cesiumInstance.Color.WHITE,
+            outlineWidth: 2,
+            heightReference: cesiumInstance.HeightReference.CLAMP_TO_GROUND,
+          },
+          label: label
+            ? {
+                text: label,
+                font: "16px Inter, sans-serif",
+                fillColor: cesiumInstance.Color.WHITE,
+                outlineColor: cesiumInstance.Color.BLACK,
+                outlineWidth: 2,
+                style: cesiumInstance.LabelStyle.FILL_AND_OUTLINE,
+                verticalOrigin: cesiumInstance.VerticalOrigin.BOTTOM,
+                pixelOffset: new cesiumInstance.Cartesian2(0, -18),
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                eyeOffset: new cesiumInstance.Cartesian3(0, 0, -10),
+              }
+            : undefined,
+        });
+
+        searchMarkerRef.current = entity;
+        viewerRef.current.scene?.requestRender();
+      },
+      [cesiumInstance, clearSearchMarker],
+    );
+
+    const focusOnLocation = useCallback(
+      (target: { latitude: number; longitude: number; name?: string }) => {
+        if (!viewerRef.current || !cesiumInstance) {
+          return;
+        }
+
+        const destination = cesiumInstance.Cartesian3.fromDegrees(
+          target.longitude,
+          target.latitude,
+          1800000,
+        );
+
+        viewerRef.current.camera.flyTo({
+          destination,
+          duration: 2.5,
+          easingFunction: cesiumInstance.EasingFunction.SINUSOIDAL_IN_OUT,
+          complete: () => {
+            addSearchMarker(target.latitude, target.longitude, target.name);
+          },
+        });
+      },
+      [addSearchMarker, cesiumInstance],
+    );
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        clearMarker,
+        focusOnLocation,
+      }),
+      [clearMarker, focusOnLocation],
+    );
 
     useEffect(() => {
       const handleResize = () => {
@@ -813,6 +897,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             rasterLayerRef.current = [];
           }
           clearMarker();
+          clearSearchMarker();
           boundaryEntitiesRef.current = [];
           geographicLineEntitiesRef.current = [];
           viewerRef.current.destroy();
@@ -821,7 +906,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           initializingViewerRef.current = false;
         }
       };
-    }, []);
+    }, [clearMarker, clearSearchMarker]);
 
     useEffect(() => {
       if (rasterState.error) {
