@@ -587,7 +587,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     >
       {isCollapsed ? (
         <div
-          className="cursor-pointer rounded-xl border border-gray-600/30 bg-gray-800/95 backdrop-blur-sm transition-all duration-200 hover:border-gray-500/50 hover:shadow-lg"
+          className="border-border bg-card hover:bg-muted-foreground cursor-pointer rounded-xl border transition-all duration-200 hover:border-gray-500/50 hover:shadow-lg"
           onClick={handleCollapseToggle}
           style={{ transform: "scale(1)" }}
           onMouseEnter={(e) => {
@@ -598,7 +598,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
           }}
         >
           <div className="pointer-events-none px-3 py-2">
-            <div className="flex items-center gap-2 text-gray-300 transition-colors hover:text-white">
+            <div className="text-muted-foreground hover:text-card-foreground flex items-center gap-2 transition-colors">
               <MapPin className="h-4 w-4" />
               <span className="text-sm font-medium select-none">
                 Region Info
