@@ -12,6 +12,10 @@ import {
   Trash2,
 } from "lucide-react";
 import { ChatMessage, ChatPageProps } from "@/types";
+import ChatSearchButton from "@/components/Chat/ChatSearchButton";
+import ChatSearchDropdown, {
+  LocationSearchResult,
+} from "@/components/Chat/ChatSearchDropdown";
 
 type SessionSummary = {
   id: string;
@@ -56,9 +60,40 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
   const historyButtonRef = useRef<HTMLButtonElement>(null);
   const historyMenuRef = useRef<HTMLDivElement>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const searchDropdownRef = useRef<HTMLDivElement>(null);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<LocationSearchResult[]>(
+    [],
+  );
+  const [isSearchLoading, setIsSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, []);
+
+  const handleSearchToggle = useCallback(() => {
+    setIsSearchOpen((prev) => {
+      const next = !prev;
+      if (next) {
+        setIsHistoryOpen(false);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSearchClose = useCallback(() => {
+    setIsSearchOpen(false);
+  }, []);
+
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchQuery(value);
+  }, []);
+
+  const handleSelectLocation = useCallback((result: LocationSearchResult) => {
+    setSearchQuery(result.label);
+    console.log("Selected location:", result);
   }, []);
 
   useEffect(() => {
@@ -353,222 +388,277 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
     }
   };
 
+  const handleSearchSubmit = useCallback(async (value: string) => {
+    const trimmed = value.trim();
+    if (trimmed.length < 2) {
+      setSearchError("Enter at least two characters to search.");
+      setSearchResults([]);
+      return;
+    }
+    setIsSearchLoading(true);
+    setSearchError(null);
+    try {
+      const response = await fetch("/api/location-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: trimmed, limit: 5 }),
+      });
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(detail || "Failed to search locations.");
+      }
+      const data = await response.json();
+      const results: LocationSearchResult[] = Array.isArray(data?.results)
+        ? data.results
+        : [];
+      setSearchResults(results);
+      if (!results.length) {
+        setSearchError("No locations matched that search.");
+      }
+    } catch (error) {
+      console.error("Location search error:", error);
+      setSearchResults([]);
+      setSearchError(
+        error instanceof Error ? error.message : "Unable to search locations.",
+      );
+    } finally {
+      setIsSearchLoading(false);
+    }
+  }, []);
+
   return (
     <>
-      <div
-        className={`fixed right-6 bottom-6 z-50 flex h-[500px] w-80 transform flex-col rounded-xl border border-gray-600/30 bg-neutral-800/95 shadow-2xl backdrop-blur-sm transition-all duration-300 ease-out ${
-          show
-            ? "translate-y-0 opacity-100"
-            : "pointer-events-none translate-y-6 opacity-0"
-        }`}
-      >
-        <div className="rounded-t-xl border-b border-gray-700/50 bg-neutral-900/60 p-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-700">
-                <Bot size={18} className="text-gray-200" />
+      <div className="fixed right-6 bottom-6 z-50 flex items-start gap-3">
+        {isSearchOpen && (
+          <ChatSearchDropdown
+            query={searchQuery}
+            onChange={handleSearchChange}
+            onSubmit={handleSearchSubmit}
+            onClose={handleSearchClose}
+            results={searchResults}
+            isLoading={isSearchLoading}
+            error={searchError}
+            onSelectResult={handleSelectLocation}
+          />
+        )}
+        <div
+          className={`flex h-[500px] w-80 transform flex-col rounded-xl border border-gray-600/30 bg-neutral-800/95 shadow-2xl backdrop-blur-sm transition-all duration-300 ease-out ${
+            show
+              ? "translate-y-0 opacity-100"
+              : "pointer-events-none translate-y-6 opacity-0"
+          }`}
+        >
+          <div className="rounded-t-xl border-b border-gray-700/50 bg-neutral-900/60 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-700">
+                  <Bot size={18} className="text-gray-200" />
+                </div>
+                <div>
+                  <h1 className="text-base font-semibold text-gray-200">
+                    CharmBot
+                  </h1>
+                  <p className="text-xs text-gray-400">
+                    Ask anything about datasets or analysis tools.
+                  </p>
+                </div>
               </div>
-              <div>
-                <h1 className="text-base font-semibold text-gray-200">
-                  CharmBot
-                </h1>
-                <p className="text-xs text-gray-400">
-                  Ask anything about datasets or analysis tools.
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={onClose}
-              className="rounded-full p-1.5 text-gray-400 transition hover:bg-neutral-700/40 hover:text-gray-200"
-              aria-label="Collapse chat"
-            >
-              <ChevronDown size={16} />
-            </button>
-          </div>
-          <div className="mt-3 flex items-center gap-2">
-            <div className="relative">
               <button
-                ref={historyButtonRef}
-                onClick={handleToggleHistory}
+                onClick={onClose}
+                className="rounded-full p-1.5 text-gray-400 transition hover:bg-neutral-700/40 hover:text-gray-200"
+                aria-label="Collapse chat"
+              >
+                <ChevronDown size={16} />
+              </button>
+            </div>
+            <div className="mt-3 flex items-center justify-end gap-2">
+              <ChatSearchButton onClick={handleSearchToggle} />
+              <div className="relative">
+                <button
+                  ref={historyButtonRef}
+                  onClick={handleToggleHistory}
+                  className="flex items-center gap-1 rounded-lg border border-gray-700/40 bg-neutral-800/70 px-2.5 py-1.5 text-xs font-medium text-gray-100 transition hover:border-gray-600 hover:bg-neutral-700"
+                >
+                  <Clock size={14} />
+                  <span>History</span>
+                  <ChevronDown
+                    size={12}
+                    className={`transition-transform ${
+                      isHistoryOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+                {isHistoryOpen && (
+                  <div
+                    ref={historyMenuRef}
+                    className="absolute right-0 z-40 mt-2 w-64 rounded-lg border border-gray-700/40 bg-neutral-900/95 p-2 text-sm text-gray-100 shadow-xl"
+                  >
+                    {isLoadingSessions ? (
+                      <div className="flex items-center justify-center gap-2 py-6 text-xs text-gray-400">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Loading conversations…
+                      </div>
+                    ) : sessions.length === 0 ? (
+                      <p className="px-2 py-4 text-xs text-gray-400">
+                        No conversations yet.
+                      </p>
+                    ) : (
+                      <ul className="custom-scrollbar max-h-56 space-y-1 overflow-y-auto pr-1">
+                        {sessions.map((session) => {
+                          const isActive = session.id === sessionId;
+                          return (
+                            <li key={session.id}>
+                              <button
+                                onClick={() => handleSelectSession(session.id)}
+                                className={`w-full rounded-md px-2 py-2 text-left transition ${
+                                  isActive
+                                    ? "bg-neutral-700/70 text-gray-50"
+                                    : "hover:bg-neutral-800/70"
+                                }`}
+                              >
+                                <p className="truncate text-sm font-medium">
+                                  {formatSessionTitle(session)}
+                                </p>
+                                <p className="mt-0.5 text-xs text-gray-400">
+                                  {formatUpdatedAt(session.updatedAt)}
+                                </p>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={handleStartNewChat}
                 className="flex items-center gap-1 rounded-lg border border-gray-700/40 bg-neutral-800/70 px-2.5 py-1.5 text-xs font-medium text-gray-100 transition hover:border-gray-600 hover:bg-neutral-700"
               >
-                <Clock size={14} />
-                <span>History</span>
-                <ChevronDown
-                  size={12}
-                  className={`transition-transform ${
-                    isHistoryOpen ? "rotate-180" : ""
-                  }`}
-                />
+                <Plus size={14} />
+                <span>New</span>
               </button>
-              {isHistoryOpen && (
-                <div
-                  ref={historyMenuRef}
-                  className="absolute right-0 z-40 mt-2 w-64 rounded-lg border border-gray-700/40 bg-neutral-900/95 p-2 text-sm text-gray-100 shadow-xl"
-                >
-                  {isLoadingSessions ? (
-                    <div className="flex items-center justify-center gap-2 py-6 text-xs text-gray-400">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Loading conversations…
-                    </div>
-                  ) : sessions.length === 0 ? (
-                    <p className="px-2 py-4 text-xs text-gray-400">
-                      No conversations yet.
-                    </p>
-                  ) : (
-                    <ul className="custom-scrollbar max-h-56 space-y-1 overflow-y-auto pr-1">
-                      {sessions.map((session) => {
-                        const isActive = session.id === sessionId;
-                        return (
-                          <li key={session.id}>
-                            <button
-                              onClick={() => handleSelectSession(session.id)}
-                              className={`w-full rounded-md px-2 py-2 text-left transition ${
-                                isActive
-                                  ? "bg-neutral-700/70 text-gray-50"
-                                  : "hover:bg-neutral-800/70"
-                              }`}
-                            >
-                              <p className="truncate text-sm font-medium">
-                                {formatSessionTitle(session)}
-                              </p>
-                              <p className="mt-0.5 text-xs text-gray-400">
-                                {formatUpdatedAt(session.updatedAt)}
-                              </p>
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </div>
-              )}
+              <button
+                onClick={() => setIsDeleteModalOpen(true)}
+                disabled={!sessionId}
+                className="flex items-center gap-1 rounded-lg border border-red-700/40 bg-red-900/70 px-2.5 py-1.5 text-xs font-medium text-red-100 transition hover:border-red-600 hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Trash2 size={12} />
+                <span>Delete</span>
+              </button>
             </div>
-            <button
-              onClick={handleStartNewChat}
-              className="flex items-center gap-1 rounded-lg border border-gray-700/40 bg-neutral-800/70 px-2.5 py-1.5 text-xs font-medium text-gray-100 transition hover:border-gray-600 hover:bg-neutral-700"
-            >
-              <Plus size={14} />
-              <span>New</span>
-            </button>
-            <button
-              onClick={() => setIsDeleteModalOpen(true)}
-              disabled={!sessionId}
-              className="flex items-center gap-1 rounded-lg border border-red-700/40 bg-red-900/70 px-2.5 py-1.5 text-xs font-medium text-red-100 transition hover:border-red-600 hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <Trash2 size={12} />
-              <span>Delete</span>
-            </button>
           </div>
-        </div>
 
-        <div className="custom-scrollbar flex-1 space-y-3 overflow-y-auto p-4">
-          {isLoadingMessages ? (
-            <div className="flex h-full items-center justify-center gap-2 text-sm text-gray-400">
-              <Loader2 className="h-5 w-5 animate-spin" />
-              Loading conversation…
-            </div>
-          ) : (
-            <>
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex gap-3 ${
-                    message.type === "user" ? "justify-end" : "justify-start"
-                  }`}
-                >
-                  {message.type === "bot" && (
+          <div className="custom-scrollbar flex-1 space-y-3 overflow-y-auto p-4">
+            {isLoadingMessages ? (
+              <div className="flex h-full items-center justify-center gap-2 text-sm text-gray-400">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Loading conversation…
+              </div>
+            ) : (
+              <>
+                {messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`flex gap-3 ${
+                      message.type === "user" ? "justify-end" : "justify-start"
+                    }`}
+                  >
+                    {message.type === "bot" && (
+                      <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-700">
+                        <Bot size={16} className="text-gray-200" />
+                      </div>
+                    )}
+
+                    <div
+                      className={`max-w-[85%] rounded-2xl px-3 py-2 ${
+                        message.type === "user"
+                          ? "bg-neutral-700 text-gray-100"
+                          : "border border-gray-700/30 bg-neutral-900/30 text-gray-200"
+                      }`}
+                    >
+                      <p className="text-sm leading-relaxed">
+                        {message.message}
+                      </p>
+                    </div>
+
+                    {message.type === "user" && (
+                      <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-600">
+                        <User size={16} className="text-gray-200" />
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {isTyping && (
+                  <div className="flex justify-start gap-3">
                     <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-700">
                       <Bot size={16} className="text-gray-200" />
                     </div>
-                  )}
-
-                  <div
-                    className={`max-w-[85%] rounded-2xl px-3 py-2 ${
-                      message.type === "user"
-                        ? "bg-neutral-700 text-gray-100"
-                        : "border border-gray-700/30 bg-neutral-900/30 text-gray-200"
-                    }`}
-                  >
-                    <p className="text-sm leading-relaxed">{message.message}</p>
-                  </div>
-
-                  {message.type === "user" && (
-                    <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-600">
-                      <User size={16} className="text-gray-200" />
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              {isTyping && (
-                <div className="flex justify-start gap-3">
-                  <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-700">
-                    <Bot size={16} className="text-gray-200" />
-                  </div>
-                  <div className="rounded-2xl border border-gray-700/30 bg-neutral-900/30 px-3 py-2 text-gray-200">
-                    <div className="flex items-center gap-1">
-                      <div className="flex space-x-1">
-                        <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-neutral-400" />
-                        <div
-                          className="h-1.5 w-1.5 animate-bounce rounded-full bg-neutral-400"
-                          style={{ animationDelay: "0.1s" }}
-                        />
-                        <div
-                          className="h-1.5 w-1.5 animate-bounce rounded-full bg-neutral-400"
-                          style={{ animationDelay: "0.2s" }}
-                        />
+                    <div className="rounded-2xl border border-gray-700/30 bg-neutral-900/30 px-3 py-2 text-gray-200">
+                      <div className="flex items-center gap-1">
+                        <div className="flex space-x-1">
+                          <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-neutral-400" />
+                          <div
+                            className="h-1.5 w-1.5 animate-bounce rounded-full bg-neutral-400"
+                            style={{ animationDelay: "0.1s" }}
+                          />
+                          <div
+                            className="h-1.5 w-1.5 animate-bounce rounded-full bg-neutral-400"
+                            style={{ animationDelay: "0.2s" }}
+                          />
+                        </div>
+                        <span className="ml-2 text-xs text-neutral-400">
+                          AI is typing...
+                        </span>
                       </div>
-                      <span className="ml-2 text-xs text-neutral-400">
-                        AI is typing...
-                      </span>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              <div ref={messagesEndRef} />
-            </>
-          )}
-        </div>
-
-        <div className="rounded-b-xl border-t border-gray-700/50 bg-neutral-900/60 p-3">
-          <div className="flex items-end gap-2">
-            <input
-              ref={inputRef}
-              type="text"
-              value={inputValue}
-              onChange={(event) => setInputValue(event.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder="Ask about climate data..."
-              className="flex-1 rounded-xl border border-gray-700/30 bg-neutral-900/30 px-3 py-2 text-sm text-gray-200 placeholder-neutral-500 focus:border-gray-600 focus:ring-2 focus:ring-gray-600 focus:outline-none"
-            />
-            <button
-              onClick={() => void handleSendMessage()}
-              disabled={!inputValue.trim() || isTyping}
-              className="flex items-center justify-center rounded-xl bg-neutral-700 p-2 text-gray-200 transition-colors hover:bg-neutral-600 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Send size={16} />
-            </button>
+                <div ref={messagesEndRef} />
+              </>
+            )}
           </div>
-        </div>
 
-        <style jsx>{`
-          .custom-scrollbar::-webkit-scrollbar {
-            width: 6px;
-          }
-          .custom-scrollbar::-webkit-scrollbar-track {
-            background: #475569;
-            border-radius: 3px;
-          }
-          .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #64748b;
-            border-radius: 3px;
-          }
-          .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
-          }
-        `}</style>
+          <div className="rounded-b-xl border-t border-gray-700/50 bg-neutral-900/60 p-3">
+            <div className="flex items-end gap-2">
+              <input
+                ref={inputRef}
+                type="text"
+                value={inputValue}
+                onChange={(event) => setInputValue(event.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder="Ask about climate data..."
+                className="flex-1 rounded-xl border border-gray-700/30 bg-neutral-900/30 px-3 py-2 text-sm text-gray-200 placeholder-neutral-500 focus:border-gray-600 focus:ring-2 focus:ring-gray-600 focus:outline-none"
+              />
+              <button
+                onClick={() => void handleSendMessage()}
+                disabled={!inputValue.trim() || isTyping}
+                className="flex items-center justify-center rounded-xl bg-neutral-700 p-2 text-gray-200 transition-colors hover:bg-neutral-600 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Send size={16} />
+              </button>
+            </div>
+          </div>
+
+          <style jsx>{`
+            .custom-scrollbar::-webkit-scrollbar {
+              width: 6px;
+            }
+            .custom-scrollbar::-webkit-scrollbar-track {
+              background: #475569;
+              border-radius: 3px;
+            }
+            .custom-scrollbar::-webkit-scrollbar-thumb {
+              background: #64748b;
+              border-radius: 3px;
+            }
+            .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+              background: #94a3b8;
+            }
+          `}</style>
+        </div>
       </div>
       {isDeleteModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4">

@@ -74,6 +74,10 @@ fsspec==2025.10.0
     #   dask
     #   kerchunk
     #   s3fs
+geographiclib==2.0
+    # via geopy
+geopy==2.4.1
+    # via -r requirements.in
 greenlet==3.2.4
     # via sqlalchemy
 h11==0.16.0

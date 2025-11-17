@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+from .location_search import router as geocode_router
 
 DEFAULT_MODEL = os.getenv("LLAMA_MODEL", "meta-llama/Meta-Llama-3-8B-Instruct")
 HF_CHAT_URL = os.getenv(
@@ -17,6 +18,7 @@ HF_CHAT_URL = os.getenv(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="ICharm LLM Service")
+app.include_router(geocode_router)
 
 TRANSIENT_STATUS_CODES = {429, 500, 502, 503, 504}
 

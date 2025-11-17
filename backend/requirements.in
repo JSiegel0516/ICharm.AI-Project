@@ -38,6 +38,9 @@ ujson
 httpx
 requests
 
+# Geocoding
+geopy
+
 # CORS support
 python-multipart
 
