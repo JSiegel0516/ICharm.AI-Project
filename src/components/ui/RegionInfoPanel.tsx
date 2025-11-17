@@ -207,7 +207,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
         setPreviousPosition(position);
         if (typeof window !== "undefined") {
           setPosition({
-            x: window.innerWidth - 200,
+            x: window.innerWidth - 225,
             y: window.innerHeight - 60,
           });
         }
