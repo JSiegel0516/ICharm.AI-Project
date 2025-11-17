@@ -399,30 +399,34 @@ export function SideButtons({
             transition={{ duration: 0.3, ease: "easeInOut" }}
             className="pointer-events-auto fixed top-1/2 left-4 z-9999 w-80 -translate-y-1/2"
           >
-            <Calendar
-              mode="single"
-              selected={selectedDate}
-              onSelect={handleDateSelect}
-              month={selectedDate}
-              onMonthChange={(newMonth) => {
-                const newDate = new Date(
-                  newMonth.getFullYear(),
-                  newMonth.getMonth(),
-                  selectedDate.getDate(),
-                );
-                onDateChange(newDate);
-              }}
-              disabled={(date) => {
-                if (!currentDataset) return false;
-                const start = currentDataset.startDate;
-                const end = currentDataset.endDate;
-                return date < start || date > end;
-              }}
-              fromDate={currentDataset?.startDate}
-              toDate={currentDataset?.endDate}
-              className="rounded-md border shadow-sm lg:h-[300px] lg:w-[250px]"
-              captionLayout="dropdown"
-            />
+            {/* Calendar Window */}
+            <AnimatePresence>
+              {showCalendar && (
+                <motion.div
+                  ref={calendarRef}
+                  initial={{ x: -100, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  exit={{ x: -100, opacity: 0 }}
+                  transition={{ duration: 0.3, ease: "easeInOut" }}
+                  className="pointer-events-auto fixed top-1/2 left-4 z-9999 w-80 -translate-y-1/2"
+                >
+                  <Calendar
+                    mode="single"
+                    selected={selectedDate}
+                    onSelect={handleDateSelect}
+                    defaultMonth={selectedDate}
+                    disabled={(date) => {
+                      if (!currentDataset) return false;
+                      const start = currentDataset.startDate;
+                      const end = currentDataset.endDate;
+                      return date < start || date > end;
+                    }}
+                    className="rounded-md border shadow-sm select-none"
+                    captionLayout="dropdown"
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
           </motion.div>
         )}
       </AnimatePresence>
