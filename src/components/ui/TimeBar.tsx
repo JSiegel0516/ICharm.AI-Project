@@ -287,26 +287,26 @@ const TimeBar: React.FC<TimeBarProps> = ({
       className={`mx-auto w-full max-w-3xl px-32 ${className}`}
     >
       <div id="timebar" className="flex items-center justify-center gap-6">
-        <button
-          onClick={handlePlayPause}
-          className={`flex h-5 w-5 items-center justify-center rounded-full transition-all duration-200 hover:scale-110 focus:outline-none ${
-            isPlaying || isActive
-              ? "border border-white/30 bg-white/20 text-white"
-              : "border border-gray-500/30 bg-gray-600/40 text-gray-400 hover:border-white/20 hover:bg-white/10 hover:text-white"
-          }`}
-          title={isPlaying ? "Pause" : "Play"}
-          type="button"
-          aria-label={isPlaying ? "Pause animation" : "Play animation"}
-        >
-          {isPlaying ? <Pause size={12} /> : <Play size={12} />}
-        </button>
-
         <div
           className="relative flex-1"
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => !isDragging && setIsHovered(false)}
         >
           <div className="relative mb-2 flex items-center justify-center gap-2">
+            <button
+              onClick={handlePlayPause}
+              className={`flex h-5 w-5 items-center justify-center rounded-full transition-all duration-200 hover:scale-110 focus:outline-none ${
+                isPlaying || isActive
+                  ? "border border-white/30 bg-white/20 text-white"
+                  : "border border-gray-500/30 bg-gray-600/40 text-gray-400 hover:border-white/20 hover:bg-white/10 hover:text-white"
+              }`}
+              title={isPlaying ? "Pause" : "Play"}
+              type="button"
+              aria-label={isPlaying ? "Pause animation" : "Play animation"}
+            >
+              {isPlaying ? <Pause size={12} /> : <Play size={12} />}
+            </button>
+
             <Popover open={showCalendar} onOpenChange={setShowCalendar}>
               <PopoverTrigger asChild>
                 <button
@@ -322,11 +322,13 @@ const TimeBar: React.FC<TimeBarProps> = ({
                   <span>{formatDate(displayDate)}</span>
                 </button>
               </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="center">
+              <PopoverContent
+                className="w-auto border-0 p-0 shadow-none"
+                align="center"
+              >
                 <Calendar
                   mode="single"
                   className="rounded-md border shadow-sm select-none"
-                  captionLayout="dropdown"
                   selected={selectedDate}
                   onSelect={handleCalendarSelect}
                   defaultMonth={selectedDate}
@@ -336,7 +338,6 @@ const TimeBar: React.FC<TimeBarProps> = ({
               </PopoverContent>
             </Popover>
           </div>
-
           <div
             className={`relative h-1 touch-none ${
               isDragging ? "cursor-grabbing" : "cursor-grab"
