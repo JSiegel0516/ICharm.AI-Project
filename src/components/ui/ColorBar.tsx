@@ -1,16 +1,18 @@
 "use client";
 
 import React, {
-  useState,
   useRef,
   useEffect,
   useMemo,
   useCallback,
+  useReducer,
 } from "react";
 import { ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
+import { Button } from "./button";
 
-// Mock types for the example
+// Types
 type TemperatureUnit = "celsius" | "fahrenheit";
+
 interface ColorBarProps {
   show: boolean;
   onToggle?: () => void;
@@ -21,6 +23,93 @@ interface ColorBarProps {
   collapsed?: boolean;
   rasterMeta?: any;
   orientation?: "horizontal" | "vertical";
+}
+
+interface Position {
+  x: number;
+  y: number;
+}
+
+// State management with useReducer
+type UIState = {
+  position: Position;
+  previousPosition: Position;
+  isCollapsed: boolean;
+  isDragging: boolean;
+  dragStart: Position;
+  showDropdown: boolean;
+  hasInitialized: boolean;
+};
+
+type UIAction =
+  | { type: "SET_POSITION"; payload: Position }
+  | { type: "START_DRAG"; payload: Position }
+  | { type: "STOP_DRAG" }
+  | { type: "TOGGLE_COLLAPSE" }
+  | { type: "SET_COLLAPSED"; payload: boolean }
+  | { type: "TOGGLE_DROPDOWN" }
+  | { type: "CLOSE_DROPDOWN" }
+  | { type: "INITIALIZE"; payload: Position }
+  | { type: "RESET_POSITION"; payload: Position };
+
+function uiReducer(state: UIState, action: UIAction): UIState {
+  switch (action.type) {
+    case "SET_POSITION":
+      return { ...state, position: action.payload };
+
+    case "START_DRAG":
+      return { ...state, isDragging: true, dragStart: action.payload };
+
+    case "STOP_DRAG":
+      return { ...state, isDragging: false };
+
+    case "TOGGLE_COLLAPSE":
+      if (state.isCollapsed) {
+        // Expanding
+        return {
+          ...state,
+          isCollapsed: false,
+          position: state.previousPosition,
+          showDropdown: false,
+        };
+      } else {
+        // Collapsing
+        return {
+          ...state,
+          isCollapsed: true,
+          previousPosition: state.position,
+          position: { x: 24, y: window.innerHeight - 60 },
+          showDropdown: false,
+        };
+      }
+
+    case "SET_COLLAPSED":
+      return { ...state, isCollapsed: action.payload };
+
+    case "TOGGLE_DROPDOWN":
+      return { ...state, showDropdown: !state.showDropdown };
+
+    case "CLOSE_DROPDOWN":
+      return { ...state, showDropdown: false };
+
+    case "INITIALIZE":
+      return {
+        ...state,
+        position: action.payload,
+        previousPosition: action.payload,
+        hasInitialized: true,
+      };
+
+    case "RESET_POSITION":
+      return {
+        ...state,
+        position: action.payload,
+        previousPosition: action.payload,
+      };
+
+    default:
+      return state;
+  }
 }
 
 const ColorBar: React.FC<ColorBarProps> = ({
@@ -34,188 +123,188 @@ const ColorBar: React.FC<ColorBarProps> = ({
   rasterMeta = null,
   orientation = "horizontal",
 }) => {
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [position, setPosition] = useState({ x: 24, y: 24 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [isCollapsed, setIsCollapsed] = useState(collapsed);
-  const [previousPosition, setPreviousPosition] = useState({ x: 24, y: 24 });
   const colorBarRef = useRef<HTMLDivElement>(null);
-  const [hasInitialized, setHasInitialized] = useState(false);
+  const isVertical = orientation === "vertical";
 
-  const defaultUnitSymbol = useMemo(() => {
+  const [uiState, dispatch] = useReducer(uiReducer, {
+    position: { x: 24, y: 24 },
+    previousPosition: { x: 24, y: 24 },
+    isCollapsed: collapsed,
+    isDragging: false,
+    dragStart: { x: 0, y: 0 },
+    showDropdown: false,
+    hasInitialized: false,
+  });
+
+  // ============================================================================
+  // UNIT DETECTION AND CONVERSION
+  // ============================================================================
+
+  const unitInfo = useMemo(() => {
     const rawCandidates = [dataset.units, rasterMeta?.units].filter(
       (value): value is string =>
         typeof value === "string" && value.trim() !== "",
     );
 
-    let fallback = "";
+    let symbol = "";
 
     for (const raw of rawCandidates) {
       const normalized = raw.trim();
       const lower = normalized.toLowerCase();
       const alphaOnly = lower.replace(/[^a-z]/g, "");
 
-      const isCelsius =
+      if (
         normalized.includes("℃") ||
         lower.includes("celsius") ||
-        lower.includes("celcius") ||
         lower.includes("°c") ||
         lower.includes("degc") ||
-        alphaOnly === "c";
-      if (isCelsius) {
-        return "°C";
+        alphaOnly === "c"
+      ) {
+        symbol = "°C";
+        break;
       }
 
-      const isFahrenheit =
+      if (
         normalized.includes("℉") ||
         lower.includes("fahrenheit") ||
         lower.includes("°f") ||
         lower.includes("degf") ||
-        alphaOnly === "f";
-      if (isFahrenheit) {
-        return "°F";
+        alphaOnly === "f"
+      ) {
+        symbol = "°F";
+        break;
       }
 
-      const isKelvin =
+      if (
         normalized.includes("K") ||
         lower.includes("kelvin") ||
         lower.includes("°k") ||
         lower.includes("degk") ||
-        alphaOnly === "k";
-      if (isKelvin) {
-        return "K";
+        alphaOnly === "k"
+      ) {
+        symbol = "K";
+        break;
       }
 
-      if (!fallback) {
-        fallback = normalized;
-      }
+      if (!symbol) symbol = normalized;
     }
 
-    if (!fallback && typeof dataset.dataType === "string") {
-      const typeLower = dataset.dataType.toLowerCase();
-      if (typeLower === "temperature") {
-        return "°C";
-      }
+    if (!symbol && dataset.dataType?.toLowerCase() === "temperature") {
+      symbol = "°C";
     }
 
-    return fallback;
-  }, [dataset.units, rasterMeta?.units, dataset.dataType]);
-
-  const hasTemperatureHints = useMemo(() => {
-    const parts: string[] = [];
-
-    const typeLower =
-      typeof dataset?.dataType === "string"
-        ? dataset.dataType.toLowerCase()
-        : "";
-    if (typeLower) {
-      parts.push(typeLower);
-    }
-
-    const possibleKeys: Array<string | undefined | null> = [
+    // Check if dataset has temperature hints
+    const parts = [
+      dataset?.dataType,
       dataset?.name,
       dataset?.description,
-      (dataset as any)?.category,
       dataset?.backend?.datasetName,
       dataset?.backend?.layerParameter,
-      dataset?.backend?.datasetType,
-    ];
-    possibleKeys.forEach((value) => {
-      if (typeof value === "string" && value.trim()) {
-        parts.push(value);
-      }
-    });
+    ]
+      .filter((v): v is string => typeof v === "string" && v.trim())
+      .join(" ")
+      .toLowerCase();
 
-    if (!parts.length) {
-      return false;
-    }
+    const hasTemperatureHints =
+      parts.includes("temp") ||
+      parts.includes("°c") ||
+      parts.includes("sea surface") ||
+      parts.includes("sst");
 
-    const combined = parts.join(" ").toLowerCase();
-    return (
-      combined.includes("temp") ||
-      combined.includes("°c") ||
-      combined.includes("degc") ||
-      combined.includes("sea surface") ||
-      combined.includes("sst") ||
-      combined.includes("surface temp")
-    );
-  }, [dataset]);
+    return {
+      symbol,
+      allowToggle: symbol === "°C" && hasTemperatureHints,
+    };
+  }, [dataset, rasterMeta?.units]);
 
-  const allowUnitToggle = useMemo(() => {
-    return defaultUnitSymbol === "°C" && hasTemperatureHints;
-  }, [defaultUnitSymbol, hasTemperatureHints]);
+  const currentUnitSymbol = unitInfo.allowToggle
+    ? unit === "fahrenheit"
+      ? "°F"
+      : "°C"
+    : unitInfo.symbol || "";
 
-  const metaMin =
-    typeof rasterMeta?.min === "number" && Number.isFinite(rasterMeta.min)
-      ? rasterMeta.min
-      : null;
-  const metaMax =
-    typeof rasterMeta?.max === "number" && Number.isFinite(rasterMeta.max)
-      ? rasterMeta.max
-      : null;
+  // ============================================================================
+  // COLOR SCALE CALCULATIONS
+  // ============================================================================
 
-  const resolvedMin = metaMin ?? dataset.colorScale.min;
-  const resolvedMax = metaMax ?? dataset.colorScale.max;
-  const safeMin = Number.isFinite(resolvedMin) ? Number(resolvedMin) : 0;
-  const safeMax = Number.isFinite(resolvedMax) ? Number(resolvedMax) : safeMin;
-  const numericColorScaleLabels = useMemo(() => {
-    const labels = dataset.colorScale.labels;
-    if (!Array.isArray(labels) || !labels.length) {
-      return null;
-    }
+  const colorScale = useMemo(() => {
+    const metaMin =
+      typeof rasterMeta?.min === "number" && Number.isFinite(rasterMeta.min)
+        ? rasterMeta.min
+        : null;
+    const metaMax =
+      typeof rasterMeta?.max === "number" && Number.isFinite(rasterMeta.max)
+        ? rasterMeta.max
+        : null;
 
-    const parsed = labels.map((label) => {
-      if (typeof label === "number" && Number.isFinite(label)) {
-        return label;
-      }
+    const min = metaMin ?? dataset.colorScale.min;
+    const max = metaMax ?? dataset.colorScale.max;
+    const safeMin = Number.isFinite(min) ? Number(min) : 0;
+    const safeMax = Number.isFinite(max) ? Number(max) : safeMin;
 
-      if (typeof label === "string") {
-        const match = label.trim().match(/-?\d+(\.\d+)?/);
-        if (match) {
-          const numeric = Number(match[0]);
-          if (Number.isFinite(numeric)) {
-            return numeric;
+    // Parse numeric labels from dataset
+    const numericLabels = dataset.colorScale.labels
+      .map((label: any) => {
+        if (typeof label === "number" && Number.isFinite(label)) return label;
+        if (typeof label === "string") {
+          const match = label.trim().match(/-?\d+(\.\d+)?/);
+          if (match) {
+            const num = Number(match[0]);
+            if (Number.isFinite(num)) return num;
           }
         }
-      }
+        return null;
+      })
+      .filter((v: any): v is number => v !== null);
 
-      return null;
-    });
-
-    if (parsed.every((value) => typeof value === "number")) {
-      return parsed as number[];
-    }
-    return null;
-  }, [dataset.colorScale.labels]);
-
-  const labelCount = useMemo(() => {
-    if (numericColorScaleLabels?.length) {
-      return numericColorScaleLabels.length;
-    }
-    return Math.max(
+    const labelCount = Math.max(
       dataset.colorScale.labels.length || 0,
       dataset.colorScale.colors.length || 0,
       2,
     );
-  }, [
-    dataset.colorScale.colors.length,
-    dataset.colorScale.labels.length,
-    numericColorScaleLabels,
-  ]);
 
-  const convertToFahrenheit = (value: number) => (value * 9) / 5 + 32;
+    // Decide whether to use dynamic range
+    const useDynamicRange =
+      (metaMin !== null && metaMax !== null) || unitInfo.symbol === "K";
 
-  const formatLabelValue = (value: number) => {
-    if (!Number.isFinite(value)) return "–";
-    const rounded = Math.round(value);
-    return (Object.is(rounded, -0) ? 0 : rounded).toString();
-  };
+    // Generate labels
+    let labels: number[];
+    if (numericLabels.length && !useDynamicRange) {
+      labels = numericLabels;
+    } else if (labelCount <= 1 || Math.abs(safeMax - safeMin) < 1e-9) {
+      labels = Array(labelCount).fill(safeMin);
+    } else {
+      labels = Array.from(
+        { length: labelCount },
+        (_, i) => safeMin + ((safeMax - safeMin) * i) / (labelCount - 1),
+      );
+    }
 
-  const isVertical = orientation === "vertical";
+    return { labels, colors: dataset.colorScale.colors };
+  }, [dataset.colorScale, rasterMeta, unitInfo.symbol]);
 
-  // NEW: Function that uses ACTUAL measured height
-  const getDefaultPosition = useCallback(() => {
+  const displayLabels = useMemo(() => {
+    const values =
+      unitInfo.allowToggle && unit === "fahrenheit"
+        ? colorScale.labels.map((v) => (v * 9) / 5 + 32)
+        : colorScale.labels;
+
+    return values.map((v) => {
+      if (!Number.isFinite(v)) return "–";
+      const rounded = Math.round(v);
+      return (Object.is(rounded, -0) ? 0 : rounded).toString();
+    });
+  }, [colorScale.labels, unitInfo.allowToggle, unit]);
+
+  const labels = isVertical ? [...displayLabels].reverse() : displayLabels;
+
+  const gradientBackground = `linear-gradient(${isVertical ? "to top" : "to right"}, ${colorScale.colors.join(", ")})`;
+
+  // ============================================================================
+  // POSITIONING LOGIC
+  // ============================================================================
+
+  const getDefaultPosition = useCallback((): Position => {
     if (typeof window === "undefined") {
       return isVertical ? { x: 24, y: 120 } : { x: 24, y: 180 };
     }
@@ -236,292 +325,226 @@ const ColorBar: React.FC<ColorBarProps> = ({
       return { x, y };
     }
 
-    // For horizontal: use ACTUAL measured height from DOM
-    const colorBarElement = colorBarRef.current;
-    const actualHeight = colorBarElement ? colorBarElement.offsetHeight : 220;
-
-    const x = margin;
-    const y = window.innerHeight - actualHeight - margin;
-
-    return { x, y };
+    const actualHeight = colorBarRef.current?.offsetHeight ?? 220;
+    return { x: margin, y: window.innerHeight - actualHeight - margin };
   }, [isVertical]);
 
-  const dynamicRangeActive = metaMin !== null && metaMax !== null;
-  const forceDynamicLabels = defaultUnitSymbol === "K";
+  const clampPosition = useCallback((pos: Position): Position => {
+    const element = colorBarRef.current;
+    if (!element) return pos;
 
-  const numericLabels = useMemo(() => {
-    if (
-      numericColorScaleLabels?.length &&
-      !forceDynamicLabels &&
-      !dynamicRangeActive
-    ) {
-      return numericColorScaleLabels;
-    }
+    const maxX = window.innerWidth - element.offsetWidth;
+    const maxY = window.innerHeight - element.offsetHeight;
 
-    if (labelCount <= 1 || Math.abs(safeMax - safeMin) < 1e-9) {
-      return Array(labelCount).fill(safeMin);
-    }
+    return {
+      x: Math.max(0, Math.min(pos.x, maxX)),
+      y: Math.max(0, Math.min(pos.y, maxY)),
+    };
+  }, []);
 
-    return Array.from({ length: labelCount }, (_, index) => {
-      return safeMin + ((safeMax - safeMin) * index) / (labelCount - 1);
-    });
-  }, [
-    labelCount,
-    numericColorScaleLabels,
-    safeMax,
-    safeMin,
-    forceDynamicLabels,
-    dynamicRangeActive,
-  ]);
+  // ============================================================================
+  // EVENT HANDLERS
+  // ============================================================================
 
-  const displayLabels = useMemo(() => {
-    const values =
-      allowUnitToggle && unit === "fahrenheit"
-        ? numericLabels.map(convertToFahrenheit)
-        : numericLabels;
-    return values.map((val) => formatLabelValue(val));
-  }, [allowUnitToggle, unit, numericLabels]);
-
-  const verticalLabels = useMemo(
-    () => [...displayLabels].reverse(),
-    [displayLabels],
-  );
-
-  const gradientBackground = useMemo(
-    () =>
-      `linear-gradient(${isVertical ? "to top" : "to right"}, ${dataset.colorScale.colors.join(", ")})`,
-    [isVertical, dataset.colorScale.colors],
-  );
-
-  const getUnitSymbol = () => {
-    if (allowUnitToggle) {
-      return unit === "fahrenheit" ? "°F" : "°C";
-    }
-    return defaultUnitSymbol || "";
-  };
-
-  const handleUnitChange = (newUnit: TemperatureUnit) => {
-    if (!allowUnitToggle) return;
-    if (onUnitChange) {
-      onUnitChange(newUnit);
-    }
-    setShowDropdown(false);
-  };
-
-  const handleResetPosition = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (!isCollapsed && !isDragging) {
-      const defaultPos = getDefaultPosition();
-      setPosition(defaultPos);
-      setPreviousPosition(defaultPos);
-    }
-  };
-
-  const handleCollapseToggle = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (isDragging) {
-      return;
-    }
-
-    setIsCollapsed((prev) => {
-      if (prev) {
-        // Expanding
-        setPosition(previousPosition);
-        return false;
-      } else {
-        // Collapsing
-        setPreviousPosition(position);
-        setPosition({ x: 24, y: window.innerHeight - 60 });
-        return true;
+  const handleCollapseToggle = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!uiState.isDragging) {
+        dispatch({ type: "TOGGLE_COLLAPSE" });
       }
-    });
-    setShowDropdown(false);
-  };
+    },
+    [uiState.isDragging],
+  );
 
-  useEffect(() => {
-    setIsCollapsed(collapsed);
-  }, [collapsed]);
+  const handleResetPosition = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!uiState.isCollapsed && !uiState.isDragging) {
+        const defaultPos = getDefaultPosition();
+        dispatch({ type: "RESET_POSITION", payload: defaultPos });
+      }
+    },
+    [uiState.isCollapsed, uiState.isDragging, getDefaultPosition],
+  );
 
-  // NEW: Initialize position after component mounts and measures itself
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (uiState.isCollapsed) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      dispatch({
+        type: "START_DRAG",
+        payload: {
+          x: e.clientX - uiState.position.x,
+          y: e.clientY - uiState.position.y,
+        },
+      });
+    },
+    [uiState.isCollapsed, uiState.position],
+  );
+
+  const handleDropdownToggle = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!unitInfo.allowToggle || uiState.isCollapsed || uiState.isDragging)
+        return;
+      dispatch({ type: "TOGGLE_DROPDOWN" });
+    },
+    [unitInfo.allowToggle, uiState.isCollapsed, uiState.isDragging],
+  );
+
+  const handleUnitChange = useCallback(
+    (newUnit: TemperatureUnit) => {
+      if (!unitInfo.allowToggle) return;
+      onUnitChange?.(newUnit);
+      dispatch({ type: "CLOSE_DROPDOWN" });
+    },
+    [unitInfo.allowToggle, onUnitChange],
+  );
+
+  // ============================================================================
+  // EFFECTS
+  // ============================================================================
+
+  // Initialize position on mount
   useEffect(() => {
-    if (!hasInitialized && colorBarRef.current && !isCollapsed) {
-      // Small delay to ensure DOM has rendered
+    if (
+      !uiState.hasInitialized &&
+      colorBarRef.current &&
+      !uiState.isCollapsed
+    ) {
       const timer = setTimeout(() => {
         const defaultPosition = getDefaultPosition();
-        setPosition(defaultPosition);
-        setPreviousPosition(defaultPosition);
-        setHasInitialized(true);
+        dispatch({ type: "INITIALIZE", payload: defaultPosition });
       }, 0);
-
       return () => clearTimeout(timer);
     }
-  }, [hasInitialized, getDefaultPosition, isCollapsed]);
+  }, [uiState.hasInitialized, uiState.isCollapsed, getDefaultPosition]);
 
   // Update position when orientation changes
   useEffect(() => {
-    if (hasInitialized && !isCollapsed) {
+    if (uiState.hasInitialized && !uiState.isCollapsed) {
       const defaultPosition = getDefaultPosition();
-      setPosition(defaultPosition);
-      setPreviousPosition(defaultPosition);
+      dispatch({ type: "RESET_POSITION", payload: defaultPosition });
     }
-  }, [orientation, hasInitialized, isCollapsed, getDefaultPosition]);
+  }, [
+    orientation,
+    uiState.hasInitialized,
+    uiState.isCollapsed,
+    getDefaultPosition,
+  ]);
 
+  // Sync collapsed state from props
   useEffect(() => {
-    if (onPositionChange) {
-      onPositionChange(position);
-    }
-  }, [position, onPositionChange]);
+    dispatch({ type: "SET_COLLAPSED", payload: collapsed });
+  }, [collapsed]);
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (isCollapsed) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    setIsDragging(true);
-    setDragStart({
-      x: e.clientX - position.x,
-      y: e.clientY - position.y,
-    });
-  };
-
+  // Notify parent of position changes
   useEffect(() => {
+    onPositionChange?.(uiState.position);
+  }, [uiState.position, onPositionChange]);
+
+  // Handle dragging
+  useEffect(() => {
+    if (!uiState.isDragging || uiState.isCollapsed) return;
+
     const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging || isCollapsed) return;
-
-      const newX = e.clientX - dragStart.x;
-      const newY = e.clientY - dragStart.y;
-
-      const colorBarElement = colorBarRef.current;
-      const colorBarWidth = colorBarElement ? colorBarElement.offsetWidth : 320;
-      const colorBarHeight = colorBarElement
-        ? colorBarElement.offsetHeight
-        : 200;
-
-      const maxX = window.innerWidth - colorBarWidth;
-      const maxY = window.innerHeight - colorBarHeight;
-
-      setPosition({
-        x: Math.max(0, Math.min(newX, maxX)),
-        y: Math.max(0, Math.min(newY, maxY)),
-      });
+      const newPos = {
+        x: e.clientX - uiState.dragStart.x,
+        y: e.clientY - uiState.dragStart.y,
+      };
+      dispatch({ type: "SET_POSITION", payload: clampPosition(newPos) });
     };
 
     const handleMouseUp = () => {
-      if (isDragging) {
-        setIsDragging(false);
-      }
+      dispatch({ type: "STOP_DRAG" });
     };
 
-    if (isDragging && !isCollapsed) {
-      document.addEventListener("mousemove", handleMouseMove);
-      document.addEventListener("mouseup", handleMouseUp);
-    }
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
 
     return () => {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [isDragging, dragStart, isCollapsed]);
+  }, [
+    uiState.isDragging,
+    uiState.isCollapsed,
+    uiState.dragStart,
+    clampPosition,
+  ]);
 
-  const handleDropdownToggle = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!allowUnitToggle || isCollapsed) {
-      return;
-    }
-    if (!isDragging) {
-      setShowDropdown(!showDropdown);
-    }
-  };
-
+  // Handle window resize
   useEffect(() => {
     const handleResize = () => {
-      if (isCollapsed) {
-        setPosition({ x: 24, y: window.innerHeight - 60 });
+      if (uiState.isCollapsed) {
+        dispatch({
+          type: "SET_POSITION",
+          payload: { x: 24, y: window.innerHeight - 60 },
+        });
       } else {
-        const colorBarElement = colorBarRef.current;
-        if (!colorBarElement) return;
-
-        const colorBarWidth = colorBarElement.offsetWidth;
-        const colorBarHeight = colorBarElement.offsetHeight;
-
-        const maxX = window.innerWidth - colorBarWidth;
-        const maxY = window.innerHeight - colorBarHeight;
-
-        setPosition((prevPosition) => ({
-          x: Math.max(0, Math.min(prevPosition.x, maxX)),
-          y: Math.max(0, Math.min(prevPosition.y, maxY)),
-        }));
+        dispatch({
+          type: "SET_POSITION",
+          payload: clampPosition(uiState.position),
+        });
       }
     };
 
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, [isCollapsed]);
+  }, [uiState.isCollapsed, uiState.position, clampPosition]);
 
+  // Close dropdown on outside click
   useEffect(() => {
+    if (!uiState.showDropdown) return;
+
     const handleClickOutside = (event: MouseEvent) => {
       if (
         colorBarRef.current &&
         !colorBarRef.current.contains(event.target as Node)
       ) {
-        setShowDropdown(false);
+        dispatch({ type: "CLOSE_DROPDOWN" });
       }
     };
 
-    if (showDropdown) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () =>
-        document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [showDropdown]);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [uiState.showDropdown]);
 
-  const unitSymbol = getUnitSymbol();
+  // ============================================================================
+  // RENDER
+  // ============================================================================
 
   return (
     <div
       ref={colorBarRef}
       className="pointer-events-auto fixed"
       style={{
-        left: `${position.x}px`,
-        top: `${position.y}px`,
-        zIndex: isCollapsed ? 1000 : 10,
+        left: `${uiState.position.x}px`,
+        top: `${uiState.position.y}px`,
+        zIndex: uiState.isCollapsed ? 1000 : 10,
       }}
     >
-      {isCollapsed ? (
-        <div
-          className="pointer-events-auto cursor-pointer rounded-xl border border-blue-500/20 bg-gradient-to-br from-blue-900/95 to-purple-900/95 backdrop-blur-sm transition-all duration-200 hover:shadow-lg"
+      {uiState.isCollapsed ? (
+        <Button
+          className="bg-card/80 border-border text-muted-foreground hover:text-card-foreground pointer-events-auto flex cursor-pointer items-center gap-2 rounded-xl border backdrop-blur-sm transition-all duration-200 hover:scale-105 hover:shadow-lg"
           onClick={handleCollapseToggle}
-          style={{ transform: "scale(1)" }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "scale(1.05)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "scale(1)";
-          }}
         >
-          <div className="pointer-events-none px-3 py-2">
-            <div className="flex items-center gap-2 text-blue-100 transition-colors hover:text-white">
-              <ChevronUp className="h-4 w-4" />
-              <span className="text-sm font-medium select-none">
-                Color Scale
-              </span>
-            </div>
-          </div>
-        </div>
+          <ChevronUp className="pointer-events-none h-4 w-4" />
+          <span className="pointer-events-none text-sm font-medium select-none">
+            Color Scale
+          </span>
+        </Button>
       ) : (
-        <div
-          id="temperature"
-          className="border-border bg-card/80 text-primary pointer-events-auto rounded-xl border px-6 py-6 backdrop-blur-sm"
-        >
+        <div className="border-border bg-card/80 text-primary pointer-events-auto rounded-xl border px-6 py-6 backdrop-blur-sm">
+          {/* Header Controls */}
           <div className="-mt-2 mb-2 flex w-full items-center justify-between gap-2">
             <button
               onClick={handleCollapseToggle}
-              className="text-muted-foreground hover:text-card-foreground z-10 -m-1 flex cursor-pointer items-center p-1 transition-colors focus:outline-none"
+              className="text-muted-foreground hover:text-card-foreground -m-1 flex cursor-pointer items-center p-1 focus:outline-none"
               title="Collapse"
               type="button"
             >
@@ -529,47 +552,46 @@ const ColorBar: React.FC<ColorBarProps> = ({
             </button>
 
             <div
-              className={`h-4 flex-1 ${isDragging ? "cursor-grabbing" : "cursor-grab"} mx-2 select-none`}
+              className={`mx-2 h-4 flex-1 select-none ${uiState.isDragging ? "cursor-grabbing" : "cursor-grab"}`}
               onMouseDown={handleMouseDown}
               title="Drag to move"
             >
               <div className="flex h-full items-center justify-center gap-1">
-                <div className="h-1 w-1 rounded-full bg-blue-400"></div>
-                <div className="h-1 w-1 rounded-full bg-blue-400"></div>
-                <div className="h-1 w-1 rounded-full bg-blue-400"></div>
+                <div className="dot"></div>
+                <div className="dot"></div>
+                <div className="dot"></div>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleResetPosition}
-                className="text-muted-foreground hover:text-card-foreground z-10 -m-1 flex cursor-pointer items-center p-1 transition-colors focus:outline-none"
-                title="Reset to default position"
-                type="button"
-              >
-                <RotateCcw className="h-3 w-3" />
-              </button>
-            </div>
+            <button
+              onClick={handleResetPosition}
+              className="text-muted-foreground hover:text-card-foreground -m-1 flex cursor-pointer items-center p-1 transition-colors focus:outline-none"
+              title="Reset to default position"
+              type="button"
+            >
+              <RotateCcw className="h-3 w-3" />
+            </button>
           </div>
 
+          {/* Unit Selector */}
           <div className="relative mt-2 mb-10">
             <div className="text-muted-foreground flex w-full items-center justify-between gap-2 text-sm font-medium">
-              <span>Unit of measurement</span>
+              <span>Unit</span>
 
-              {allowUnitToggle ? (
+              {unitInfo.allowToggle ? (
                 <div className="relative">
                   <button
                     onClick={handleDropdownToggle}
                     className="text-muted-foreground hover:text-card-foreground flex items-center gap-1 rounded px-2 py-1 text-xs font-semibold transition-colors focus:outline-none"
                     type="button"
                   >
-                    <span>{unitSymbol}</span>
+                    <span>{currentUnitSymbol}</span>
                     <ChevronDown
-                      className={`h-3 w-3 transition-transform ${showDropdown ? "rotate-180" : ""}`}
+                      className={`h-3 w-3 transition-transform ${uiState.showDropdown ? "rotate-180" : ""}`}
                     />
                   </button>
 
-                  {showDropdown && !isDragging && (
+                  {uiState.showDropdown && !uiState.isDragging && (
                     <div className="absolute top-7 right-0 z-50 w-32 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
                       <button
                         onClick={() => handleUnitChange("celsius")}
@@ -597,13 +619,14 @@ const ColorBar: React.FC<ColorBarProps> = ({
                   )}
                 </div>
               ) : (
-                <span className="min-w-8text-right text-card-foreground ml-2">
-                  {unitSymbol || "–"}
+                <span className="text-card-foreground ml-2 min-w-8 text-right">
+                  {currentUnitSymbol || "–"}
                 </span>
               )}
             </div>
           </div>
 
+          {/* Color Scale */}
           <div className="relative">
             {isVertical ? (
               <div className="flex w-full items-center justify-center">
@@ -615,7 +638,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
                     />
                   </div>
                   <div className="text-card-foreground absolute inset-y-4 left-full ml-4 flex flex-col justify-between text-right text-xs">
-                    {verticalLabels.map((label, index) => (
+                    {labels.map((label, index) => (
                       <span key={index} className="leading-none">
                         {label}
                       </span>
@@ -630,7 +653,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
                   style={{ background: gradientBackground }}
                 />
                 <div className="absolute -top-4 left-0 flex w-full justify-between text-xs">
-                  {displayLabels.map((label, index) => (
+                  {labels.map((label, index) => (
                     <span
                       key={index}
                       className="text-card-foreground leading-none"
@@ -647,4 +670,5 @@ const ColorBar: React.FC<ColorBarProps> = ({
     </div>
   );
 };
+
 export default ColorBar;

@@ -3,6 +3,7 @@
 
 @custom-variant dark (&:is(.dark *));
 
+
 @theme {
   /* Radii */
   --radius-sm: calc(var(--radius) - 4px);
@@ -11,11 +12,12 @@
   --radius-xl: calc(var(--radius) + 4px);
 
   /* Core colors */
-  --color-border: hsl(var(--border));
-  --color-input: hsl(var(--input));
-  --color-ring: hsl(var(--ring));
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
 
   /* Semantic colors */
   --color-primary: var(--primary);
@@ -28,6 +30,11 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+
+  /* Inputs & Borders */
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
 
   /* Chart colors */
   --color-chart-1: var(--chart-1);
@@ -47,36 +54,20 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
-/* -------------------------
-   Base Layer
--------------------------- */
-@layer base {
-  *,
-  ::after,
-  ::before,
-  ::backdrop,
-  ::file-selector-button {
-    border-color: var(--color-gray-200, currentcolor);
-    @apply border-border outline-ring/50;
-  }
-  button:not(:disabled),
-  [role="button"]:not(:disabled) {
-    cursor: pointer;
-  }
 
-  body {
-    @apply bg-background text-foreground;
-  }
-}
 
 :root {
   --radius: 0.625rem;
+
+  /* Background / Foreground */
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
+
+  /* Semantic colors */
   --primary: oklch(0.205 0 0);
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
@@ -86,14 +77,20 @@
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
+
+  /* Inputs / Borders */
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
+
+  /* Chart colors */
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
+
+  /* Sidebar */
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -104,13 +101,18 @@
   --sidebar-ring: oklch(0.708 0 0);
 }
 
+
+
 .dark {
+  /* Background / Foreground */
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
+
+  /* Semantic colors */
   --primary: oklch(0.922 0 0);
   --primary-foreground: oklch(0.205 0 0);
   --secondary: oklch(0.269 0 0);
@@ -120,14 +122,20 @@
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
+
+  /* Inputs / Borders */
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
+
+  /* Chart colors */
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
+
+  /* Sidebar */
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
@@ -138,25 +146,52 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
-@layer utilities {
-  .sidebtn {
-    @apply bg-muted/70 text-muted-foreground relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-all;
+
+@layer base {
+
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+    @apply border-border outline-ring/50;
   }
 
-  .sidebtn:hover {
-    @apply bg-muted-foreground/50 text-card-foreground scale-105;
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  body {
+    @apply bg-background text-foreground;
   }
 }
 
 @layer components {
+  .dot {
+    @apply h-1 w-1 rounded-full bg-blue-400/80
+  }
 }
 
-/* -------------------------
-   Utilities
--------------------------- */
+@layer utilities {
+  .sidebtn {
+    @apply relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg bg-muted/70 text-muted-foreground transition-all;
+  }
+
+  .sidebtn-hover {
+    @apply scale-105 bg-muted-foreground/50 text-card-foreground;
+  }
+}
+
+
+
+@utility btn-hover {
+  @apply pointer-events-none absolute left-12 whitespace-nowrap rounded-xl bg-neutral-900/95 px-3 py-1.5 text-sm text-gray-100 opacity-0 transition-opacity;
+}
 
 @utility tooltip {
-  @apply pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 transform rounded bg-gray-800 px-2 py-1 text-xs whitespace-nowrap text-white opacity-0 transition-opacity group-hover:opacity-100;
+  @apply pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100;
 }
 
 @utility chat-bubble-user {
@@ -171,13 +206,8 @@
   text-wrap: balance;
 }
 
-@utility btn-hover {
-  @apply pointer-events-none absolute left-12 rounded-xl bg-neutral-900/95 px-3 py-1.5 text-sm whitespace-nowrap text-gray-100 opacity-0 transition-opacity;
-}
 
-/* -------------------------
-   Animations
--------------------------- */
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -208,9 +238,7 @@
   animation: slideIn 0.3s ease-out;
 }
 
-/* -------------------------
-   Misc & Scrollbars
--------------------------- */
+
 .globe-container {
   perspective: 1000px;
 }
@@ -234,42 +262,4 @@
 
 .chat-messages::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
-}
-
-@theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
 }

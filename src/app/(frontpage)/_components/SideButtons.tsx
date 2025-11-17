@@ -357,7 +357,7 @@ export function SideButtons({
               >
                 <Button
                   size="icon"
-                  className="sidebtn sidebtn-hover group"
+                  className="sidebtn hover:sidebtn-hover group"
                   onClick={onClick}
                 >
                   {icon}
@@ -373,12 +373,16 @@ export function SideButtons({
               animate={{ opacity: isExpanded ? 1 : 0.8, scale: 1, y: 1 }}
               transition={{ duration: 0.2, delay: 0.25 }}
             >
-              <div className="sidebtn sidebtn--hover group">
-                <SettingsIcon size={18} onClick={toggleMenu} />
+              <Button
+                size="icon"
+                className="sidebtn hover:sidebtn-hover group"
+                onClick={toggleMenu}
+              >
+                <SettingsIcon size={18} />
                 <div className="btn-hover group-hover:opacity-100">
                   {isExpanded ? "Hide Settings" : "Show Settings"}
                 </div>
-              </div>
+              </Button>
             </motion.div>
           </motion.div>
         )}

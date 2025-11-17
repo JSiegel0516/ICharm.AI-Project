@@ -42,10 +42,10 @@ const ChatBot: React.FC = () => {
         <button
           id="chatbot"
           onClick={show ? handleClose : handleOpenFullPage}
-          className={`fixed right-6 bottom-6 z-50 flex h-14 w-14 items-center justify-center rounded-full border text-white shadow-xl transition-all duration-300 hover:scale-110 hover:shadow-2xl ${
+          className={`text-card-foreground fixed right-6 bottom-6 z-50 flex h-14 w-14 items-center justify-center rounded-full border shadow-xl transition-all duration-300 hover:scale-110 hover:shadow-2xl ${
             showFullPage
-              ? "border-gray-600/30 bg-neutral-800/95 backdrop-blur-sm hover:border-gray-500/50"
-              : "border-transparent bg-neutral-800 hover:bg-neutral-700"
+              ? "border-border bg-neutral-800/95 backdrop-blur-sm hover:border-gray-500/50"
+              : "bg-card/80 border-transparent hover:bg-neutral-700"
           }`}
           aria-label={show ? "Close chat" : "Open chat"}
         >
