@@ -982,15 +982,16 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         {currentDataset && (
           <Dialog>
             <DialogTrigger asChild>
-              <div className="absolute inset-x-0 top-4 z-30 mx-auto max-w-max">
-                <button
-                  onClick={() => setIsModalOpen(true)}
-                  className="hover:bg-muted/70 rounded-md px-6 py-3 text-2xl font-semibold text-gray-300 transition hover:rounded-xl"
+              <div className="absolute inset-x-0 top-6 z-30 mx-auto max-w-max">
+                <Button
+                  variant="ghost"
                   title="Click for dataset details"
                   id="dataset-title"
+                  className="text-3xl font-semibold"
+                  onClick={() => setIsModalOpen(true)}
                 >
                   {currentDataset.name}
-                </button>
+                </Button>
               </div>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[625px]">

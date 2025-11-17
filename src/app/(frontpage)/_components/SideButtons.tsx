@@ -355,12 +355,16 @@ export function SideButtons({
                 }}
                 transition={{ duration: 0.2, delay }}
               >
-                <div className="sidebtn sidebtn--hover group" onClick={onClick}>
+                <Button
+                  size="icon"
+                  className="sidebtn sidebtn-hover group"
+                  onClick={onClick}
+                >
                   {icon}
                   <div className="btn-hover group-hover:opacity-100">
                     {label}
                   </div>
-                </div>
+                </Button>
               </motion.div>
             ))}
 
@@ -415,40 +419,6 @@ export function SideButtons({
               className="rounded-md border shadow-sm lg:h-[300px] lg:w-[250px]"
               captionLayout="dropdown"
             />
-          </motion.div>
-        )}
-      </AnimatePresence>
-      {/* Dataset Selection Card */}
-      <AnimatePresence>
-        {showDatasetCard && (
-          <motion.div
-            ref={datasetCardRef}
-            initial={{ x: -100, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: -100, opacity: 0 }}
-            transition={{ duration: 0.3, ease: "easeInOut" }}
-            className="pointer-events-auto fixed top-1/2 left-4 z-9999 w-96 -translate-y-1/2"
-          >
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center justify-between text-lg">
-                  <span>Select Datasets</span>
-                  <Badge variant="secondary">
-                    {selectedDatasets.size} selected
-                  </Badge>
-                </CardTitle>
-                <CardDescription>
-                  Choose datasets to visualize on the globe
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="max-h-96 space-y-3 overflow-y-auto">
-                {isLoading && (
-                  <div className="rounded border border-neutral-600 bg-neutral-800/50 p-3 text-sm text-slate-300">
-                    Loading datasets...
-                  </div>
-                )}
-              </CardContent>
-            </Card>
           </motion.div>
         )}
       </AnimatePresence>

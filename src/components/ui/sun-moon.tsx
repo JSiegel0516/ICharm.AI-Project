@@ -1,11 +1,11 @@
-'use client';
+"use client";
 
-import type { Variants } from 'motion/react';
-import type { HTMLAttributes } from 'react';
-import { forwardRef, useCallback, useImperativeHandle, useRef } from 'react';
-import { motion, useAnimation } from 'motion/react';
+import type { Variants } from "motion/react";
+import type { HTMLAttributes } from "react";
+import { forwardRef, useCallback, useImperativeHandle, useRef } from "react";
+import { motion, useAnimation } from "motion/react";
 
-import { cn } from '@/lib/utils';
+import { cn } from "@/lib/utils";
 
 export interface SunMoonIconHandle {
   startAnimation: () => void;
@@ -24,7 +24,7 @@ const sunVariants: Variants = {
     rotate: [0, -5, 5, -2, 2, 0],
     transition: {
       duration: 1.5,
-      ease: 'easeInOut',
+      ease: "easeInOut",
     },
   },
 };
@@ -48,12 +48,12 @@ const SunMoonIcon = forwardRef<SunMoonIconHandle, SunMoonIconProps>(
 
       return {
         startAnimation: () => {
-          sunControls.start('animate');
-          moonControls.start('animate');
+          sunControls.start("animate");
+          moonControls.start("animate");
         },
         stopAnimation: () => {
-          sunControls.start('normal');
-          moonControls.start('normal');
+          sunControls.start("normal");
+          moonControls.start("normal");
         },
       };
     });
@@ -61,25 +61,25 @@ const SunMoonIcon = forwardRef<SunMoonIconHandle, SunMoonIconProps>(
     const handleMouseEnter = useCallback(
       (e: React.MouseEvent<HTMLDivElement>) => {
         if (!isControlledRef.current) {
-          sunControls.start('animate');
-          moonControls.start('animate');
+          sunControls.start("animate");
+          moonControls.start("animate");
         } else {
           onMouseEnter?.(e);
         }
       },
-      [sunControls, moonControls, onMouseEnter]
+      [sunControls, moonControls, onMouseEnter],
     );
 
     const handleMouseLeave = useCallback(
       (e: React.MouseEvent<HTMLDivElement>) => {
         if (!isControlledRef.current) {
-          sunControls.start('normal');
-          moonControls.start('normal');
+          sunControls.start("normal");
+          moonControls.start("normal");
         } else {
           onMouseLeave?.(e);
         }
       },
-      [sunControls, moonControls, onMouseLeave]
+      [sunControls, moonControls, onMouseLeave],
     );
 
     return (
@@ -108,14 +108,14 @@ const SunMoonIcon = forwardRef<SunMoonIconHandle, SunMoonIconProps>(
             <path d="M12 8a2.83 2.83 0 0 0 4 4 4 4 0 1 1-4-4" />
           </motion.g>
           {[
-            'M12 2v2',
-            'M12 20v2',
-            'm4.9 4.9 1.4 1.4',
-            'm17.7 17.7 1.4 1.4',
-            'M2 12h2',
-            'M20 12h2',
-            'm6.3 17.7-1.4 1.4',
-            'm19.1 4.9-1.4 1.4',
+            "M12 2v2",
+            "M12 20v2",
+            "m4.9 4.9 1.4 1.4",
+            "m17.7 17.7 1.4 1.4",
+            "M2 12h2",
+            "M20 12h2",
+            "m6.3 17.7-1.4 1.4",
+            "m19.1 4.9-1.4 1.4",
           ].map((d, index) => (
             <motion.path
               key={d}
@@ -129,9 +129,9 @@ const SunMoonIcon = forwardRef<SunMoonIconHandle, SunMoonIconProps>(
         </svg>
       </div>
     );
-  }
+  },
 );
 
-SunMoonIcon.displayName = 'SunMoonIcon';
+SunMoonIcon.displayName = "SunMoonIcon";
 
 export { SunMoonIcon };

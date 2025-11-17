@@ -59,10 +59,10 @@
     border-color: var(--color-gray-200, currentcolor);
     @apply border-border outline-ring/50;
   }
-    button:not(:disabled),
-    [role="button"]:not(:disabled) {
-      cursor: pointer;
-    }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
 
   body {
     @apply bg-background text-foreground;
@@ -138,21 +138,23 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
-@layer components {
+@layer utilities {
   .sidebtn {
-    @apply relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-xl bg-muted/70 text-muted-foreground transition-all;
+    @apply bg-muted/70 text-muted-foreground relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition-all;
   }
 
   .sidebtn:hover {
-    @apply scale-105 bg-muted-foreground/50 text-card-foreground;
+    @apply bg-muted-foreground/50 text-card-foreground scale-105;
   }
-
 }
 
+@layer components {
+}
 
 /* -------------------------
    Utilities
 -------------------------- */
+
 @utility nav-icon {
   @apply relative flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 transition-all duration-200 hover:scale-105 hover:bg-gray-200;
 }
@@ -174,7 +176,7 @@
 }
 
 @utility btn-icon {
-  @apply relative flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl bg-card/90 text-gray-400 transition-all hover:scale-105 hover:bg-card/50 hover:text-gray-100;
+  @apply bg-card/90 hover:bg-card/50 relative flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl text-gray-400 transition-all hover:scale-105 hover:text-gray-100;
 }
 
 @utility btn-hover {
@@ -278,13 +280,4 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-}
-
-@layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
 }
