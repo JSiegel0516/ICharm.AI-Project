@@ -142,9 +142,10 @@ export interface AppState {
   colorBarOrientation: ColorBarOrientation;
   locationFocusRequest?: {
     id: number;
-    latitude: number;
-    longitude: number;
+    latitude?: number;
+    longitude?: number;
     name?: string;
+    mode?: "focus" | "clear";
   } | null;
 }
 
@@ -233,6 +234,7 @@ export interface GlobeRef {
     longitude: number;
     name?: string;
   }) => void;
+  clearSearchMarker: () => void;
 }
 
 export type TemperatureUnit = "celsius" | "fahrenheit";

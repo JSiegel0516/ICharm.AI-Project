@@ -378,7 +378,18 @@ export default function HomePage() {
       return;
     }
 
-    globeRef.current.focusOnLocation(locationFocusRequest);
+    if (locationFocusRequest.mode === "clear") {
+      globeRef.current.clearSearchMarker();
+      clearLocationFocusRequest();
+      return;
+    }
+
+    if (
+      typeof locationFocusRequest.latitude === "number" &&
+      typeof locationFocusRequest.longitude === "number"
+    ) {
+      globeRef.current.focusOnLocation(locationFocusRequest);
+    }
     clearLocationFocusRequest();
   }, [locationFocusRequest, clearLocationFocusRequest]);
 

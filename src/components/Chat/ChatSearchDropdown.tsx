@@ -1,7 +1,16 @@
 "use client";
 
 import React from "react";
-import { AlertCircle, Loader2, MapPin, Search, X } from "lucide-react";
+import {
+  AlertCircle,
+  ChevronLeft,
+  GripVertical,
+  Loader2,
+  MapPin,
+  RefreshCw,
+  Search,
+  X,
+} from "lucide-react";
 
 export type LocationSearchResult = {
   id: string;
@@ -21,6 +30,9 @@ interface ChatSearchDropdownProps {
   isLoading?: boolean;
   error?: string | null;
   onSelectResult?: (result: LocationSearchResult) => void;
+  onDragHandleMouseDown?: (event: React.MouseEvent<HTMLDivElement>) => void;
+  onCollapse?: () => void;
+  onRefreshPosition?: () => void;
 }
 
 const ChatSearchDropdown: React.FC<ChatSearchDropdownProps> = ({
@@ -32,6 +44,9 @@ const ChatSearchDropdown: React.FC<ChatSearchDropdownProps> = ({
   isLoading = false,
   error,
   onSelectResult,
+  onDragHandleMouseDown,
+  onCollapse,
+  onRefreshPosition,
 }) => {
   const trimmedQuery = query.trim();
   const showResults =
@@ -40,21 +55,45 @@ const ChatSearchDropdown: React.FC<ChatSearchDropdownProps> = ({
 
   return (
     <div className="pointer-events-auto w-72 rounded-xl border border-gray-700/40 bg-neutral-900/95 p-4 text-gray-100 shadow-2xl">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm font-semibold">Location Search</p>
-          <p className="text-xs text-gray-400">
-            Find a city, state, or country
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-full p-1 text-gray-400 transition hover:bg-neutral-800"
-          aria-label="Close search panel"
+      <div className="flex items-center justify-between border-b border-white/10 pb-3">
+        <div
+          className="flex cursor-move items-center gap-2 text-left select-none"
+          onMouseDown={onDragHandleMouseDown}
         >
-          <X size={14} />
-        </button>
+          <GripVertical size={16} className="text-gray-500" />
+          <div>
+            <p className="text-sm font-semibold">Location Search</p>
+            <p className="text-xs text-gray-400">
+              Find a city, state, or country
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => onRefreshPosition?.()}
+            className="rounded-md p-1.5 text-gray-400 transition hover:bg-neutral-800 hover:text-gray-100"
+            aria-label="Reset position"
+          >
+            <RefreshCw size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={() => onCollapse?.()}
+            className="rounded-md p-1.5 text-gray-400 transition hover:bg-neutral-800 hover:text-gray-100"
+            aria-label="Collapse"
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-1.5 text-gray-400 transition hover:bg-neutral-800 hover:text-gray-100"
+            aria-label="Close search panel"
+          >
+            <X size={14} />
+          </button>
+        </div>
       </div>
       <div className="mt-3 space-y-2">
         <label className="text-xs tracking-wide text-gray-500 uppercase">

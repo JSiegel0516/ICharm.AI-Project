@@ -327,12 +327,17 @@ const useAppStateInternal = () => {
     setState((prev) => ({ ...prev, showChat: show }));
   }, []);
 
+  const toggleColorbar = useCallback(() => {
+    setState((prev) => ({ ...prev, showColorbar: !prev.showColorbar }));
+  }, []);
+
   const requestLocationFocus = useCallback(
     (target: { latitude: number; longitude: number; name?: string }) => {
       setState((prev) => ({
         ...prev,
         locationFocusRequest: {
           id: Date.now(),
+          mode: "focus",
           ...target,
         },
       }));
@@ -340,12 +345,18 @@ const useAppStateInternal = () => {
     [],
   );
 
-  const clearLocationFocusRequest = useCallback(() => {
-    setState((prev) => ({ ...prev, locationFocusRequest: null }));
+  const requestLocationMarkerClear = useCallback(() => {
+    setState((prev) => ({
+      ...prev,
+      locationFocusRequest: {
+        id: Date.now(),
+        mode: "clear",
+      },
+    }));
   }, []);
 
-  const toggleColorbar = useCallback(() => {
-    setState((prev) => ({ ...prev, showColorbar: !prev.showColorbar }));
+  const clearLocationFocusRequest = useCallback(() => {
+    setState((prev) => ({ ...prev, locationFocusRequest: null }));
   }, []);
 
   const setColorBarOrientation = useCallback(
@@ -478,6 +489,7 @@ const useAppStateInternal = () => {
     setCurrentDataset,
     refreshDatasets,
     requestLocationFocus,
+    requestLocationMarkerClear,
     clearLocationFocusRequest,
   };
 };

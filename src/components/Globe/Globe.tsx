@@ -423,8 +423,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       () => ({
         clearMarker,
         focusOnLocation,
+        clearSearchMarker,
       }),
-      [clearMarker, focusOnLocation],
+      [clearMarker, focusOnLocation, clearSearchMarker],
     );
 
     useEffect(() => {

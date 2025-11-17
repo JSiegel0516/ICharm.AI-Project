@@ -7,12 +7,17 @@ import {
   User,
   Clock,
   ChevronDown,
+  ChevronUp,
   Plus,
   Loader2,
   Trash2,
 } from "lucide-react";
 import { useAppState } from "@/context/HeaderContext";
 import { ChatMessage, ChatPageProps } from "@/types";
+
+// Position the search panel so its top aligns with the top edge of the CharmBot
+// popout and sits just to the left of it. Tweaked via manual inspection.
+const SEARCH_PANEL_ORIGIN = { x: -5, y: -327 };
 import ChatSearchButton from "@/components/Chat/ChatSearchButton";
 import ChatSearchDropdown, {
   LocationSearchResult,
@@ -46,7 +51,7 @@ const formatUpdatedAt = (date: Date) =>
   });
 
 const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
-  const { requestLocationFocus } = useAppState();
+  const { requestLocationFocus, requestLocationMarkerClear } = useAppState();
   const [messages, setMessages] = useState<ChatMessage[]>([
     createGreetingMessage(),
   ]);
@@ -70,33 +75,49 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
   const [isSearchLoading, setIsSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [autoFocusPending, setAutoFocusPending] = useState(false);
+  const [searchPosition, setSearchPosition] = useState(() => ({
+    ...SEARCH_PANEL_ORIGIN,
+  }));
+  const [isSearchCollapsed, setIsSearchCollapsed] = useState(false);
+  const [isDraggingSearch, setIsDraggingSearch] = useState(false);
+  const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const dragPointerRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
-  const resetSearchState = useCallback(() => {
-    setSearchQuery("");
-    setSearchResults([]);
-    setIsSearchLoading(false);
-    setSearchError(null);
-    setAutoFocusPending(false);
-  }, []);
+  const resetSearchState = useCallback(
+    (shouldClearMarker = false) => {
+      setSearchQuery("");
+      setSearchResults([]);
+      setIsSearchLoading(false);
+      setSearchError(null);
+      setAutoFocusPending(false);
+      if (shouldClearMarker) {
+        requestLocationMarkerClear();
+      }
+    },
+    [requestLocationMarkerClear],
+  );
 
   const handleSearchToggle = useCallback(() => {
     setIsSearchOpen((prev) => {
       if (prev) {
-        resetSearchState();
+        resetSearchState(true);
+        setIsSearchCollapsed(false);
         return false;
       }
       setIsHistoryOpen(false);
+      setIsSearchCollapsed(false);
       return true;
     });
   }, [resetSearchState]);
 
   const handleSearchClose = useCallback(() => {
     setIsSearchOpen(false);
-    resetSearchState();
+    setIsSearchCollapsed(false);
+    resetSearchState(true);
   }, [resetSearchState]);
 
   const handleSearchChange = useCallback((value: string) => {
@@ -117,9 +138,59 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
     [requestLocationFocus],
   );
 
+  const handleSearchCollapse = useCallback(() => {
+    setIsSearchCollapsed(true);
+    setIsSearchOpen(false);
+  }, []);
+
+  const handleSearchExpand = useCallback(() => {
+    setIsSearchCollapsed(false);
+    setIsSearchOpen(true);
+  }, []);
+
+  const handleSearchRefreshPosition = useCallback(() => {
+    setSearchPosition({ ...SEARCH_PANEL_ORIGIN });
+  }, []);
+
+  const handleSearchDragStart = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      dragStartRef.current = { ...searchPosition };
+      dragPointerRef.current = { x: event.clientX, y: event.clientY };
+      setIsDraggingSearch(true);
+    },
+    [searchPosition],
+  );
+
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  useEffect(() => {
+    if (!isDraggingSearch) {
+      return;
+    }
+
+    const handleMove = (event: MouseEvent) => {
+      const deltaX = event.clientX - dragPointerRef.current.x;
+      const deltaY = event.clientY - dragPointerRef.current.y;
+      setSearchPosition({
+        x: dragStartRef.current.x + deltaX,
+        y: dragStartRef.current.y + deltaY,
+      });
+    };
+
+    const handleUp = () => {
+      setIsDraggingSearch(false);
+    };
+
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, [isDraggingSearch]);
 
   useEffect(() => {
     if (show && inputRef.current) {
@@ -497,18 +568,47 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
 
   return (
     <>
-      <div className="fixed right-6 bottom-6 z-50 flex items-start gap-3">
-        {isSearchOpen && (
-          <ChatSearchDropdown
-            query={searchQuery}
-            onChange={handleSearchChange}
-            onSubmit={handleSearchSubmit}
-            onClose={handleSearchClose}
-            results={searchResults}
-            isLoading={isSearchLoading}
-            error={searchError}
-            onSelectResult={handleSelectLocation}
-          />
+      <div className="fixed right-6 bottom-6 z-50 flex items-end gap-3">
+        {isSearchCollapsed && (
+          <div
+            className="pointer-events-auto mb-3 cursor-pointer rounded-xl border border-gray-700/30 bg-neutral-800/60 px-3 py-2 text-blue-100 backdrop-blur-sm transition-all duration-200 hover:shadow-lg"
+            onClick={handleSearchExpand}
+            onMouseEnter={(event) => {
+              event.currentTarget.style.transform = "scale(1.05)";
+            }}
+            onMouseLeave={(event) => {
+              event.currentTarget.style.transform = "scale(1)";
+            }}
+            style={{ transform: "scale(1)" }}
+          >
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <ChevronUp className="h-4 w-4" />
+              <span className="select-none">Location Search</span>
+            </div>
+          </div>
+        )}
+        {!isSearchCollapsed && isSearchOpen && (
+          <div
+            className="pointer-events-auto"
+            style={{
+              transform: `translate(${searchPosition.x}px, ${searchPosition.y}px)`,
+              cursor: isDraggingSearch ? "grabbing" : "default",
+            }}
+          >
+            <ChatSearchDropdown
+              query={searchQuery}
+              onChange={handleSearchChange}
+              onSubmit={handleSearchSubmit}
+              onClose={handleSearchClose}
+              results={searchResults}
+              isLoading={isSearchLoading}
+              error={searchError}
+              onSelectResult={handleSelectLocation}
+              onDragHandleMouseDown={handleSearchDragStart}
+              onCollapse={handleSearchCollapse}
+              onRefreshPosition={handleSearchRefreshPosition}
+            />
+          </div>
         )}
         <div
           className={`flex h-[500px] w-80 transform flex-col rounded-xl border border-gray-600/30 bg-neutral-800/95 shadow-2xl backdrop-blur-sm transition-all duration-300 ease-out ${
