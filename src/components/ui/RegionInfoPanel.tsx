@@ -168,7 +168,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   const [timeseriesSeries, setTimeseriesSeries] = useState<SeriesPoint[]>([]);
   const [timeseriesUnits, setTimeseriesUnits] = useState<string | null>(null);
 
-  // Date range selection state
   const [dateRangeOption, setDateRangeOption] =
     useState<DateRangeOption>("1year");
   const [customStartDate, setCustomStartDate] = useState<string>("");
@@ -247,6 +246,17 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   const [zoomWindow, setZoomWindow] = useState<[number, number] | null>(null);
 
   useEffect(() => {
+    if (isCollapsed && typeof window !== "undefined") {
+      const colorBarWidth = colorBarCollapsed ? 160 : 320;
+      const gap = colorBarCollapsed ? 4 : 8;
+      const collapsedHeight = 52;
+      const newX = colorBarPosition.x + colorBarWidth + gap;
+      const newY = window.innerHeight - collapsedHeight - 16;
+      setPosition({ x: newX, y: newY });
+    }
+  }, [isCollapsed, colorBarPosition.x, colorBarCollapsed]);
+
+  useEffect(() => {
     setZoomWindow(null);
   }, [chartData]);
 
@@ -319,7 +329,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     [chartData],
   );
 
-  // Get the dataset ID - try multiple possible locations
   const datasetId = useMemo(() => {
     return (
       currentDataset?.backend?.id ??
@@ -346,7 +355,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }, [currentDataset]);
 
-  // Determine if this dataset should use the legacy single-month range (e.g., NDVI)
   const isHighFrequencyDataset = useMemo(() => {
     const datasetName = (currentDataset?.name || "").toLowerCase();
     return datasetName.includes("vegetation") || datasetName.includes("ndvi");
@@ -364,7 +372,14 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     const handleResize = () => {
       if (typeof window === "undefined") return;
 
-      if (!isCollapsed && panelRef.current) {
+      if (isCollapsed) {
+        const colorBarWidth = colorBarCollapsed ? 160 : 320;
+        const gap = colorBarCollapsed ? 4 : 8;
+        const collapsedHeight = 52;
+        const newX = colorBarPosition.x + colorBarWidth + gap;
+        const newY = window.innerHeight - collapsedHeight - 16;
+        setPosition({ x: newX, y: newY });
+      } else if (panelRef.current) {
         const panelWidth = panelRef.current.offsetWidth;
         const panelHeight = panelRef.current.offsetHeight;
 
@@ -379,7 +394,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       window.addEventListener("resize", handleResize);
       return () => window.removeEventListener("resize", handleResize);
     }
-  }, [isCollapsed]);
+  }, [isCollapsed, colorBarPosition.x, colorBarCollapsed]);
 
   const handleClose = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -402,10 +417,12 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       } else {
         setPreviousPosition(position);
         if (typeof window !== "undefined") {
-          setPosition({
-            x: window.innerWidth - 200,
-            y: window.innerHeight - 60,
-          });
+          const colorBarWidth = colorBarCollapsed ? 160 : 320;
+          const gap = colorBarCollapsed ? 4 : 8;
+          const collapsedHeight = 52;
+          const newX = colorBarPosition.x + colorBarWidth + gap;
+          const newY = window.innerHeight - collapsedHeight - 16;
+          setPosition({ x: newX, y: newY });
         }
         return true;
       }
@@ -462,7 +479,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     };
   }, [isDragging, dragStart, isCollapsed]);
 
-  // Calculate date range based on selected option
   const calculateDateRange = (): { start: Date; end: Date } => {
     let targetDate = selectedDate ?? datasetEnd ?? new Date();
 
@@ -476,7 +492,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     let startDate: Date;
     let endDate: Date;
 
-    // For high-frequency datasets (CMORPH, NDVI), always use the selected month
     if (isHighFrequencyDataset) {
       startDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
       endDate = new Date(
@@ -488,7 +503,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
         59,
       );
     } else {
-      // For regular datasets, use the selected range option
       switch (dateRangeOption) {
         case "all":
           startDate =
@@ -566,7 +580,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
             endDate = new Date(customEndDate);
             endDate.setHours(23, 59, 59, 999);
           } else {
-            // Fallback to 1 year if custom dates not set
             startDate = new Date(
               targetDate.getFullYear() - 1,
               targetDate.getMonth(),
@@ -600,7 +613,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       }
     }
 
-    // Clamp to dataset bounds
     if (datasetStart && startDate < datasetStart) {
       startDate = datasetStart;
     }
@@ -611,11 +623,9 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     return { start: startDate, end: endDate };
   };
 
-  // Dynamic timeseries handler using your backend API
   const handleTimeseriesClick = async () => {
     setTimeseriesOpen(true);
 
-    // Check if we have a valid dataset ID
     if (!datasetId) {
       console.error("[Timeseries] No dataset ID found");
       console.log("[Timeseries] currentDataset:", currentDataset);
@@ -633,10 +643,8 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     setTimeseriesError(null);
 
     try {
-      // Format coordinates string for focusCoordinates parameter
       const focusCoords = `${latitude},${longitude}`;
 
-      // Format dates as YYYY-MM-DD (backend expects this format)
       const formatDate = (date: Date) => {
         const year = date.getFullYear();
         const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -677,7 +685,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       console.log("[Timeseries] Response status:", response.status);
       console.log("[Timeseries] Response headers:", response.headers);
 
-      // Check content type before parsing
       const contentType = response.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
         const text = await response.text();
@@ -706,12 +713,10 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       );
       console.log("[Timeseries] Processing info:", result?.processingInfo);
 
-      // Extract data from API response
       if (!result?.data || !Array.isArray(result.data)) {
         throw new Error("Invalid response format");
       }
 
-      // Transform API response to SeriesPoint format
       const series: SeriesPoint[] = result.data.map((point: any) => ({
         date: point.date,
         value: point.values?.[datasetId] ?? null,
@@ -724,7 +729,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
         series.filter((p) => p.value !== null).length,
       );
 
-      // Get units from metadata
       const units = result.metadata?.[datasetId]?.units ?? datasetUnit;
 
       setTimeseriesSeries(series);
@@ -748,7 +752,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     }
   };
 
-  // Add this right before "if (!show) return null;"
   console.log("[RegionInfoPanel] Debug info:", {
     currentDataset: currentDataset,
     datasetId: datasetId,
@@ -797,7 +800,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
           <div className="-mt-1 mb-3 flex h-3 w-full items-center justify-between">
             <button
               onClick={handleCollapseToggle}
-              className="z-10 -m-1 flex cursor-pointer items-center p-1 text-gray-400 transition-colors hover:text-gray-200 focus:outline-none"
+              className="z-10 -m-2 flex cursor-pointer items-center p-2 text-gray-400 transition-colors hover:text-gray-200 focus:outline-none"
               title="Collapse"
               type="button"
             >
@@ -818,7 +821,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
 
             <button
               onClick={handleClose}
-              className="z-10 -m-1 flex cursor-pointer items-center p-1 text-gray-400 transition-colors hover:text-gray-200 focus:outline-none"
+              className="z-10 -m-2 flex cursor-pointer items-center p-2 text-gray-400 transition-colors hover:text-gray-200 focus:outline-none"
               title="Close"
               type="button"
             >
@@ -912,7 +915,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
               </p>
             </div>
 
-            {/* Date Range Selector - Only show for non-high-frequency datasets */}
             {!isHighFrequencyDataset && (
               <div className="mb-4 space-y-2">
                 <label className="flex items-center gap-2 text-sm font-medium text-gray-300">
