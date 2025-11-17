@@ -701,7 +701,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                       : "View time series for this location"
                   }
                 >
-                  Open Dialog
+                  View Time Series
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-[825px]">
