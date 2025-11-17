@@ -412,17 +412,16 @@ export function SideButtons({
                 >
                   <Calendar
                     mode="single"
+                    captionLayout="dropdown"
                     selected={selectedDate}
                     onSelect={handleDateSelect}
-                    defaultMonth={selectedDate}
-                    disabled={(date) => {
-                      if (!currentDataset) return false;
-                      const start = currentDataset.startDate;
-                      const end = currentDataset.endDate;
-                      return date < start || date > end;
-                    }}
-                    className="rounded-md border shadow-sm select-none"
-                    captionLayout="dropdown"
+                    month={calendarMonth}
+                    onMonthChange={handleMonthChange}
+                    disabled={(date) =>
+                      date < dateRange.minDate || date > dateRange.maxDate
+                    }
+                    className="bg-card rounded-md border shadow-sm select-none"
+                    autoFocus
                   />
                 </motion.div>
               )}
