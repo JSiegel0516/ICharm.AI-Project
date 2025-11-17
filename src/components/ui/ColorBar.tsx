@@ -516,12 +516,12 @@ const ColorBar: React.FC<ColorBarProps> = ({
       ) : (
         <div
           id="temperature"
-          className="pointer-events-auto rounded-xl border border-gray-700/30 bg-neutral-800/60 px-6 py-6 text-blue-100 backdrop-blur-sm"
+          className="border-border bg-card/80 text-primary pointer-events-auto rounded-xl border px-6 py-6 backdrop-blur-sm"
         >
           <div className="-mt-2 mb-2 flex w-full items-center justify-between gap-2">
             <button
               onClick={handleCollapseToggle}
-              className="z-10 -m-1 flex cursor-pointer items-center p-1 text-blue-300 transition-colors hover:text-blue-200 focus:outline-none"
+              className="text-muted-foreground hover:text-card-foreground z-10 -m-1 flex cursor-pointer items-center p-1 transition-colors focus:outline-none"
               title="Collapse"
               type="button"
             >
@@ -543,7 +543,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
             <div className="flex items-center gap-2">
               <button
                 onClick={handleResetPosition}
-                className="z-10 -m-1 flex cursor-pointer items-center p-1 text-blue-300 transition-colors hover:text-blue-200 focus:outline-none"
+                className="text-muted-foreground hover:text-card-foreground z-10 -m-1 flex cursor-pointer items-center p-1 transition-colors focus:outline-none"
                 title="Reset to default position"
                 type="button"
               >
@@ -552,15 +552,15 @@ const ColorBar: React.FC<ColorBarProps> = ({
             </div>
           </div>
 
-          <div className="relative mt-2 mb-12">
-            <div className="flex w-full items-center justify-between gap-2 text-sm font-medium text-blue-200">
+          <div className="relative mt-2 mb-10">
+            <div className="text-muted-foreground flex w-full items-center justify-between gap-2 text-sm font-medium">
               <span>Unit of measurement</span>
 
               {allowUnitToggle ? (
                 <div className="relative">
                   <button
                     onClick={handleDropdownToggle}
-                    className="flex items-center gap-1 rounded px-2 py-1 text-xs font-semibold text-blue-200 transition-colors hover:text-white focus:outline-none"
+                    className="text-muted-foreground hover:text-card-foreground flex items-center gap-1 rounded px-2 py-1 text-xs font-semibold transition-colors focus:outline-none"
                     type="button"
                   >
                     <span>{unitSymbol}</span>
@@ -597,7 +597,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
                   )}
                 </div>
               ) : (
-                <span className="ml-2 min-w-[2rem] text-right text-blue-100">
+                <span className="min-w-8text-right text-card-foreground ml-2">
                   {unitSymbol || "–"}
                 </span>
               )}
@@ -608,13 +608,13 @@ const ColorBar: React.FC<ColorBarProps> = ({
             {isVertical ? (
               <div className="flex w-full items-center justify-center">
                 <div className="relative flex">
-                  <div className="h-64 w-14 rounded-lg bg-white/10 p-[1px] shadow-inner">
+                  <div className="h-64 w-14 rounded-lg bg-white/10 p-px shadow-inner">
                     <div
                       className="h-full w-full overflow-hidden rounded-[10px]"
                       style={{ background: gradientBackground }}
                     />
                   </div>
-                  <div className="absolute inset-y-4 left-full ml-4 flex flex-col justify-between text-right text-xs text-blue-200">
+                  <div className="text-card-foreground absolute inset-y-4 left-full ml-4 flex flex-col justify-between text-right text-xs">
                     {verticalLabels.map((label, index) => (
                       <span key={index} className="leading-none">
                         {label}
@@ -631,7 +631,10 @@ const ColorBar: React.FC<ColorBarProps> = ({
                 />
                 <div className="absolute -top-4 left-0 flex w-full justify-between text-xs">
                   {displayLabels.map((label, index) => (
-                    <span key={index} className="leading-none text-blue-200">
+                    <span
+                      key={index}
+                      className="text-card-foreground leading-none"
+                    >
                       {label}
                     </span>
                   ))}
