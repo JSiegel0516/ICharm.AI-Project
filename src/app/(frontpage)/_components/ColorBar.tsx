@@ -8,7 +8,7 @@ import React, {
   useReducer,
 } from "react";
 import { ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
-import { Button } from "./button";
+import { Button } from "../../../components/ui/button";
 
 // Types
 type TemperatureUnit = "celsius" | "fahrenheit";

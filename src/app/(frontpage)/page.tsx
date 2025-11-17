@@ -7,11 +7,11 @@ import React, {
   useCallback,
   useEffect,
 } from "react";
-import Globe, { GlobeRef } from "@/components/Globe/Globe";
-import ColorBar from "@/components/ui/ColorBar";
-import TimeBar from "@/components/ui/TimeBar";
-import PressureLevelsSelector from "@/components/ui/Popups/PressureLevelsSelector";
-import RegionInfoPanel from "@/components/ui/RegionInfoPanel";
+import Globe, { GlobeRef } from "@/app/(frontpage)/_components/Globe/Globe";
+import ColorBar from "@/app/(frontpage)/_components/ColorBar";
+import TimeBar from "@/app/(frontpage)/_components/TimeBar";
+import PressureLevelsSelector from "@/app/(frontpage)/_components/Popups/PressureLevelsSelector";
+import RegionInfoPanel from "@/app/(frontpage)/_components/RegionInfoPanel";
 import { useAppState } from "@/context/HeaderContext";
 import {
   TemperatureUnit,
