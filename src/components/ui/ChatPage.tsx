@@ -388,43 +388,72 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
     }
   };
 
-  const handleSearchSubmit = useCallback(async (value: string) => {
-    const trimmed = value.trim();
-    if (trimmed.length < 2) {
-      setSearchError("Enter at least two characters to search.");
-      setSearchResults([]);
+  const handleSearchSubmit = useCallback((value: string) => {
+    setSearchQuery(value);
+  }, []);
+
+  useEffect(() => {
+    if (!isSearchOpen) {
       return;
     }
+
+    const trimmed = searchQuery.trim();
+    if (trimmed.length < 2) {
+      setSearchResults([]);
+      setSearchError(null);
+      setIsSearchLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
     setIsSearchLoading(true);
     setSearchError(null);
-    try {
-      const response = await fetch("/api/location-search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: trimmed, limit: 5 }),
-      });
-      if (!response.ok) {
-        const detail = await response.text();
-        throw new Error(detail || "Failed to search locations.");
-      }
-      const data = await response.json();
-      const results: LocationSearchResult[] = Array.isArray(data?.results)
-        ? data.results
-        : [];
-      setSearchResults(results);
-      if (!results.length) {
-        setSearchError("No locations matched that search.");
-      }
-    } catch (error) {
-      console.error("Location search error:", error);
-      setSearchResults([]);
-      setSearchError(
-        error instanceof Error ? error.message : "Unable to search locations.",
-      );
-    } finally {
-      setIsSearchLoading(false);
-    }
-  }, []);
+
+    const timer = window.setTimeout(() => {
+      const fetchLocations = async () => {
+        try {
+          const response = await fetch("/api/location-search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query: trimmed, limit: 5 }),
+            signal: controller.signal,
+          });
+          if (!response.ok) {
+            const detail = await response.text();
+            throw new Error(detail || "Failed to search locations.");
+          }
+          const data = await response.json();
+          const results: LocationSearchResult[] = Array.isArray(data?.results)
+            ? data.results
+            : [];
+          setSearchResults(results);
+          if (!results.length) {
+            setSearchError("No locations matched that search.");
+          }
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError") {
+            return;
+          }
+          console.error("Location search error:", error);
+          setSearchResults([]);
+          setSearchError(
+            error instanceof Error
+              ? error.message
+              : "Unable to search locations.",
+          );
+        } finally {
+          setIsSearchLoading(false);
+        }
+      };
+
+      void fetchLocations();
+    }, 300);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [searchQuery, isSearchOpen]);
 
   return (
     <>
