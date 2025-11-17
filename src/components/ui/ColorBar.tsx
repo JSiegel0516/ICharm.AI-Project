@@ -9,7 +9,6 @@ import React, {
 } from "react";
 import { ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 
-// Mock types for the example
 type TemperatureUnit = "celsius" | "fahrenheit";
 interface ColorBarProps {
   show: boolean;
@@ -214,29 +213,23 @@ const ColorBar: React.FC<ColorBarProps> = ({
 
   const isVertical = orientation === "vertical";
 
-  // NEW: Function that uses ACTUAL measured height
   const getDefaultPosition = useCallback(() => {
     if (typeof window === "undefined") {
       return isVertical ? { x: 24, y: 120 } : { x: 24, y: 180 };
     }
 
-    const margin = 24;
+    const margin = 16;
 
     if (isVertical) {
-      const offset = Math.round(window.innerHeight * 0.05);
-      const cardWidth = 200;
-      const cardHeight = 360;
-      const x = Math.max(margin, window.innerWidth - cardWidth - margin - 12);
-      const targetTop =
-        Math.round(window.innerHeight * 0.25) - cardHeight / 2 + offset;
-      const y = Math.max(
-        margin,
-        Math.min(targetTop, window.innerHeight - cardHeight - margin),
-      );
+      const colorBarElement = colorBarRef.current;
+      const cardWidth = colorBarElement ? colorBarElement.offsetWidth : 200;
+      const cardHeight = colorBarElement ? colorBarElement.offsetHeight : 360;
+      const x = window.innerWidth - cardWidth - margin;
+      const verticalOffset = Math.round(window.innerHeight * 0.25);
+      const y = verticalOffset;
       return { x, y };
     }
 
-    // For horizontal: use ACTUAL measured height from DOM
     const colorBarElement = colorBarRef.current;
     const actualHeight = colorBarElement ? colorBarElement.offsetHeight : 220;
 
@@ -329,11 +322,9 @@ const ColorBar: React.FC<ColorBarProps> = ({
 
     setIsCollapsed((prev) => {
       if (prev) {
-        // Expanding
         setPosition(previousPosition);
         return false;
       } else {
-        // Collapsing
         setPreviousPosition(position);
         setPosition({ x: 24, y: window.innerHeight - 60 });
         return true;
@@ -346,10 +337,8 @@ const ColorBar: React.FC<ColorBarProps> = ({
     setIsCollapsed(collapsed);
   }, [collapsed]);
 
-  // NEW: Initialize position after component mounts and measures itself
   useEffect(() => {
     if (!hasInitialized && colorBarRef.current && !isCollapsed) {
-      // Small delay to ensure DOM has rendered
       const timer = setTimeout(() => {
         const defaultPosition = getDefaultPosition();
         setPosition(defaultPosition);
@@ -361,7 +350,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     }
   }, [hasInitialized, getDefaultPosition, isCollapsed]);
 
-  // Update position when orientation changes
   useEffect(() => {
     if (hasInitialized && !isCollapsed) {
       const defaultPosition = getDefaultPosition();
@@ -494,7 +482,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
     >
       {isCollapsed ? (
         <div
-          className="pointer-events-auto cursor-pointer rounded-xl border border-blue-500/20 bg-gradient-to-br from-blue-900/95 to-purple-900/95 backdrop-blur-sm transition-all duration-200 hover:shadow-lg"
+          className="pointer-events-auto cursor-pointer rounded-xl border border-gray-700/30 bg-neutral-800/60 backdrop-blur-sm transition-all duration-200 hover:shadow-lg"
           onClick={handleCollapseToggle}
           style={{ transform: "scale(1)" }}
           onMouseEnter={(e) => {
@@ -554,7 +542,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
 
           <div className="relative mt-2 mb-12">
             <div className="flex w-full items-center justify-between gap-2 text-sm font-medium text-blue-200">
-              <span>Unit of measurement</span>
+              <span>Units</span>
 
               {allowUnitToggle ? (
                 <div className="relative">
@@ -614,7 +602,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
                       style={{ background: gradientBackground }}
                     />
                   </div>
-                  <div className="absolute inset-y-4 left-full ml-4 flex flex-col justify-between text-right text-xs text-blue-200">
+                  <div className="absolute inset-y-4 left-full mr-4 ml-4 flex flex-col justify-between text-right text-xs text-blue-200">
                     {verticalLabels.map((label, index) => (
                       <span key={index} className="leading-none">
                         {label}
