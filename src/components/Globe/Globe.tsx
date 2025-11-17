@@ -468,16 +468,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       rasterState.requestKey,
     ]);
 
-    const calculateRadiusFromCameraHeight = (cameraHeight: number): number => {
-      const referenceHeight = 10000000;
-      const baseRadius = 65000;
-      const scaleFactor = Math.sqrt(cameraHeight / referenceHeight);
-      const minRadius = 8000;
-      const maxRadius = 150000;
-      const calculatedRadius = baseRadius * scaleFactor;
-      return Math.max(minRadius, Math.min(maxRadius, calculatedRadius));
-    };
-
     const addClickMarker = (
       Cesium: any,
       latitude: number,
@@ -487,59 +477,27 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
       clearMarker();
 
-      const cameraHeight = viewerRef.current.camera.positionCartographic.height;
-      const baseRadius = calculateRadiusFromCameraHeight(cameraHeight);
-
-      const markers = [];
-      const numRings = 8;
-      const ringSpacing = baseRadius * 0.05;
-
-      for (let i = 0; i < numRings; i++) {
-        const radius = baseRadius - i * ringSpacing;
-        if (radius <= 0) break;
-
-        const circleEntity = viewerRef.current.entities.add({
-          position: Cesium.Cartesian3.fromDegrees(
-            longitude,
-            latitude,
-            1000 + i,
+      const marker = viewerRef.current.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(longitude, latitude, 1000),
+        billboard: {
+          image: "/images/selector.png",
+          width: 48,
+          height: 48,
+          verticalOrigin: Cesium.VerticalOrigin.CENTER,
+          pixelOffset: new Cesium.Cartesian2(0, 0),
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          scaleByDistance: new Cesium.NearFarScalar(
+            1000.0,
+            1.0,
+            8000000.0,
+            0.65,
           ),
-          ellipse: {
-            semiMajorAxis: radius,
-            semiMinorAxis: radius,
-            material: Cesium.Color.TRANSPARENT,
-            outline: true,
-            outlineColor: Cesium.Color.LIME.withAlpha(0.9 - i * 0.1),
-            outlineWidth: 3,
-            height: 0,
-            extrudedHeight: 0,
-            zIndex: 9999,
-          },
-        });
+        },
+      });
 
-        markers.push(circleEntity);
-      }
-
-      currentMarkerRef.current = markers;
+      currentMarkerRef.current = marker;
       viewerRef.current.scene?.requestRender();
-    };
-
-    const updateMarkerRadius = (Cesium: any) => {
-      if (!currentMarkerRef.current || !viewerRef.current) return;
-
-      const cameraHeight = viewerRef.current.camera.positionCartographic.height;
-      const baseRadius = calculateRadiusFromCameraHeight(cameraHeight);
-      const ringSpacing = baseRadius * 0.05;
-
-      if (Array.isArray(currentMarkerRef.current)) {
-        currentMarkerRef.current.forEach((marker, i) => {
-          const radius = baseRadius - i * ringSpacing;
-          if (radius > 0) {
-            marker.ellipse.semiMajorAxis = radius;
-            marker.ellipse.semiMinorAxis = radius;
-          }
-        });
-      }
     };
 
     // Initialize Cesium viewer
@@ -752,12 +710,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             },
             Cesium.ScreenSpaceEventType.RIGHT_CLICK,
           );
-
-          viewer.camera.changed.addEventListener(() => {
-            if (window.Cesium) {
-              updateMarkerRadius(window.Cesium);
-            }
-          });
 
           setTimeout(() => {
             viewer.resize();
