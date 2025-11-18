@@ -865,16 +865,12 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
               </button>
             </div>
             <div className="flex items-center justify-between gap-2">
-              <CardTitle>
-                <div className="flex flex-row gap-4 text-sm font-medium text-white">
-                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
-                  {latitude.toFixed(2)}°, {longitude.toFixed(2)}°
-                </div>
+              <CardTitle className="flex flex-row gap-2">
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                {latitude.toFixed(2)}°, {longitude.toFixed(2)}°
               </CardTitle>
             </div>
-            <CardDescription>
-              Click on the globe to view data for any location
-            </CardDescription>
+            <CardDescription></CardDescription>
           </CardHeader>
 
           <CardContent className="">
