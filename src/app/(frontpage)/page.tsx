@@ -114,97 +114,7 @@ const parseNumericList = (input: unknown): number[] => {
   return [];
 };
 
-const normalizeLevelUnit = (
-  unit?: string | null,
-  descriptor?: string | null,
-) => {
-  const normalized = unit?.trim().toLowerCase();
-  if (normalized) {
-    if (
-      normalized === "mb" ||
-      normalized.includes("millibar") ||
-      normalized.includes("mbar")
-    ) {
-      return "millibar";
-    }
-    if (normalized === "hpa" || normalized.includes("hectopascal")) {
-      return "hPa";
-    }
-    if (normalized === "pa" || normalized.includes("pascal")) {
-      return "Pa";
-    }
-    if (normalized === "m" || normalized.includes("meter")) {
-      return "m";
-    }
-    if (normalized === "km" || normalized.includes("kilometer")) {
-      return "km";
-    }
-    return unit.trim();
-  }
-
-  const descriptorText = descriptor?.toLowerCase() ?? "";
-  if (
-    descriptorText.includes("pressure") ||
-    descriptorText.includes("millibar") ||
-    descriptorText.includes("mbar")
-  ) {
-    return "millibar";
-  }
-  if (
-    descriptorText.includes("height") ||
-    descriptorText.includes("altitude")
-  ) {
-    return "m";
-  }
-  return "level";
-};
-
-const isPressureUnit = (unit: string) => {
-  const normalized = unit.toLowerCase();
-  return (
-    normalized === "millibar" || normalized === "hpa" || normalized === "pa"
-  );
-};
-
-const formatLevelValue = (value: number) => {
-  if (Number.isInteger(value)) {
-    return value.toString();
-  }
-  const fixed = value.toFixed(1);
-  return fixed.endsWith(".0") ? fixed.slice(0, -2) : fixed;
-};
-
-const formatPressureLevelLabel = (value: number, unit: string) => {
-  const formattedValue = formatLevelValue(value);
-  if (unit === "level") {
-    return formattedValue;
-  }
-  return `${formattedValue} ${unit}`;
-};
-
-const parseNumericList = (input: unknown): number[] => {
-  if (!input) return [];
-  if (Array.isArray(input)) {
-    return input
-      .map((value) => Number(value))
-      .filter((value) => Number.isFinite(value));
-  }
-  if (typeof input === "string") {
-    const matches = input.match(/-?\d+(\.\d+)?/g);
-    if (!matches) return [];
-    return matches
-      .map((value) => Number(value))
-      .filter((value) => Number.isFinite(value));
-  }
-  if (typeof input === "number" && Number.isFinite(input)) {
-    return [input];
-  }
-  return [];
-};
-
 export default function HomePage() {
-  const { showColorbar, currentDataset, toggleColorbar, colorBarOrientation } =
-    useAppState();
   const { showColorbar, currentDataset, toggleColorbar, colorBarOrientation } =
     useAppState();
   const globeRef = useRef<GlobeRef>(null);
@@ -316,7 +226,6 @@ export default function HomePage() {
     geographicLinesVisible: false,
     rasterOpacity: 0.65,
     hideZeroPrecipitation: false,
-    hideZeroPrecipitation: false,
   });
 
   // Event Handlers
@@ -373,13 +282,6 @@ export default function HomePage() {
 
   const handleRasterOpacityChange = useCallback((opacity: number) => {
     setGlobeSettings((prev) => ({ ...prev, rasterOpacity: opacity }));
-  }, []);
-
-  const handleHideZeroPrecipToggle = useCallback((enabled: boolean) => {
-    setGlobeSettings((prev) => ({
-      ...prev,
-      hideZeroPrecipitation: enabled,
-    }));
   }, []);
 
   const handleHideZeroPrecipToggle = useCallback((enabled: boolean) => {
@@ -467,17 +369,6 @@ export default function HomePage() {
         selectedPressureLevel.unit,
       )}`
     : undefined;
-  const selectedLevelValue =
-    hasPressureLevels && selectedPressureLevel
-      ? selectedPressureLevel.value
-      : null;
-
-  const pressureLevelHelperText = selectedPressureLevel
-    ? `Current: ${formatPressureLevelLabel(
-        selectedPressureLevel.value,
-        selectedPressureLevel.unit,
-      )}`
-    : undefined;
 
   const memoizedGlobe = useMemo(
     () => (
@@ -486,7 +377,6 @@ export default function HomePage() {
         currentDataset={currentDataset}
         selectedDate={selectedDate}
         selectedLevel={selectedLevelValue}
-        hideZeroPrecipitation={globeSettings.hideZeroPrecipitation}
         hideZeroPrecipitation={globeSettings.hideZeroPrecipitation}
         onRegionClick={handleRegionClick}
         satelliteLayerVisible={globeSettings.satelliteLayerVisible}
@@ -527,7 +417,6 @@ export default function HomePage() {
           onGeographicLinesToggle={handleGeographicLinesToggle}
           onRasterOpacityChange={handleRasterOpacityChange}
           onHideZeroPrecipToggle={handleHideZeroPrecipToggle}
-          onHideZeroPrecipToggle={handleHideZeroPrecipToggle}
         />
 
         {/* Tutorial Modal */}
@@ -547,7 +436,6 @@ export default function HomePage() {
           collapsed={colorBarCollapsed}
           onToggleCollapse={setColorBarCollapsed}
           rasterMeta={rasterMeta}
-          orientation={colorBarOrientation}
           orientation={colorBarOrientation}
         />
 

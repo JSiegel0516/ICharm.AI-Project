@@ -122,7 +122,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
   collapsed = false,
   rasterMeta = null,
   orientation = "horizontal",
-  orientation = "horizontal",
 }) => {
   const colorBarRef = useRef<HTMLDivElement>(null);
   const isVertical = orientation === "vertical";
@@ -284,7 +283,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     return { labels, colors: dataset.colorScale.colors };
   }, [dataset.colorScale, rasterMeta, unitInfo.symbol]);
 
-  const displayLabels = useMemo(() => {
   const displayLabels = useMemo(() => {
     const values =
       unitInfo.allowToggle && unit === "fahrenheit"

@@ -299,7 +299,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       geographicLinesVisible = false,
       rasterOpacity = 0.65,
       hideZeroPrecipitation = false,
-      hideZeroPrecipitation = false,
       onRasterMetadataChange,
     },
     ref,
@@ -332,7 +331,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       dataset: currentDataset,
       date: selectedDate,
       level: selectedLevel ?? null,
-      maskZeroValues: shouldHideZero,
       maskZeroValues: shouldHideZero,
     });
 
