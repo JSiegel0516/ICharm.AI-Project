@@ -173,7 +173,7 @@ async function seedDatasets() {
     console.log("\n💾 Inserting datasets into database...");
     await db.insert(climateDataset).values(datasets);
     console.log(
-      `✅ Successfully seeded ${datasets.length} datasets with slugs`,
+      `Successfully seeded ${datasets.length} datasets with slugs`,
     );
 
     // Show all slugs and total URL length

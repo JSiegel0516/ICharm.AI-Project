@@ -36,7 +36,7 @@ if ! command -v psql &> /dev/null; then
     exit 1
 fi
 
-echo -e "${GREEN}✅ psql found${NC}"
+echo -e "${GREEN}psql found${NC}"
 
 # Check PostgreSQL is running
 if ! pg_isready -h $DB_HOST -p $DB_PORT &> /dev/null; then
@@ -44,7 +44,7 @@ if ! pg_isready -h $DB_HOST -p $DB_PORT &> /dev/null; then
     exit 1
 fi
 
-echo -e "${GREEN}✅ PostgreSQL is running${NC}\n"
+echo -e "${GREEN}PostgreSQL is running${NC}\n"
 
 # Prompt for postgres password
 echo -e "${YELLOW}Enter your PostgreSQL 'postgres' user password:${NC}"
@@ -79,7 +79,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-echo -e "${GREEN}✅ Database and user created${NC}\n"
+echo -e "${GREEN}Database and user created${NC}\n"
 
 # Step 2: Create schema
 echo -e "${BLUE}📋 Step 2: Creating tables and schema...${NC}"
@@ -155,7 +155,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-echo -e "${GREEN}✅ Schema created successfully${NC}\n"
+echo -e "${GREEN}Schema created successfully${NC}\n"
 
 # Step 3: Verify
 echo -e "${BLUE}🔍 Step 3: Verifying setup...${NC}\n"
@@ -176,7 +176,7 @@ EOSQL
 
 echo ""
 echo -e "${GREEN}╔════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║          ✅ Setup Complete!            ║${NC}"
+echo -e "${GREEN}║          Setup Complete!            ║${NC}"
 echo -e "${GREEN}╚════════════════════════════════════════╝${NC}\n"
 
 echo -e "${BLUE}📝 Add this to your .env.local:${NC}"
