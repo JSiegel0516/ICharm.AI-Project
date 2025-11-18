@@ -748,6 +748,97 @@ def _open_ndvi_dataset(metadata: pd.Series, target_date: datetime) -> xr.Dataset
     return loaded
 
 
+def _apply_monthly_sampling(
+    ds: xr.Dataset, start_date: datetime, end_date: datetime
+) -> xr.Dataset:
+    """If date range > 1 year, filter dataset to same day of month for each month."""
+    date_range = end_date - start_date
+    logger.debug(
+        f"[DEBUG] _apply_monthly_sampling called: date_range={date_range.days} days, "
+        f"has_time_dim={'time' in ds.dims}"
+    )
+    if date_range <= timedelta(days=390) or "time" not in ds.dims:
+        logger.debug(
+            "[DEBUG] _apply_monthly_sampling: skipping (range <= 365 days or no time dim)"
+        )
+        return ds
+
+    logger.info(
+        f"[MONTHLY_SAMPLING] Date range > 1 year ({date_range.days} days), sampling same day of month for each month"
+    )
+    sample_day = start_date.day
+    sample_dates = []
+    current = datetime(start_date.year, start_date.month, 1)
+
+    while current <= end_date:
+        try:
+            sample_date = current.replace(day=sample_day)
+            if sample_date < start_date:
+                if current.month == 12:
+                    current = datetime(current.year + 1, 1, 1)
+                else:
+                    current = datetime(current.year, current.month + 1, 1)
+                continue
+            if sample_date <= end_date:
+                sample_dates.append(sample_date)
+        except ValueError:
+            if current.month == 12:
+                next_month = datetime(current.year + 1, 1, 1)
+            else:
+                next_month = datetime(current.year, current.month + 1, 1)
+            sample_date = next_month - timedelta(days=1)
+            if start_date <= sample_date <= end_date:
+                sample_dates.append(sample_date)
+
+        if current.month == 12:
+            current = datetime(current.year + 1, 1, 1)
+        else:
+            current = datetime(current.year, current.month + 1, 1)
+
+    if not sample_dates:
+        return ds
+
+    logger.info(f"Filtering dataset to {len(sample_dates)} monthly sample dates")
+    time_coord = ds.time
+    time_mask = np.zeros(len(time_coord), dtype=bool)
+
+    for sample_date in sample_dates:
+        try:
+            if hasattr(time_coord.values[0], "year"):
+                time_diffs = [
+                    abs(
+                        (t - sample_date).total_seconds()
+                        if hasattr(t, "total_seconds")
+                        else abs(t.year - sample_date.year) * 365
+                        + abs(t.month - sample_date.month) * 30
+                        + abs(t.day - sample_date.day)
+                    )
+                    for t in time_coord.values
+                ]
+            else:
+                time_diffs = [
+                    abs((pd.Timestamp(t) - pd.Timestamp(sample_date)).total_seconds())
+                    for t in time_coord.values
+                ]
+            closest_idx = np.argmin(time_diffs)
+            time_mask[closest_idx] = True
+        except Exception as e:
+            logger.warning(f"Could not match sample date {sample_date}: {e}")
+
+    if time_mask.any():
+        ds = ds.isel(time=time_mask)
+        logger.info(
+            f"[MONTHLY_SAMPLING] Filtered dataset to {np.sum(time_mask)} time points"
+        )
+        logger.debug(
+            f"[DEBUG] Monthly sampling applied: {np.sum(time_mask)}/{len(time_mask)} time points selected"
+        )
+    else:
+        logger.warning("[MONTHLY_SAMPLING] No time points matched for monthly sampling")
+
+    return ds
+
+
 async def open_cloud_dataset(
     metadata: pd.Series, start_date: datetime, end_date: datetime
 ) -> xr.Dataset:
@@ -788,6 +879,7 @@ async def open_cloud_dataset(
         if normalized_name == "normalized difference vegetation index cdr":
             logger.info("Using NDVI-specific loader")
             ds = await asyncio.to_thread(_open_ndvi_dataset, metadata, start_date)
+            ds = _apply_monthly_sampling(ds, start_date, end_date)
             dataset_cache.set(cache_key, ds)
             return ds
 
@@ -874,6 +966,7 @@ async def open_cloud_dataset(
                 )
                 logger.info(f"   Dimensions: {dict(ds.dims)}")
                 logger.info(f"   Variables: {list(ds.data_vars)}")
+                ds = _apply_monthly_sampling(ds, start_date, end_date)
                 dataset_cache.set(cache_key, ds)
                 return ds
             else:
@@ -889,6 +982,7 @@ async def open_cloud_dataset(
                     ds = await asyncio.to_thread(
                         _open_cmorph_dataset, metadata, start_date, end_date
                     )
+                    ds = _apply_monthly_sampling(ds, start_date, end_date)
                     dataset_cache.set(cache_key, ds)
                     return ds
                 # For SST, we just fall through to generic cloud logic below
@@ -1097,6 +1191,7 @@ async def open_cloud_dataset(
         logger.info(f"Successfully opened: {metadata['datasetName']}")
         logger.info(f"   Dimensions: {dict(ds.dims)}")
         logger.info(f"   Variables: {list(ds.data_vars)}")
+        ds = _apply_monthly_sampling(ds, start_date, end_date)
         dataset_cache.set(cache_key, ds)
         return ds
 
