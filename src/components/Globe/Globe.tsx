@@ -274,6 +274,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const boundaryEntitiesRef = useRef<any[]>([]);
     const geographicLineEntitiesRef = useRef<any[]>([]);
     const rasterLayerRef = useRef<any[]>([]);
+    const isUpdatingMarkerRef = useRef(false);
 
     const rasterDataRef = useRef<RasterLayerData | undefined>(undefined);
     const datasetName = (currentDataset?.name ?? "").toLowerCase();
@@ -294,12 +295,29 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         viewerRef.current &&
         !viewerRef.current.isDestroyed()
       ) {
-        if (Array.isArray(currentMarkerRef.current)) {
-          currentMarkerRef.current.forEach((marker) =>
-            viewerRef.current.entities.remove(marker),
-          );
-        } else {
-          viewerRef.current.entities.remove(currentMarkerRef.current);
+        try {
+          if (currentMarkerRef.current.layer) {
+            viewerRef.current.scene.imageryLayers.remove(
+              currentMarkerRef.current.layer,
+              true,
+            );
+          } else if (
+            currentMarkerRef.current._imageryProvider ||
+            currentMarkerRef.current.alpha !== undefined
+          ) {
+            viewerRef.current.scene.imageryLayers.remove(
+              currentMarkerRef.current,
+              true,
+            );
+          } else if (Array.isArray(currentMarkerRef.current)) {
+            currentMarkerRef.current.forEach((marker) =>
+              viewerRef.current.entities.remove(marker),
+            );
+          } else {
+            viewerRef.current.entities.remove(currentMarkerRef.current);
+          }
+        } catch (err) {
+          console.warn("Failed to remove marker", err);
         }
         currentMarkerRef.current = null;
       }
@@ -319,28 +337,14 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const updateMarkerVisibility = useCallback(() => {
       if (!viewerRef.current || !cesiumInstance) return;
 
-      const camera = viewerRef.current.camera;
       const scene = viewerRef.current.scene;
 
-      if (currentMarkerRef.current) {
-        const position = currentMarkerRef.current.position.getValue(
-          cesiumInstance.JulianDate.now(),
-        );
-        if (position) {
-          const occluder = new cesiumInstance.EllipsoidalOccluder(
-            cesiumInstance.Ellipsoid.WGS84,
-            camera.position,
-          );
-          const visible = occluder.isPointVisible(position);
-          currentMarkerRef.current.show = visible;
-        }
-      }
-
-      if (searchMarkerRef.current) {
+      if (searchMarkerRef.current && searchMarkerRef.current.position) {
         const position = searchMarkerRef.current.position.getValue(
           cesiumInstance.JulianDate.now(),
         );
         if (position) {
+          const camera = viewerRef.current.camera;
           const occluder = new cesiumInstance.EllipsoidalOccluder(
             cesiumInstance.Ellipsoid.WGS84,
             camera.position,
@@ -418,6 +422,71 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       [addSearchMarker, cesiumInstance],
     );
 
+    const addClickMarker = useCallback(
+      (Cesium: any, latitude: number, longitude: number) => {
+        if (!viewerRef.current || isUpdatingMarkerRef.current) return;
+
+        isUpdatingMarkerRef.current = true;
+
+        try {
+          if (
+            currentMarkerRef.current &&
+            viewerRef.current &&
+            !viewerRef.current.isDestroyed()
+          ) {
+            try {
+              if (currentMarkerRef.current.layer) {
+                viewerRef.current.scene.imageryLayers.remove(
+                  currentMarkerRef.current.layer,
+                  true,
+                );
+              }
+            } catch (err) {
+              console.warn("Failed to remove marker", err);
+            }
+          }
+
+          const cameraHeight =
+            viewerRef.current.camera.positionCartographic.height;
+          const markerSize = Math.max(
+            0.05,
+            Math.min(2.0, cameraHeight / 8000000),
+          );
+
+          const rectangle = Cesium.Rectangle.fromDegrees(
+            longitude - markerSize,
+            latitude - markerSize,
+            longitude + markerSize,
+            latitude + markerSize,
+          );
+
+          const markerProvider = new Cesium.SingleTileImageryProvider({
+            url: "/images/selector.png",
+            rectangle: rectangle,
+          });
+
+          const markerLayer =
+            viewerRef.current.scene.imageryLayers.addImageryProvider(
+              markerProvider,
+            );
+          markerLayer.alpha = 1.0;
+
+          viewerRef.current.scene.imageryLayers.raiseToTop(markerLayer);
+
+          currentMarkerRef.current = {
+            layer: markerLayer,
+            latitude: latitude,
+            longitude: longitude,
+          };
+
+          viewerRef.current.scene?.requestRender();
+        } finally {
+          isUpdatingMarkerRef.current = false;
+        }
+      },
+      [],
+    );
+
     useImperativeHandle(
       ref,
       () => ({
@@ -467,37 +536,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       rasterState.error,
       rasterState.requestKey,
     ]);
-
-    const addClickMarker = (
-      Cesium: any,
-      latitude: number,
-      longitude: number,
-    ) => {
-      if (!viewerRef.current) return;
-
-      clearMarker();
-
-      const marker = viewerRef.current.entities.add({
-        position: Cesium.Cartesian3.fromDegrees(longitude, latitude, 0),
-        billboard: {
-          image: "/images/selector.png",
-          width: 48,
-          height: 48,
-          verticalOrigin: Cesium.VerticalOrigin.CENTER,
-          pixelOffset: new Cesium.Cartesian2(0, 0),
-          heightReference: Cesium.HeightReference.NONE,
-          scaleByDistance: new Cesium.NearFarScalar(
-            1000.0,
-            1.0,
-            8000000.0,
-            0.65,
-          ),
-        },
-      });
-
-      currentMarkerRef.current = marker;
-      viewerRef.current.scene?.requestRender();
-    };
 
     useEffect(() => {
       if (
@@ -701,6 +739,38 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           viewer.camera.changed.addEventListener(updateMarkerVisibility);
           viewer.scene.preRender.addEventListener(updateMarkerVisibility);
 
+          let lastCameraHeight = viewer.camera.positionCartographic.height;
+          let cameraUpdateTimeout: any = null;
+
+          viewer.camera.changed.addEventListener(() => {
+            if (!currentMarkerRef.current || !currentMarkerRef.current.latitude)
+              return;
+
+            const currentHeight = viewer.camera.positionCartographic.height;
+            const heightDifference = Math.abs(currentHeight - lastCameraHeight);
+
+            if (heightDifference / lastCameraHeight > 0.1) {
+              lastCameraHeight = currentHeight;
+
+              if (cameraUpdateTimeout) {
+                clearTimeout(cameraUpdateTimeout);
+              }
+
+              cameraUpdateTimeout = setTimeout(() => {
+                if (
+                  currentMarkerRef.current &&
+                  currentMarkerRef.current.latitude
+                ) {
+                  addClickMarker(
+                    Cesium,
+                    currentMarkerRef.current.latitude,
+                    currentMarkerRef.current.longitude,
+                  );
+                }
+              }, 100);
+            }
+          });
+
           setTimeout(() => {
             viewer.resize();
             viewer.forceResize();
@@ -729,6 +799,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       boundaryLinesVisible,
       geographicLinesVisible,
       updateMarkerVisibility,
+      addClickMarker,
     ]);
 
     const applyRasterLayers = useCallback(
