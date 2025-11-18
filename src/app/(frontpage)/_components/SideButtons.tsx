@@ -34,7 +34,6 @@ interface SideButtonsProps {
   onDateChange: (date: Date) => void;
   onShowTutorial: () => void;
   onShowSidebarPanel: (panel: "datasets" | "history" | "about" | null) => void;
-  // NEW: Globe settings props
   globeSettings: GlobeSettings;
   onSatelliteToggle: (visible: boolean) => void;
   onBoundaryToggle: (visible: boolean) => void;
@@ -74,7 +73,8 @@ export function SideButtons({
   const [isExpanded, setIsExpanded] = useState(true);
   const [showCalendar, setShowCalendar] = useState(false);
   const [showDatasetCard, setShowDatasetCard] = useState(false);
-  const [showGlobeSettings, setShowGlobeSettings] = useState(false); // NEW
+  const [showGlobeSettings, setShowGlobeSettings] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [selectedDatasets, setSelectedDatasets] = useState<Set<string>>(() =>
     currentDataset ? new Set([currentDataset.id]) : new Set(),
   );
@@ -107,11 +107,24 @@ export function SideButtons({
   }, [onShowSidebarPanel]);
 
   const handleDownloadClick = useCallback(() => {
-    console.log("Download clicked");
-  }, []);
+    if (!currentDataset) {
+      alert("Please select a dataset first");
+      return;
+    }
+
+    const origLocation = currentDataset.backend?.origLocation;
+
+    if (!origLocation) {
+      alert("This dataset does not have a download location available.");
+      return;
+    }
+
+    // Open the download link in a new tab
+    window.open(origLocation, "_blank");
+  }, [currentDataset]);
 
   const handlePreferencesClick = useCallback(() => {
-    setShowGlobeSettings(true); // UPDATED: Open settings panel instead
+    setShowGlobeSettings(true);
   }, []);
 
   const handleFullscreenClick = useCallback(() => {
@@ -138,7 +151,7 @@ export function SideButtons({
 
   const closeGlobeSettings = useCallback(() => {
     setShowGlobeSettings(false);
-  }, []); // NEW
+  }, []);
 
   const toggleDatasetSelection = useCallback(
     (datasetId: string) => {
@@ -215,7 +228,7 @@ export function SideButtons({
     setCalendarMonth(newMonth);
   }, []);
 
-  // Click-outside handler - UPDATED to include globe settings
+  // Click-outside handler
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -285,6 +298,7 @@ export function SideButtons({
         label: "Show Tutorial",
         onClick: onShowTutorial,
         delay: 0.15,
+        disabled: false,
       },
       {
         id: "dataset",
@@ -292,6 +306,7 @@ export function SideButtons({
         label: "Select Dataset",
         onClick: handleFileTextClick,
         delay: 0,
+        disabled: false,
       },
       {
         id: "calendar",
@@ -299,13 +314,15 @@ export function SideButtons({
         label: "Set Date",
         onClick: handleCalendarClick,
         delay: 0.05,
+        disabled: false,
       },
       {
         id: "download",
         icon: <DownloadIcon size={18} />,
-        label: "Download Dataset",
+        label: isDownloading ? "Downloading..." : "Download Dataset",
         onClick: handleDownloadClick,
         delay: 0.1,
+        disabled: isDownloading || !currentDataset,
       },
       {
         id: "preferences",
@@ -313,6 +330,7 @@ export function SideButtons({
         label: "Globe Settings",
         onClick: handlePreferencesClick,
         delay: 0.2,
+        disabled: false,
       },
       {
         id: "fullscreen",
@@ -320,6 +338,7 @@ export function SideButtons({
         label: "Fullscreen",
         onClick: handleFullscreenClick,
         delay: 0.25,
+        disabled: false,
       },
     ],
     [
@@ -329,6 +348,8 @@ export function SideButtons({
       handleDownloadClick,
       handlePreferencesClick,
       handleFullscreenClick,
+      isDownloading,
+      currentDataset,
     ],
   );
 
@@ -343,30 +364,33 @@ export function SideButtons({
             transition={{ duration: 0.3, ease: "easeInOut" }}
             className="pointer-events-auto fixed top-0 left-4 z-9999 flex h-screen flex-col items-center justify-center gap-2"
           >
-            {buttonConfigs.map(({ id, icon, label, onClick, delay }) => (
-              <motion.div
-                key={id}
-                id={id}
-                initial={false}
-                animate={{
-                  opacity: isExpanded ? 1 : 0,
-                  scale: isExpanded ? 1 : 0.8,
-                  y: isExpanded ? 0 : 10,
-                }}
-                transition={{ duration: 0.2, delay }}
-              >
-                <Button
-                  size="icon"
-                  className="sidebtn hover:sidebtn-hover group"
-                  onClick={onClick}
+            {buttonConfigs.map(
+              ({ id, icon, label, onClick, delay, disabled }) => (
+                <motion.div
+                  key={id}
+                  id={id}
+                  initial={false}
+                  animate={{
+                    opacity: isExpanded ? 1 : 0,
+                    scale: isExpanded ? 1 : 0.8,
+                    y: isExpanded ? 0 : 10,
+                  }}
+                  transition={{ duration: 0.2, delay }}
                 >
-                  {icon}
-                  <div className="btn-hover group-hover:opacity-100">
-                    {label}
-                  </div>
-                </Button>
-              </motion.div>
-            ))}
+                  <Button
+                    size="icon"
+                    className="sidebtn hover:sidebtn-hover group"
+                    onClick={onClick}
+                    disabled={disabled}
+                  >
+                    {icon}
+                    <div className="btn-hover group-hover:opacity-100">
+                      {label}
+                    </div>
+                  </Button>
+                </motion.div>
+              ),
+            )}
 
             <motion.div
               initial={false}
@@ -399,33 +423,19 @@ export function SideButtons({
             transition={{ duration: 0.3, ease: "easeInOut" }}
             className="pointer-events-auto fixed top-1/2 left-4 z-9999 w-80 -translate-y-1/2"
           >
-            {/* Calendar Window */}
-            <AnimatePresence>
-              {showCalendar && (
-                <motion.div
-                  ref={calendarRef}
-                  initial={{ x: -100, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
-                  exit={{ x: -100, opacity: 0 }}
-                  transition={{ duration: 0.3, ease: "easeInOut" }}
-                  className="pointer-events-auto fixed top-1/2 left-4 z-9999 w-80 -translate-y-1/2"
-                >
-                  <Calendar
-                    mode="single"
-                    captionLayout="dropdown"
-                    selected={selectedDate}
-                    onSelect={handleDateSelect}
-                    month={calendarMonth}
-                    onMonthChange={handleMonthChange}
-                    disabled={(date) =>
-                      date < dateRange.minDate || date > dateRange.maxDate
-                    }
-                    className="bg-card rounded-md border shadow-sm select-none"
-                    autoFocus
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
+            <Calendar
+              mode="single"
+              captionLayout="dropdown"
+              selected={selectedDate}
+              onSelect={handleDateSelect}
+              month={calendarMonth}
+              onMonthChange={handleMonthChange}
+              disabled={(date) =>
+                date < dateRange.minDate || date > dateRange.maxDate
+              }
+              className="bg-card rounded-md border shadow-sm select-none"
+              autoFocus
+            />
           </motion.div>
         )}
       </AnimatePresence>
@@ -562,7 +572,7 @@ export function SideButtons({
         )}
       </AnimatePresence>
 
-      {/* NEW: Globe Settings Panel */}
+      {/* Globe Settings Panel */}
       <GlobeSettingsPanel
         isOpen={showGlobeSettings}
         onClose={closeGlobeSettings}
