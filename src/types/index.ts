@@ -100,6 +100,7 @@ export interface RegionInfoPanelProps {
   className?: string;
   currentDataset?: Dataset;
   selectedDate?: Date;
+  temperatureUnit?: TemperatureUnit;
 }
 
 export interface SettingsIconHandle {

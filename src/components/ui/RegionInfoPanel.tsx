@@ -45,6 +45,102 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
+type TemperatureUnitInfo = {
+  type: "celsius" | "fahrenheit" | "kelvin" | null;
+  symbol: string;
+};
+
+const normalizeTemperatureUnit = (
+  rawUnit?: string | null,
+): TemperatureUnitInfo => {
+  if (!rawUnit || !rawUnit.trim()) {
+    return { type: null, symbol: "units" };
+  }
+
+  const normalized = rawUnit.trim();
+  const lower = normalized.toLowerCase();
+  const alphaOnly = lower.replace(/[^a-z]/g, "");
+
+  const celsiusHints =
+    normalized.includes("℃") ||
+    lower.includes("celsius") ||
+    lower.includes("celcius") ||
+    lower.includes("°c") ||
+    lower.includes("degc") ||
+    alphaOnly === "c";
+  if (celsiusHints) {
+    return { type: "celsius", symbol: "°C" };
+  }
+
+  const fahrenheitHints =
+    normalized.includes("℉") ||
+    lower.includes("fahrenheit") ||
+    lower.includes("°f") ||
+    lower.includes("degf") ||
+    alphaOnly === "f";
+  if (fahrenheitHints) {
+    return { type: "fahrenheit", symbol: "°F" };
+  }
+
+  const kelvinHints =
+    normalized.includes("K") ||
+    lower.includes("kelvin") ||
+    lower.includes("°k") ||
+    lower.includes("degk") ||
+    alphaOnly === "k";
+  if (kelvinHints) {
+    return { type: "kelvin", symbol: "K" };
+  }
+
+  return { type: null, symbol: normalized };
+};
+
+const hasTemperatureHints = (
+  dataset?: RegionInfoPanelProps["currentDataset"],
+): boolean => {
+  if (!dataset) {
+    return false;
+  }
+
+  const parts: string[] = [];
+  const typeLower =
+    typeof dataset.dataType === "string" ? dataset.dataType.toLowerCase() : "";
+  if (typeLower) {
+    parts.push(typeLower);
+  }
+
+  const possibleKeys: Array<string | undefined | null> = [
+    dataset.name,
+    dataset.description,
+    (dataset as any)?.category,
+    dataset.backend?.datasetName,
+    dataset.backend?.layerParameter,
+    dataset.backend?.datasetType,
+  ];
+
+  possibleKeys.forEach((value) => {
+    if (typeof value === "string" && value.trim()) {
+      parts.push(value);
+    }
+  });
+
+  if (!parts.length) {
+    return false;
+  }
+
+  const combined = parts.join(" ").toLowerCase();
+  return (
+    combined.includes("temp") ||
+    combined.includes("°c") ||
+    combined.includes("degc") ||
+    combined.includes("sea surface") ||
+    combined.includes("sst") ||
+    combined.includes("surface temp")
+  );
+};
+
+const celsiusToFahrenheit = (value: number) => (value * 9) / 5 + 32;
+
 type SeriesPoint = {
   date: string;
   value: number | null;
@@ -84,6 +180,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   className = "",
   currentDataset,
   selectedDate,
+  temperatureUnit = "celsius",
 }) => {
   const getDefaultPosition = () => {
     if (typeof window !== "undefined") {
@@ -119,6 +216,143 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     regionData.dataset ??
     "";
 
+  const datasetUnitInfo = useMemo(
+    () => normalizeTemperatureUnit(datasetUnit),
+    [datasetUnit],
+  );
+
+  const datasetLooksTemperature = useMemo(
+    () => hasTemperatureHints(currentDataset),
+    [currentDataset],
+  );
+
+  const useFahrenheit =
+    datasetLooksTemperature &&
+    datasetUnitInfo.type === "celsius" &&
+    temperatureUnit === "fahrenheit";
+
+  const displayUnitLabel = useMemo(
+    () =>
+      useFahrenheit ? "°F" : datasetUnitInfo.symbol || datasetUnit || "units",
+    [useFahrenheit, datasetUnitInfo.symbol, datasetUnit],
+  );
+
+  const resolvedTimeseriesUnit = useMemo(
+    () =>
+      useFahrenheit
+        ? "°F"
+        : (timeseriesUnits ?? datasetUnitInfo.symbol ?? datasetUnit ?? "units"),
+    [useFahrenheit, timeseriesUnits, datasetUnitInfo.symbol, datasetUnit],
+  );
+
+  const primaryValueSource =
+    typeof regionData.precipitation === "number"
+      ? regionData.precipitation
+      : typeof regionData.temperature === "number"
+        ? regionData.temperature
+        : 0;
+
+  const convertedPrimaryValue = useFahrenheit
+    ? celsiusToFahrenheit(primaryValueSource)
+    : primaryValueSource;
+
+  const formattedPrimaryValue = Number.isFinite(convertedPrimaryValue)
+    ? convertedPrimaryValue.toFixed(2)
+    : "0.00";
+
+  const chartData = useMemo(() => {
+    return timeseriesSeries.map((entry) => {
+      if (entry.value == null || !Number.isFinite(entry.value)) {
+        return { date: entry.date, value: null };
+      }
+
+      const numericValue = Number(entry.value);
+      const convertedValue = useFahrenheit
+        ? celsiusToFahrenheit(numericValue)
+        : numericValue;
+
+      return {
+        date: entry.date,
+        value: Number(convertedValue.toFixed(2)),
+      };
+    });
+  }, [timeseriesSeries, useFahrenheit]);
+
+  const [zoomWindow, setZoomWindow] = useState<[number, number] | null>(null);
+
+  useEffect(() => {
+    setZoomWindow(null);
+  }, [chartData]);
+
+  const displayedChartData = useMemo(() => {
+    if (!zoomWindow || chartData.length === 0) {
+      return chartData;
+    }
+    const [start, end] = zoomWindow;
+    return chartData.slice(start, Math.min(end + 1, chartData.length));
+  }, [chartData, zoomWindow]);
+
+  const yAxisDomain = useMemo(() => {
+    const values = displayedChartData
+      .map((point) => point.value)
+      .filter((value): value is number => typeof value === "number");
+    if (!values.length) {
+      return undefined;
+    }
+    let min = Math.min(...values);
+    let max = Math.max(...values);
+    if (!Number.isFinite(min) || !Number.isFinite(max)) {
+      return undefined;
+    }
+    if (min === max) {
+      const padding = Math.abs(min) * 0.05 || 1;
+      min -= padding;
+      max += padding;
+    } else {
+      const padding = (max - min) * 0.1;
+      min -= padding;
+      max += padding;
+    }
+    return [min, max] as [number, number];
+  }, [displayedChartData]);
+
+  const handleChartWheel = useCallback(
+    (event: React.WheelEvent<HTMLDivElement>) => {
+      if (chartData.length === 0) {
+        return;
+      }
+      event.preventDefault();
+      const directionIn = event.deltaY < 0;
+      setZoomWindow((current) => {
+        const total = chartData.length;
+        const currentWindow = current ?? [0, total - 1];
+        let [start, end] = currentWindow;
+        const windowSize = end - start + 1;
+        const minWindow = Math.max(5, Math.ceil(total * 0.05));
+        const zoomStep = Math.max(1, Math.ceil(windowSize * 0.1));
+
+        if (directionIn) {
+          if (windowSize <= minWindow) {
+            return currentWindow;
+          }
+          start = Math.min(start + zoomStep, end - minWindow + 1);
+          end = Math.max(end - zoomStep, start + minWindow - 1);
+          return [start, end];
+        }
+
+        start = Math.max(0, start - zoomStep);
+        end = Math.min(total - 1, end + zoomStep);
+
+        if (start === 0 && end === total - 1) {
+          return null;
+        }
+
+        return [start, end];
+      });
+    },
+    [chartData],
+  );
+
   // Get the dataset ID - try multiple possible locations
   const datasetId = useMemo(() => {
     return (
@@ -146,14 +380,10 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }, [currentDataset]);
 
-  // Determine if this is a high-frequency dataset (CMORPH or NDVI)
+  // Determine if this dataset should use the legacy single-month range (e.g., NDVI)
   const isHighFrequencyDataset = useMemo(() => {
     const datasetName = (currentDataset?.name || "").toLowerCase();
-    return (
-      datasetName.includes("cmorph") ||
-      datasetName.includes("vegetation") ||
-      datasetName.includes("ndvi")
-    );
+    return datasetName.includes("vegetation") || datasetName.includes("ndvi");
   }, [currentDataset]);
 
   useEffect(() => {
@@ -265,16 +495,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       document.removeEventListener("mouseup", handleMouseUp);
     };
   }, [isDragging, dragStart, isCollapsed]);
-
-  const chartData = useMemo(() => {
-    return timeseriesSeries.map((entry) => ({
-      date: entry.date,
-      value:
-        entry.value != null && Number.isFinite(entry.value)
-          ? Number(entry.value.toFixed(2))
-          : null,
-    }));
-  }, [timeseriesSeries]);
 
   // Calculate date range based on selected option
   const calculateDateRange = (): { start: Date; end: Date } => {

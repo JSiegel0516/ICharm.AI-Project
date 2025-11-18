@@ -20,6 +20,7 @@ import {
   GlobeSettings,
 } from "@/types";
 import { pressureLevels } from "@/utils/constants";
+import { isSeaSurfaceTemperatureDataset } from "@/utils/datasetGuards";
 import { SideButtons } from "./_components/SideButtons";
 import { Tutorial } from "./_components/Tutorial";
 
@@ -113,7 +114,97 @@ const parseNumericList = (input: unknown): number[] => {
   return [];
 };
 
+const normalizeLevelUnit = (
+  unit?: string | null,
+  descriptor?: string | null,
+) => {
+  const normalized = unit?.trim().toLowerCase();
+  if (normalized) {
+    if (
+      normalized === "mb" ||
+      normalized.includes("millibar") ||
+      normalized.includes("mbar")
+    ) {
+      return "millibar";
+    }
+    if (normalized === "hpa" || normalized.includes("hectopascal")) {
+      return "hPa";
+    }
+    if (normalized === "pa" || normalized.includes("pascal")) {
+      return "Pa";
+    }
+    if (normalized === "m" || normalized.includes("meter")) {
+      return "m";
+    }
+    if (normalized === "km" || normalized.includes("kilometer")) {
+      return "km";
+    }
+    return unit.trim();
+  }
+
+  const descriptorText = descriptor?.toLowerCase() ?? "";
+  if (
+    descriptorText.includes("pressure") ||
+    descriptorText.includes("millibar") ||
+    descriptorText.includes("mbar")
+  ) {
+    return "millibar";
+  }
+  if (
+    descriptorText.includes("height") ||
+    descriptorText.includes("altitude")
+  ) {
+    return "m";
+  }
+  return "level";
+};
+
+const isPressureUnit = (unit: string) => {
+  const normalized = unit.toLowerCase();
+  return (
+    normalized === "millibar" || normalized === "hpa" || normalized === "pa"
+  );
+};
+
+const formatLevelValue = (value: number) => {
+  if (Number.isInteger(value)) {
+    return value.toString();
+  }
+  const fixed = value.toFixed(1);
+  return fixed.endsWith(".0") ? fixed.slice(0, -2) : fixed;
+};
+
+const formatPressureLevelLabel = (value: number, unit: string) => {
+  const formattedValue = formatLevelValue(value);
+  if (unit === "level") {
+    return formattedValue;
+  }
+  return `${formattedValue} ${unit}`;
+};
+
+const parseNumericList = (input: unknown): number[] => {
+  if (!input) return [];
+  if (Array.isArray(input)) {
+    return input
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value));
+  }
+  if (typeof input === "string") {
+    const matches = input.match(/-?\d+(\.\d+)?/g);
+    if (!matches) return [];
+    return matches
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value));
+  }
+  if (typeof input === "number" && Number.isFinite(input)) {
+    return [input];
+  }
+  return [];
+};
+
 export default function HomePage() {
+  const { showColorbar, currentDataset, toggleColorbar, colorBarOrientation } =
+    useAppState();
   const { showColorbar, currentDataset, toggleColorbar, colorBarOrientation } =
     useAppState();
   const globeRef = useRef<GlobeRef>(null);
@@ -132,6 +223,10 @@ export default function HomePage() {
   const [colorBarPosition, setColorBarPosition] = useState({ x: 24, y: 300 });
 
   const datasetPressureLevels = useMemo<PressureLevel[] | null>(() => {
+    if (isSeaSurfaceTemperatureDataset(currentDataset)) {
+      return null;
+    }
+
     const backend = currentDataset?.backend;
     if (!backend) {
       return null;
@@ -207,6 +302,7 @@ export default function HomePage() {
   // Pressure Level State
   const [selectedPressureLevel, setSelectedPressureLevel] =
     useState<PressureLevel | null>(null);
+  useState<PressureLevel | null>(null);
   const [rasterMeta, setRasterMeta] = useState<{
     units?: string | null;
     min?: number | null;
@@ -219,6 +315,7 @@ export default function HomePage() {
     boundaryLinesVisible: true,
     geographicLinesVisible: false,
     rasterOpacity: 0.65,
+    hideZeroPrecipitation: false,
     hideZeroPrecipitation: false,
   });
 
@@ -285,9 +382,47 @@ export default function HomePage() {
     }));
   }, []);
 
+  const handleHideZeroPrecipToggle = useCallback((enabled: boolean) => {
+    setGlobeSettings((prev) => ({
+      ...prev,
+      hideZeroPrecipitation: enabled,
+    }));
+  }, []);
+
   useEffect(() => {
     setRasterMeta(null);
   }, [currentDataset]);
+
+  useEffect(() => {
+    if (!hasPressureLevels || !datasetPressureLevels) {
+      setSelectedPressureLevel(null);
+      return;
+    }
+
+    setSelectedPressureLevel((prev) => {
+      if (prev) {
+        const match = datasetPressureLevels.find(
+          (level) => level.value === prev.value,
+        );
+        if (match) {
+          return match;
+        }
+      }
+      return datasetPressureLevels[0];
+    });
+  }, [
+    hasPressureLevels,
+    datasetPressureLevels,
+    currentDataset?.id,
+    currentDataset?.backend?.id,
+  ]);
+
+  useEffect(() => {
+    if (!hasPressureLevels) {
+      return;
+    }
+    setRasterMeta(null);
+  }, [selectedPressureLevel, hasPressureLevels]);
 
   useEffect(() => {
     if (!hasPressureLevels || !datasetPressureLevels) {
@@ -332,6 +467,17 @@ export default function HomePage() {
         selectedPressureLevel.unit,
       )}`
     : undefined;
+  const selectedLevelValue =
+    hasPressureLevels && selectedPressureLevel
+      ? selectedPressureLevel.value
+      : null;
+
+  const pressureLevelHelperText = selectedPressureLevel
+    ? `Current: ${formatPressureLevelLabel(
+        selectedPressureLevel.value,
+        selectedPressureLevel.unit,
+      )}`
+    : undefined;
 
   const memoizedGlobe = useMemo(
     () => (
@@ -340,6 +486,7 @@ export default function HomePage() {
         currentDataset={currentDataset}
         selectedDate={selectedDate}
         selectedLevel={selectedLevelValue}
+        hideZeroPrecipitation={globeSettings.hideZeroPrecipitation}
         hideZeroPrecipitation={globeSettings.hideZeroPrecipitation}
         onRegionClick={handleRegionClick}
         satelliteLayerVisible={globeSettings.satelliteLayerVisible}
@@ -358,6 +505,7 @@ export default function HomePage() {
       globeSettings.boundaryLinesVisible,
       globeSettings.geographicLinesVisible,
       globeSettings.rasterOpacity,
+      globeSettings.hideZeroPrecipitation,
       globeSettings.hideZeroPrecipitation,
     ],
   );
@@ -379,6 +527,7 @@ export default function HomePage() {
           onGeographicLinesToggle={handleGeographicLinesToggle}
           onRasterOpacityChange={handleRasterOpacityChange}
           onHideZeroPrecipToggle={handleHideZeroPrecipToggle}
+          onHideZeroPrecipToggle={handleHideZeroPrecipToggle}
         />
 
         {/* Tutorial Modal */}
@@ -399,6 +548,7 @@ export default function HomePage() {
           onToggleCollapse={setColorBarCollapsed}
           rasterMeta={rasterMeta}
           orientation={colorBarOrientation}
+          orientation={colorBarOrientation}
         />
 
         {/* Region Info Panel */}
@@ -412,6 +562,7 @@ export default function HomePage() {
           colorBarCollapsed={colorBarCollapsed}
           currentDataset={currentDataset}
           selectedDate={selectedDate}
+          temperatureUnit={temperatureUnit}
         />
 
         {/* Bottom Controls */}
@@ -428,6 +579,23 @@ export default function HomePage() {
             </div>
 
             {/* Pressure Levels Selector */}
+            {hasPressureLevels && datasetPressureLevels && (
+              <div
+                id="pressure"
+                className="pointer-events-auto absolute bottom-0 flex items-center gap-4"
+                style={{
+                  left: "calc(50% + 300px)",
+                  transform: "translateX(0)",
+                }}
+              >
+                <PressureLevelsSelector
+                  selectedLevel={selectedPressureLevel}
+                  onLevelChange={handlePressureLevelChange}
+                  levels={datasetPressureLevels}
+                  helperText={pressureLevelHelperText}
+                />
+              </div>
+            )}
             {hasPressureLevels && datasetPressureLevels && (
               <div
                 id="pressure"

@@ -14,6 +14,13 @@ import type {
   RegionData,
   ColorBarOrientation,
 } from "@/types";
+import type {
+  Dataset,
+  AppState,
+  TemperatureUnit,
+  RegionData,
+  ColorBarOrientation,
+} from "@/types";
 import { mockDatasets } from "@/utils/constants";
 
 type DatabaseDataset = {
@@ -69,6 +76,8 @@ type AppStateContextType = ReturnType<typeof useAppStateInternal>;
 const AppStateContext = createContext<AppStateContextType | undefined>(
   undefined,
 );
+
+const COLOR_BAR_ORIENTATION_STORAGE_KEY = "icharm_colorBarOrientation";
 
 // Certain datasets report "present" in metadata even though archives stop earlier.
 const DATASET_END_OVERRIDES: Record<string, string> = {
@@ -256,6 +265,14 @@ const useAppStateInternal = () => {
       rasterOpacity: 0.65,
       hideZeroPrecipitation: false,
     },
+    colorBarOrientation: "horizontal",
+    globeSettings: {
+      satelliteLayerVisible: true,
+      boundaryLinesVisible: true,
+      geographicLinesVisible: false,
+      rasterOpacity: 0.65,
+      hideZeroPrecipitation: false,
+    },
   });
 
   const [selectedYear, setSelectedYear] = useState<number>(
@@ -278,6 +295,35 @@ const useAppStateInternal = () => {
       dataset: "Global Precipitation Climatology Project",
     },
   });
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const storedOrientation = window.localStorage.getItem(
+        COLOR_BAR_ORIENTATION_STORAGE_KEY,
+      );
+      if (
+        storedOrientation === "horizontal" ||
+        storedOrientation === "vertical"
+      ) {
+        const normalizedOrientation = storedOrientation as ColorBarOrientation;
+        setState((prev) => {
+          if (prev.colorBarOrientation === normalizedOrientation) {
+            return prev;
+          }
+          return {
+            ...prev,
+            colorBarOrientation: normalizedOrientation,
+          };
+        });
+      }
+    } catch (error) {
+      console.warn("Failed to load color bar orientation preference:", error);
+    }
+  }, []);
 
   const setShowSettings = useCallback((show: boolean) => {
     setState((prev) => ({ ...prev, showSettings: show }));
@@ -412,6 +458,7 @@ const useAppStateInternal = () => {
     setShowTutorial,
     setShowChat,
     toggleColorbar,
+    setColorBarOrientation,
     setColorBarOrientation,
     setCurrentDataset,
     refreshDatasets,

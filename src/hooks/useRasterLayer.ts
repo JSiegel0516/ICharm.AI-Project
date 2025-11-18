@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Buffer } from "buffer";
 import type { Dataset } from "@/types";
+import { isSeaSurfaceTemperatureDataset } from "@/utils/datasetGuards";
 
 export type RasterLayerTexture = {
   imageUrl: string;
@@ -24,6 +25,7 @@ type UseRasterLayerOptions = {
   dataset?: Dataset;
   date?: Date;
   level?: number | null;
+  maskZeroValues?: boolean;
   maskZeroValues?: boolean;
 };
 
@@ -127,6 +129,7 @@ export const useRasterLayer = ({
   date,
   level,
   maskZeroValues = false,
+  maskZeroValues = false,
 }: UseRasterLayerOptions): UseRasterLayerResult => {
   const [data, setData] = useState<RasterLayerData | undefined>();
   const [isLoading, setIsLoading] = useState(false);
@@ -215,6 +218,13 @@ export const useRasterLayer = ({
       }
     };
 
+    const abortOngoingRequest = () => {
+      if (controllerRef.current) {
+        controllerRef.current.abort();
+        controllerRef.current = null;
+      }
+    };
+
     if (!backendDatasetId || !date) {
       setData(undefined);
       setError(null);
@@ -229,9 +239,20 @@ export const useRasterLayer = ({
       setError(null);
       setIsLoading(true);
       return () => abortOngoingRequest();
+      abortOngoingRequest();
+      return () => abortOngoingRequest();
+    }
+
+    if (waitingForLevel) {
+      abortOngoingRequest();
+      setData(undefined);
+      setError(null);
+      setIsLoading(true);
+      return () => abortOngoingRequest();
     }
 
     const run = async () => {
+      abortOngoingRequest();
       abortOngoingRequest();
       const controller = new AbortController();
       controllerRef.current = controller;
@@ -247,6 +268,7 @@ export const useRasterLayer = ({
             date: formatDateForApi(date),
             level: level ?? undefined,
             cssColors,
+            maskZeroValues: maskZeroValues || undefined,
             maskZeroValues: maskZeroValues || undefined,
           }),
           signal: controller.signal,
@@ -300,7 +322,16 @@ export const useRasterLayer = ({
 
     return () => {
       abortOngoingRequest();
+      abortOngoingRequest();
     };
+  }, [
+    backendDatasetId,
+    dataset?.units,
+    date,
+    level,
+    maskZeroValues,
+    waitingForLevel,
+  ]);
   }, [
     backendDatasetId,
     dataset?.units,
