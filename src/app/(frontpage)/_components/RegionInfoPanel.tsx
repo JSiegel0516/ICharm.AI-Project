@@ -1,6 +1,12 @@
 "use client";
 import { Monitor } from "lucide-react";
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useMemo,
+  useCallback,
+} from "react";
 import { ChevronDown, X, MapPin, Calendar } from "lucide-react";
 import { RegionInfoPanelProps } from "@/types";
 import {
