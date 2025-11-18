@@ -441,6 +441,7 @@ export default function HomePage() {
           regionData={regionInfoData.regionData}
           colorBarPosition={colorBarPosition}
           colorBarCollapsed={colorBarCollapsed}
+          colorBarOrientation={colorBarOrientation}
           currentDataset={currentDataset}
           selectedDate={selectedDate}
           temperatureUnit={temperatureUnit}

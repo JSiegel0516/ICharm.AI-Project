@@ -143,6 +143,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   },
   colorBarPosition = { x: 24, y: 300 },
   colorBarCollapsed = false,
+  colorBarOrientation = "horizontal",
   className = "",
   currentDataset,
   selectedDate,
@@ -360,13 +361,31 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     return datasetName.includes("vegetation") || datasetName.includes("ndvi");
   }, [currentDataset]);
 
+  const getOppositeColorBarAnchor = useCallback(() => {
+    if (typeof window === "undefined") {
+      return colorBarOrientation === "vertical"
+        ? { x: 24, y: 180 }
+        : { x: 24, y: 120 };
+    }
+
+    const margin = 16;
+    if (colorBarOrientation === "vertical") {
+      const estimatedHeight = 290;
+      return { x: margin, y: window.innerHeight - estimatedHeight - margin };
+    }
+
+    const cardWidth = 280;
+    const verticalOffset = Math.round(window.innerHeight * 0.2);
+    return { x: window.innerWidth - cardWidth - margin, y: verticalOffset };
+  }, [colorBarOrientation]);
+
   useEffect(() => {
-    if (show && typeof window !== "undefined") {
-      const initialPos = { x: window.innerWidth - 350, y: 200 };
+    if (show) {
+      const initialPos = getOppositeColorBarAnchor();
       setPosition(initialPos);
       setPreviousPosition(initialPos);
     }
-  }, [show]);
+  }, [show, getOppositeColorBarAnchor]);
 
   useEffect(() => {
     const handleResize = () => {
