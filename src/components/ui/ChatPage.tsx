@@ -644,7 +644,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
 
   return (
     <>
-      <div className="fixed right-6 bottom-6 z-50 flex items-end gap-3">
+      <div className="pointer-events-none fixed right-6 bottom-6 z-50 flex items-end gap-3">
         {isSearchCollapsed && (
           <div
             className="pointer-events-auto mb-3 cursor-pointer rounded-xl border border-gray-700/30 bg-neutral-800/60 px-3 py-2 text-blue-100 backdrop-blur-sm transition-all duration-200 hover:shadow-lg"
@@ -689,7 +689,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
         <div
           className={`flex h-[500px] w-80 transform flex-col rounded-xl border border-gray-600/30 bg-neutral-800/95 shadow-2xl backdrop-blur-sm transition-all duration-300 ease-out ${
             show
-              ? "translate-y-0 opacity-100"
+              ? "pointer-events-auto translate-y-0 opacity-100"
               : "pointer-events-none translate-y-6 opacity-0"
           }`}
         >
