@@ -4,6 +4,11 @@ import {
   buildContextString,
 } from "@/utils/ragRetriever";
 import { ChatDB } from "@/lib/db";
+import { ConversationContextPayload } from "@/types";
+import {
+  sanitizeConversationContext,
+  buildTrendInsightPrompt,
+} from "./trendAnalysis";
 
 const HF_MODEL =
   process.env.LLAMA_MODEL ?? "meta-llama/Meta-Llama-3-8B-Instruct";
@@ -12,6 +17,8 @@ const TEST_USER_EMAIL =
 const LLM_SERVICE_URL = (
   process.env.LLM_SERVICE_URL ?? "http://localhost:8001"
 ).replace(/\/$/, "");
+const DATA_SERVICE_URL =
+  process.env.DATA_SERVICE_URL ?? "http://localhost:8000";
 
 type ChatMessage = {
   role: "system" | "user" | "assistant";
@@ -21,6 +28,7 @@ type ChatMessage = {
 type ChatRequestPayload = {
   messages?: ChatMessage[];
   sessionId?: string | null;
+  context?: ConversationContextPayload | null;
 };
 
 function isValidMessagesPayload(payload: unknown): payload is ChatMessage[] {
@@ -85,11 +93,18 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { messages, sessionId: incomingSessionId } = body ?? {};
+  const {
+    messages,
+    sessionId: incomingSessionId,
+    context: rawContext,
+  } = body ?? {};
 
   if (!isValidMessagesPayload(messages)) {
     return Response.json({ error: "Invalid chat payload" }, { status: 400 });
   }
+
+  const conversationContext =
+    sanitizeConversationContext(rawContext) ?? undefined;
 
   const sanitizedSessionId =
     typeof incomingSessionId === "string" && incomingSessionId.trim()
@@ -187,6 +202,27 @@ Instructions:
     }
   }
   // === RAG ENHANCEMENT END ===
+
+  if (conversationContext && lastUserMessage?.content) {
+    try {
+      const trendPrompt = await buildTrendInsightPrompt({
+        query: lastUserMessage.content,
+        context: conversationContext,
+        dataServiceUrl: DATA_SERVICE_URL,
+      });
+      if (trendPrompt) {
+        enhancedMessages = [
+          {
+            role: "system",
+            content: trendPrompt,
+          },
+          ...enhancedMessages,
+        ];
+      }
+    } catch (error) {
+      console.error("Trend insight generation failed:", error);
+    }
+  }
 
   let sessionId = sanitizedSessionId;
   let testUserId: string | null = null;

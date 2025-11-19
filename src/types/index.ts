@@ -61,6 +61,20 @@ export interface ChatMessage {
   }>;
 }
 
+export interface ConversationContextPayload {
+  datasetId?: string | null;
+  datasetName?: string;
+  datasetUnits?: string | null;
+  datasetStartDate?: string | null;
+  datasetEndDate?: string | null;
+  selectedDate?: string | null;
+  location?: {
+    latitude?: number | null;
+    longitude?: number | null;
+    name?: string | null;
+  } | null;
+}
+
 export interface ChatMessageProps {
   message: ChatMessage;
 }
@@ -129,11 +143,16 @@ export interface AppState {
   showChat: boolean;
   showColorbar: boolean;
   showRegionInfo: boolean;
-  regionInfoData?: {
+  regionInfoData: {
     latitude: number;
     longitude: number;
     regionData: RegionData;
   };
+  currentLocationMarker?: {
+    latitude: number;
+    longitude: number;
+    name?: string | null;
+  } | null;
   currentDataset: Dataset;
   datasets: Dataset[];
   globePosition: GlobePosition;

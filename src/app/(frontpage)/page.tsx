@@ -122,11 +122,17 @@ export default function HomePage() {
     colorBarOrientation,
     locationFocusRequest,
     clearLocationFocusRequest,
+    showRegionInfo,
+    setShowRegionInfo,
+    regionInfoData,
+    setRegionInfoData,
+    selectedDate,
+    setSelectedDate,
+    setCurrentLocationMarker,
   } = useAppState();
   const globeRef = useRef<GlobeRef>(null);
 
   // Date & Time State
-  const [selectedDate, setSelectedDate] = useState(new Date());
   const [isTimebarPlaying, setIsTimebarPlaying] = useState(false);
 
   // UI State
@@ -198,23 +204,6 @@ export default function HomePage() {
 
   const hasPressureLevels = Boolean(datasetPressureLevels?.length);
 
-  // Region Info State
-  const [showRegionInfo, setShowRegionInfo] = useState(false);
-  const [regionInfoData, setRegionInfoData] = useState<{
-    latitude: number;
-    longitude: number;
-    regionData: RegionData;
-  }>({
-    latitude: 21.25,
-    longitude: -71.25,
-    regionData: {
-      name: "GPCP V2.3 Precipitation",
-      precipitation: 0.9,
-      temperature: 24.5,
-      dataset: "Global Precipitation Climatation Project",
-    },
-  });
-
   // Pressure Level State
   const [selectedPressureLevel, setSelectedPressureLevel] =
     useState<PressureLevel | null>(null);
@@ -234,9 +223,12 @@ export default function HomePage() {
   });
 
   // Event Handlers
-  const handleDateChange = useCallback((date: Date) => {
-    setSelectedDate(date);
-  }, []);
+  const handleDateChange = useCallback(
+    (date: Date) => {
+      setSelectedDate(date);
+    },
+    [setSelectedDate],
+  );
 
   const handlePlayPause = useCallback((isPlaying: boolean) => {
     setIsTimebarPlaying(isPlaying);
@@ -263,14 +255,19 @@ export default function HomePage() {
         },
       });
       setShowRegionInfo(true);
+      setCurrentLocationMarker({
+        latitude,
+        longitude,
+        name: data?.name,
+      });
     },
-    [],
+    [setRegionInfoData, setShowRegionInfo, setCurrentLocationMarker],
   );
 
   const handleRegionInfoClose = useCallback(() => {
     setShowRegionInfo(false);
     globeRef.current?.clearMarker();
-  }, []);
+  }, [setShowRegionInfo]);
 
   // Globe Settings Handlers
   const handleSatelliteToggle = useCallback((visible: boolean) => {

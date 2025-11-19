@@ -243,6 +243,21 @@ const useAppStateInternal = () => {
     showRegionInfo: false,
     datasets: mockDatasets, // Start with mock, will be replaced by DB data
     currentDataset: mockDatasets[0],
+    regionInfoData: {
+      latitude: 21.25,
+      longitude: -71.25,
+      regionData: {
+        name: "GPCP V2.3 Precipitation",
+        precipitation: 0.9,
+        temperature: 24.5,
+        dataset: "Global Precipitation Climatology Project",
+      },
+    },
+    currentLocationMarker: {
+      latitude: 21.25,
+      longitude: -71.25,
+      name: "GPCP V2.3 Precipitation",
+    },
     globePosition: {
       latitude: 0,
       longitude: 0,
@@ -264,6 +279,7 @@ const useAppStateInternal = () => {
   const [selectedYear, setSelectedYear] = useState<number>(
     new Date().getFullYear(),
   );
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [temperatureUnit, setTemperatureUnit] =
     useState<TemperatureUnit>("celsius");
   const [showRegionInfo, setShowRegionInfo] = useState<boolean>(false);
@@ -327,6 +343,22 @@ const useAppStateInternal = () => {
     setState((prev) => ({ ...prev, showChat: show }));
   }, []);
 
+  const setCurrentLocationMarker = useCallback(
+    (
+      marker: {
+        latitude: number;
+        longitude: number;
+        name?: string | null;
+      } | null,
+    ) => {
+      setState((prev) => ({
+        ...prev,
+        currentLocationMarker: marker,
+      }));
+    },
+    [],
+  );
+
   const toggleColorbar = useCallback(() => {
     setState((prev) => ({ ...prev, showColorbar: !prev.showColorbar }));
   }, []);
@@ -340,6 +372,11 @@ const useAppStateInternal = () => {
           mode: "focus",
           ...target,
         },
+        currentLocationMarker: {
+          latitude: target.latitude,
+          longitude: target.longitude,
+          name: target.name ?? null,
+        },
       }));
     },
     [],
@@ -352,6 +389,7 @@ const useAppStateInternal = () => {
         id: Date.now(),
         mode: "clear",
       },
+      currentLocationMarker: null,
     }));
   }, []);
 
@@ -474,6 +512,8 @@ const useAppStateInternal = () => {
     ...state,
     selectedYear,
     setSelectedYear,
+    selectedDate,
+    setSelectedDate,
     temperatureUnit,
     setTemperatureUnit,
     showRegionInfo,
@@ -488,6 +528,8 @@ const useAppStateInternal = () => {
     setColorBarOrientation,
     setCurrentDataset,
     refreshDatasets,
+    currentLocationMarker: state.currentLocationMarker,
+    setCurrentLocationMarker,
     requestLocationFocus,
     requestLocationMarkerClear,
     clearLocationFocusRequest,

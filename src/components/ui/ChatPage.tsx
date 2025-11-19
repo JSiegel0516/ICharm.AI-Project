@@ -13,7 +13,11 @@ import {
   Trash2,
 } from "lucide-react";
 import { useAppState } from "@/context/HeaderContext";
-import { ChatMessage, ChatPageProps } from "@/types";
+import {
+  ChatMessage,
+  ChatPageProps,
+  ConversationContextPayload,
+} from "@/types";
 
 // Position the search panel so its top aligns with the top edge of the CharmBot
 // popout and sits just to the left of it. Tweaked via manual inspection.
@@ -50,8 +54,26 @@ const formatUpdatedAt = (date: Date) =>
     minute: "2-digit",
   });
 
+const formatDateOnly = (value?: Date | string | null): string | null => {
+  if (!value) {
+    return null;
+  }
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed.toISOString().split("T")[0] ?? null;
+};
+
 const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
-  const { requestLocationFocus, requestLocationMarkerClear } = useAppState();
+  const {
+    requestLocationFocus,
+    requestLocationMarkerClear,
+    currentDataset,
+    regionInfoData,
+    selectedDate,
+    currentLocationMarker,
+  } = useAppState();
   const [messages, setMessages] = useState<ChatMessage[]>([
     createGreetingMessage(),
   ]);
@@ -82,6 +104,57 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
   const [isDraggingSearch, setIsDraggingSearch] = useState(false);
   const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const dragPointerRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const buildConversationContext =
+    useCallback((): ConversationContextPayload | null => {
+      if (!currentDataset) {
+        return null;
+      }
+
+      const datasetId =
+        currentDataset.backend?.id ??
+        currentDataset.backendId ??
+        currentDataset.id ??
+        null;
+
+      const fallbackLocation =
+        regionInfoData &&
+        typeof regionInfoData.latitude === "number" &&
+        typeof regionInfoData.longitude === "number"
+          ? {
+              latitude: regionInfoData.latitude,
+              longitude: regionInfoData.longitude,
+              name: regionInfoData.regionData?.name ?? null,
+            }
+          : null;
+
+      const primaryLocation = currentLocationMarker ?? fallbackLocation;
+
+      const locationPayload =
+        primaryLocation &&
+        typeof primaryLocation.latitude === "number" &&
+        typeof primaryLocation.longitude === "number"
+          ? {
+              latitude: primaryLocation.latitude,
+              longitude: primaryLocation.longitude,
+              name: primaryLocation.name ?? null,
+            }
+          : null;
+
+      return {
+        datasetId,
+        datasetName: currentDataset.name,
+        datasetUnits:
+          currentDataset.units ??
+          currentDataset.backend?.units ??
+          currentDataset.backend?.layerParameter ??
+          null,
+        datasetStartDate: formatDateOnly(currentDataset.startDate),
+        datasetEndDate: formatDateOnly(currentDataset.endDate),
+        selectedDate: formatDateOnly(selectedDate),
+        location: locationPayload,
+      };
+    }, [currentDataset, regionInfoData, selectedDate, currentLocationMarker]);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -410,6 +483,8 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
         content: msg.message,
       }));
 
+      const contextPayload = buildConversationContext();
+
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000);
 
@@ -421,6 +496,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
         body: JSON.stringify({
           messages: conversationHistory,
           sessionId: activeSessionId,
+          context: contextPayload ?? undefined,
         }),
         signal: controller.signal,
       });
