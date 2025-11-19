@@ -23,9 +23,25 @@ const TREND_KEYWORDS = [
   "long-term",
   "decade",
   "year over year",
+  "dataset",
+  "analysis",
+  "analyze",
+  "summarize",
+  "summary",
+  "insight",
+  "pattern",
+  "behavior",
+  "overview",
 ];
 
 const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000;
+const FALLBACK_WINDOW_YEARS = 30;
+const GLOBAL_BOUNDS = {
+  north: 90,
+  south: -90,
+  east: 180,
+  west: -180,
+};
 
 type TrendInsightOptions = {
   query: string;
@@ -77,6 +93,12 @@ const formatNumber = (value: number, fractionDigits = 2): string => {
 const formatDateOnly = (value: Date): string =>
   value.toISOString().split("T")[0] ?? "";
 
+const parseDateSafe = (value?: string | null): Date | null => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 const estimateStepMs = (series: Array<{ date: string }>): number | null => {
   for (let i = 1; i < series.length; i++) {
     const prev = new Date(series[i - 1].date);
@@ -106,7 +128,19 @@ const normalizeNumber = (value: unknown): number | null => {
 };
 
 const clampWindowYear = (years?: number): number =>
-  typeof years === "number" && years > 1 && years < 100 ? years : 15;
+  typeof years === "number" && years > 1 && years < 150
+    ? years
+    : FALLBACK_WINDOW_YEARS;
+
+const YEAR_WINDOW_REGEX = /(?:last|past)\s+(\d{1,3})\s*(?:years|yrs|year)/i;
+
+const parseRequestedWindow = (query: string | undefined): number | null => {
+  if (!query) return null;
+  const match = query.match(YEAR_WINDOW_REGEX);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+};
 
 export const sanitizeConversationContext = (
   raw: unknown,
@@ -157,47 +191,56 @@ export const buildTrendInsightPrompt = async ({
   }
 
   const datasetId = normalizeString(context.datasetId ?? undefined);
-  const lat = normalizeNumber(context.location?.latitude);
-  const lon = normalizeNumber(context.location?.longitude);
-
-  if (!datasetId || lat === null || lon === null) {
+  if (!datasetId) {
     return null;
   }
 
-  const targetWindowYears = clampWindowYear(windowYears);
+  const lat = normalizeNumber(context.location?.latitude);
+  const lon = normalizeNumber(context.location?.longitude);
+  const hasLocation = lat !== null && lon !== null;
+
+  const requestedWindowYears =
+    typeof windowYears === "number" ? windowYears : parseRequestedWindow(query);
   const now = new Date();
 
-  const selectedDate = context.selectedDate
-    ? new Date(context.selectedDate)
-    : now;
-  const safeSelectedDate = Number.isNaN(selectedDate.getTime())
-    ? now
-    : selectedDate;
+  const datasetStart = parseDateSafe(context.datasetStartDate);
+  const datasetEnd = parseDateSafe(context.datasetEndDate);
 
-  const startCandidate = new Date(safeSelectedDate);
-  startCandidate.setFullYear(
-    safeSelectedDate.getFullYear() - targetWindowYears,
-  );
+  const referenceEnd = (() => {
+    if (context.selectedDate) {
+      const parsed = new Date(context.selectedDate);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+    if (datasetEnd && !Number.isNaN(datasetEnd.getTime())) {
+      return datasetEnd;
+    }
+    return now;
+  })();
 
-  const datasetStart = context.datasetStartDate
-    ? new Date(context.datasetStartDate)
-    : null;
-  const datasetEnd = context.datasetEndDate
-    ? new Date(context.datasetEndDate)
-    : null;
+  const targetWindowYears = clampWindowYear(requestedWindowYears ?? undefined);
 
+  const fallbackStart = new Date(referenceEnd);
+  fallbackStart.setFullYear(referenceEnd.getFullYear() - FALLBACK_WINDOW_YEARS);
+
+  const requestedStart = new Date(referenceEnd);
+  requestedStart.setFullYear(referenceEnd.getFullYear() - targetWindowYears);
+
+  const desiredStart = requestedWindowYears ? requestedStart : fallbackStart;
   const safeStart =
-    datasetStart && datasetStart > startCandidate
-      ? datasetStart
-      : startCandidate;
-  const safeEnd =
-    datasetEnd && datasetEnd < safeSelectedDate ? datasetEnd : safeSelectedDate;
+    datasetStart && datasetStart > desiredStart ? datasetStart : desiredStart;
+  const safeEnd = referenceEnd;
+
+  if (safeStart >= safeEnd) {
+    return null;
+  }
 
   if (safeStart > safeEnd) {
     return null;
   }
 
-  const payload = {
+  const payload: Record<string, any> = {
     datasetIds: [datasetId],
     startDate: formatDateOnly(safeStart),
     endDate: formatDateOnly(safeEnd),
@@ -206,8 +249,13 @@ export const buildTrendInsightPrompt = async ({
     analysisModel: "raw",
     aggregation: "mean",
     chartType: "line",
-    focusCoordinates: `${lat},${lon}`,
   };
+
+  if (hasLocation && lat !== null && lon !== null) {
+    payload.focusCoordinates = `${lat},${lon}`;
+  } else {
+    payload.spatialBounds = GLOBAL_BOUNDS;
+  }
 
   const response = await fetch(
     `${dataServiceUrl.replace(/\/$/, "")}/api/v2/timeseries/extract`,
@@ -277,13 +325,18 @@ export const buildTrendInsightPrompt = async ({
     normalizeString(context.datasetName) ??
     normalizeString(metadata?.name) ??
     datasetId;
-  const locationLabel =
-    normalizeString(context.location?.name) ??
-    `${formatNumber(lat, 2)}°, ${formatNumber(lon, 2)}°`;
+  const locationLabel = hasLocation
+    ? (normalizeString(context.location?.name) ??
+      `${formatNumber(lat!, 2)}°, ${formatNumber(lon!, 2)}°`)
+    : null;
 
   const lines = [
     `Dataset: ${datasetLabel}`,
-    `Location: ${locationLabel} (lat ${formatNumber(lat, 2)}°, lon ${formatNumber(lon, 2)}°)`,
+    `Location mode: ${
+      hasLocation && locationLabel
+        ? `Marker at ${locationLabel}`
+        : "No marker selected (global extraction)"
+    }`,
     `Period analyzed: ${formatDateOnly(safeStart)} to ${formatDateOnly(safeEnd)} (${series.length} records, ~${targetWindowYears} years)`,
     `Average value: ${formatNumber(mean, 2)} ${units}`,
     `Starting value: ${formatNumber(firstPoint.value, 2)} ${units} on ${firstPoint.date}`,
@@ -304,12 +357,22 @@ export const buildTrendInsightPrompt = async ({
 
   const instructions = [
     "You are the iCharm climate assistant.",
-    "Explain the long-term behavior of the dataset using the quantitative summary below.",
+    "Explain the behaviour of the currently loaded dataset over the analyzed period in the summary.",
     "Reference the dataset name, time window, and whether values are increasing, decreasing, or stable.",
     "Highlight notable extremes and relate them to well-known climate drivers when possible.",
     "Do not invent numbers beyond what is provided and keep units consistent.",
     `User question: "${query}"`,
   ];
+
+  if (hasLocation && locationLabel) {
+    instructions.push(
+      `After summarizing the dataset-wide trend, politely ask the user if they would like a focused analysis at ${locationLabel}. Only ask once per response and do not assume they want it.`,
+    );
+  }
+
+  instructions.push(
+    "Close by offering to analyze a different dataset if the user is interested.",
+  );
 
   return `${instructions.join(
     " ",
