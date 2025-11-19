@@ -890,7 +890,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
 
             <div className="pt-1">
               <button
-                className="w-full rounded-lg border border-gray-600/40 bg-gray-700/50 px-3 py-2 text-sm font-medium text-gray-200 transition-colors hover:border-gray-500/60 hover:bg-gray-600/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                 type="button"
                 onClick={handleTimeseriesClick}
                 disabled={!datasetId}
@@ -899,8 +898,9 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                     ? "Select a dataset first"
                     : "View time series for this location"
                 }
+                className="relative flex w-full items-center justify-center gap-2 rounded-lg border border-gray-600/50 bg-gray-800/70 px-4 py-2 text-sm font-semibold text-gray-100 transition-colors outline-none hover:border-gray-400 hover:bg-gray-700 focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900 disabled:cursor-not-allowed disabled:opacity-45"
               >
-                Time Series
+                <span>Time Series</span>
               </button>
             </div>
           </div>

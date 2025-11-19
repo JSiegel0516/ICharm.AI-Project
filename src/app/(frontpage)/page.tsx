@@ -435,23 +435,6 @@ export default function HomePage() {
           />
         </div>
 
-        {/* Region Info Panel */}
-        <div className="pointer-events-auto">
-          <RegionInfoPanel
-            show={showRegionInfo}
-            onClose={handleRegionInfoClose}
-            latitude={regionInfoData.latitude}
-            longitude={regionInfoData.longitude}
-            regionData={regionInfoData.regionData}
-            colorBarPosition={colorBarPosition}
-            colorBarCollapsed={colorBarCollapsed}
-            colorBarOrientation={colorBarOrientation}
-            currentDataset={currentDataset}
-            selectedDate={selectedDate}
-            temperatureUnit={temperatureUnit}
-          />
-        </div>
-
         {/* Bottom Controls */}
         <div className="pointer-events-auto absolute right-12 bottom-0 left-0 z-20 pb-4">
           <div className="relative flex items-end justify-center px-4">
@@ -488,6 +471,21 @@ export default function HomePage() {
           </div>
         </div>
       </div>
+
+      {/* Region Info Panel */}
+      <RegionInfoPanel
+        show={showRegionInfo}
+        onClose={handleRegionInfoClose}
+        latitude={regionInfoData.latitude}
+        longitude={regionInfoData.longitude}
+        regionData={regionInfoData.regionData}
+        colorBarPosition={colorBarPosition}
+        colorBarCollapsed={colorBarCollapsed}
+        colorBarOrientation={colorBarOrientation}
+        currentDataset={currentDataset}
+        selectedDate={selectedDate}
+        temperatureUnit={temperatureUnit}
+      />
     </section>
   );
 }
