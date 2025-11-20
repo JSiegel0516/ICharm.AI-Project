@@ -1,5 +1,5 @@
 "use client";
-
+import { Monitor } from "lucide-react";
 import React, {
   useState,
   useRef,
@@ -10,14 +10,45 @@ import React, {
 import { ChevronDown, X, MapPin, Calendar } from "lucide-react";
 import { RegionInfoPanelProps } from "@/types";
 import {
-  ResponsiveContainer,
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { ChartConfig, ChartContainer } from "@/components/ui/chart";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
+import {
   LineChart,
   Line,
-  CartesianGrid,
+  BarChart,
+  Bar,
+  AreaChart,
+  Area,
+  ScatterChart,
+  Scatter,
   XAxis,
   YAxis,
-  Tooltip,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
   Legend,
+  ResponsiveContainer,
 } from "recharts";
 
 type TemperatureUnitInfo = {
@@ -128,6 +159,15 @@ type DateRangeOption =
   | "3months"
   | "1month"
   | "custom";
+
+const chartConfig = {
+  desktop: {
+    label: "Desktop",
+    icon: Monitor,
+    // A color like 'hsl(220, 98%, 61%)' or 'var(--color-name)'
+    color: "#2563eb",
+  },
+} satisfies ChartConfig;
 
 const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   show,
@@ -436,12 +476,10 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       } else {
         setPreviousPosition(position);
         if (typeof window !== "undefined") {
-          const colorBarWidth = colorBarCollapsed ? 160 : 320;
-          const gap = colorBarCollapsed ? 4 : 8;
-          const collapsedHeight = 52;
-          const newX = colorBarPosition.x + colorBarWidth + gap;
-          const newY = window.innerHeight - collapsedHeight - 16;
-          setPosition({ x: newX, y: newY });
+          setPosition({
+            x: window.innerWidth - 225,
+            y: window.innerHeight - 60,
+          });
         }
         return true;
       }
@@ -795,7 +833,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     >
       {isCollapsed ? (
         <div
-          className="cursor-pointer rounded-xl border border-gray-600/30 bg-gray-800/95 backdrop-blur-sm transition-all duration-200 hover:border-gray-500/50 hover:shadow-lg"
+          className="border-border bg-card hover:bg-muted-foreground cursor-pointer rounded-xl border transition-all duration-200 hover:border-gray-500/50 hover:shadow-lg"
           onClick={handleCollapseToggle}
           style={{ transform: "scale(1)" }}
           onMouseEnter={(e) => {
@@ -806,7 +844,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
           }}
         >
           <div className="pointer-events-none px-3 py-2">
-            <div className="flex items-center gap-2 text-gray-300 transition-colors hover:text-white">
+            <div className="text-muted-foreground hover:text-card-foreground flex items-center gap-2 transition-colors">
               <MapPin className="h-4 w-4" />
               <span className="text-sm font-medium select-none">
                 Region Info
@@ -815,255 +853,277 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
           </div>
         </div>
       ) : (
-        <div className="min-w-60 rounded-xl border border-gray-600/30 bg-gray-800/95 px-4 py-4 text-gray-200 shadow-xl backdrop-blur-sm">
-          <div className="-mt-1 mb-3 flex h-3 w-full items-center justify-between">
-            <button
-              onClick={handleCollapseToggle}
-              className="z-10 -m-2 flex cursor-pointer items-center p-2 text-gray-400 transition-colors hover:text-gray-200 focus:outline-none"
-              title="Collapse"
-              type="button"
-            >
-              <ChevronDown className="h-3 w-3" />
-            </button>
-
-            <div
-              className={`h-3 flex-1 ${isDragging ? "cursor-grabbing" : "cursor-grab"} mx-2 select-none`}
-              onMouseDown={handleMouseDown}
-              title="Drag to move"
-            >
-              <div className="flex h-full items-center justify-center gap-1">
-                <div className="h-0.5 w-0.5 rounded-full bg-gray-500"></div>
-                <div className="h-0.5 w-0.5 rounded-full bg-gray-500"></div>
-                <div className="h-0.5 w-0.5 rounded-full bg-gray-500"></div>
-              </div>
-            </div>
-
-            <button
-              onClick={handleClose}
-              className="z-10 -m-2 flex cursor-pointer items-center p-2 text-gray-400 transition-colors hover:text-gray-200 focus:outline-none"
-              title="Close"
-              type="button"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-
-          <div className="space-y-3">
-            <div className="flex items-start gap-2">
-              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
-              <div className="text-sm font-medium text-white">
-                {latitude.toFixed(2)}°, {longitude.toFixed(2)}°
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-gray-700/50 bg-gray-900/50 p-3">
-              <div className="text-center">
-                <div className="mb-1 font-mono text-2xl font-bold text-white">
-                  {formattedPrimaryValue}{" "}
-                  <span className="text-base font-normal text-gray-400">
-                    {displayUnitLabel}
-                  </span>
-                </div>
-                <div className="text-sm text-gray-400">
-                  {currentDataset?.name ||
-                    regionData.name ||
-                    datasetIdentifier ||
-                    "Value"}
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-lg border border-gray-700/30 bg-gray-900/30 p-2">
-                <div className="mb-1 text-xs text-gray-400">Lat</div>
-                <div className="font-mono text-sm font-medium text-white">
-                  {Math.abs(latitude).toFixed(2)}° {latitude >= 0 ? "N" : "S"}
-                </div>
-              </div>
-              <div className="rounded-lg border border-gray-700/30 bg-gray-900/30 p-2">
-                <div className="mb-1 text-xs text-gray-400">Lon</div>
-                <div className="font-mono text-sm font-medium text-white">
-                  {Math.abs(longitude).toFixed(2)}° {longitude >= 0 ? "E" : "W"}
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-1">
+        <Card className="bg-card w-full max-w-sm">
+          <CardHeader>
+            <div className="flex items-center justify-between gap-1">
               <button
+                onClick={handleCollapseToggle}
+                className="z-10 flex cursor-pointer items-center p-1 text-gray-400 transition-colors hover:text-gray-200 focus:outline-none"
+                title="Collapse"
                 type="button"
-                onClick={handleTimeseriesClick}
-                disabled={!datasetId}
-                title={
-                  !datasetId
-                    ? "Select a dataset first"
-                    : "View time series for this location"
-                }
-                className="relative flex w-full items-center justify-center gap-2 rounded-lg border border-gray-600/50 bg-gray-800/70 px-4 py-2 text-sm font-semibold text-gray-100 transition-colors outline-none hover:border-gray-400 hover:bg-gray-700 focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900 disabled:cursor-not-allowed disabled:opacity-45"
               >
-                <span>Time Series</span>
+                <ChevronDown className="h-3 w-3" />
+              </button>
+
+              <div
+                className={`flex h-3 items-center justify-center gap-1 px-2 ${isDragging ? "cursor-grabbing" : "cursor-grab"} select-none`}
+                onMouseDown={handleMouseDown}
+                title="Drag to move"
+              >
+                <div className="dot"></div>
+                <div className="dot"></div>
+                <div className="dot"></div>
+              </div>
+
+              <button
+                onClick={handleClose}
+                className="z-10 flex cursor-pointer items-center p-1 text-gray-400 transition-colors hover:text-gray-200 focus:outline-none"
+                title="Close"
+                type="button"
+              >
+                <X className="h-3 w-3" />
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {timeseriesOpen && (
-        <div
-          className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-black/70 px-4 py-6"
-          onClick={() => setTimeseriesOpen(false)}
-        >
-          <div
-            className="relative w-full max-w-4xl rounded-xl border border-gray-700 bg-gray-900/95 p-6 text-gray-200 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={() => setTimeseriesOpen(false)}
-              className="absolute top-4 right-4 rounded-full border border-gray-600/40 p-1 text-gray-400 transition-colors hover:border-gray-500/60 hover:text-white"
-              title="Close"
-              type="button"
-            >
-              <X className="h-4 w-4" />
-            </button>
-
-            <div className="mb-4">
-              <h2 className="text-lg font-semibold text-white">
-                {currentDataset?.name || "Time Series"}
-              </h2>
-              <p className="text-sm text-gray-400">
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="flex flex-row gap-2">
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
                 {latitude.toFixed(2)}°, {longitude.toFixed(2)}°
-              </p>
+              </CardTitle>
             </div>
+            <CardDescription></CardDescription>
+          </CardHeader>
 
-            {!isHighFrequencyDataset && (
-              <div className="mb-4 space-y-2">
-                <label className="flex items-center gap-2 text-sm font-medium text-gray-300">
-                  <Calendar className="h-4 w-4" />
-                  Date Range
-                </label>
-
-                <div className="flex flex-wrap gap-2">
-                  <select
-                    value={dateRangeOption}
-                    onChange={(e) =>
-                      setDateRangeOption(e.target.value as DateRangeOption)
-                    }
-                    className="rounded-lg border border-gray-600/40 bg-gray-800 px-3 py-2 text-sm text-gray-200 transition-colors hover:border-gray-500/60 focus:border-blue-500 focus:outline-none"
-                  >
-                    <option value="1month">1 Month</option>
-                    <option value="3months">3 Months</option>
-                    <option value="6months">6 Months</option>
-                    <option value="1year">1 Year</option>
-                    <option value="all">All Available Data</option>
-                    <option value="custom">Custom Range</option>
-                  </select>
-
-                  {dateRangeOption === "custom" && (
-                    <>
-                      <input
-                        type="date"
-                        value={customStartDate}
-                        onChange={(e) => setCustomStartDate(e.target.value)}
-                        min={datasetStart?.toISOString().split("T")[0]}
-                        max={datasetEnd?.toISOString().split("T")[0]}
-                        className="rounded-lg border border-gray-600/40 bg-gray-800 px-3 py-2 text-sm text-gray-200 transition-colors hover:border-gray-500/60 focus:border-blue-500 focus:outline-none"
-                      />
-                      <span className="flex items-center text-gray-400">
-                        to
-                      </span>
-                      <input
-                        type="date"
-                        value={customEndDate}
-                        onChange={(e) => setCustomEndDate(e.target.value)}
-                        min={
-                          customStartDate ||
-                          datasetStart?.toISOString().split("T")[0]
-                        }
-                        max={datasetEnd?.toISOString().split("T")[0]}
-                        className="rounded-lg border border-gray-600/40 bg-gray-800 px-3 py-2 text-sm text-gray-200 transition-colors hover:border-gray-500/60 focus:border-blue-500 focus:outline-none"
-                      />
-                    </>
-                  )}
-
-                  <button
-                    onClick={handleTimeseriesClick}
-                    className="rounded-lg border border-blue-500/50 bg-blue-600/20 px-4 py-2 text-sm font-medium text-blue-300 transition-colors hover:border-blue-400 hover:bg-blue-600/30"
-                    disabled={timeseriesLoading}
-                  >
-                    {timeseriesLoading ? "Loading..." : "Update"}
-                  </button>
+          <CardContent className="">
+            <div className="space-y-3">
+              <div className="bg-secondary/40 border-border rounded-lg border p-3">
+                <div className="text-center">
+                  <div className="mb-1 font-mono text-2xl font-bold text-white">
+                    {(regionData.precipitation ?? 0).toFixed(2)}{" "}
+                    <span className="text-base font-normal text-gray-400">
+                      {datasetUnit}
+                    </span>
+                  </div>
+                  <div className="text-sm text-gray-400">
+                    {currentDataset?.name ||
+                      regionData.name ||
+                      datasetIdentifier ||
+                      "Value"}
+                  </div>
                 </div>
               </div>
-            )}
 
-            <div
-              className="relative h-80 w-full overflow-hidden rounded-lg border border-gray-700/50 bg-gray-900/50"
-              onWheel={handleChartWheel}
-            >
-              {zoomWindow && (
-                <button
-                  onClick={() => setZoomWindow(null)}
-                  className="absolute top-3 right-3 z-10 rounded-md border border-slate-600 bg-slate-800/80 px-3 py-1 text-xs text-slate-200 transition-colors hover:border-slate-400 hover:bg-slate-700/80"
-                >
-                  Reset zoom
-                </button>
-              )}
-              {timeseriesLoading ? (
-                <div className="flex h-full w-full items-center justify-center text-sm text-gray-400">
-                  Loading timeseries...
+              <div className="grid grid-cols-2 gap-2">
+                <div className="border-border bg-secondary/40 rounded-lg border p-2">
+                  <div className="mb-1 text-xs text-gray-400">Lat</div>
+                  <div className="font-mono text-sm font-medium text-white">
+                    {Math.abs(latitude).toFixed(2)}° {latitude >= 0 ? "N" : "S"}
+                  </div>
                 </div>
-              ) : timeseriesError ? (
-                <div className="flex h-full w-full items-center justify-center p-4 text-center text-sm text-red-400">
-                  {timeseriesError}
+                <div className="border-border bg-secondary/40 rounded-lg border p-2">
+                  <div className="mb-1 text-xs text-gray-400">Lon</div>
+                  <div className="font-mono text-sm font-medium text-white">
+                    {Math.abs(longitude).toFixed(2)}°{" "}
+                    {longitude >= 0 ? "E" : "W"}
+                  </div>
                 </div>
-              ) : displayedChartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={displayedChartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis
-                      dataKey="date"
-                      stroke="#94a3b8"
-                      tick={{ fontSize: 12 }}
-                      allowDuplicatedCategory={false}
-                    />
-                    <YAxis
-                      stroke="#94a3b8"
-                      tick={{ fontSize: 12 }}
-                      domain={yAxisDomain ?? ["auto", "auto"]}
-                      label={{
-                        value: resolvedTimeseriesUnit,
-                        angle: -90,
-                        position: "insideLeft",
-                        fill: "#94a3b8",
-                        fontSize: 12,
-                      }}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "#1f2937",
-                        border: "1px solid #374151",
-                        borderRadius: "0.5rem",
-                      }}
-                    />
-                    <Legend />
-                    <Line
-                      type="monotone"
-                      dataKey="value"
-                      name={currentDataset?.name || "Value"}
-                      stroke="#38bdf8"
-                      strokeWidth={2}
-                      dot={false}
-                      connectNulls
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-sm text-gray-400">
-                  No timeseries data available.
-                </div>
-              )}
+              </div>
             </div>
-          </div>
-        </div>
+          </CardContent>
+
+          <CardFooter className="flex-col gap-2">
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  onClick={handleTimeseriesClick}
+                  disabled={!datasetId}
+                  title={
+                    !datasetId
+                      ? "Select a dataset first"
+                      : "View time series for this location"
+                  }
+                >
+                  View Time Series
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[825px]">
+                <DialogHeader>
+                  <DialogTitle>
+                    {currentDataset?.name || "Time Series"}
+                  </DialogTitle>
+                  <DialogDescription>
+                    Location: {latitude.toFixed(2)}°, {longitude.toFixed(2)}°
+                  </DialogDescription>
+                </DialogHeader>
+
+                {/* Date Range Selector - Only show for non-high-frequency datasets */}
+                {!isHighFrequencyDataset && (
+                  <div className="space-y-2">
+                    <label className="text-card-foreground flex items-center gap-2 text-sm font-medium">
+                      <Calendar className="h-4 w-4" />
+                      Date Range
+                    </label>
+
+                    <div className="flex flex-wrap items-center gap-4">
+                      <NativeSelect
+                        value={dateRangeOption}
+                        onChange={(e) =>
+                          setDateRangeOption(e.target.value as DateRangeOption)
+                        }
+                      >
+                        <NativeSelectOption value="1month">
+                          1 Month
+                        </NativeSelectOption>
+                        <NativeSelectOption value="3months">
+                          3 Months
+                        </NativeSelectOption>
+                        <NativeSelectOption value="6months">
+                          6 Months
+                        </NativeSelectOption>
+                        <NativeSelectOption value="1year">
+                          1 Year
+                        </NativeSelectOption>
+                      </NativeSelect>
+
+                      <Button
+                        variant="outline"
+                        onClick={handleTimeseriesClick}
+                        disabled={timeseriesLoading}
+                      >
+                        {timeseriesLoading ? "Loading..." : "Update"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Chart Area */}
+                <div className="relative h-80 w-full overflow-hidden rounded-lg border border-gray-700">
+                  {timeseriesLoading ? (
+                    <div className="flex h-full w-full items-center justify-center">
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-600 border-t-blue-500"></div>
+                        <p className="text-sm text-gray-400">
+                          Loading timeseries data...
+                        </p>
+                      </div>
+                    </div>
+                  ) : timeseriesError ? (
+                    <div className="flex h-full w-full items-center justify-center p-4">
+                      <div className="flex flex-col items-center gap-2 text-center">
+                        <div className="rounded-full bg-red-900/20 p-3">
+                          <svg
+                            className="h-6 w-6 text-red-400"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                            />
+                          </svg>
+                        </div>
+                        <p className="text-sm text-red-400">
+                          {timeseriesError}
+                        </p>
+                      </div>
+                    </div>
+                  ) : chartData.length > 0 ? (
+                    <ChartContainer
+                      config={chartConfig}
+                      className="h-full w-full"
+                    >
+                      <LineChart
+                        accessibilityLayer
+                        data={chartData}
+                        margin={{ top: 10, right: 10, bottom: 10, left: 10 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                        <XAxis
+                          dataKey="date"
+                          stroke="#94a3b8"
+                          tick={{ fontSize: 12 }}
+                          tickLine={{ stroke: "#4b5563" }}
+                        />
+                        <YAxis
+                          stroke="#94a3b8"
+                          tick={{ fontSize: 12 }}
+                          tickLine={{ stroke: "#4b5563" }}
+                          label={{
+                            value: timeseriesUnits ?? datasetUnit,
+                            angle: -90,
+                            position: "insideLeft",
+                            fill: "#94a3b8",
+                            fontSize: 12,
+                          }}
+                        />
+                        <RechartsTooltip
+                          contentStyle={{
+                            backgroundColor: "#1f2937",
+                            border: "1px solid #374151",
+                            borderRadius: "0.5rem",
+                            padding: "8px 12px",
+                          }}
+                          labelStyle={{ color: "#e5e7eb", marginBottom: "4px" }}
+                          itemStyle={{ color: "#38bdf8" }}
+                        />
+                        <Legend
+                          wrapperStyle={{
+                            paddingTop: "10px",
+                          }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="value"
+                          name={currentDataset?.name || "Value"}
+                          stroke="#38bdf8"
+                          strokeWidth={2}
+                          dot={false}
+                          connectNulls
+                          activeDot={{ r: 4, strokeWidth: 0 }}
+                        />
+                      </LineChart>
+                    </ChartContainer>
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center">
+                      <div className="flex flex-col items-center gap-2 text-center">
+                        <div className="rounded-full bg-gray-700/50 p-3">
+                          <svg
+                            className="h-6 w-6 text-gray-400"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                            />
+                          </svg>
+                        </div>
+                        <p className="text-sm text-gray-400">
+                          No timeseries data available
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Try selecting a different date range or location
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button variant="outline">Close</Button>
+                  </DialogClose>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </CardFooter>
+        </Card>
       )}
     </div>
   );

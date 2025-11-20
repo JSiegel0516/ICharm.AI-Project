@@ -14,6 +14,13 @@ import type {
   RegionData,
   ColorBarOrientation,
 } from "@/types";
+import type {
+  Dataset,
+  AppState,
+  TemperatureUnit,
+  RegionData,
+  ColorBarOrientation,
+} from "@/types";
 import { mockDatasets } from "@/utils/constants";
 
 type DatabaseDataset = {
@@ -273,7 +280,14 @@ const useAppStateInternal = () => {
       rasterOpacity: 0.65,
       hideZeroPrecipitation: false,
     },
-    locationFocusRequest: null,
+    colorBarOrientation: "horizontal",
+    globeSettings: {
+      satelliteLayerVisible: true,
+      boundaryLinesVisible: true,
+      geographicLinesVisible: false,
+      rasterOpacity: 0.65,
+      hideZeroPrecipitation: false,
+    },
   });
 
   const [selectedYear, setSelectedYear] = useState<number>(
@@ -400,19 +414,6 @@ const useAppStateInternal = () => {
   const setColorBarOrientation = useCallback(
     (orientation: ColorBarOrientation) => {
       setState((prev) => ({ ...prev, colorBarOrientation: orientation }));
-      if (typeof window !== "undefined") {
-        try {
-          window.localStorage.setItem(
-            COLOR_BAR_ORIENTATION_STORAGE_KEY,
-            orientation,
-          );
-        } catch (error) {
-          console.warn(
-            "Failed to persist color bar orientation preference:",
-            error,
-          );
-        }
-      }
     },
     [],
   );
@@ -525,6 +526,7 @@ const useAppStateInternal = () => {
     setShowTutorial,
     setShowChat,
     toggleColorbar,
+    setColorBarOrientation,
     setColorBarOrientation,
     setCurrentDataset,
     refreshDatasets,

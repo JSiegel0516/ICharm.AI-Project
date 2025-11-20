@@ -26,7 +26,7 @@ if (-not (Get-Command psql -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-Write-Host "✅ psql found`n" -ForegroundColor Green
+Write-Host "psql found`n" -ForegroundColor Green
 
 # Set password environment variable
 $env:PGPASSWORD = $DB_PASSWORD
@@ -51,7 +51,7 @@ GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;
 
 $createDbScript | psql -h $DB_HOST -p $DB_PORT -U postgres postgres
 
-Write-Host "✅ Database and user created`n" -ForegroundColor Green
+Write-Host "Database and user created`n" -ForegroundColor Green
 
 # Step 2: Create schema
 Write-Host "📋 Step 2: Creating tables and schema..." -ForegroundColor Blue
@@ -114,7 +114,7 @@ ON CONFLICT (email) DO NOTHING;
 
 $schemaScript | psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME
 
-Write-Host "✅ Schema created successfully`n" -ForegroundColor Green
+Write-Host "Schema created successfully`n" -ForegroundColor Green
 
 # Step 3: Verify
 Write-Host "🔍 Step 3: Verifying database setup...`n" -ForegroundColor Blue
@@ -122,7 +122,7 @@ Write-Host "🔍 Step 3: Verifying database setup...`n" -ForegroundColor Blue
 psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c "\dt"
 
 Write-Host "`n╔════════════════════════════════════════╗" -ForegroundColor Green
-Write-Host "║          ✅ Setup Complete!            ║" -ForegroundColor Green
+Write-Host "║          Setup Complete!            ║" -ForegroundColor Green
 Write-Host "╚════════════════════════════════════════╝`n" -ForegroundColor Green
 
 Write-Host "📝 Connection details for .env.local:" -ForegroundColor Blue
