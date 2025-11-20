@@ -124,7 +124,20 @@ export async function POST(req: NextRequest) {
   }> = [];
   let enhancedMessages = [...messages];
 
-  if (userQuery) {
+  let trendPrompt: string | null = null;
+  if (conversationContext && lastUserMessage?.content) {
+    try {
+      trendPrompt = await buildTrendInsightPrompt({
+        query: lastUserMessage.content,
+        context: conversationContext,
+        dataServiceUrl: DATA_SERVICE_URL,
+      });
+    } catch (error) {
+      console.error("Trend insight generation failed:", error);
+    }
+  }
+
+  if (userQuery && !trendPrompt) {
     console.log("🔍 Analyzing query...");
 
     try {
@@ -203,25 +216,14 @@ Instructions:
   }
   // === RAG ENHANCEMENT END ===
 
-  if (conversationContext && lastUserMessage?.content) {
-    try {
-      const trendPrompt = await buildTrendInsightPrompt({
-        query: lastUserMessage.content,
-        context: conversationContext,
-        dataServiceUrl: DATA_SERVICE_URL,
-      });
-      if (trendPrompt) {
-        enhancedMessages = [
-          {
-            role: "system",
-            content: trendPrompt,
-          },
-          ...enhancedMessages,
-        ];
-      }
-    } catch (error) {
-      console.error("Trend insight generation failed:", error);
-    }
+  if (trendPrompt) {
+    enhancedMessages = [
+      {
+        role: "system",
+        content: trendPrompt,
+      },
+      ...enhancedMessages,
+    ];
   }
 
   let sessionId = sanitizedSessionId;

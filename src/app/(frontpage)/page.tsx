@@ -377,18 +377,26 @@ export default function HomePage() {
 
     if (locationFocusRequest.mode === "clear") {
       globeRef.current.clearSearchMarker();
+      setCurrentLocationMarker(null);
       clearLocationFocusRequest();
       return;
     }
 
-    if (
-      typeof locationFocusRequest.latitude === "number" &&
-      typeof locationFocusRequest.longitude === "number"
-    ) {
+    const { latitude, longitude, name } = locationFocusRequest;
+    if (typeof latitude === "number" && typeof longitude === "number") {
       globeRef.current.focusOnLocation(locationFocusRequest);
+      setCurrentLocationMarker({
+        latitude,
+        longitude,
+        name: name ?? null,
+      });
     }
     clearLocationFocusRequest();
-  }, [locationFocusRequest, clearLocationFocusRequest]);
+  }, [
+    locationFocusRequest,
+    clearLocationFocusRequest,
+    setCurrentLocationMarker,
+  ]);
 
   return (
     <section className="bg-background fixed inset-0 h-screen w-screen overflow-hidden">

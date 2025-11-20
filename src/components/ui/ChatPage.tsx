@@ -104,6 +104,57 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
   const [isDraggingSearch, setIsDraggingSearch] = useState(false);
   const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const dragPointerRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const typingIntervalsRef = useRef<number[]>([]);
+
+  useEffect(() => {
+    return () => {
+      typingIntervalsRef.current.forEach((handle) => {
+        window.clearInterval(handle);
+      });
+      typingIntervalsRef.current = [];
+    };
+  }, []);
+
+  const appendAnimatedAssistantMessage = useCallback(
+    (content: string, sources?: ChatMessage["sources"]) => {
+      const id = `${Date.now()}-bot`;
+      const newMessage: ChatMessage = {
+        id,
+        type: "bot",
+        message: "",
+        timestamp: new Date(),
+        sources,
+      };
+      setMessages((prev) => [...prev, newMessage]);
+
+      let index = 0;
+      const total = content.length;
+      const baseDelay = total > 1200 ? 1 : total > 400 ? 8 : 15;
+
+      const interval = window.setInterval(() => {
+        index += 1;
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === id
+              ? {
+                  ...msg,
+                  message: content.slice(0, index),
+                }
+              : msg,
+          ),
+        );
+
+        if (index >= total) {
+          window.clearInterval(interval);
+          typingIntervalsRef.current = typingIntervalsRef.current.filter(
+            (handle) => handle !== interval,
+          );
+        }
+      }, baseDelay);
+      typingIntervalsRef.current.push(interval);
+    },
+    [],
+  );
 
   const buildConversationContext =
     useCallback((): ConversationContextPayload | null => {
@@ -520,30 +571,19 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
         throw new Error("Empty response from API");
       }
 
-      const assistantMessage: ChatMessage = {
-        id: `${Date.now() + 1}`,
-        type: "bot",
-        message: botResponse,
-        timestamp: new Date(),
-        sources: Array.isArray(data.sources) ? data.sources : undefined,
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
+      appendAnimatedAssistantMessage(
+        botResponse,
+        Array.isArray(data.sources) ? data.sources : undefined,
+      );
       void loadSessions();
     } catch (error) {
       console.error("Chat API error:", error);
 
-      const fallbackMessage: ChatMessage = {
-        id: `${Date.now()}-error`,
-        type: "bot",
-        message:
-          error instanceof Error
-            ? `Sorry, something went wrong: ${error.message}`
-            : "Sorry, something went wrong. Please try again.",
-        timestamp: new Date(),
-      };
-
-      setMessages((prev) => [...prev, fallbackMessage]);
+      const fallbackText =
+        error instanceof Error
+          ? `Sorry, something went wrong: ${error.message}`
+          : "Sorry, something went wrong. Please try again.";
+      appendAnimatedAssistantMessage(fallbackText);
     } finally {
       setIsTyping(false);
     }

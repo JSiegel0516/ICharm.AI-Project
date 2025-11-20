@@ -227,7 +227,9 @@ export const buildTrendInsightPrompt = async ({
   const requestedStart = new Date(referenceEnd);
   requestedStart.setFullYear(referenceEnd.getFullYear() - targetWindowYears);
 
-  const desiredStart = requestedWindowYears ? requestedStart : fallbackStart;
+  const desiredStart = requestedWindowYears
+    ? requestedStart
+    : (datasetStart ?? fallbackStart);
   const safeStart =
     datasetStart && datasetStart > desiredStart ? datasetStart : desiredStart;
   const safeEnd = referenceEnd;
@@ -361,6 +363,7 @@ export const buildTrendInsightPrompt = async ({
     "Reference the dataset name, time window, and whether values are increasing, decreasing, or stable.",
     "Highlight notable extremes and relate them to well-known climate drivers when possible.",
     "Do not invent numbers beyond what is provided and keep units consistent.",
+    "Write in plain sentences without Markdown headings or bold text; short paragraphs or simple line breaks are fine.",
     `User question: "${query}"`,
   ];
 
