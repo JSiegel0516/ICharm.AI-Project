@@ -110,8 +110,6 @@ export function buildContextString(
 // Check if query is tutorial-related
 export function isTutorialQuery(query: string): boolean {
   const tutorialKeywords = [
-    "how do i",
-    "how can i",
     "tutorial",
     "button",
     "menu",
@@ -130,7 +128,6 @@ export function isTutorialQuery(query: string): boolean {
     "settings",
     "calendar",
     "download",
-    "time series",
     "visualization",
     "change",
     "adjust",
@@ -139,7 +136,15 @@ export function isTutorialQuery(query: string): boolean {
   ];
 
   const lowerQuery = query.toLowerCase();
-  return tutorialKeywords.some((keyword) => lowerQuery.includes(keyword));
+  const hits = tutorialKeywords.filter((keyword) =>
+    lowerQuery.includes(keyword),
+  ).length;
+
+  if (lowerQuery.includes("tutorial")) {
+    return true;
+  }
+
+  return hits >= 2;
 }
 
 // Check if query is about-page related
