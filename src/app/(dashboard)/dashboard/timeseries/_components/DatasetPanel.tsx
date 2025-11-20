@@ -277,18 +277,16 @@ export function DatasetFilter({
                                 {(dataset as any).datasetName || dataset.name}
                               </h4>
                               {isCloud ? (
-                                <Cloud className="h-3 w-3 flex-shrink-0 text-blue-500" />
+                                <Cloud className="h-3 w-3 shrink-0 text-blue-500" />
                               ) : (
-                                <Database className="h-3 w-3 flex-shrink-0 text-green-500" />
+                                <Database className="h-3 w-3 shrink-0 text-green-500" />
                               )}
                             </div>
                             <p className="text-muted-foreground text-xs">
                               {(dataset as any).sourceName ||
                                 (dataset as any).source ||
                                 "Unknown source"}{" "}
-                              • {dataset.name}
-                            </p>
-                            <p className="text-muted-foreground text-xs">
+                              • {dataset.name} •{" "}
                               {(dataset as any).units || "N/A"}
                             </p>
                             {(dataset as any).startDate &&
@@ -342,9 +340,9 @@ export function DatasetFilter({
                       >
                         <div className="flex items-center gap-2">
                           {isCloud ? (
-                            <Cloud className="h-3 w-3 flex-shrink-0 text-blue-500" />
+                            <Cloud className="h-3 w-3 shrink-0 text-blue-500" />
                           ) : (
-                            <Database className="h-3 w-3 flex-shrink-0 text-green-500" />
+                            <Database className="h-3 w-3 shrink-0 text-green-500" />
                           )}
                           <span className="text-sm">{displayName}</span>
                         </div>
