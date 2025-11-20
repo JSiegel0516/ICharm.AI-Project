@@ -13,12 +13,7 @@ import TimeBar from "@/components/ui/TimeBar";
 import PressureLevelsSelector from "@/components/ui/Popups/PressureLevelsSelector";
 import RegionInfoPanel from "@/components/ui/RegionInfoPanel";
 import { useAppState } from "@/context/HeaderContext";
-import {
-  TemperatureUnit,
-  RegionData,
-  PressureLevel,
-  GlobeSettings,
-} from "@/types";
+import { RegionData, PressureLevel, GlobeSettings } from "@/types";
 import { pressureLevels } from "@/utils/constants";
 import { isSeaSurfaceTemperatureDataset } from "@/utils/datasetGuards";
 import { SideButtons } from "./_components/SideButtons";
@@ -129,6 +124,8 @@ export default function HomePage() {
     selectedDate,
     setSelectedDate,
     setCurrentLocationMarker,
+    temperatureUnit,
+    setTemperatureUnit,
   } = useAppState();
   const globeRef = useRef<GlobeRef>(null);
 
@@ -136,8 +133,6 @@ export default function HomePage() {
   const [isTimebarPlaying, setIsTimebarPlaying] = useState(false);
 
   // UI State
-  const [temperatureUnit, setTemperatureUnit] =
-    useState<TemperatureUnit>("celsius");
   const [activeSidebarPanel, setActiveSidebarPanel] =
     useState<SidebarPanel>(null);
   const [tutorialOpen, setTutorialOpen] = useState(false);
