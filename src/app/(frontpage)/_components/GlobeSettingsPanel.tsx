@@ -75,23 +75,16 @@ export function GlobeSettingsPanel({
           transition={{ duration: 0.3, ease: "easeInOut" }}
           className="pointer-events-auto fixed top-1/2 left-4 z-9999 w-96 -translate-y-1/2"
         >
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Globe Settings</CardTitle>
-              <CardDescription>
-                Customize globe appearance and layers
-              </CardDescription>
-            </CardHeader>
-
-            <CardContent className="space-y-6">
+          <Card className="flex max-h-[600px] flex-col">
+            <CardContent className="flex-1 space-y-4 overflow-y-auto py-4">
               {/* Layer Manipulation Section */}
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <h3 className="text-sm font-semibold text-white">
                   Layer Visibility
                 </h3>
 
                 {/* Satellite Layer Toggle */}
-                <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-3">
+                <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
                   <div className="space-y-0.5">
                     <Label
                       htmlFor="satellite-toggle"
@@ -112,7 +105,7 @@ export function GlobeSettingsPanel({
                 </div>
 
                 {/* Boundary Lines Toggle */}
-                <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-3">
+                <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
                   <div className="space-y-0.5">
                     <Label
                       htmlFor="boundary-toggle"
@@ -133,7 +126,7 @@ export function GlobeSettingsPanel({
                 </div>
 
                 {/* Geographic Grid Lines Toggle */}
-                <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-3">
+                <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
                   <div className="space-y-0.5">
                     <Label
                       htmlFor="geographic-lines-toggle"
@@ -155,8 +148,8 @@ export function GlobeSettingsPanel({
               </div>
 
               {/* Raster Opacity Section */}
-              <div className="space-y-4">
-                <div className="space-y-2">
+              <div className="space-y-3">
+                <div className="space-y-1">
                   <div className="flex items-center justify-between">
                     <Label
                       htmlFor="raster-opacity"
@@ -173,7 +166,7 @@ export function GlobeSettingsPanel({
                   </p>
                 </div>
 
-                <div className="rounded-lg border border-neutral-600 bg-neutral-700/50 p-4">
+                <div className="rounded-lg border border-neutral-600 bg-neutral-700/50 p-3">
                   <Slider
                     id="raster-opacity"
                     min={0}
@@ -191,11 +184,11 @@ export function GlobeSettingsPanel({
               </div>
 
               {/* Precipitation Display */}
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <h3 className="text-sm font-semibold text-white">
                   Precipitation Display
                 </h3>
-                <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-3">
+                <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
                   <div className="space-y-0.5">
                     <Label
                       htmlFor="precip-zero-toggle"
@@ -217,7 +210,7 @@ export function GlobeSettingsPanel({
               </div>
 
               {/* Info Section */}
-              <div className="rounded-lg border border-blue-500/30 bg-blue-900/20 p-3">
+              <div className="rounded-lg border border-blue-500/30 bg-blue-900/20 p-2.5">
                 <p className="text-xs text-blue-200">
                   <strong>Tip:</strong> Disable satellite imagery to see pure
                   climate data, or adjust opacity to blend data with terrain
@@ -226,10 +219,10 @@ export function GlobeSettingsPanel({
               </div>
             </CardContent>
 
-            <div className="border-t border-slate-700 p-4">
+            <div className="border-border shrink-0 border-t p-3">
               <Button
                 onClick={onClose}
-                className="w-full bg-rose-500 text-white hover:bg-rose-600"
+                className="text-card-foreground bg-muted-foreground/20 w-full"
               >
                 Done
               </Button>

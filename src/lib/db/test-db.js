@@ -7,7 +7,7 @@ const sql = postgres(process.env.POSTGRES_URL);
 
 sql`SELECT 1 as test`
   .then((result) => {
-    console.log("✅ Connection successful:", result);
+    console.log("Connection successful:", result);
     process.exit(0);
   })
   .catch((error) => {

@@ -1049,7 +1049,7 @@ async def open_cloud_dataset(
                 storage_options={"anon": S3_ANON},
             )
 
-        logger.info(f"✅ Successfully opened: {metadata['datasetName']}")
+        logger.info(f"Successfully opened: {metadata['datasetName']}")
         logger.info(f"   Dimensions: {dict(ds.dims)}")
         logger.info(f"   Variables: {list(ds.data_vars)}")
 
@@ -1282,7 +1282,7 @@ async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
                 else:
                     raise
 
-            logger.info(f"✅ Fallback successful! Variables: {list(ds.data_vars)}")
+            logger.info(f"Fallback successful! Variables: {list(ds.data_vars)}")
             dataset_cache.set(cache_key, ds)
             return ds
         else:

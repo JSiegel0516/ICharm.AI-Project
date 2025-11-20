@@ -58,7 +58,7 @@ def main():
         
         local_files.append(str(local_file))
     
-    logger.info(f"✅ Downloaded {len(local_files)} files")
+    logger.info(f"Downloaded {len(local_files)} files")
     
     # Step 2: Open all files locally (no parallel, no remote)
     logger.info("\nStep 2: Opening local files...")
@@ -92,7 +92,7 @@ def main():
             zarr_version=2,
         )
 
-        logger.info(f"✅ Wrote {zarr_output}")
+        logger.info(f"Wrote {zarr_output}")
         
        
         

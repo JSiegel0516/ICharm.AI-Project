@@ -93,7 +93,7 @@ export async function GET(request: Request) {
     // Log results for debugging
     const cloudCount = datasets.filter((d) => d.Stored === "cloud").length;
     const localCount = datasets.filter((d) => d.Stored === "local").length;
-    console.log(`✅ Returning ${datasets.length} datasets:`);
+    console.log(`Returning ${datasets.length} datasets:`);
     console.log(`   - Cloud: ${cloudCount}`);
     console.log(`   - Local: ${localCount}`);
 

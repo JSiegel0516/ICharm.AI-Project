@@ -43,7 +43,7 @@ def fix_global_surface_temperature():
         print("1️⃣ Opening NetCDF with decode_times=False...")
         ds = xr.open_dataset(nc_file, decode_times=False)
 
-        print("   ✅ Dataset loaded successfully")
+        print("   Dataset loaded successfully")
         print(f"   📊 Dimensions: {dict(ds.sizes)}")
         print(f"   📋 Variables: {list(ds.data_vars.keys())}")
 
@@ -94,7 +94,7 @@ def fix_global_surface_temperature():
             decoded_times = cftime.num2date(
                 time_coord.values, fixed_units, calendar=calendar
             )
-            print("   ✅ Time decoding successful!")
+            print("   Time decoding successful!")
             print(f"   📅 First decoded time: {decoded_times[0]}")
             print(f"   📅 Last decoded time: {decoded_times[-1]}")
             print(f"   📊 Total time points: {len(decoded_times)}")
@@ -112,7 +112,7 @@ def fix_global_surface_temperature():
 
             datetime_index = pd.to_datetime([str(dt) for dt in decoded_times])
             numpy_times = datetime_index.values
-            print("   ✅ Converted to numpy datetime64")
+            print("   Converted to numpy datetime64")
 
         except Exception as e:
             print(f"   ⚠️  Using cftime objects directly: {e}")
@@ -158,7 +158,7 @@ def fix_global_surface_temperature():
                 }
                 ds_fixed[coord_name].attrs = clean_attrs
 
-        print("   ✅ Created dataset with clean attributes")
+        print("   Created dataset with clean attributes")
 
         # Step 7: Save directly to zarr with minimal encoding
         print("\n7️⃣ Saving directly to zarr...")
@@ -166,7 +166,7 @@ def fix_global_surface_temperature():
         # Let xarray handle all encoding automatically
         ds_fixed.to_zarr(zarr_file, mode="w", consolidated=True)
 
-        print(f"   ✅ Zarr file created: {zarr_file}")
+        print(f"   Zarr file created: {zarr_file}")
 
         # Step 8: Verify the new zarr file works with your API pattern
         print("\n8️⃣ Verifying zarr file for FastAPI compatibility...")
@@ -174,14 +174,14 @@ def fix_global_surface_temperature():
         # Test opening normally (like your API would)
         ds_verify = xr.open_zarr(zarr_file)
 
-        print("   ✅ Zarr opens successfully without decode_times=False!")
+        print("   Zarr opens successfully without decode_times=False!")
         print(f"   📅 Time coordinate type: {ds_verify.time.dtype}")
         print(f"   📅 First time value: {ds_verify.time.values[0]}")
         print(f"   📅 Last time value: {ds_verify.time.values[-1]}")
 
         # Test time selection (common API operation)
         test_slice = ds_verify.sel(time=slice("1850-01-01", "1850-12-31"))
-        print(f"   ✅ Time slicing works: {len(test_slice.time)} points in 1850")
+        print(f"   Time slicing works: {len(test_slice.time)} points in 1850")
 
         # Test time formatting (for JSON response)
         sample_time = ds_verify.time.values[0]
@@ -192,11 +192,11 @@ def fix_global_surface_temperature():
             import pandas as pd
 
             formatted = pd.to_datetime(sample_time).strftime("%Y-%m-%d")
-        print(f"   ✅ Time formatting works: {formatted}")
+        print(f"   Time formatting works: {formatted}")
 
         # Test data access (what your API does)
         sample_data = ds_verify.air.isel(time=0, lat=0, lon=0).values
-        print(f"   ✅ Data access works: sample value = {sample_data}")
+        print(f"   Data access works: sample value = {sample_data}")
 
         # Clean up
         ds.close()
@@ -237,7 +237,7 @@ if __name__ == "__main__":
     success = fix_global_surface_temperature()
 
     if success:
-        print("\n✅ READY FOR PRODUCTION!")
+        print("\nREADY FOR PRODUCTION!")
         print("Your FastAPI can now use this dataset normally:")
         print("  ds = xr.open_zarr('datasets/global_surface_temperature.zarr')")
         print("  # No decode_times=False needed!")

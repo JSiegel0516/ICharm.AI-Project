@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Buffer } from "buffer";
 import type { Dataset } from "@/types";
-import { isSeaSurfaceTemperatureDataset } from "@/utils/datasetGuards";
 
 export type RasterLayerTexture = {
   imageUrl: string;
@@ -186,10 +185,6 @@ export const useRasterLayer = ({
       return false;
     }
 
-    if (isSeaSurfaceTemperatureDataset(dataset)) {
-      return false;
-    }
-
     const levelValues = dataset.backend.levelValues;
     if (Array.isArray(levelValues) && levelValues.length > 0) {
       return true;
@@ -279,7 +274,7 @@ export const useRasterLayer = ({
 
         setData({
           textures,
-          units: payload?.units ?? dataset.units,
+          units: payload?.units ?? dataset?.units,
           min: payload?.valueRange?.min ?? payload?.actualRange?.min,
           max: payload?.valueRange?.max ?? payload?.actualRange?.max,
           sampleValue: sampler,
@@ -306,14 +301,7 @@ export const useRasterLayer = ({
     return () => {
       abortOngoingRequest();
     };
-  }, [
-    backendDatasetId,
-    dataset?.units,
-    date,
-    level,
-    maskZeroValues,
-    waitingForLevel,
-  ]);
+  }, [backendDatasetId, dataset, date, level, cssColors, maskZeroValues, waitingForLevel]);
 
   return { data, isLoading, error, requestKey };
 };

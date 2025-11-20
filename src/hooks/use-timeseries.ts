@@ -670,7 +670,7 @@ export function useTimeSeries(baseURL: string = ""): UseTimeSeriesAPI {
         );
 
         // Log response for debugging
-        console.log("✅ Received time series response:", {
+        console.log("Received time series response:", {
           dataPoints: response.data.data.length,
           datasets: response.data.processingInfo.datasetsProcessed,
           extractionMode: response.data.processingInfo.extractionMode,

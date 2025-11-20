@@ -500,7 +500,7 @@ export default function TimeSeriesPage() {
             </div>
           </ResizablePanel>
 
-          <ResizableHandle />
+          <ResizableHandle withHandle />
 
           {/* Right Panel - Visualization */}
           <ResizablePanel defaultSize={65}>

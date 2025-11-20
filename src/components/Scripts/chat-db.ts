@@ -13,7 +13,7 @@ async function testConnection() {
     process.exit(1);
   }
 
-  console.log("✅ POSTGRES_URL loaded\n");
+  console.log("POSTGRES_URL loaded\n");
 
   const client = new Client({
     connectionString: process.env.POSTGRES_URL,
@@ -33,7 +33,7 @@ async function testConnection() {
       "SELECT NOW() as current_time, version() as version",
     );
 
-    console.log("✅ Connection successful!");
+    console.log("Connection successful!");
     console.log("📅 Server time:", result.rows[0].current_time);
     console.log("📦 PostgreSQL version:", result.rows[0].version.split(",")[0]);
     console.log();

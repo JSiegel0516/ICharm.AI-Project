@@ -212,6 +212,7 @@ export default function HomePage() {
   // Pressure Level State
   const [selectedPressureLevel, setSelectedPressureLevel] =
     useState<PressureLevel | null>(null);
+  useState<PressureLevel | null>(null);
   const [rasterMeta, setRasterMeta] = useState<{
     units?: string | null;
     min?: number | null;
@@ -325,6 +326,37 @@ export default function HomePage() {
     setRasterMeta(null);
   }, [selectedPressureLevel, hasPressureLevels]);
 
+  useEffect(() => {
+    if (!hasPressureLevels || !datasetPressureLevels) {
+      setSelectedPressureLevel(null);
+      return;
+    }
+
+    setSelectedPressureLevel((prev) => {
+      if (prev) {
+        const match = datasetPressureLevels.find(
+          (level) => level.value === prev.value,
+        );
+        if (match) {
+          return match;
+        }
+      }
+      return datasetPressureLevels[0];
+    });
+  }, [
+    hasPressureLevels,
+    datasetPressureLevels,
+    currentDataset?.id,
+    currentDataset?.backend?.id,
+  ]);
+
+  useEffect(() => {
+    if (!hasPressureLevels) {
+      return;
+    }
+    setRasterMeta(null);
+  }, [selectedPressureLevel, hasPressureLevels]);
+
   // Memoized Globe
   const selectedLevelValue =
     hasPressureLevels && selectedPressureLevel
@@ -363,6 +395,7 @@ export default function HomePage() {
       globeSettings.boundaryLinesVisible,
       globeSettings.geographicLinesVisible,
       globeSettings.rasterOpacity,
+      globeSettings.hideZeroPrecipitation,
       globeSettings.hideZeroPrecipitation,
     ],
   );
@@ -434,6 +467,23 @@ export default function HomePage() {
             </div>
 
             {/* Pressure Levels Selector */}
+            {hasPressureLevels && datasetPressureLevels && (
+              <div
+                id="pressure"
+                className="pointer-events-auto absolute bottom-0 flex items-center gap-4"
+                style={{
+                  left: "calc(50% + 300px)",
+                  transform: "translateX(0)",
+                }}
+              >
+                <PressureLevelsSelector
+                  selectedLevel={selectedPressureLevel}
+                  onLevelChange={handlePressureLevelChange}
+                  levels={datasetPressureLevels}
+                  helperText={pressureLevelHelperText}
+                />
+              </div>
+            )}
             {hasPressureLevels && datasetPressureLevels && (
               <div
                 id="pressure"
