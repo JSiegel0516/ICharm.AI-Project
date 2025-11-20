@@ -703,10 +703,25 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
                     rasterDataRef.current?.units ??
                     currentDataset?.units ??
                     "units";
+
+                  const datasetName = currentDataset?.name?.toLowerCase() ?? "";
+                  const datasetType =
+                    currentDataset?.dataType?.toLowerCase() ?? "";
+                  const looksTemperature =
+                    datasetType.includes("temp") ||
+                    datasetName.includes("temp") ||
+                    units.toLowerCase().includes("degc") ||
+                    units.toLowerCase().includes("celsius");
+
+                  const fallbackValue = looksTemperature
+                    ? -20 + Math.random() * 60
+                    : Math.random() * 100;
+                  const value = rasterValue ?? fallbackValue;
+
                   const regionData: RegionData = {
                     name: `${latitude.toFixed(2)}°, ${longitude.toFixed(2)}°`,
-                    precipitation: rasterValue ?? Math.random() * 100,
-                    temperature: -20 + Math.random() * 60,
+                    precipitation: looksTemperature ? undefined : value,
+                    temperature: looksTemperature ? value : undefined,
                     dataset: currentDataset?.name || "Sample Dataset",
                     unit: units,
                   };

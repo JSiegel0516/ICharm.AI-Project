@@ -101,50 +101,6 @@ const normalizeTemperatureUnit = (
   return { type: null, symbol: normalized };
 };
 
-const hasTemperatureHints = (
-  dataset?: RegionInfoPanelProps["currentDataset"],
-): boolean => {
-  if (!dataset) {
-    return false;
-  }
-
-  const parts: string[] = [];
-  const typeLower =
-    typeof dataset.dataType === "string" ? dataset.dataType.toLowerCase() : "";
-  if (typeLower) {
-    parts.push(typeLower);
-  }
-
-  const possibleKeys: Array<string | undefined | null> = [
-    dataset.name,
-    dataset.description,
-    (dataset as any)?.category,
-    dataset.backend?.datasetName,
-    dataset.backend?.layerParameter,
-    dataset.backend?.datasetType,
-  ];
-
-  possibleKeys.forEach((value) => {
-    if (typeof value === "string" && value.trim()) {
-      parts.push(value);
-    }
-  });
-
-  if (!parts.length) {
-    return false;
-  }
-
-  const combined = parts.join(" ").toLowerCase();
-  return (
-    combined.includes("temp") ||
-    combined.includes("°c") ||
-    combined.includes("degc") ||
-    combined.includes("sea surface") ||
-    combined.includes("sst") ||
-    combined.includes("surface temp")
-  );
-};
-
 const celsiusToFahrenheit = (value: number) => (value * 9) / 5 + 32;
 
 type SeriesPoint = {
@@ -227,15 +183,8 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     [datasetUnit],
   );
 
-  const datasetLooksTemperature = useMemo(
-    () => hasTemperatureHints(currentDataset),
-    [currentDataset],
-  );
-
   const useFahrenheit =
-    datasetLooksTemperature &&
-    datasetUnitInfo.type === "celsius" &&
-    temperatureUnit === "fahrenheit";
+    datasetUnitInfo.type === "celsius" && temperatureUnit === "fahrenheit";
 
   const displayUnitLabel = useMemo(
     () =>
@@ -252,10 +201,10 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   );
 
   const primaryValueSource =
-    typeof regionData.precipitation === "number"
-      ? regionData.precipitation
-      : typeof regionData.temperature === "number"
-        ? regionData.temperature
+    typeof regionData.temperature === "number"
+      ? regionData.temperature
+      : typeof regionData.precipitation === "number"
+        ? regionData.precipitation
         : 0;
 
   const convertedPrimaryValue = useFahrenheit
@@ -898,9 +847,9 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
               <div className="bg-secondary/40 border-border rounded-lg border p-3">
                 <div className="text-center">
                   <div className="mb-1 font-mono text-2xl font-bold text-white">
-                    {(regionData.precipitation ?? 0).toFixed(2)}{" "}
+                    {formattedPrimaryValue}{" "}
                     <span className="text-base font-normal text-gray-400">
-                      {datasetUnit}
+                      {displayUnitLabel}
                     </span>
                   </div>
                   <div className="text-sm text-gray-400">

@@ -37,7 +37,6 @@ type UIState = {
   isCollapsed: boolean;
   isDragging: boolean;
   dragStart: Position;
-  showDropdown: boolean;
   hasInitialized: boolean;
 };
 
@@ -47,8 +46,6 @@ type UIAction =
   | { type: "STOP_DRAG" }
   | { type: "TOGGLE_COLLAPSE" }
   | { type: "SET_COLLAPSED"; payload: boolean }
-  | { type: "TOGGLE_DROPDOWN" }
-  | { type: "CLOSE_DROPDOWN" }
   | { type: "INITIALIZE"; payload: Position }
   | { type: "RESET_POSITION"; payload: Position };
 
@@ -70,7 +67,6 @@ function uiReducer(state: UIState, action: UIAction): UIState {
           ...state,
           isCollapsed: false,
           position: state.previousPosition,
-          showDropdown: false,
         };
       } else {
         // Collapsing
@@ -85,12 +81,6 @@ function uiReducer(state: UIState, action: UIAction): UIState {
 
     case "SET_COLLAPSED":
       return { ...state, isCollapsed: action.payload };
-
-    case "TOGGLE_DROPDOWN":
-      return { ...state, showDropdown: !state.showDropdown };
-
-    case "CLOSE_DROPDOWN":
-      return { ...state, showDropdown: false };
 
     case "INITIALIZE":
       return {
@@ -132,7 +122,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     isCollapsed: collapsed,
     isDragging: false,
     dragStart: { x: 0, y: 0 },
-    showDropdown: false,
     hasInitialized: false,
   });
 
@@ -382,16 +371,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     [uiState.isCollapsed, uiState.position],
   );
 
-  const handleDropdownToggle = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation();
-      if (!unitInfo.allowToggle || uiState.isCollapsed || uiState.isDragging)
-        return;
-      dispatch({ type: "TOGGLE_DROPDOWN" });
-    },
-    [unitInfo.allowToggle, uiState.isCollapsed, uiState.isDragging],
-  );
-
   const handleUnitChange = useCallback(
     (newUnit: TemperatureUnit) => {
       if (!unitInfo.allowToggle) return;
@@ -492,23 +471,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     return () => window.removeEventListener("resize", handleResize);
   }, [uiState.isCollapsed, uiState.position, clampPosition]);
 
-  // Close dropdown on outside click
-  useEffect(() => {
-    if (!uiState.showDropdown) return;
-
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        colorBarRef.current &&
-        !colorBarRef.current.contains(event.target as Node)
-      ) {
-        dispatch({ type: "CLOSE_DROPDOWN" });
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [uiState.showDropdown]);
-
   // ============================================================================
   // RENDER
   // ============================================================================
@@ -574,44 +536,29 @@ const ColorBar: React.FC<ColorBarProps> = ({
               <span>Unit</span>
 
               {unitInfo.allowToggle ? (
-                <div className="relative">
+                <div className="inline-flex items-center gap-1 rounded-md border border-white/20 bg-white/5 p-1">
                   <button
-                    onClick={handleDropdownToggle}
-                    className="text-muted-foreground hover:text-card-foreground flex items-center gap-1 rounded px-2 py-1 text-xs font-semibold transition-colors focus:outline-none"
                     type="button"
+                    onClick={() => handleUnitChange("celsius")}
+                    className={`rounded px-2 py-1 text-xs font-semibold transition-colors focus:outline-none ${
+                      unit === "celsius"
+                        ? "bg-white text-gray-900"
+                        : "text-gray-300 hover:text-white"
+                    }`}
                   >
-                    <span>{currentUnitSymbol}</span>
-                    <ChevronDown
-                      className={`h-3 w-3 transition-transform ${uiState.showDropdown ? "rotate-180" : ""}`}
-                    />
+                    °C
                   </button>
-
-                  {uiState.showDropdown && !uiState.isDragging && (
-                    <div className="absolute top-7 right-0 z-50 w-32 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
-                      <button
-                        onClick={() => handleUnitChange("celsius")}
-                        className={`w-full px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 focus:outline-none ${
-                          unit === "celsius"
-                            ? "bg-blue-50 text-blue-600"
-                            : "text-gray-700"
-                        }`}
-                        type="button"
-                      >
-                        Celsius (°C)
-                      </button>
-                      <button
-                        onClick={() => handleUnitChange("fahrenheit")}
-                        className={`w-full px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 focus:outline-none ${
-                          unit === "fahrenheit"
-                            ? "bg-blue-50 text-blue-600"
-                            : "text-gray-700"
-                        }`}
-                        type="button"
-                      >
-                        Fahrenheit (°F)
-                      </button>
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleUnitChange("fahrenheit")}
+                    className={`rounded px-2 py-1 text-xs font-semibold transition-colors focus:outline-none ${
+                      unit === "fahrenheit"
+                        ? "bg-white text-gray-900"
+                        : "text-gray-300 hover:text-white"
+                    }`}
+                  >
+                    °F
+                  </button>
                 </div>
               ) : (
                 <span className="text-card-foreground ml-2 min-w-8 text-right">
