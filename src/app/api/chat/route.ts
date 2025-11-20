@@ -31,6 +31,34 @@ type ChatRequestPayload = {
   context?: ConversationContextPayload | null;
 };
 
+function buildDatasetSummaryPrompt(
+  context?: ConversationContextPayload,
+): string | null {
+  if (!context) {
+    return null;
+  }
+
+  const datasetLabel = context.datasetName ?? context.datasetId;
+  if (!datasetLabel) {
+    return null;
+  }
+
+  const description = context.datasetDescription;
+  const units = context.datasetUnits ?? "dataset units";
+  const coverageStart = context.datasetStartDate ?? "start unknown";
+  const coverageEnd = context.datasetEndDate ?? "present";
+
+  let summary = `You are answering questions about the dataset "${datasetLabel}".`;
+  if (description) {
+    summary += ` Description: ${description}.`;
+  }
+  summary += ` Report values using ${units}. Temporal coverage spans ${coverageStart} to ${coverageEnd}.`;
+  summary +=
+    " When the user refers to 'this dataset' or 'current dataset', they mean this dataset. Always base your answers on it unless the user explicitly switches datasets.";
+
+  return summary;
+}
+
 function isValidMessagesPayload(payload: unknown): payload is ChatMessage[] {
   if (!Array.isArray(payload)) {
     return false;
@@ -123,6 +151,27 @@ export async function POST(req: NextRequest) {
     score: number;
   }> = [];
   let enhancedMessages = [...messages];
+
+  const datasetSummaryPrompt = buildDatasetSummaryPrompt(conversationContext);
+  if (datasetSummaryPrompt) {
+    if (enhancedMessages[0]?.role === "system") {
+      enhancedMessages = [
+        {
+          role: "system",
+          content: `${datasetSummaryPrompt}\n\n${enhancedMessages[0].content}`,
+        },
+        ...enhancedMessages.slice(1),
+      ];
+    } else {
+      enhancedMessages = [
+        {
+          role: "system",
+          content: datasetSummaryPrompt,
+        },
+        ...enhancedMessages,
+      ];
+    }
+  }
 
   let trendPrompt: string | null = null;
   if (conversationContext && lastUserMessage?.content) {

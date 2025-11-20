@@ -65,6 +65,7 @@ export interface ConversationContextPayload {
   datasetId?: string | null;
   datasetName?: string;
   datasetUnits?: string | null;
+  datasetDescription?: string | null;
   datasetStartDate?: string | null;
   datasetEndDate?: string | null;
   selectedDate?: string | null;

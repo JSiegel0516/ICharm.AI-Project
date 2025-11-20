@@ -200,6 +200,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
           currentDataset.backend?.units ??
           currentDataset.backend?.layerParameter ??
           null,
+        datasetDescription: currentDataset.description ?? null,
         datasetStartDate: formatDateOnly(currentDataset.startDate),
         datasetEndDate: formatDateOnly(currentDataset.endDate),
         selectedDate: formatDateOnly(selectedDate),
