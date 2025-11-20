@@ -33,6 +33,7 @@ import {
   Tooltip as RechartsTooltip,
   Legend,
   ResponsiveContainer,
+  ComposedChart,
 } from "recharts";
 import {
   ChartType,
@@ -111,6 +112,8 @@ export function VisualizationPanel({
   >([]);
   const [tempLat, setTempLat] = useState("");
   const [tempLon, setTempLon] = useState("");
+  const [showHistogram, setShowHistogram] = useState(false);
+  const [showLinearTrend, setShowLinearTrend] = useState(false);
 
   const addCoordinate = () => {
     const lat = parseFloat(tempLat);
@@ -126,6 +129,47 @@ export function VisualizationPanel({
   const removeCoordinate = (index: number) => {
     setSelectedCoordinates(selectedCoordinates.filter((_, i) => i !== index));
   };
+
+  // Calculate linear trend line data for each visible dataset
+  const trendLineData = useMemo(() => {
+    if (!showLinearTrend || chartData.length === 0) return {};
+
+    const trends: Record<string, any[]> = {};
+    const visibleDatasetIds = Array.from(visibleDatasets);
+
+    visibleDatasetIds.forEach((datasetId) => {
+      // Extract valid data points
+      const points: { x: number; y: number }[] = [];
+      chartData.forEach((point, index) => {
+        const value = point[datasetId];
+        if (typeof value === "number" && !isNaN(value) && value !== null) {
+          points.push({ x: index, y: value });
+        }
+      });
+
+      if (points.length < 2) return;
+
+      // Calculate linear regression (y = mx + b)
+      const n = points.length;
+      const sumX = points.reduce((sum, p) => sum + p.x, 0);
+      const sumY = points.reduce((sum, p) => sum + p.y, 0);
+      const sumXY = points.reduce((sum, p) => sum + p.x * p.y, 0);
+      const sumX2 = points.reduce((sum, p) => sum + p.x * p.x, 0);
+
+      const m = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+      const b = (sumY - m * sumX) / n;
+
+      // Generate trend line points for all data
+      const trendPoints = chartData.map((point, index) => ({
+        date: point.date,
+        [`${datasetId}_trend`]: m * index + b,
+      }));
+
+      trends[datasetId] = trendPoints;
+    });
+
+    return trends;
+  }, [chartData, visibleDatasets, showLinearTrend]);
 
   // Calculate Y-axis domain dynamically based on visible datasets
   const yDomain = useMemo(() => {
@@ -161,6 +205,30 @@ export function VisualizationPanel({
     const originalUnit = metadata[firstDataset.id]?.units || "";
     return getDisplayUnit(originalUnit);
   }, [metadata, selectedDatasets]);
+
+  // Generate academically correct chart title
+  const chartTitle = useMemo(() => {
+    if (selectedDatasets.length === 0 || !metadata) {
+      return "Time Series Visualization";
+    }
+
+    // Get dataset names and variables
+    const datasetNames = selectedDatasets
+      .map((dataset) => {
+        const meta = metadata[dataset.id];
+        const varName = meta?.variable || dataset.name;
+        const source = meta?.source || "Unknown Source";
+        return `${varName} (${source})`;
+      })
+      .join(" vs. ");
+
+    // Format date range
+    const startDate = dateRange.start || "Start";
+    const endDate = dateRange.end || "End";
+    const temporalRange = `${startDate} to ${endDate}`;
+
+    return `${datasetNames}: ${temporalRange}`;
+  }, [selectedDatasets, metadata, dateRange]);
 
   const renderChart = () => {
     const colors = [
@@ -213,6 +281,93 @@ export function VisualizationPanel({
 
       return formatValue(value, yAxisUnit, true);
     };
+
+    // For line charts with overlays, use ComposedChart
+    if (chartType === ChartType.LINE && (showHistogram || showLinearTrend)) {
+      return (
+        <ComposedChart {...commonProps}>
+          <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+          <XAxis
+            dataKey="date"
+            tick={{ fontSize: 12 }}
+            angle={-45}
+            textAnchor="end"
+            height={80}
+          />
+          <YAxis
+            tick={{ fontSize: 12 }}
+            domain={yDomain}
+            tickFormatter={formatYAxis}
+            width={80}
+            label={{
+              value: yAxisUnit,
+              angle: -90,
+              position: "insideLeft",
+              style: { textAnchor: "middle", fontSize: 12 },
+            }}
+          />
+          <RechartsTooltip
+            formatter={formatTooltipValue}
+            labelStyle={{ fontWeight: "bold" }}
+            contentStyle={{ fontSize: 12 }}
+          />
+          <Legend />
+
+          {/* Histogram bars (if enabled) */}
+          {showHistogram &&
+            selectedDatasets.map(
+              (dataset, idx) =>
+                visibleDatasetIds.includes(dataset.id) && (
+                  <Bar
+                    key={`bar-${dataset.id}`}
+                    dataKey={dataset.id}
+                    name={`${(dataset as any).datasetName || dataset.name} (Histogram)`}
+                    fill={colors[idx % colors.length]}
+                    fillOpacity={0.3}
+                  />
+                ),
+            )}
+
+          {/* Original time series lines */}
+          {selectedDatasets.map(
+            (dataset, idx) =>
+              visibleDatasetIds.includes(dataset.id) && (
+                <Line
+                  key={`line-${dataset.id}`}
+                  type="monotone"
+                  dataKey={dataset.id}
+                  name={(dataset as any).datasetName || dataset.name}
+                  stroke={colors[idx % colors.length]}
+                  strokeWidth={2}
+                  dot={false}
+                  connectNulls={false}
+                />
+              ),
+          )}
+
+          {/* Linear trend lines (if enabled) */}
+          {showLinearTrend &&
+            selectedDatasets.map(
+              (dataset, idx) =>
+                visibleDatasetIds.includes(dataset.id) &&
+                trendLineData[dataset.id] && (
+                  <Line
+                    key={`trend-${dataset.id}`}
+                    type="monotone"
+                    data={trendLineData[dataset.id]}
+                    dataKey={`${dataset.id}_trend`}
+                    name={`${(dataset as any).datasetName || dataset.name} (Trend)`}
+                    stroke={colors[idx % colors.length]}
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                    dot={false}
+                    connectNulls={true}
+                  />
+                ),
+            )}
+        </ComposedChart>
+      );
+    }
 
     switch (chartType) {
       case ChartType.LINE:
@@ -476,6 +631,36 @@ export function VisualizationPanel({
             </div>
           </div>
 
+          {/* Overlay Options for Line Charts */}
+          {chartType === ChartType.LINE && (
+            <div className="flex items-center gap-6 border-t pt-4">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="show-histogram"
+                  checked={showHistogram}
+                  onCheckedChange={(checked) =>
+                    setShowHistogram(checked as boolean)
+                  }
+                />
+                <label htmlFor="show-histogram" className="text-sm font-medium">
+                  Show Histogram
+                </label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="show-trend"
+                  checked={showLinearTrend}
+                  onCheckedChange={(checked) =>
+                    setShowLinearTrend(checked as boolean)
+                  }
+                />
+                <label htmlFor="show-trend" className="text-sm font-medium">
+                  Show Linear Trend
+                </label>
+              </div>
+            </div>
+          )}
+
           {/* Processing Options */}
           <div className="space-y-3 border-t pt-4">
             <h4 className="text-md font-medium">Processing Options</h4>
@@ -608,7 +793,9 @@ export function VisualizationPanel({
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Time Series Visualization</CardTitle>
+                <CardTitle className="text-xl leading-relaxed">
+                  {chartTitle}
+                </CardTitle>
                 {processingInfo && (
                   <CardDescription>
                     {processingInfo.totalPoints} data points •{" "}
