@@ -483,40 +483,38 @@ export function VisualizationPanel({
   return (
     <div className="space-y-6">
       {/* Main Chart */}
-      {chartData.length > 0 && (
-        <Card className="flex-1">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-base leading-relaxed">
-                  {chartTitle}
-                </CardTitle>
-                {processingInfo && (
-                  <CardDescription>
-                    {processingInfo.totalPoints} data points •{" "}
-                    {processingInfo.datasetsProcessed} datasets • Processed in{" "}
-                    {processingInfo.processingTime}
-                    {yDomain && yAxisUnit && (
-                      <>
-                        {" "}
-                        • Y-axis range: {yDomain[0].toFixed(2)} to{" "}
-                        {yDomain[1].toFixed(2)} {yAxisUnit}
-                      </>
-                    )}
-                  </CardDescription>
-                )}
-              </div>
+      <Card className="flex-1">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base leading-relaxed">
+                {chartTitle}
+              </CardTitle>
+              {processingInfo && (
+                <CardDescription>
+                  {processingInfo.totalPoints} data points •{" "}
+                  {processingInfo.datasetsProcessed} datasets • Processed in{" "}
+                  {processingInfo.processingTime}
+                  {yDomain && yAxisUnit && (
+                    <>
+                      {" "}
+                      • Y-axis range: {yDomain[0].toFixed(2)} to{" "}
+                      {yDomain[1].toFixed(2)} {yAxisUnit}
+                    </>
+                  )}
+                </CardDescription>
+              )}
             </div>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[500px]" data-chart-container>
-              <ResponsiveContainer width="100%" height="100%">
-                {renderChart()}
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[500px]" data-chart-container>
+            <ResponsiveContainer width="100%" height="100%">
+              {renderChart()}
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Data Table */}
       {chartData.length > 0 && (

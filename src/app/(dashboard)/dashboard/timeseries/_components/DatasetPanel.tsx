@@ -238,23 +238,55 @@ export function DatasetFilter({
     <div className="space-y-4">
       {/* Dataset Filters */}
       <Card>
-        <CardHeader className="pb-3">
+        <CardHeader className="">
           <CardTitle className="text-base">Filters</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Category Filter */}
-          <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select category" />
-            </SelectTrigger>
-            <SelectContent>
-              {categories.map((cat) => (
-                <SelectItem key={cat} value={cat}>
-                  {cat}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <CardContent className="">
+          {/* Date Range - Horizontal */}
+          <div className="flex flex-row gap-6">
+            <div className="">
+              <label className="text-sm font-medium">Start Date</label>
+              <Input
+                type="date"
+                className="w-[200px]"
+                value={dateRange?.start || ""}
+                onChange={(e) =>
+                  setDateRange((prev) => ({
+                    ...prev,
+                    start: e.target.value,
+                  }))
+                }
+              />
+              <label className="text-sm font-medium">End Date</label>
+              <Input
+                type="date"
+                className="w-[200px]"
+                value={dateRange?.end || ""}
+                onChange={(e) =>
+                  setDateRange((prev) => ({
+                    ...prev,
+                    end: e.target.value,
+                  }))
+                }
+              />
+            </div>
+            {/* Focus Coordinates */}
+            <div className="items-center">
+              <label className="text-sm font-medium">
+                Focus Coordinates (Optional)
+              </label>
+              <Input
+                type="text"
+                placeholder="e.g., 40.7128,-74.0060"
+                value={focusCoordinates}
+                onChange={(e) => setFocusCoordinates(e.target.value)}
+              />
+              <p className="text-muted-foreground text-xs">
+                Enter coordinates as latitude,longitude pairs. Separate multiple
+                coordinates with semicolons (;)
+              </p>
+            </div>
+          </div>
 
           {/* Data Source Filter */}
           <div className="flex gap-2">
@@ -285,6 +317,22 @@ export function DatasetFilter({
               <Cloud className="mr-2 h-4 w-4" />
               Cloud
             </Button>
+            {/* Category Filter */}
+            <Select
+              value={selectedCategory}
+              onValueChange={setSelectedCategory}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select category" />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((cat) => (
+                  <SelectItem key={cat} value={cat}>
+                    {cat}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             {/* Search */}
             <div className="relative w-full">
               <Search className="text-muted-foreground absolute top-2.5 left-2 h-4 w-4" />
@@ -477,149 +525,101 @@ export function DatasetFilter({
           </div>
         </CardContent>
 
-        <CardHeader className="pb-3">
+        <CardHeader className="">
           <CardTitle className="text-sm">Chart Options</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Date Range - Horizontal */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Start Date</label>
-              <Input
-                type="date"
-                className="w-[200px]"
-                value={dateRange?.start || ""}
-                onChange={(e) =>
-                  setDateRange((prev) => ({
-                    ...prev,
-                    start: e.target.value,
-                  }))
-                }
-              />
-              <label className="text-sm font-medium">End Date</label>
-              <Input
-                type="date"
-                className="w-[200px]"
-                value={dateRange?.end || ""}
-                onChange={(e) =>
-                  setDateRange((prev) => ({
-                    ...prev,
-                    end: e.target.value,
-                  }))
-                }
-              />
-            </div>
-          </div>
-
+        <CardContent className="">
           {/* Chart Type, Analysis Model, Aggregation - Horizontal */}
-          <div className="grid grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Chart Type</label>
-              <Select
-                value={chartType}
-                onValueChange={(v) => setChartType(v as ChartType)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.values(ChartType).map((type) => (
-                    <SelectItem key={type} value={type}>
-                      {type.toUpperCase()}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Analysis Model</label>
-              <Select
-                value={analysisModel}
-                onValueChange={(v) => setAnalysisModel(v as AnalysisModel)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(AnalysisModel).map(([key, value]) => (
-                    <SelectItem key={value} value={value}>
-                      {key}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Aggregation</label>
-              <Select
-                value={aggregation}
-                onValueChange={(v) => setAggregation(v as AggregationMethod)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(AggregationMethod).map(([key, value]) => (
-                    <SelectItem key={value} value={value}>
-                      {key}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Resample Frequency and Normalization - Horizontal */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Resample Frequency</label>
-              <Select
-                value={resampleFreq || "none"}
-                onValueChange={(v) =>
-                  setResampleFreq(v === "none" ? undefined : v)
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="No resampling" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No resampling</SelectItem>
-                  <SelectItem value="D">Daily</SelectItem>
-                  <SelectItem value="W">Weekly</SelectItem>
-                  <SelectItem value="M">Monthly</SelectItem>
-                  <SelectItem value="Q">Quarterly</SelectItem>
-                  <SelectItem value="Y">Yearly</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Options</label>
-              <div className="flex items-center space-x-4 pt-2">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="normalize"
-                    checked={normalize}
-                    onCheckedChange={(checked) =>
-                      setNormalize(checked as boolean)
-                    }
-                  />
-                  <label htmlFor="normalize" className="text-sm">
-                    Normalize
-                  </label>
-                </div>
+          <div className="flex flex-row gap-4">
+            <label className="text-sm font-medium">Chart Type</label>
+            <Select
+              value={chartType}
+              onValueChange={(v) => setChartType(v as ChartType)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.values(ChartType).map((type) => (
+                  <SelectItem key={type} value={type}>
+                    {type.toUpperCase()}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <label className="text-sm font-medium">Analysis Model</label>
+            <Select
+              value={analysisModel}
+              onValueChange={(v) => setAnalysisModel(v as AnalysisModel)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(AnalysisModel).map(([key, value]) => (
+                  <SelectItem key={value} value={value}>
+                    {key}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <label className="text-sm font-medium">Aggregation</label>
+            <Select
+              value={aggregation}
+              onValueChange={(v) => setAggregation(v as AggregationMethod)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(AggregationMethod).map(([key, value]) => (
+                  <SelectItem key={value} value={value}>
+                    {key}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {/* Resample Frequency and Normalization - Horizontal */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  Resample Frequency
+                </label>
+                <Select
+                  value={resampleFreq || "none"}
+                  onValueChange={(v) =>
+                    setResampleFreq(v === "none" ? undefined : v)
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="No resampling" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No resampling</SelectItem>
+                    <SelectItem value="D">Daily</SelectItem>
+                    <SelectItem value="W">Weekly</SelectItem>
+                    <SelectItem value="M">Monthly</SelectItem>
+                    <SelectItem value="Q">Quarterly</SelectItem>
+                    <SelectItem value="Y">Yearly</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-            </div>
-          </div>
 
-          {/* Chart Overlays - Only for Line Charts */}
-          {chartType === ChartType.LINE && (
-            <div className="space-y-2 border-t pt-4">
-              <label className="text-sm font-medium">Chart Overlays</label>
-              <div className="flex items-center space-x-6">
-                <div className="flex items-center space-x-2">
+              <div className="">
+                <label className="text-sm font-medium">Options</label>
+                <div className="flex flex-row">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="normalize"
+                      checked={normalize}
+                      onCheckedChange={(checked) =>
+                        setNormalize(checked as boolean)
+                      }
+                    />
+                    <label htmlFor="normalize" className="text-sm">
+                      Normalize
+                    </label>
+                  </div>
                   <Checkbox
                     id="show-histogram"
                     checked={showHistogram}
@@ -630,8 +630,6 @@ export function DatasetFilter({
                   <label htmlFor="show-histogram" className="text-sm">
                     Show Histogram
                   </label>
-                </div>
-                <div className="flex items-center space-x-2">
                   <Checkbox
                     id="show-trend"
                     checked={showLinearTrend}
@@ -645,40 +643,23 @@ export function DatasetFilter({
                 </div>
               </div>
             </div>
-          )}
 
-          {/* Smoothing Window */}
-          {analysisModel === AnalysisModel.MOVING_AVG && (
-            <div className="space-y-2 border-t pt-4">
-              <label className="text-sm font-medium">
-                Smoothing Window: {smoothingWindow} months
-              </label>
-              <Slider
-                value={[smoothingWindow]}
-                onValueChange={(value) => setSmoothingWindow(value[0])}
-                min={1}
-                max={24}
-                step={1}
-                className="w-full"
-              />
-            </div>
-          )}
-
-          {/* Focus Coordinates */}
-          <div className="space-y-2 border-t pt-4">
-            <label className="text-sm font-medium">
-              Focus Coordinates (Optional)
-            </label>
-            <Input
-              type="text"
-              placeholder="e.g., 40.7128,-74.0060"
-              value={focusCoordinates}
-              onChange={(e) => setFocusCoordinates(e.target.value)}
-            />
-            <p className="text-muted-foreground text-xs">
-              Enter coordinates as latitude,longitude pairs. Separate multiple
-              coordinates with semicolons (;)
-            </p>
+            {/* Smoothing Window */}
+            {analysisModel === AnalysisModel.MOVING_AVG && (
+              <div className="space-y-2 border-t pt-4">
+                <label className="text-sm font-medium">
+                  Smoothing Window: {smoothingWindow} months
+                </label>
+                <Slider
+                  value={[smoothingWindow]}
+                  onValueChange={(value) => setSmoothingWindow(value[0])}
+                  min={1}
+                  max={24}
+                  step={1}
+                  className="w-full"
+                />
+              </div>
+            )}
           </div>
         </CardContent>
         <CardFooter>
