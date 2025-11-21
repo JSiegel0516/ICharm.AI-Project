@@ -255,6 +255,7 @@ export default function HomePage() {
         latitude,
         longitude,
         name: data?.name,
+        source: "marker",
       });
     },
     [setRegionInfoData, setShowRegionInfo, setCurrentLocationMarker],
@@ -417,6 +418,7 @@ export default function HomePage() {
         latitude,
         longitude,
         name: name ?? null,
+        source: "search",
       });
     }
     clearLocationFocusRequest();

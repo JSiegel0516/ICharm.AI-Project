@@ -7,7 +7,7 @@ import { ChatDB } from "@/lib/db";
 import { ConversationContextPayload } from "@/types";
 import {
   sanitizeConversationContext,
-  buildTrendInsightPrompt,
+  buildTrendInsightResponse,
 } from "./trendAnalysis";
 
 const HF_MODEL =
@@ -139,10 +139,120 @@ export async function POST(req: NextRequest) {
       ? incomingSessionId.trim()
       : null;
 
-  // === RAG ENHANCEMENT START ===
-  // Get the latest user message
   const lastUserMessage = findLastUserMessage(messages);
   const userQuery = lastUserMessage?.content ?? "";
+
+  let sessionId = sanitizedSessionId;
+  let testUserId: string | null = null;
+
+  if (userQuery) {
+    try {
+      const testUser = await ChatDB.getOrCreateUserByEmail(TEST_USER_EMAIL);
+      testUserId = testUser.id;
+
+      const candidateTitle = deriveSessionTitle(lastUserMessage);
+
+      if (sessionId) {
+        const existing = await ChatDB.getSession(sessionId, testUser.id);
+        if (!existing) {
+          const created = await ChatDB.createSession(
+            testUser.id,
+            candidateTitle,
+          );
+          sessionId = created.id;
+        } else if (!existing.title && candidateTitle) {
+          await ChatDB.updateSessionTitle(
+            sessionId,
+            testUser.id,
+            candidateTitle,
+          );
+        }
+      } else {
+        const created = await ChatDB.createSession(testUser.id, candidateTitle);
+        sessionId = created.id;
+      }
+
+      if (sessionId) {
+        try {
+          await ChatDB.addMessage(sessionId, "user", userQuery);
+        } catch (messageError) {
+          console.error("Failed to persist user message", messageError);
+        }
+      }
+    } catch (bootstrapError) {
+      console.error("Failed to bootstrap chat persistence", bootstrapError);
+    }
+  } else {
+    console.warn(
+      "No user message detected in payload; skipping persistence bootstrap.",
+    );
+  }
+
+  let trendResult: Awaited<
+    ReturnType<typeof buildTrendInsightResponse>
+  > | null = null;
+
+  if (conversationContext && userQuery) {
+    try {
+      trendResult = await buildTrendInsightResponse({
+        query: userQuery,
+        context: conversationContext,
+        dataServiceUrl: DATA_SERVICE_URL,
+      });
+    } catch (error) {
+      console.error("Trend insight generation failed:", error);
+    }
+  }
+
+  if (trendResult && trendResult.type !== "none") {
+    const assistantMessage = trendResult.message;
+    const trendSources =
+      trendResult.type === "summary"
+        ? [
+            {
+              id: `${trendResult.metadata.datasetId}:${trendResult.metadata.analysisScope}`,
+              title: `${trendResult.metadata.datasetLabel} ${
+                trendResult.metadata.analysisScope === "marker"
+                  ? "marker"
+                  : "global"
+              } summary`,
+              category: "timeseries",
+              score: 1,
+            },
+          ]
+        : undefined;
+
+    if (sessionId && assistantMessage) {
+      try {
+        await ChatDB.addMessage(
+          sessionId,
+          "assistant",
+          assistantMessage,
+          trendSources,
+        );
+      } catch (assistantStoreError) {
+        console.error(
+          "Failed to persist assistant trend message",
+          assistantStoreError,
+        );
+      }
+    }
+
+    return Response.json(
+      {
+        content: assistantMessage,
+        sources: trendSources,
+        sessionId: sessionId ?? undefined,
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      },
+    );
+  }
+
+  // === RAG ENHANCEMENT START ===
 
   let contextSources: Array<{
     id: string;
@@ -173,20 +283,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  let trendPrompt: string | null = null;
-  if (conversationContext && lastUserMessage?.content) {
-    try {
-      trendPrompt = await buildTrendInsightPrompt({
-        query: lastUserMessage.content,
-        context: conversationContext,
-        dataServiceUrl: DATA_SERVICE_URL,
-      });
-    } catch (error) {
-      console.error("Trend insight generation failed:", error);
-    }
-  }
-
-  if (userQuery && !trendPrompt) {
+  if (userQuery) {
     console.log("🔍 Analyzing query...");
 
     try {
@@ -264,62 +361,6 @@ Instructions:
     }
   }
   // === RAG ENHANCEMENT END ===
-
-  if (trendPrompt) {
-    enhancedMessages = [
-      {
-        role: "system",
-        content: trendPrompt,
-      },
-      ...enhancedMessages,
-    ];
-  }
-
-  let sessionId = sanitizedSessionId;
-  let testUserId: string | null = null;
-
-  if (lastUserMessage?.content) {
-    try {
-      const testUser = await ChatDB.getOrCreateUserByEmail(TEST_USER_EMAIL);
-      testUserId = testUser.id;
-
-      const candidateTitle = deriveSessionTitle(lastUserMessage);
-
-      if (sessionId) {
-        const existing = await ChatDB.getSession(sessionId, testUser.id);
-        if (!existing) {
-          const created = await ChatDB.createSession(
-            testUser.id,
-            candidateTitle,
-          );
-          sessionId = created.id;
-        } else if (!existing.title && candidateTitle) {
-          await ChatDB.updateSessionTitle(
-            sessionId,
-            testUser.id,
-            candidateTitle,
-          );
-        }
-      } else {
-        const created = await ChatDB.createSession(testUser.id, candidateTitle);
-        sessionId = created.id;
-      }
-
-      if (sessionId) {
-        try {
-          await ChatDB.addMessage(sessionId, "user", lastUserMessage.content);
-        } catch (messageError) {
-          console.error("Failed to persist user message", messageError);
-        }
-      }
-    } catch (bootstrapError) {
-      console.error("Failed to bootstrap chat persistence", bootstrapError);
-    }
-  } else {
-    console.warn(
-      "No user message detected in payload; skipping persistence bootstrap.",
-    );
-  }
 
   try {
     const llmResponse = await fetch(`${LLM_SERVICE_URL}/v1/chat`, {

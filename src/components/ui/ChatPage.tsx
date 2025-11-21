@@ -156,6 +156,64 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
     [],
   );
 
+  const maybeHandleLocalIntent = useCallback(
+    (message: string): boolean => {
+      if (!currentDataset) {
+        return false;
+      }
+
+      const normalized = message.toLowerCase();
+      const datasetIntentMatchers: Array<string | RegExp> = [
+        /what\s+(dataset|data\s*set)\s+(am\s+i\s+)?(looking\s+at|viewing|using|seeing|on)/i,
+        /which\s+(dataset|data\s*set)/i,
+        /current\s+(dataset|data\s*set)/i,
+        /what\s+dataset\s+is\s+this/i,
+        /what\s+am\s+i\s+looking\s+at/i,
+        "dataset am i on",
+        "what dataset is loaded",
+        "what dataset do i have",
+      ];
+
+      const wantsDatasetInfo = datasetIntentMatchers.some((matcher) => {
+        if (typeof matcher === "string") {
+          return normalized.includes(matcher);
+        }
+        return matcher.test(message);
+      });
+
+      if (!wantsDatasetInfo) {
+        return false;
+      }
+
+      const coverageStart = formatDateOnly(currentDataset.startDate);
+      const coverageEnd = formatDateOnly(currentDataset.endDate);
+      const units = currentDataset.units || "dataset units";
+      const description =
+        currentDataset.description ||
+        currentDataset.backend?.layerParameter ||
+        null;
+
+      const summarySegments = [
+        `You're currently viewing "${currentDataset.name}".`,
+        description ? `Description: ${description}.` : null,
+        `Values are reported in ${units}.`,
+        coverageStart && coverageEnd
+          ? `Archive coverage spans ${coverageStart} to ${coverageEnd}.`
+          : null,
+        currentDataset.backend?.sourceName
+          ? `Source: ${currentDataset.backend.sourceName}.`
+          : null,
+        currentDataset.backend?.datasetType
+          ? `Type: ${currentDataset.backend.datasetType}.`
+          : null,
+      ].filter((segment): segment is string => Boolean(segment));
+
+      appendAnimatedAssistantMessage(summarySegments.join(" "));
+      return true;
+    },
+    [appendAnimatedAssistantMessage, currentDataset],
+  );
+
   const buildConversationContext =
     useCallback((): ConversationContextPayload | null => {
       if (!currentDataset) {
@@ -176,10 +234,14 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
               latitude: regionInfoData.latitude,
               longitude: regionInfoData.longitude,
               name: regionInfoData.regionData?.name ?? null,
+              source: "region" as const,
             }
           : null;
 
       const primaryLocation = currentLocationMarker ?? fallbackLocation;
+      const usingMarkerSelection =
+        Boolean(currentLocationMarker) &&
+        primaryLocation === currentLocationMarker;
 
       const locationPayload =
         primaryLocation &&
@@ -189,6 +251,13 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
               latitude: primaryLocation.latitude,
               longitude: primaryLocation.longitude,
               name: primaryLocation.name ?? null,
+              source:
+                primaryLocation.source ??
+                (usingMarkerSelection
+                  ? "marker"
+                  : fallbackLocation
+                    ? (fallbackLocation.source ?? "region")
+                    : "unknown"),
             }
           : null;
 
@@ -505,14 +574,15 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
   };
 
   const handleSendMessage = async () => {
-    if (!inputValue.trim()) {
+    const trimmedInput = inputValue.trim();
+    if (!trimmedInput) {
       return;
     }
 
     const newMessage: ChatMessage = {
       id: `${Date.now()}`,
       type: "user",
-      message: inputValue,
+      message: trimmedInput,
       timestamp: new Date(),
     };
 
@@ -520,6 +590,11 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
     setMessages(nextMessages);
     setInputValue("");
     setIsTyping(true);
+
+    if (maybeHandleLocalIntent(trimmedInput)) {
+      setIsTyping(false);
+      return;
+    }
 
     let activeSessionId = sessionId;
 
