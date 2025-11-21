@@ -7,19 +7,18 @@ import { usePathname } from "next/navigation";
 
 // Define your page titles
 const PAGE_TITLES: Record<string, string> = {
-  "/": "Dashboard",
+  "/dashboard": "Dashboard",
   "/documents": "Documents",
   "/dashboard/timeseries": "Time Series Analysis",
   "/analysis": "Analysis",
   "/settings": "Settings",
-  // Add more routes as needed
 };
 
 export function SiteHeader() {
   const pathname = usePathname();
 
   // Get the title for the current page, with fallback
-  const pageTitle = PAGE_TITLES[pathname] || "iCharm";
+  const pageTitle = PAGE_TITLES[pathname] || "iCharm Dashboard";
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
@@ -30,7 +29,7 @@ export function SiteHeader() {
           className="mx-2 data-[orientation=vertical]:h-4"
         />
         <h1 className="text-base font-medium">{pageTitle}</h1>
-        <div className="justify-end">
+        <div className="ml-auto">
           <ThemeToggle />
         </div>
       </div>

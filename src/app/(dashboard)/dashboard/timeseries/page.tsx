@@ -22,7 +22,7 @@ import {
   type DatasetInfo,
   type SpatialBounds,
 } from "@/hooks/use-timeseries";
-import { DatasetFilter } from "@/app/(dashboard)/dashboard/timeseries/_components/DatasetPanel";
+import { DatasetFilter } from "@/app/(dashboard)/dashboard/timeseries/_components/OptionsPanel";
 import { VisualizationPanel } from "@/app/(dashboard)/dashboard/timeseries/_components/VisualizationPanel";
 
 // ============================================================================
@@ -77,25 +77,24 @@ export default function TimeSeriesPage() {
     start: "2020-01-01",
     end: "2023-12-31",
   });
+
+  // Client-side chart options (moved to VisualizationPanel)
   const [chartType, setChartType] = useState<ChartType>(ChartType.LINE);
-  const [analysisModel, setAnalysisModel] = useState<AnalysisModel>(
-    AnalysisModel.RAW,
+  const [normalize, setNormalize] = useState(false);
+  const [smoothingWindow, setSmoothingWindow] = useState(1);
+  const [resampleFreq, setResampleFreq] = useState<string | undefined>(
+    undefined,
   );
   const [aggregation, setAggregation] = useState<AggregationMethod>(
     AggregationMethod.MEAN,
   );
-  const [normalize, setNormalize] = useState(false);
-  const [smoothingWindow, setSmoothingWindow] = useState(12);
-  const [resampleFreq, setResampleFreq] = useState<string | undefined>(
-    undefined,
+  const [showHistogram, setShowHistogram] = useState(false);
+  const [showLinearTrend, setShowLinearTrend] = useState(false);
+
+  // Server-side options (stay in OptionsPanel)
+  const [analysisModel, setAnalysisModel] = useState<AnalysisModel>(
+    AnalysisModel.RAW,
   );
-  const [showSpatialFilter, setShowSpatialFilter] = useState(false);
-  const [spatialBounds, setSpatialBounds] = useState<SpatialBounds>({
-    lat_min: -90,
-    lat_max: 90,
-    lon_min: -180,
-    lon_max: 180,
-  });
   const [dataSourceFilter, setDataSourceFilter] = useState<
     "all" | "local" | "cloud"
   >("all");
@@ -106,10 +105,6 @@ export default function TimeSeriesPage() {
     isValid: boolean;
     errors: string[];
   }>({ isValid: true, errors: [] });
-
-  // Chart overlay state
-  const [showHistogram, setShowHistogram] = useState(false);
-  const [showLinearTrend, setShowLinearTrend] = useState(false);
 
   // Track if we've initialized from URL params
   const initializedFromUrl = useRef(false);
@@ -206,11 +201,6 @@ export default function TimeSeriesPage() {
     });
   }, [focusCoordinates]);
 
-  // Memoized chart data (already transformed in hook)
-  const chartData = useMemo(() => {
-    return data; // Data is already in chart-ready format from the hook
-  }, [data]);
-
   // Handle Extract button click with validation
   const handleExtract = useCallback(async () => {
     if (selectedDatasets.length === 0) {
@@ -230,7 +220,7 @@ export default function TimeSeriesPage() {
     const datasetIds = selectedDatasets.map((d) => d.id);
     setVisibleDatasets(new Set(datasetIds));
 
-    console.log("🚀 Extracting datasets:");
+    console.log("Extracting datasets:");
     console.log("  - UUIDs for API:", datasetIds);
     console.log(
       "  - Slugs for display:",
@@ -244,22 +234,19 @@ export default function TimeSeriesPage() {
     }
 
     try {
+      // NOTE: We request RAW data - client-side transformations applied in VisualizationPanel
       await extractTimeSeries({
-        datasetIds, // UUIDs for API
+        datasetIds,
         startDate: dateRange.start,
         endDate: dateRange.end,
-        analysisModel,
-        normalize,
+        analysisModel, // Server-side analysis only
+        normalize: false, // Done client-side
         chartType,
-        spatialBounds: showSpatialFilter ? spatialBounds : undefined,
-        aggregation,
-        resampleFreq,
+        aggregation: AggregationMethod.MEAN,
+        resampleFreq: undefined, // Done client-side
         includeStatistics: true,
         includeMetadata: true,
-        smoothingWindow:
-          analysisModel === AnalysisModel.MOVING_AVG
-            ? smoothingWindow
-            : undefined,
+        smoothingWindow: undefined, // Done client-side
         focusCoordinates: focusCoordinates.trim() || undefined,
       });
 
@@ -271,12 +258,6 @@ export default function TimeSeriesPage() {
     selectedDatasets,
     dateRange,
     analysisModel,
-    aggregation,
-    normalize,
-    smoothingWindow,
-    resampleFreq,
-    showSpatialFilter,
-    spatialBounds,
     chartType,
     focusCoordinates,
     coordinateValidation,
@@ -321,7 +302,7 @@ export default function TimeSeriesPage() {
 
   return (
     <div className="container mx-auto space-y-6 p-6">
-      {/* Dataset Filter - All Controls */}
+      {/* Dataset Filter - Server-side Controls Only */}
       <DatasetFilter
         selectedDatasets={selectedDatasets}
         setSelectedDatasets={setSelectedDatasets}
@@ -334,26 +315,12 @@ export default function TimeSeriesPage() {
         setVisibleDatasets={setVisibleDatasets}
         dataSourceFilter={dataSourceFilter}
         setDataSourceFilter={setDataSourceFilter}
-        chartType={chartType}
-        setChartType={setChartType}
         dateRange={dateRange}
         setDateRange={setDateRange}
         analysisModel={analysisModel}
         setAnalysisModel={setAnalysisModel}
-        aggregation={aggregation}
-        setAggregation={setAggregation}
-        normalize={normalize}
-        setNormalize={setNormalize}
-        smoothingWindow={smoothingWindow}
-        setSmoothingWindow={setSmoothingWindow}
-        resampleFreq={resampleFreq}
-        setResampleFreq={setResampleFreq}
         focusCoordinates={focusCoordinates}
         setFocusCoordinates={setFocusCoordinates}
-        showHistogram={showHistogram}
-        setShowHistogram={setShowHistogram}
-        showLinearTrend={showLinearTrend}
-        setShowLinearTrend={setShowLinearTrend}
         onExtract={handleExtract}
         onExport={handleExport}
         onReset={reset}
@@ -381,20 +348,31 @@ export default function TimeSeriesPage() {
         </Alert>
       )}
 
-      {/* Visualization Panel - Chart, Table, Stats */}
+      {/* Visualization Panel - Includes ChartOptionsPanel now */}
       <div data-chart-container>
         <VisualizationPanel
           chartType={chartType}
+          setChartType={setChartType}
           dateRange={dateRange}
           analysisModel={analysisModel}
-          chartData={chartData}
+          chartData={data}
           selectedDatasets={selectedDatasets}
           visibleDatasets={visibleDatasets}
           processingInfo={processingInfo}
           statistics={statistics}
           metadata={metadata}
+          normalize={normalize}
+          setNormalize={setNormalize}
+          smoothingWindow={smoothingWindow}
+          setSmoothingWindow={setSmoothingWindow}
+          resampleFreq={resampleFreq}
+          setResampleFreq={setResampleFreq}
+          aggregation={aggregation}
+          setAggregation={setAggregation}
           showHistogram={showHistogram}
+          setShowHistogram={setShowHistogram}
           showLinearTrend={showLinearTrend}
+          setShowLinearTrend={setShowLinearTrend}
         />
       </div>
     </div>

@@ -7,7 +7,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   LineChart,
   Line,
@@ -27,42 +26,94 @@ import {
 } from "recharts";
 import {
   ChartType,
-  AnalysisModel,
+  AggregationMethod,
   type DatasetInfo,
   type ProcessingInfo,
   formatValue,
   getDisplayUnit,
   convertUnits,
 } from "@/hooks/use-timeseries";
+import { applyTransformations } from "@/lib/client-transformations";
+import { ChartOptionsPanel } from "./ChartOptionsPanel";
 import { DataTable } from "./DataTable";
 
 interface VisualizationPanelProps {
+  // Chart type & date range
   chartType: ChartType;
+  setChartType: (type: ChartType) => void;
   dateRange: { start: string; end: string };
-  analysisModel: AnalysisModel;
+  analysisModel: string;
+
+  // Data
   chartData: any[];
   selectedDatasets: DatasetInfo[];
   visibleDatasets: Set<string>;
   processingInfo: ProcessingInfo | null;
   statistics: Record<string, any> | null;
   metadata: Record<string, any> | null;
+
+  // Client-side transformation options
+  normalize: boolean;
+  setNormalize: (normalize: boolean) => void;
+  smoothingWindow: number;
+  setSmoothingWindow: (window: number) => void;
+  resampleFreq: string | undefined;
+  setResampleFreq: (freq: string | undefined) => void;
+  aggregation: AggregationMethod;
+  setAggregation: (method: AggregationMethod) => void;
+
+  // Overlays
   showHistogram: boolean;
+  setShowHistogram: (show: boolean) => void;
   showLinearTrend: boolean;
+  setShowLinearTrend: (show: boolean) => void;
 }
 
 export function VisualizationPanel({
   chartType,
+  setChartType,
   dateRange,
   analysisModel,
-  chartData,
+  chartData: rawChartData,
   selectedDatasets,
   visibleDatasets,
   processingInfo,
   statistics,
   metadata,
+  normalize,
+  setNormalize,
+  smoothingWindow,
+  setSmoothingWindow,
+  resampleFreq,
+  setResampleFreq,
+  aggregation,
+  setAggregation,
   showHistogram,
+  setShowHistogram,
   showLinearTrend,
+  setShowLinearTrend,
 }: VisualizationPanelProps) {
+  // Apply client-side transformations
+  const chartData = useMemo(() => {
+    if (rawChartData.length === 0) return rawChartData;
+
+    const datasetIds = selectedDatasets.map((d) => d.id);
+
+    return applyTransformations(rawChartData, datasetIds, {
+      normalize,
+      smoothingWindow: smoothingWindow > 1 ? smoothingWindow : undefined,
+      resampleFreq,
+      aggregation,
+    });
+  }, [
+    rawChartData,
+    selectedDatasets,
+    normalize,
+    smoothingWindow,
+    resampleFreq,
+    aggregation,
+  ]);
+
   // Calculate linear trend line data for each visible dataset
   const trendLineData = useMemo(() => {
     if (!showLinearTrend || chartData.length === 0) return {};
@@ -129,11 +180,12 @@ export function VisualizationPanel({
 
   // Get display unit for Y-axis
   const yAxisUnit = useMemo(() => {
+    if (normalize) return "normalized";
     if (!metadata || selectedDatasets.length === 0) return "";
     const firstDataset = selectedDatasets[0];
     const originalUnit = metadata[firstDataset.id]?.units || "";
     return getDisplayUnit(originalUnit);
-  }, [metadata, selectedDatasets]);
+  }, [metadata, selectedDatasets, normalize]);
 
   // Generate chart title
   const chartTitle = useMemo(() => {
@@ -178,6 +230,7 @@ export function VisualizationPanel({
     };
 
     const formatYAxis = (value: number) => {
+      if (normalize) return value.toFixed(2);
       if (Math.abs(value) < 0.01) return value.toFixed(4);
       if (Math.abs(value) < 1) return value.toFixed(3);
       if (Math.abs(value) >= 1000) return (value / 1000).toFixed(1) + "k";
@@ -188,6 +241,7 @@ export function VisualizationPanel({
       if (typeof value !== "number" || isNaN(value) || value === null) {
         return "-";
       }
+      if (normalize) return value.toFixed(4);
       return formatValue(value, yAxisUnit, true);
     };
 
@@ -246,7 +300,7 @@ export function VisualizationPanel({
                   stroke={colors[idx % colors.length]}
                   strokeWidth={2}
                   dot={false}
-                  connectNulls={false}
+                  connectNulls
                 />
               ),
           )}
@@ -266,7 +320,7 @@ export function VisualizationPanel({
                     strokeWidth={2}
                     strokeDasharray="5 5"
                     dot={false}
-                    connectNulls={true}
+                    connectNulls
                   />
                 ),
             )}
@@ -300,7 +354,6 @@ export function VisualizationPanel({
             />
             <RechartsTooltip
               formatter={formatTooltipValue}
-              labelStyle={{ fontWeight: "bold" }}
               contentStyle={{ fontSize: 12 }}
             />
             <Legend />
@@ -315,7 +368,7 @@ export function VisualizationPanel({
                     stroke={colors[idx % colors.length]}
                     strokeWidth={2}
                     dot={false}
-                    connectNulls={false}
+                    connectNulls
                   />
                 ),
             )}
@@ -486,25 +539,23 @@ export function VisualizationPanel({
       <Card className="flex-1">
         <CardHeader>
           <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-base leading-relaxed">
-                {chartTitle}
-              </CardTitle>
-              {processingInfo && (
-                <CardDescription>
-                  {processingInfo.totalPoints} data points •{" "}
-                  {processingInfo.datasetsProcessed} datasets • Processed in{" "}
-                  {processingInfo.processingTime}
-                  {yDomain && yAxisUnit && (
-                    <>
-                      {" "}
-                      • Y-axis range: {yDomain[0].toFixed(2)} to{" "}
-                      {yDomain[1].toFixed(2)} {yAxisUnit}
-                    </>
-                  )}
-                </CardDescription>
-              )}
-            </div>
+            <CardTitle className="text-base leading-relaxed">
+              {chartTitle}
+            </CardTitle>
+            {processingInfo && (
+              <CardDescription>
+                {processingInfo.totalPoints} data points •{" "}
+                {processingInfo.datasetsProcessed} datasets • Processed in{" "}
+                {processingInfo.processingTime}
+                {yDomain && yAxisUnit && !normalize && (
+                  <>
+                    {" "}
+                    • Y-axis range: {yDomain[0].toFixed(2)} to{" "}
+                    {yDomain[1].toFixed(2)} {yAxisUnit}
+                  </>
+                )}
+              </CardDescription>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -515,6 +566,24 @@ export function VisualizationPanel({
           </div>
         </CardContent>
       </Card>
+
+      {/* Chart Options Panel  */}
+      <ChartOptionsPanel
+        chartType={chartType}
+        setChartType={setChartType}
+        normalize={normalize}
+        setNormalize={setNormalize}
+        smoothingWindow={smoothingWindow}
+        setSmoothingWindow={setSmoothingWindow}
+        resampleFreq={resampleFreq}
+        setResampleFreq={setResampleFreq}
+        aggregation={aggregation}
+        setAggregation={setAggregation}
+        showHistogram={showHistogram}
+        setShowHistogram={setShowHistogram}
+        showLinearTrend={showLinearTrend}
+        setShowLinearTrend={setShowLinearTrend}
+      />
 
       {/* Data Table */}
       {chartData.length > 0 && (
@@ -527,7 +596,7 @@ export function VisualizationPanel({
       )}
 
       {/* Statistics */}
-      {statistics && Object.keys(statistics).length > 0 && (
+      {statistics && Object.keys(statistics).length > 0 && !normalize && (
         <Card>
           <CardHeader>
             <CardTitle className="text-sm">Statistical Summary</CardTitle>
