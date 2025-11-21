@@ -306,25 +306,28 @@ export function DatasetFilter({
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2">
                                 <p className="truncate text-sm font-medium">
-                                  {(dataset as any).datasetName || dataset.name}
+                                  {(dataset as any).datasetName ||
+                                    dataset.name}{" "}
+                                </p>
+                                <p className="text-muted-foreground truncate text-xs">
+                                  • {dataset.name} •{(dataset as any).startDate}{" "}
+                                  to {(dataset as any).endDate} •{" "}
+                                  {(dataset as any).units || "N/A"}
                                 </p>
                                 <Badge variant="outline" className="text-xs">
+                                  {(dataset as any).sourceName ||
+                                    (dataset as any).source ||
+                                    "Unknown source"}
+                                </Badge>
+                                <Badge variant="outline" className="text-xs">
                                   {dataset.stored === "local" ? (
-                                    <Database className="mr-1 h-3 w-3" />
+                                    <Database className="text-chart-2 mr-1 h-3 w-3" />
                                   ) : (
-                                    <Cloud className="mr-1 h-3 w-3" />
+                                    <Cloud className="text-chart-1 mr-1 h-3 w-3" />
                                   )}
                                   {dataset.stored}
                                 </Badge>
                               </div>
-                              <p className="text-muted-foreground truncate text-xs">
-                                {(dataset as any).sourceName ||
-                                  (dataset as any).source ||
-                                  "Unknown source"}{" "}
-                                • {dataset.name} •{(dataset as any).startDate}{" "}
-                                to {(dataset as any).endDate} •{" "}
-                                {(dataset as any).units || "N/A"}v
-                              </p>
                             </div>
                           </div>
                         </div>
@@ -398,49 +401,9 @@ export function DatasetFilter({
           )}
 
           {/* Server-side Analysis Options */}
-          <div className="grid grid-cols-1 gap-4">
-            <label className="text-sm font-medium">Analysis Model</label>
-
-            <div className="flex flex-row gap-6">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Start Date</label>
-                <Input
-                  type="date"
-                  className="w-[200px]"
-                  value={dateRange?.start || ""}
-                  onChange={(e) =>
-                    setDateRange((prev) => ({
-                      ...prev,
-                      start: e.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">End Date</label>
-                <Input
-                  type="date"
-                  className="w-[200px]"
-                  value={dateRange?.end || ""}
-                  onChange={(e) =>
-                    setDateRange((prev) => ({ ...prev, end: e.target.value }))
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Focus Coordinates (Optional)
-                </label>
-                <Input
-                  placeholder="e.g., 40.7128,-74.0060 or 51.5074,-0.1278"
-                  value={focusCoordinates}
-                  onChange={(e) => setFocusCoordinates(e.target.value)}
-                />
-                <p className="text-muted-foreground text-xs">
-                  Extract data for specific lat,lon points. Leave empty for
-                  spatial aggregation.
-                </p>
-              </div>
+          <div className="flex flex-row gap-6">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Analysis Model</label>
               <Select
                 value={analysisModel}
                 onValueChange={(v) => setAnalysisModel(v as AnalysisModel)}
@@ -456,6 +419,44 @@ export function DatasetFilter({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Start Date</label>
+              <Input
+                type="date"
+                value={dateRange?.start || ""}
+                onChange={(e) =>
+                  setDateRange((prev) => ({
+                    ...prev,
+                    start: e.target.value,
+                  }))
+                }
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">End Date</label>
+              <Input
+                type="date"
+                value={dateRange?.end || ""}
+                onChange={(e) =>
+                  setDateRange((prev) => ({ ...prev, end: e.target.value }))
+                }
+              />
+            </div>
+
+            <div className="flex-1 space-y-2">
+              <label className="text-sm font-medium">
+                Focus Coordinates (Optional)
+              </label>
+              <Input
+                className="w-full"
+                placeholder="Extract data for specific lat,lon points. Leave empty for spatial aggregation. e.g., 40.7128,-74.0060;51.5074,-0.1278"
+                value={focusCoordinates}
+                onChange={(e) => setFocusCoordinates(e.target.value)}
+              />
+              <p className="text-muted-foreground text-xs"></p>
             </div>
           </div>
         </CardContent>
