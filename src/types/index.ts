@@ -73,6 +73,7 @@ export interface ConversationContextPayload {
     latitude?: number | null;
     longitude?: number | null;
     name?: string | null;
+    source?: "marker" | "search" | "region" | "unknown" | null;
   } | null;
 }
 
@@ -153,6 +154,7 @@ export interface AppState {
     latitude: number;
     longitude: number;
     name?: string | null;
+    source?: "marker" | "search" | "region" | "unknown" | null;
   } | null;
   currentDataset: Dataset;
   datasets: Dataset[];

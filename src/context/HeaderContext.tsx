@@ -264,6 +264,7 @@ const useAppStateInternal = () => {
       latitude: 21.25,
       longitude: -71.25,
       name: "GPCP V2.3 Precipitation",
+      source: "region",
     },
     globePosition: {
       latitude: 0,
@@ -363,6 +364,7 @@ const useAppStateInternal = () => {
         latitude: number;
         longitude: number;
         name?: string | null;
+        source?: "marker" | "search" | "region" | "unknown" | null;
       } | null,
     ) => {
       setState((prev) => ({
@@ -390,6 +392,7 @@ const useAppStateInternal = () => {
           latitude: target.latitude,
           longitude: target.longitude,
           name: target.name ?? null,
+          source: "search",
         },
       }));
     },

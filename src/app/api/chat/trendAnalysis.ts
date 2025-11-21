@@ -34,6 +34,53 @@ const TREND_KEYWORDS = [
   "overview",
 ];
 
+const LOCATION_SCOPE_KEYWORDS: Array<string | RegExp> = [
+  "current marker",
+  "my marker",
+  "this marker",
+  "selected marker",
+  "marker position",
+  "current position",
+  "my position",
+  "current location",
+  "my location",
+  "this location",
+  "selected location",
+  "selected spot",
+  "selected point",
+  "this point",
+  "this spot",
+  "these coordinates",
+  "my coordinates",
+  "current coordinates",
+  "at my marker",
+  "at this marker",
+  "at my location",
+  "at this location",
+  "at my position",
+  "around my marker",
+  "around this marker",
+  /at\s+my\s+(?:marker|location|position|coordinates)/,
+  /at\s+this\s+(?:marker|location|position|spot|point)/,
+  /near\s+(?:my|this)\s+(?:marker|location|spot|point)/,
+];
+
+const DATASET_SCOPE_KEYWORDS: Array<string | RegExp> = [
+  "entire dataset",
+  "whole dataset",
+  "overall dataset",
+  "dataset overview",
+  "dataset summary",
+  "summary of this dataset",
+  "summarize this dataset",
+  "global summary",
+  "global overview",
+  "whole thing",
+  "entire data set",
+  "all data",
+  "full dataset",
+];
+
 const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000;
 const FALLBACK_WINDOW_YEARS = 30;
 const GLOBAL_BOUNDS = {
@@ -142,6 +189,70 @@ const parseRequestedWindow = (query: string | undefined): number | null => {
   return Number.isFinite(value) ? value : null;
 };
 
+const containsKeyword = (
+  text: string,
+  keywords: Array<string | RegExp>,
+): boolean => {
+  return keywords.some((keyword) =>
+    typeof keyword === "string" ? text.includes(keyword) : keyword.test(text),
+  );
+};
+
+type LocationSourceType = "marker" | "search" | "region" | "unknown";
+
+const normalizeLocationSource = (
+  value?: string | null,
+): LocationSourceType | null => {
+  if (!value || typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (
+    normalized === "marker" ||
+    normalized === "search" ||
+    normalized === "region" ||
+    normalized === "unknown"
+  ) {
+    return normalized as LocationSourceType;
+  }
+  if (normalized === "manual" || normalized === "click") {
+    return "marker";
+  }
+  return null;
+};
+
+type AnalysisScope = "global" | "marker" | "marker-missing";
+
+const determineAnalysisScope = (
+  query: string | undefined,
+  {
+    hasValidLocation,
+    hasManualMarker,
+  }: { hasValidLocation: boolean; hasManualMarker: boolean },
+): AnalysisScope => {
+  const normalized = (query ?? "").toLowerCase();
+  if (!normalized.trim()) {
+    return hasValidLocation ? "global" : "global";
+  }
+
+  const mentionsMarker =
+    containsKeyword(normalized, LOCATION_SCOPE_KEYWORDS) ||
+    (hasManualMarker && /\bhere\b/.test(normalized));
+
+  if (mentionsMarker) {
+    return hasValidLocation ? "marker" : "marker-missing";
+  }
+
+  if (containsKeyword(normalized, DATASET_SCOPE_KEYWORDS)) {
+    return "global";
+  }
+
+  return "global";
+};
+
+const buildMissingMarkerMessage = (datasetLabel: string): string =>
+  `It sounds like you want a marker-specific summary for ${datasetLabel}, but I don’t see a marker or search location selected. Click a point on the globe or pick a location from search, then ask again and I’ll analyze that spot for you.`;
+
 export const sanitizeConversationContext = (
   raw: unknown,
 ): ConversationContextPayload | null => {
@@ -158,6 +269,9 @@ export const sanitizeConversationContext = (
       latitude: normalizeNumber(locationRaw.latitude),
       longitude: normalizeNumber(locationRaw.longitude),
       name: normalizeString(locationRaw.name ?? locationRaw.label),
+      source: normalizeLocationSource(
+        locationRaw.source ?? locationRaw.origin ?? locationRaw.type,
+      ),
     };
   }
 
@@ -180,24 +294,68 @@ export const isTrendQuery = (query: string | undefined): boolean => {
   return TREND_KEYWORDS.some((keyword) => normalized.includes(keyword));
 };
 
-export const buildTrendInsightPrompt = async ({
+type TrendInsightSummaryMetadata = {
+  datasetId: string;
+  datasetLabel: string;
+  analysisScope: "marker" | "global";
+  windowStart: string;
+  windowEnd: string;
+  locationLabel?: string | null;
+};
+
+type TrendInsightResult =
+  | { type: "none" }
+  | { type: "needs-marker"; message: string }
+  | { type: "summary"; message: string; metadata: TrendInsightSummaryMetadata }
+  | { type: "error"; message: string };
+
+const describeChange = (value: number, units: string): string => {
+  const magnitude = Math.abs(value);
+  if (magnitude < 0.01) {
+    return `Values were essentially stable, changing by less than 0.01 ${units}.`;
+  }
+  const direction = value > 0 ? "increased" : "decreased";
+  return `Values ${direction} by ${formatNumber(magnitude, 2)} ${units} over the window.`;
+};
+
+export const buildTrendInsightResponse = async ({
   query,
   context,
   dataServiceUrl,
   windowYears,
-}: TrendInsightOptions): Promise<string | null> => {
+}: TrendInsightOptions): Promise<TrendInsightResult> => {
   if (!isTrendQuery(query)) {
-    return null;
+    return { type: "none" };
   }
 
   const datasetId = normalizeString(context.datasetId ?? undefined);
   if (!datasetId) {
-    return null;
+    return { type: "none" };
   }
 
   const lat = normalizeNumber(context.location?.latitude);
   const lon = normalizeNumber(context.location?.longitude);
   const hasLocation = lat !== null && lon !== null;
+  const locationSource = normalizeLocationSource(context.location?.source);
+  const hasManualMarker = locationSource === "marker";
+
+  const analysisScope = determineAnalysisScope(query, {
+    hasValidLocation: hasLocation,
+    hasManualMarker,
+  });
+
+  const datasetLabel =
+    normalizeString(context.datasetName) ?? datasetId ?? "current dataset";
+
+  if (
+    analysisScope === "marker-missing" ||
+    (analysisScope === "marker" && !hasLocation)
+  ) {
+    return {
+      type: "needs-marker",
+      message: buildMissingMarkerMessage(datasetLabel),
+    };
+  }
 
   const requestedWindowYears =
     typeof windowYears === "number" ? windowYears : parseRequestedWindow(query);
@@ -234,12 +392,11 @@ export const buildTrendInsightPrompt = async ({
     datasetStart && datasetStart > desiredStart ? datasetStart : desiredStart;
   const safeEnd = referenceEnd;
 
-  if (safeStart >= safeEnd) {
-    return null;
-  }
-
-  if (safeStart > safeEnd) {
-    return null;
+  if (safeStart >= safeEnd || safeStart > safeEnd) {
+    return {
+      type: "error",
+      message: `I couldn’t determine a valid time window to summarize ${datasetLabel}. Try picking a different date range and ask again.`,
+    };
   }
 
   const payload: Record<string, any> = {
@@ -253,28 +410,40 @@ export const buildTrendInsightPrompt = async ({
     chartType: "line",
   };
 
-  if (hasLocation && lat !== null && lon !== null) {
+  const usingMarkerExtraction =
+    analysisScope === "marker" && hasLocation && lat !== null && lon !== null;
+
+  if (usingMarkerExtraction && lat !== null && lon !== null) {
     payload.focusCoordinates = `${lat},${lon}`;
   } else {
     payload.spatialBounds = GLOBAL_BOUNDS;
   }
 
-  const response = await fetch(
-    `${dataServiceUrl.replace(/\/$/, "")}/api/v2/timeseries/extract`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+  let response: Response;
+  try {
+    response = await fetch(
+      `${dataServiceUrl.replace(/\/$/, "")}/api/v2/timeseries/extract`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
       },
-      body: JSON.stringify(payload),
-    },
-  );
+    );
+  } catch (error) {
+    return {
+      type: "error",
+      message: `I tried to retrieve ${datasetLabel} from the analysis service but the request failed (${(error as Error).message}). Please try again in a moment.`,
+    };
+  }
 
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error(
-      `Timeseries request failed (${response.status}): ${detail.slice(0, 240)}`,
-    );
+    return {
+      type: "error",
+      message: `The analysis service rejected the request for ${datasetLabel} (status ${response.status}). Details: ${detail.slice(0, 200)}`,
+    };
   }
 
   const body = (await response.json()) as TimeSeriesResponsePayload;
@@ -296,7 +465,10 @@ export const buildTrendInsightPrompt = async ({
       : [];
 
   if (!series.length) {
-    return null;
+    return {
+      type: "error",
+      message: `I couldn’t extract any data points for ${datasetLabel} during the requested window. Try choosing another date or dataset and ask again.`,
+    };
   }
 
   const stats = body.statistics?.[datasetId];
@@ -323,61 +495,68 @@ export const buildTrendInsightPrompt = async ({
     normalizeString(context.datasetUnits) ??
     normalizeString(metadata?.units) ??
     "units";
-  const datasetLabel =
-    normalizeString(context.datasetName) ??
-    normalizeString(metadata?.name) ??
-    datasetId;
-  const locationLabel = hasLocation
-    ? (normalizeString(context.location?.name) ??
-      `${formatNumber(lat!, 2)}°, ${formatNumber(lon!, 2)}°`)
-    : null;
+  const formattedLatLon =
+    hasLocation && lat !== null && lon !== null
+      ? `${formatNumber(lat, 2)}°, ${formatNumber(lon, 2)}°`
+      : null;
+  const locationLabel =
+    hasLocation && formattedLatLon
+      ? (normalizeString(context.location?.name) ?? formattedLatLon)
+      : null;
+  const analysisScopeMode: "marker" | "global" = usingMarkerExtraction
+    ? "marker"
+    : "global";
+  const windowStart = formatDateOnly(safeStart);
+  const windowEnd = formatDateOnly(safeEnd);
 
-  const lines = [
-    `Dataset: ${datasetLabel}`,
-    `Location mode: ${
-      hasLocation && locationLabel
-        ? `Marker at ${locationLabel}`
-        : "No marker selected (global extraction)"
-    }`,
-    `Period analyzed: ${formatDateOnly(safeStart)} to ${formatDateOnly(safeEnd)} (${series.length} records, ~${targetWindowYears} years)`,
-    `Average value: ${formatNumber(mean, 2)} ${units}`,
-    `Starting value: ${formatNumber(firstPoint.value, 2)} ${units} on ${firstPoint.date}`,
-    `Latest value: ${formatNumber(lastPoint.value, 2)} ${units} on ${lastPoint.date}`,
-    `Observed change over window: ${formatNumber(observedChange, 2)} ${units}`,
-    `Minimum: ${formatNumber(minPoint.value, 2)} ${units} on ${minPoint.date}`,
-    `Maximum: ${formatNumber(maxPoint.value, 2)} ${units} on ${maxPoint.date}`,
-  ];
+  const intro = usingMarkerExtraction
+    ? `Here’s what ${datasetLabel} looks like at ${
+        locationLabel ?? formattedLatLon ?? "the selected marker"
+      } from ${windowStart} through ${windowEnd}.`
+    : `Here’s a dataset-wide look at ${datasetLabel} from ${windowStart} through ${windowEnd}.`;
 
-  if (perDecadeTrend !== null) {
-    lines.push(
-      `Estimated linear trend: ${formatNumber(perDecadeTrend, 2)} ${units} per decade (${formatNumber(
-        perYearTrend ?? 0,
-        3,
-      )} ${units}/year).`,
-    );
-  }
+  const changeStatement = describeChange(observedChange, units);
+  const startEndStatement = `The period starts at ${formatNumber(firstPoint.value, 2)} ${units} on ${firstPoint.date} and ends at ${formatNumber(lastPoint.value, 2)} ${units} on ${lastPoint.date}, with an average of ${formatNumber(mean, 2)} ${units}.`;
 
-  const instructions = [
-    "You are the iCharm climate assistant.",
-    "Explain the behaviour of the currently loaded dataset over the analyzed period in the summary.",
-    "Reference the dataset name, time window, and whether values are increasing, decreasing, or stable.",
-    "Highlight notable extremes and relate them to well-known climate drivers when possible.",
-    "Do not invent numbers beyond what is provided and keep units consistent.",
-    "Write in plain sentences without Markdown headings or bold text; short paragraphs or simple line breaks are fine.",
-    `User question: "${query}"`,
-  ];
+  const extremesStatement = `Extremes ranged from ${formatNumber(minPoint.value, 2)} ${units} on ${minPoint.date} to ${formatNumber(maxPoint.value, 2)} ${units} on ${maxPoint.date}.`;
 
-  if (hasLocation && locationLabel) {
-    instructions.push(
-      `After summarizing the dataset-wide trend, politely ask the user if they would like a focused analysis at ${locationLabel}. Only ask once per response and do not assume they want it.`,
-    );
-  }
+  const trendStatement =
+    perDecadeTrend !== null
+      ? `That works out to roughly ${formatNumber(perDecadeTrend, 2)} ${units} per decade (${formatNumber(
+          perYearTrend ?? 0,
+          3,
+        )} ${units} per year) under a linear trend assumption.`
+      : null;
 
-  instructions.push(
-    "Close by offering to analyze a different dataset if the user is interested.",
-  );
+  const closing =
+    analysisScopeMode === "marker"
+      ? "Let me know if you’d like the global average for comparison or want to inspect a different location."
+      : hasLocation && (locationLabel || formattedLatLon)
+        ? `If you’d like a localized view at ${
+            locationLabel ?? formattedLatLon
+          }, drop me another note and I’ll focus on that spot.`
+        : "Ask anytime if you want me to drill into a particular region or dataset.";
 
-  return `${instructions.join(
-    " ",
-  )}\n\nQuantitative summary:\n${lines.join("\n")}`;
+  const summaryParagraphs = [
+    intro,
+    `${changeStatement} ${startEndStatement}`,
+    `${extremesStatement}${trendStatement ? ` ${trendStatement}` : ""}`,
+    closing,
+  ].filter((paragraph) => paragraph && paragraph.trim().length > 0);
+
+  return {
+    type: "summary",
+    message: summaryParagraphs.join("\n\n"),
+    metadata: {
+      datasetId,
+      datasetLabel,
+      analysisScope: analysisScopeMode,
+      windowStart,
+      windowEnd,
+      locationLabel:
+        analysisScopeMode === "marker"
+          ? (locationLabel ?? formattedLatLon ?? null)
+          : (locationLabel ?? formattedLatLon ?? null),
+    },
+  };
 };
