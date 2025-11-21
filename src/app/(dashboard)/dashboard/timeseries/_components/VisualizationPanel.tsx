@@ -1,15 +1,5 @@
 "use client";
-import React, { useState, useMemo } from "react";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import React, { useMemo } from "react";
 import {
   Card,
   CardContent,
@@ -17,7 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Slider } from "@/components/ui/slider";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   LineChart,
   Line,
@@ -38,7 +28,6 @@ import {
 import {
   ChartType,
   AnalysisModel,
-  AggregationMethod,
   type DatasetInfo,
   type ProcessingInfo,
   formatValue,
@@ -47,89 +36,33 @@ import {
 } from "@/hooks/use-timeseries";
 import { DataTable } from "./DataTable";
 
-type NormalizationMode = "all" | "selected";
-
-interface CoordinateSelection {
-  lat?: number;
-  lon?: number;
-}
-
 interface VisualizationPanelProps {
   chartType: ChartType;
-  setChartType: (type: ChartType) => void;
   dateRange: { start: string; end: string };
-  setDateRange: React.Dispatch<
-    React.SetStateAction<{ start: string; end: string }>
-  >;
   analysisModel: AnalysisModel;
-  setAnalysisModel: (model: AnalysisModel) => void;
-  aggregation: AggregationMethod;
-  setAggregation: (method: AggregationMethod) => void;
-  normalize: boolean;
-  setNormalize: (normalize: boolean) => void;
-  smoothingWindow: number;
-  setSmoothingWindow: (window: number) => void;
-  resampleFreq: string | undefined;
-  setResampleFreq: (freq: string | undefined) => void;
-  focusCoordinates: string;
-  setFocusCoordinates: (coords: string) => void;
   chartData: any[];
   selectedDatasets: DatasetInfo[];
   visibleDatasets: Set<string>;
   processingInfo: ProcessingInfo | null;
   statistics: Record<string, any> | null;
   metadata: Record<string, any> | null;
+  showHistogram: boolean;
+  showLinearTrend: boolean;
 }
 
 export function VisualizationPanel({
   chartType,
-  setChartType,
   dateRange,
-  setDateRange,
   analysisModel,
-  setAnalysisModel,
-  aggregation,
-  setAggregation,
-  normalize,
-  setNormalize,
-  smoothingWindow,
-  setSmoothingWindow,
-  resampleFreq,
-  setResampleFreq,
-  focusCoordinates,
-  setFocusCoordinates,
   chartData,
   selectedDatasets,
   visibleDatasets,
   processingInfo,
   statistics,
   metadata,
+  showHistogram,
+  showLinearTrend,
 }: VisualizationPanelProps) {
-  const [normalizationMode, setNormalizationMode] =
-    useState<NormalizationMode>("all");
-  const [selectedCoordinates, setSelectedCoordinates] = useState<
-    CoordinateSelection[]
-  >([]);
-  const [tempLat, setTempLat] = useState("");
-  const [tempLon, setTempLon] = useState("");
-  const [showHistogram, setShowHistogram] = useState(false);
-  const [showLinearTrend, setShowLinearTrend] = useState(false);
-
-  const addCoordinate = () => {
-    const lat = parseFloat(tempLat);
-    const lon = parseFloat(tempLon);
-
-    if (!isNaN(lat) && !isNaN(lon)) {
-      setSelectedCoordinates([...selectedCoordinates, { lat, lon }]);
-      setTempLat("");
-      setTempLon("");
-    }
-  };
-
-  const removeCoordinate = (index: number) => {
-    setSelectedCoordinates(selectedCoordinates.filter((_, i) => i !== index));
-  };
-
   // Calculate linear trend line data for each visible dataset
   const trendLineData = useMemo(() => {
     if (!showLinearTrend || chartData.length === 0) return {};
@@ -138,7 +71,6 @@ export function VisualizationPanel({
     const visibleDatasetIds = Array.from(visibleDatasets);
 
     visibleDatasetIds.forEach((datasetId) => {
-      // Extract valid data points
       const points: { x: number; y: number }[] = [];
       chartData.forEach((point, index) => {
         const value = point[datasetId];
@@ -149,7 +81,6 @@ export function VisualizationPanel({
 
       if (points.length < 2) return;
 
-      // Calculate linear regression (y = mx + b)
       const n = points.length;
       const sumX = points.reduce((sum, p) => sum + p.x, 0);
       const sumY = points.reduce((sum, p) => sum + p.y, 0);
@@ -159,7 +90,6 @@ export function VisualizationPanel({
       const m = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
       const b = (sumY - m * sumX) / n;
 
-      // Generate trend line points for all data
       const trendPoints = chartData.map((point, index) => ({
         date: point.date,
         [`${datasetId}_trend`]: m * index + b,
@@ -171,7 +101,7 @@ export function VisualizationPanel({
     return trends;
   }, [chartData, visibleDatasets, showLinearTrend]);
 
-  // Calculate Y-axis domain dynamically based on visible datasets
+  // Calculate Y-axis domain
   const yDomain = useMemo(() => {
     if (chartData.length === 0) return undefined;
 
@@ -193,12 +123,11 @@ export function VisualizationPanel({
       return undefined;
     }
 
-    // Add 5% padding to top and bottom
     const padding = (maxY - minY) * 0.05;
     return [minY - padding, maxY + padding];
   }, [chartData, visibleDatasets]);
 
-  // Get display unit for Y-axis label
+  // Get display unit for Y-axis
   const yAxisUnit = useMemo(() => {
     if (!metadata || selectedDatasets.length === 0) return "";
     const firstDataset = selectedDatasets[0];
@@ -206,13 +135,12 @@ export function VisualizationPanel({
     return getDisplayUnit(originalUnit);
   }, [metadata, selectedDatasets]);
 
-  // Generate academically correct chart title
+  // Generate chart title
   const chartTitle = useMemo(() => {
     if (selectedDatasets.length === 0 || !metadata) {
       return "Time Series Visualization";
     }
 
-    // Get dataset names and variables
     const datasetNames = selectedDatasets
       .map((dataset) => {
         const meta = metadata[dataset.id];
@@ -222,7 +150,6 @@ export function VisualizationPanel({
       })
       .join(" vs. ");
 
-    // Format date range
     const startDate = dateRange.start || "Start";
     const endDate = dateRange.end || "End";
     const temporalRange = `${startDate} to ${endDate}`;
@@ -250,39 +177,20 @@ export function VisualizationPanel({
       margin: { top: 5, right: 30, left: 60, bottom: 5 },
     };
 
-    // Enhanced Y-axis tick formatter
     const formatYAxis = (value: number) => {
-      // For very small numbers, use more precision
-      if (Math.abs(value) < 0.01) {
-        return value.toFixed(4);
-      }
-      // For moderate numbers
-      if (Math.abs(value) < 1) {
-        return value.toFixed(3);
-      }
-      // For large numbers, use k notation
-      if (Math.abs(value) >= 1000) {
-        return (value / 1000).toFixed(1) + "k";
-      }
+      if (Math.abs(value) < 0.01) return value.toFixed(4);
+      if (Math.abs(value) < 1) return value.toFixed(3);
+      if (Math.abs(value) >= 1000) return (value / 1000).toFixed(1) + "k";
       return value.toFixed(2);
     };
 
-    // Enhanced tooltip formatter with unit display
     const formatTooltipValue = (value: any, name: string) => {
       if (typeof value !== "number" || isNaN(value) || value === null) {
         return "-";
       }
-
-      // Find the dataset to get the original unit
-      const dataset = selectedDatasets.find(
-        (d) => d.id === name || d.name === name,
-      );
-      const originalUnit = dataset ? metadata?.[dataset.id]?.units : "";
-
       return formatValue(value, yAxisUnit, true);
     };
 
-    // For line charts with overlays, use ComposedChart
     if (chartType === ChartType.LINE && (showHistogram || showLinearTrend)) {
       return (
         <ComposedChart {...commonProps}>
@@ -313,7 +221,6 @@ export function VisualizationPanel({
           />
           <Legend />
 
-          {/* Histogram bars (if enabled) */}
           {showHistogram &&
             selectedDatasets.map(
               (dataset, idx) =>
@@ -328,7 +235,6 @@ export function VisualizationPanel({
                 ),
             )}
 
-          {/* Original time series lines */}
           {selectedDatasets.map(
             (dataset, idx) =>
               visibleDatasetIds.includes(dataset.id) && (
@@ -345,7 +251,6 @@ export function VisualizationPanel({
               ),
           )}
 
-          {/* Linear trend lines (if enabled) */}
           {showLinearTrend &&
             selectedDatasets.map(
               (dataset, idx) =>
@@ -577,223 +482,13 @@ export function VisualizationPanel({
 
   return (
     <div className="space-y-6">
-      {/* Controls */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Visualization Controls</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Date Range & Chart Type */}
-          <div className="flex items-end gap-4">
-            <div className="flex-1 space-y-1">
-              <label className="text-sm font-medium">Start Date</label>
-              <Input
-                type="date"
-                value={dateRange.start}
-                onChange={(e) =>
-                  setDateRange((prev) => ({
-                    ...prev,
-                    start: e.target.value,
-                  }))
-                }
-              />
-            </div>
-            <div className="flex-1 space-y-1">
-              <label className="text-sm font-medium">End Date</label>
-              <Input
-                type="date"
-                value={dateRange.end}
-                onChange={(e) =>
-                  setDateRange((prev) => ({
-                    ...prev,
-                    end: e.target.value,
-                  }))
-                }
-              />
-            </div>
-            <div className="flex-1 space-y-1">
-              <label className="text-sm font-medium">Chart Type</label>
-              <Select
-                value={chartType}
-                onValueChange={(v) => setChartType(v as ChartType)}
-              >
-                <SelectTrigger className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.values(ChartType).map((type) => (
-                    <SelectItem key={type} value={type}>
-                      {type.toUpperCase()}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Overlay Options for Line Charts */}
-          {chartType === ChartType.LINE && (
-            <div className="flex items-center gap-6 border-t pt-4">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="show-histogram"
-                  checked={showHistogram}
-                  onCheckedChange={(checked) =>
-                    setShowHistogram(checked as boolean)
-                  }
-                />
-                <label htmlFor="show-histogram" className="text-sm font-medium">
-                  Show Histogram
-                </label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="show-trend"
-                  checked={showLinearTrend}
-                  onCheckedChange={(checked) =>
-                    setShowLinearTrend(checked as boolean)
-                  }
-                />
-                <label htmlFor="show-trend" className="text-sm font-medium">
-                  Show Linear Trend
-                </label>
-              </div>
-            </div>
-          )}
-
-          {/* Processing Options */}
-          <div className="space-y-3 border-t pt-4">
-            <h4 className="text-md font-medium">Processing Options</h4>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Analysis Model</label>
-                <Select
-                  value={analysisModel}
-                  onValueChange={(v) => setAnalysisModel(v as AnalysisModel)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(AnalysisModel).map(([key, value]) => (
-                      <SelectItem key={value} value={value}>
-                        {key}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium">
-                  Aggregation Method
-                </label>
-                <Select
-                  value={aggregation}
-                  onValueChange={(v) => setAggregation(v as AggregationMethod)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(AggregationMethod).map(([key, value]) => (
-                      <SelectItem key={value} value={value}>
-                        {key}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium">
-                  Resample Frequency
-                </label>
-                <Select
-                  value={resampleFreq || "none"}
-                  onValueChange={(v) =>
-                    setResampleFreq(v === "none" ? undefined : v)
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="No resampling" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No resampling</SelectItem>
-                    <SelectItem value="D">Daily</SelectItem>
-                    <SelectItem value="W">Weekly</SelectItem>
-                    <SelectItem value="M">Monthly</SelectItem>
-                    <SelectItem value="Q">Quarterly</SelectItem>
-                    <SelectItem value="Y">Yearly</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Normalization Options */}
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Normalization</label>
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="normalize"
-                    checked={normalize}
-                    onCheckedChange={(checked) =>
-                      setNormalize(checked as boolean)
-                    }
-                  />
-                  <label htmlFor="normalize" className="text-sm">
-                    Normalize (0-1)
-                  </label>
-                </div>
-              </div>
-
-              {analysisModel === AnalysisModel.MOVING_AVG && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium">
-                      Smoothing Window: {smoothingWindow} months
-                    </label>
-                  </div>
-                  <Slider
-                    value={[smoothingWindow]}
-                    onValueChange={(value) => setSmoothingWindow(value[0])}
-                    min={1}
-                    max={24}
-                    step={1}
-                    className="w-full"
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Focus Coordinates */}
-            <div className="space-y-2 pt-2">
-              <label className="text-sm font-medium">
-                Focus Coordinates (Optional)
-              </label>
-              <Input
-                type="text"
-                placeholder="e.g., 40.7128,-74.0060 or multiple: 40.7128,-74.0060; 34.0522,-118.2437"
-                value={focusCoordinates}
-                onChange={(e) => setFocusCoordinates(e.target.value)}
-                className="w-full"
-              />
-              <p className="text-muted-foreground text-xs">
-                Enter coordinates as latitude,longitude pairs. Separate multiple
-                coordinates with semicolons (;)
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Main Chart */}
       {chartData.length > 0 && (
         <Card className="flex-1">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-xl leading-relaxed">
+                <CardTitle className="text-base leading-relaxed">
                   {chartTitle}
                 </CardTitle>
                 {processingInfo && (
@@ -847,15 +542,6 @@ export function VisualizationPanel({
               {Object.entries(statistics).map(
                 ([datasetId, stats]: [string, any]) => {
                   const originalUnit = metadata?.[datasetId]?.units || "";
-
-                  // Debug logging
-                  console.log("Statistics for", datasetId, {
-                    originalStats: stats,
-                    originalUnit,
-                    yAxisUnit,
-                  });
-
-                  // Convert statistics to display units
                   const convertedStats = {
                     min: convertUnits(stats.min || 0, originalUnit).value,
                     max: convertUnits(stats.max || 0, originalUnit).value,
@@ -863,8 +549,6 @@ export function VisualizationPanel({
                     std: convertUnits(stats.std || 0, originalUnit).value,
                     trend: convertUnits(stats.trend || 0, originalUnit).value,
                   };
-
-                  console.log("Converted stats:", convertedStats);
 
                   return (
                     <Card key={datasetId} className="p-3">
