@@ -7,7 +7,9 @@ repos:
     hooks:
       - id: ruff-check
         args: [--fix]
+        exclude: '\.ipynb$'
       - id: ruff-format
+        exclude: '\.ipynb$'
   # Enforce type hint
   # - By enforcing type hints you'll find more bugs in your code
   - repo: https://github.com/pre-commit/mirrors-mypy
@@ -30,6 +32,7 @@ repos:
       - id: check-ast
       - id: trailing-whitespace
       - id: end-of-file-fixer
+        exclude: '\.ipynb$'
       - id: check-merge-conflict
   - repo: https://github.com/PyCQA/flake8
     rev: 7.3.0

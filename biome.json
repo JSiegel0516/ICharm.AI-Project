@@ -10,12 +10,12 @@
     "includes": [
       "**",
       "!.mypy_cache",
-      "!.next",
-      "!.venv",
+      "!**/.next/**",
+      "!**/.venv/**",
       "!build",
       "!dist",
-      "!node_modules",
-      "!public"
+      "!**/node_modules/**",
+      "!**/public/**"
     ]
   },
   "formatter": {
