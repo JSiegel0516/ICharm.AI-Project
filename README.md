@@ -24,6 +24,12 @@ AI-powered climate data exploration combining interactive visualization, tutoria
    pre-commit install
    ```
 
+NOTE: To be able to run `pre-commit` on all the files (whether they're part of a commit or not). Useful to run every now and then:
+
+```bash
+pre-commit run --all-files
+```
+
 2. Install dependencies:
 
    ```bash

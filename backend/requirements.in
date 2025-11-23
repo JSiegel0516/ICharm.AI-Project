@@ -39,6 +39,7 @@ httpx
 requests
 
 # Geocoding
+geographiclib==2.0
 geopy
 
 # CORS support
@@ -53,3 +54,4 @@ psutil
 
 # Logging
 loguru
+tqdm
