@@ -262,8 +262,6 @@ class TimeSeriesRequest(BaseModel):
             end = datetime.strptime(v, "%Y-%m-%d")
             if end < start:
                 raise ValueError("endDate must be after startDate")
-            if (end - start).days > 365 * 50:  # Max 50 years
-                raise ValueError("Date range cannot exceed 50 years")
         return v
 
 
@@ -1710,11 +1708,50 @@ async def extract_timeseries(request: TimeSeriesRequest):
             try:
                 is_local = meta_row["Stored"] == "local"
 
+                # Clip requested range to dataset coverage when metadata is available
+                effective_start = start_date
+                effective_end = end_date
+                meta_start_raw = meta_row.get("startDate")
+                meta_end_raw = meta_row.get("endDate")
+
+                try:
+                    meta_start = datetime.strptime(str(meta_start_raw), "%Y-%m-%d")
+                    meta_end = datetime.strptime(str(meta_end_raw), "%Y-%m-%d")
+                    effective_start = max(start_date, meta_start)
+                    effective_end = min(end_date, meta_end)
+
+                    if effective_end < effective_start:
+                        logger.warning(
+                            "Requested date range %s to %s is outside coverage for %s (%s to %s); skipping dataset",
+                            start_date.date(),
+                            end_date.date(),
+                            meta_row.get("datasetName"),
+                            meta_start.date(),
+                            meta_end.date(),
+                        )
+                        continue
+
+                    if effective_start != start_date or effective_end != end_date:
+                        logger.info(
+                            "Clipped request to dataset coverage for %s: %s to %s",
+                            meta_row.get("datasetName"),
+                            effective_start.date(),
+                            effective_end.date(),
+                        )
+                except Exception as meta_date_error:
+                    logger.debug(
+                        "Could not parse date metadata for %s, using requested range: %s",
+                        meta_row.get("datasetName"),
+                        meta_date_error,
+                    )
+
                 # Open dataset
                 if is_local:
                     ds = await open_local_dataset(meta_row)
                 else:
-                    ds = await open_cloud_dataset(meta_row, start_date, end_date)
+                    ds = await open_cloud_dataset(
+                        meta_row, effective_start, effective_end
+                    )
 
                 # Determine level if multi-level
                 level_value = None
@@ -1732,8 +1769,8 @@ async def extract_timeseries(request: TimeSeriesRequest):
                 series = await extract_time_series(
                     ds,
                     meta_row,
-                    start_date,
-                    end_date,
+                    effective_start,
+                    effective_end,
                     spatial_bounds=request.spatialBounds
                     if not focus_coords
                     else None,  # Ignore bounds if using coords

@@ -1,5 +1,9 @@
 import { ConversationContextPayload } from "@/types";
 
+const LLM_SERVICE_URL = (
+  process.env.LLM_SERVICE_URL ?? "http://localhost:8001"
+).replace(/\/$/, "");
+
 const TREND_KEYWORDS = [
   "trend",
   "trends",
@@ -198,6 +202,63 @@ const containsKeyword = (
   );
 };
 
+type GeocodedLocation = {
+  latitude: number;
+  longitude: number;
+  label: string;
+};
+
+const geocodeFromQuery = async (
+  query: string | undefined,
+): Promise<GeocodedLocation | null> => {
+  const trimmed = (query ?? "").trim();
+  if (!trimmed) return null;
+
+  try {
+    const response = await fetch(`${LLM_SERVICE_URL}/v1/geocode/search`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query: trimmed, limit: 1 }),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = (await response.json()) as {
+      results?: Array<{
+        latitude?: number;
+        longitude?: number;
+        label?: string;
+      }>;
+    };
+
+    const first = data?.results?.[0];
+    if (
+      first &&
+      typeof first.latitude === "number" &&
+      Number.isFinite(first.latitude) &&
+      typeof first.longitude === "number" &&
+      Number.isFinite(first.longitude)
+    ) {
+      return {
+        latitude: first.latitude,
+        longitude: first.longitude,
+        label:
+          typeof first.label === "string" && first.label.trim().length
+            ? first.label.trim()
+            : `${first.latitude.toFixed(2)}, ${first.longitude.toFixed(2)}`,
+      };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+};
+
 type LocationSourceType = "marker" | "search" | "region" | "unknown";
 
 const normalizeLocationSource = (
@@ -333,16 +394,31 @@ export const buildTrendInsightResponse = async ({
     return { type: "none" };
   }
 
-  const lat = normalizeNumber(context.location?.latitude);
-  const lon = normalizeNumber(context.location?.longitude);
-  const hasLocation = lat !== null && lon !== null;
-  const locationSource = normalizeLocationSource(context.location?.source);
+  let lat = normalizeNumber(context.location?.latitude);
+  let lon = normalizeNumber(context.location?.longitude);
+  let hasLocation = lat !== null && lon !== null;
+  let locationSource = normalizeLocationSource(context.location?.source);
   const hasManualMarker = locationSource === "marker";
 
-  const analysisScope = determineAnalysisScope(query, {
+  let geocodedLocation: GeocodedLocation | null = null;
+  if (!hasLocation) {
+    geocodedLocation = await geocodeFromQuery(query);
+    if (geocodedLocation) {
+      lat = geocodedLocation.latitude;
+      lon = geocodedLocation.longitude;
+      hasLocation = true;
+      locationSource = "search";
+    }
+  }
+
+  let analysisScope = determineAnalysisScope(query, {
     hasValidLocation: hasLocation,
     hasManualMarker,
   });
+
+  if (analysisScope === "global" && hasLocation && geocodedLocation) {
+    analysisScope = "marker";
+  }
 
   const datasetLabel =
     normalizeString(context.datasetName) ?? datasetId ?? "current dataset";
@@ -388,7 +464,7 @@ export const buildTrendInsightResponse = async ({
   const desiredStart = requestedWindowYears
     ? requestedStart
     : (datasetStart ?? fallbackStart);
-  const safeStart =
+  let safeStart =
     datasetStart && datasetStart > desiredStart ? datasetStart : desiredStart;
   const safeEnd = referenceEnd;
 
@@ -501,7 +577,10 @@ export const buildTrendInsightResponse = async ({
       : null;
   const locationLabel =
     hasLocation && formattedLatLon
-      ? (normalizeString(context.location?.name) ?? formattedLatLon)
+      ? (normalizeString(context.location?.name) ??
+        geocodedLocation?.label ??
+        null ??
+        formattedLatLon)
       : null;
   const analysisScopeMode: "marker" | "global" = usingMarkerExtraction
     ? "marker"

@@ -1,11 +1,14 @@
 // src/utils/ragRetriever.ts
 import { pipeline } from "@xenova/transformers";
 import tutorialIndex from "@/data/tutorial/tutorialIndex.json";
+import climateQuestionPlaybook from "@/data/playbooks/climateQuestionPlaybook";
 import { TutorialSection, RetrievalResult } from "@/types";
 
 // use node src/components/Scripts/embedTutorial.js to generate embeddings
 
 let embedder: any = null;
+let playbookSectionCache: TutorialSection[] | null = null;
+let combinedSectionCache: TutorialSection[] | null = null;
 
 // Initialize the embedding model (lazy loading)
 async function getEmbedder() {
@@ -30,11 +33,44 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
+async function buildPlaybookSections(model: any): Promise<TutorialSection[]> {
+  if (playbookSectionCache) {
+    return playbookSectionCache;
+  }
+
+  const sections: TutorialSection[] = [];
+  for (const entry of climateQuestionPlaybook) {
+    const embeddingOutput = await model(entry.content, {
+      pooling: "mean",
+      normalize: true,
+    });
+    sections.push({
+      id: entry.id,
+      title: entry.title,
+      content: entry.content,
+      category: entry.category ?? "analysis-playbook",
+      embedding: Array.from(embeddingOutput.data) as number[],
+    });
+  }
+  playbookSectionCache = sections;
+  return sections;
+}
+
+async function getSectionPool(model: any): Promise<TutorialSection[]> {
+  if (combinedSectionCache) {
+    return combinedSectionCache;
+  }
+  const tutorialSections = tutorialIndex.sections as TutorialSection[];
+  const playbookSections = await buildPlaybookSections(model);
+  combinedSectionCache = [...tutorialSections, ...playbookSections];
+  return combinedSectionCache;
+}
+
 // Retrieve relevant sections based on a query
 export async function retrieveRelevantSections(
   query: string,
   topK: number = 3,
-  category?: "tutorial" | "about",
+  category?: "tutorial" | "about" | "analysis-playbook",
 ): Promise<RetrievalResult[]> {
   try {
     // Get the embedding model
@@ -44,9 +80,10 @@ export async function retrieveRelevantSections(
     const output = await model(query, { pooling: "mean", normalize: true });
     const queryEmbedding = Array.from(output.data) as number[];
 
-    // Filter sections by category if specified
-    let sections = tutorialIndex.sections as TutorialSection[];
+    // Load combined section pool (tutorial + playbook)
+    let sections = await getSectionPool(model);
 
+    // Filter sections by category if specified
     if (category) {
       sections = sections.filter((s) => s.category === category);
       console.log(
@@ -87,7 +124,7 @@ export async function retrieveRelevantSections(
 // Build context string from retrieved sections
 export function buildContextString(
   results: RetrievalResult[],
-  contextType: "tutorial" | "about" = "tutorial",
+  contextType: "tutorial" | "about" | "analysis" = "tutorial",
 ): string {
   if (results.length === 0) {
     return "";
@@ -96,7 +133,9 @@ export function buildContextString(
   const contextLabel =
     contextType === "tutorial"
       ? "iCharm Tutorial"
-      : "4DVD Platform Information";
+      : contextType === "about"
+        ? "4DVD Platform Information"
+        : "Climate Question Playbook";
 
   let context = `Context from ${contextLabel}:\n\n`;
 
@@ -212,20 +251,74 @@ export function isAboutQuery(query: string): boolean {
   return hasAboutKeyword;
 }
 
+function isAnalysisQuery(query: string): boolean {
+  const analysisKeywords = [
+    "temperature",
+    "surface",
+    "precipitation",
+    "rain",
+    "trend",
+    "variance",
+    "anomaly",
+    "compare",
+    "correlate",
+    "lag",
+    "forecast",
+    "predict",
+    "predictive",
+    "drought",
+    "heat wave",
+    "heatwave",
+    "cold snap",
+    "marine heat",
+    "enso",
+    "monsoon",
+    "itcz",
+    "blocking",
+    "extreme",
+    "warming",
+    "cooling",
+    "climate change",
+    "hemisphere",
+    "arctic",
+    "antarctica",
+    "variance",
+    "standard deviation",
+    "percentile",
+    "median",
+  ];
+
+  const lowerQuery = query.toLowerCase();
+  let hits = 0;
+  analysisKeywords.forEach((keyword) => {
+    if (lowerQuery.includes(keyword)) {
+      hits += keyword.includes(" ") ? 2 : 1;
+    }
+  });
+
+  const mentionsCoordinates = /\b(lat|latitude|lon|longitude)\b/.test(
+    lowerQuery,
+  );
+  return hits >= 2 || (hits >= 1 && mentionsCoordinates);
+}
+
 // Determine query type and retrieve appropriate sections
 export async function retrieveRelevantContext(
   query: string,
   topK: number = 3,
 ): Promise<{
   results: RetrievalResult[];
-  contextType: "tutorial" | "about" | "general";
+  contextType: "tutorial" | "about" | "analysis" | "general";
 }> {
   console.log(`\n🔍 Query: "${query}"`);
 
   const isAbout = isAboutQuery(query);
   const isTutorial = isTutorialQuery(query);
+  const isAnalysis = isAnalysisQuery(query);
 
-  console.log(`📌 Detection: isAbout=${isAbout}, isTutorial=${isTutorial}`);
+  console.log(
+    `📌 Detection: isAbout=${isAbout}, isTutorial=${isTutorial}, isAnalysis=${isAnalysis}`,
+  );
 
   // Prioritize about queries over tutorial if both match
   if (isAbout) {
@@ -236,6 +329,14 @@ export async function retrieveRelevantContext(
     console.log("➜ Using TUTORIAL context");
     const results = await retrieveRelevantSections(query, topK, "tutorial");
     return { results, contextType: "tutorial" };
+  } else if (isAnalysis) {
+    console.log("➜ Using ANALYSIS context");
+    const results = await retrieveRelevantSections(
+      query,
+      topK,
+      "analysis-playbook",
+    );
+    return { results, contextType: "analysis" };
   } else {
     console.log("➜ Using GENERAL context (searching all sections)");
     // For general queries, search all sections

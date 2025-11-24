@@ -300,7 +300,9 @@ export async function POST(req: NextRequest) {
           relevantSections,
           contextType === "general"
             ? "tutorial"
-            : (contextType as "tutorial" | "about"),
+            : contextType === "analysis"
+              ? "analysis"
+              : (contextType as "tutorial" | "about"),
         );
 
         // Store sources for response
@@ -329,6 +331,17 @@ Instructions:
 - If asked about licensing or technical details, be precise
 - If the answer is not in the context, acknowledge that and offer general guidance
 - Use a professional, informative tone`;
+        } else if (contextType === "analysis") {
+          systemPrompt = `You are the iCharm climate analysis assistant. Use the Climate Question Playbook context to determine the type of question being asked and outline a grounded approach for answering it with iCharm datasets.
+
+${contextString}
+
+Instructions:
+- Explicitly mention which datasets, variables, and time windows should be interrogated to answer the user.
+- When numeric output is possible, describe how to obtain it (e.g., run /api/v2/timeseries/extract for coordinates/regions, aggregate over hemispheres, compute trends).
+- Reference the user's current marker or dataset context when available; otherwise explain how they can derive the needed inputs from the globe and data service.
+- Clearly separate observed data from projections or qualitative guidance, and note any assumptions/uncertainties.
+- Offer next steps (e.g., “animate the Time Bar for 2000–2020” or “use the point statistics endpoint for the Sahel”) so the user can reproduce the workflow.`;
         } else {
           systemPrompt = `You are an AI assistant for iCharm, a climate visualization platform. Use the following context from the tutorial to answer the user's question.
 
