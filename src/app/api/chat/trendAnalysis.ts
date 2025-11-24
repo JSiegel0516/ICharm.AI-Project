@@ -184,9 +184,19 @@ const clampWindowYear = (years?: number): number =>
     : FALLBACK_WINDOW_YEARS;
 
 const YEAR_WINDOW_REGEX = /(?:last|past)\s+(\d{1,3})\s*(?:years|yrs|year)/i;
+const DECADE_REGEX = /(?:last|past)\s+(?:a\s+)?decade/i;
+const CENTURY_REGEX = /(?:last|past)\s+(?:a\s+)?century/i;
 
 const parseRequestedWindow = (query: string | undefined): number | null => {
   if (!query) return null;
+
+  if (DECADE_REGEX.test(query)) {
+    return 10;
+  }
+  if (CENTURY_REGEX.test(query)) {
+    return 100;
+  }
+
   const match = query.match(YEAR_WINDOW_REGEX);
   if (!match) return null;
   const value = Number(match[1]);
@@ -206,6 +216,37 @@ type GeocodedLocation = {
   latitude: number;
   longitude: number;
   label: string;
+  bbox?: {
+    north: number;
+    south: number;
+    east: number;
+    west: number;
+  } | null;
+};
+
+type ParsedCoordinates = {
+  latitude: number;
+  longitude: number;
+  label?: string;
+};
+
+const parseCoordinatesFromQuery = (
+  query: string | undefined,
+): ParsedCoordinates | null => {
+  if (!query) return null;
+  const coordRegex =
+    /(-?\d{1,2}(?:\.\d+)?)[,\s]+(-?\d{1,3}(?:\.\d+)?)(?:\s*°)?/;
+  const match = query.match(coordRegex);
+  if (!match) return null;
+  const lat = Number.parseFloat(match[1]);
+  const lon = Number.parseFloat(match[2]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+  return {
+    latitude: lat,
+    longitude: lon,
+    label: `${lat.toFixed(2)}, ${lon.toFixed(2)}`,
+  };
 };
 
 const geocodeFromQuery = async (
@@ -232,6 +273,9 @@ const geocodeFromQuery = async (
         latitude?: number;
         longitude?: number;
         label?: string;
+        raw?: {
+          boundingbox?: [string, string, string, string];
+        };
       }>;
     };
 
@@ -243,6 +287,27 @@ const geocodeFromQuery = async (
       typeof first.longitude === "number" &&
       Number.isFinite(first.longitude)
     ) {
+      const bboxRaw = first.raw?.boundingbox;
+      let bbox: GeocodedLocation["bbox"] = null;
+      if (
+        Array.isArray(bboxRaw) &&
+        bboxRaw.length === 4 &&
+        bboxRaw.every((v) => typeof v === "string")
+      ) {
+        const south = Number.parseFloat(bboxRaw[0]);
+        const north = Number.parseFloat(bboxRaw[1]);
+        const west = Number.parseFloat(bboxRaw[2]);
+        const east = Number.parseFloat(bboxRaw[3]);
+        if (
+          Number.isFinite(north) &&
+          Number.isFinite(south) &&
+          Number.isFinite(east) &&
+          Number.isFinite(west)
+        ) {
+          bbox = { north, south, east, west };
+        }
+      }
+
       return {
         latitude: first.latitude,
         longitude: first.longitude,
@@ -250,6 +315,7 @@ const geocodeFromQuery = async (
           typeof first.label === "string" && first.label.trim().length
             ? first.label.trim()
             : `${first.latitude.toFixed(2)}, ${first.longitude.toFixed(2)}`,
+        bbox,
       };
     }
   } catch {
@@ -257,6 +323,35 @@ const geocodeFromQuery = async (
   }
 
   return null;
+};
+
+const extractLocationPhrase = (query: string | undefined): string | null => {
+  if (!query) return null;
+  // Try to grab a location-like phrase after common prepositions
+  const prepositionRegex =
+    /\b(?:in|for|at|near|around|over|within|of)\s+(?:the\s+)?([A-Za-z][\w\s\-\.,']{2,}?)(?:\?|\.|,| over| during| for| in| at| near| around| of|$)/i;
+  const match = query.match(prepositionRegex);
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+
+  // Fallback: use trailing words as a location guess
+  const tokens = query.replace(/[?.,]/g, " ").split(/\s+/).filter(Boolean);
+  if (tokens.length >= 2) {
+    const tail = tokens.slice(-6).join(" ").trim();
+    if (tail.length >= 3) {
+      return tail;
+    }
+  }
+
+  // Final fallback: strip leading question words and return the remaining chunk
+  const cleaned = query
+    .replace(
+      /^(what|how|where|show|tell me about|can you|could you|please)\s+/i,
+      "",
+    )
+    .trim();
+  return cleaned.length >= 3 ? cleaned : null;
 };
 
 type LocationSourceType = "marker" | "search" | "region" | "unknown";
@@ -311,8 +406,13 @@ const determineAnalysisScope = (
   return "global";
 };
 
-const buildMissingMarkerMessage = (datasetLabel: string): string =>
-  `It sounds like you want a marker-specific summary for ${datasetLabel}, but I don’t see a marker or search location selected. Click a point on the globe or pick a location from search, then ask again and I’ll analyze that spot for you.`;
+const buildMissingMarkerMessage = (
+  datasetLabel: string,
+  hasManualMarker: boolean,
+): string =>
+  hasManualMarker
+    ? `Looks like you want a marker-specific summary for ${datasetLabel}, but I can’t read your marker. Click the spot again or pick a place from search, then ask again and I’ll analyze that location.`
+    : `To summarize ${datasetLabel} for a specific place, tell me a location name (e.g., “Bangkok, Thailand”) or drop a marker on the globe. I’ll analyze that spot as soon as you provide it.`;
 
 export const sanitizeConversationContext = (
   raw: unknown,
@@ -394,34 +494,72 @@ export const buildTrendInsightResponse = async ({
     return { type: "none" };
   }
 
-  let lat = normalizeNumber(context.location?.latitude);
-  let lon = normalizeNumber(context.location?.longitude);
-  let hasLocation = lat !== null && lon !== null;
+  const extractedLocation = extractLocationPhrase(query);
+  const parsedCoords = parseCoordinatesFromQuery(query);
+  const userSpecifiedLocation = Boolean(parsedCoords || extractedLocation);
+
+  let lat: number | null = null;
+  let lon: number | null = null;
   let locationSource = normalizeLocationSource(context.location?.source);
   const hasManualMarker = locationSource === "marker";
-
   let geocodedLocation: GeocodedLocation | null = null;
-  if (!hasLocation) {
-    geocodedLocation = await geocodeFromQuery(query);
+
+  // 1) If the user explicitly provided coordinates in the query, use them and ignore prior marker.
+  if (parsedCoords) {
+    lat = parsedCoords.latitude;
+    lon = parsedCoords.longitude;
+    locationSource = "marker";
+    geocodedLocation = {
+      latitude: lat,
+      longitude: lon,
+      label: parsedCoords.label ?? parsedCoords.latitude.toString(),
+      bbox: null,
+    };
+  } else if (extractedLocation) {
+    // 2) If they named a place, geocode it (do not rely on prior marker).
+    geocodedLocation = await geocodeFromQuery(extractedLocation);
     if (geocodedLocation) {
       lat = geocodedLocation.latitude;
       lon = geocodedLocation.longitude;
-      hasLocation = true;
       locationSource = "search";
     }
   }
+
+  // 3) If no explicit location was provided, fall back to current context marker/search.
+  if (lat === null || lon === null) {
+    const ctxLat = normalizeNumber(context.location?.latitude);
+    const ctxLon = normalizeNumber(context.location?.longitude);
+    if (ctxLat !== null && ctxLon !== null) {
+      lat = ctxLat;
+      lon = ctxLon;
+      locationSource = normalizeLocationSource(context.location?.source);
+    }
+  }
+
+  const hasLocation = lat !== null && lon !== null;
 
   let analysisScope = determineAnalysisScope(query, {
     hasValidLocation: hasLocation,
     hasManualMarker,
   });
 
-  if (analysisScope === "global" && hasLocation && geocodedLocation) {
+  if (
+    analysisScope === "global" &&
+    hasLocation &&
+    (geocodedLocation || userSpecifiedLocation)
+  ) {
     analysisScope = "marker";
   }
 
   const datasetLabel =
     normalizeString(context.datasetName) ?? datasetId ?? "current dataset";
+
+  if (!hasLocation && userSpecifiedLocation) {
+    const prompt =
+      `I couldn’t locate “${extractedLocation ?? "that place"}” for ${datasetLabel}. ` +
+      `Tell me a nearby city name or coordinates (lat, lon), or drop a marker, and I’ll run a location-specific summary.`;
+    return { type: "needs-marker", message: prompt };
+  }
 
   if (
     analysisScope === "marker-missing" ||
@@ -429,7 +567,7 @@ export const buildTrendInsightResponse = async ({
   ) {
     return {
       type: "needs-marker",
-      message: buildMissingMarkerMessage(datasetLabel),
+      message: buildMissingMarkerMessage(datasetLabel, hasManualMarker),
     };
   }
 
@@ -453,17 +591,13 @@ export const buildTrendInsightResponse = async ({
     return now;
   })();
 
-  const targetWindowYears = clampWindowYear(requestedWindowYears ?? undefined);
+  const normalizedWindowYears = clampWindowYear(
+    requestedWindowYears ?? windowYears ?? undefined,
+  );
 
-  const fallbackStart = new Date(referenceEnd);
-  fallbackStart.setFullYear(referenceEnd.getFullYear() - FALLBACK_WINDOW_YEARS);
+  const desiredStart = new Date(referenceEnd);
+  desiredStart.setFullYear(referenceEnd.getFullYear() - normalizedWindowYears);
 
-  const requestedStart = new Date(referenceEnd);
-  requestedStart.setFullYear(referenceEnd.getFullYear() - targetWindowYears);
-
-  const desiredStart = requestedWindowYears
-    ? requestedStart
-    : (datasetStart ?? fallbackStart);
   let safeStart =
     datasetStart && datasetStart > desiredStart ? datasetStart : desiredStart;
   const safeEnd = referenceEnd;
@@ -490,7 +624,18 @@ export const buildTrendInsightResponse = async ({
     analysisScope === "marker" && hasLocation && lat !== null && lon !== null;
 
   if (usingMarkerExtraction && lat !== null && lon !== null) {
-    payload.focusCoordinates = `${lat},${lon}`;
+    if (geocodedLocation?.bbox) {
+      payload.spatialBounds = {
+        lat_min: geocodedLocation.bbox.south,
+        lat_max: geocodedLocation.bbox.north,
+        lon_min: geocodedLocation.bbox.west,
+        lon_max: geocodedLocation.bbox.east,
+      };
+      // Also include centroid as a fallback point extraction hint
+      payload.focusCoordinates = `${lat},${lon}`;
+    } else {
+      payload.focusCoordinates = `${lat},${lon}`;
+    }
   } else {
     payload.spatialBounds = GLOBAL_BOUNDS;
   }
@@ -575,13 +720,27 @@ export const buildTrendInsightResponse = async ({
     hasLocation && lat !== null && lon !== null
       ? `${formatNumber(lat, 2)}°, ${formatNumber(lon, 2)}°`
       : null;
-  const locationLabel =
+  let locationLabel =
     hasLocation && formattedLatLon
       ? (normalizeString(context.location?.name) ??
         geocodedLocation?.label ??
-        null ??
         formattedLatLon)
       : null;
+
+  // Avoid using dataset names or empty labels as the "location"
+  if (
+    locationLabel &&
+    datasetLabel &&
+    locationLabel.toLowerCase().includes(datasetLabel.toLowerCase())
+  ) {
+    locationLabel = formattedLatLon;
+  }
+
+  // Ensure we always surface a location descriptor when we have one
+  const locationDescriptor =
+    locationLabel ||
+    formattedLatLon ||
+    (hasLocation ? "selected location" : null);
   const analysisScopeMode: "marker" | "global" = usingMarkerExtraction
     ? "marker"
     : "global";
@@ -589,9 +748,7 @@ export const buildTrendInsightResponse = async ({
   const windowEnd = formatDateOnly(safeEnd);
 
   const intro = usingMarkerExtraction
-    ? `Here’s what ${datasetLabel} looks like at ${
-        locationLabel ?? formattedLatLon ?? "the selected marker"
-      } from ${windowStart} through ${windowEnd}.`
+    ? `Here’s what ${datasetLabel} looks like at ${locationDescriptor ?? "the selected marker"} from ${windowStart} through ${windowEnd}.`
     : `Here’s a dataset-wide look at ${datasetLabel} from ${windowStart} through ${windowEnd}.`;
 
   const changeStatement = describeChange(observedChange, units);
