@@ -751,7 +751,7 @@ def _open_ndvi_dataset(metadata: pd.Series, target_date: datetime) -> xr.Dataset
 async def open_cloud_dataset(
     metadata: pd.Series, start_date: datetime, end_date: datetime
 ) -> xr.Dataset:
-    """Open cloud-based dataset using direct S3 access (simplified from working example)"""
+    """Open cloud-based dataset using S3 or pre-built kerchunk references."""
 
     cache_key = f"{metadata['id']}_{start_date.date()}_{end_date.date()}"
     cached = dataset_cache.get(cache_key)
@@ -773,51 +773,152 @@ async def open_cloud_dataset(
         logger.info(f"Opening cloud dataset: {metadata['datasetName']}")
         logger.info(f"Input file: {input_file}")
         logger.info(f"Engine: {engine}")
-        dataset_name = str(metadata.get("datasetName") or "")
-        normalized_name = dataset_name.lower()
 
+        dataset_name = str(metadata.get("datasetName") or "")
+        normalized_name = dataset_name.lower().strip()
+
+        # TLS keeps its special-case loader behaviour
         if normalized_name == "mean layer temperature - noaa cdr":
             logger.info(
                 "Using HDF5 loader for Mean Layer Temperature - NOAA CDR dataset"
             )
             engine = "h5netcdf"
 
-        if normalized_name == "precipitation - cmorph cdr":
-            logger.info("Using CMORPH-specific loader")
-            ds = await asyncio.to_thread(
-                _open_cmorph_dataset, metadata, start_date, end_date
-            )
-            dataset_cache.set(cache_key, ds)
-            return ds
+        # NDVI keeps its own loader (very custom pattern)
         if normalized_name == "normalized difference vegetation index cdr":
             logger.info("Using NDVI-specific loader")
             ds = await asyncio.to_thread(_open_ndvi_dataset, metadata, start_date)
             dataset_cache.set(cache_key, ds)
             return ds
 
-        # Resolve concrete object keys for the requested date range
-        candidate_urls: List[str] = []
+        # ------------------------------------------------------------------
+        # Kerchunk hint (from DB, possibly overridden for SST & CMORPH)
+        # ------------------------------------------------------------------
+        kerchunk_hint = (metadata.get("kerchunkPath") or "").strip()
+
+        # TEMPORARY: override kerchunk path for SST & CMORPH until DB metadata is updated
+        if not kerchunk_hint:
+            # Make matching robust to fancy hyphens / spacing
+            if (
+                "sea surface temperature" in normalized_name
+                and "optimum interpolation" in normalized_name
+            ):
+                kerchunk_hint = "kerchunk/sst_combined.json"
+                logger.info(
+                    "Using hardcoded kerchunk path for SST OISST CDR: %s",
+                    kerchunk_hint,
+                )
+            elif "cmorph" in normalized_name:
+                kerchunk_hint = "kerchunk/cmorph_combined.json"
+                logger.info(
+                    "Using hardcoded kerchunk path for CMORPH CDR: %s",
+                    kerchunk_hint,
+                )
+
+        # ------------------------------------------------------------------
+        # Helper: resolve kerchunk_hint → local path inside container
+        # ------------------------------------------------------------------
+        def _kerchunk_local_path() -> Optional[Path]:
+            if not kerchunk_hint or kerchunk_hint.lower() in ("none", "null"):
+                return None
+
+            cleaned = kerchunk_hint.lstrip("/\\")
+            if cleaned.startswith("kerchunk/"):
+                cleaned = cleaned[len("kerchunk/") :]  # noqa: E203
+
+            # Try KERCHUNK_PATH first
+            try:
+                if KERCHUNK_PATH.exists():
+                    path = KERCHUNK_PATH / cleaned
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    if os.access(path.parent, os.W_OK):
+                        logger.info(f"Using KERCHUNK_PATH for kerchunk: {path}")
+                        return path
+            except (OSError, PermissionError) as e:
+                logger.warning(f"KERCHUNK_PATH not writable: {e}")
+
+            # Fallback to CACHE_DIR/kerchunk
+            path = CACHE_DIR / "kerchunk" / cleaned
+            logger.info(f"Using CACHE_DIR for kerchunk: {path}")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            return path
+
+        # ------------------------------------------------------------------
+        # NEW: use pre-built kerchunk JSON for SST & CMORPH when available
+        # ------------------------------------------------------------------
+        if (
+            "sea surface temperature" in normalized_name
+            and "optimum interpolation" in normalized_name
+        ) or ("cmorph" in normalized_name):
+            local_ref = _kerchunk_local_path()
+            if local_ref and local_ref.exists():
+                logger.info(
+                    "Opening %s via pre-built kerchunk reference: %s",
+                    metadata["datasetName"],
+                    local_ref,
+                )
+                ds = await asyncio.to_thread(
+                    xr.open_dataset,
+                    "reference://",
+                    engine="zarr",
+                    backend_kwargs={"consolidated": False},
+                    storage_options={
+                        "fo": str(local_ref),
+                        "remote_protocol": "s3",
+                        "remote_options": {"anon": S3_ANON},
+                        "asynchronous": False,
+                    },
+                )
+                logger.info(
+                    f"✅ Successfully opened (kerchunk): {metadata['datasetName']}"
+                )
+                logger.info(f"   Dimensions: {dict(ds.dims)}")
+                logger.info(f"   Variables: {list(ds.data_vars)}")
+                dataset_cache.set(cache_key, ds)
+                return ds
+            else:
+                logger.warning(
+                    "Expected pre-built kerchunk reference for %s at %s, "
+                    "but it does not exist. Falling back to legacy loader.",
+                    metadata["datasetName"],
+                    local_ref or kerchunk_hint,
+                )
+                # For CMORPH, legacy loader still exists
+                if "cmorph" in normalized_name:
+                    logger.info("Using CMORPH-specific legacy loader as fallback")
+                    ds = await asyncio.to_thread(
+                        _open_cmorph_dataset, metadata, start_date, end_date
+                    )
+                    dataset_cache.set(cache_key, ds)
+                    return ds
+                # For SST, we just fall through to generic cloud logic below
+
+        # ------------------------------------------------------------------
+        # Generic cloud logic (for everything else, including TLS fallback)
+        # ------------------------------------------------------------------
+        # Resolve concrete S3 object keys for requested date range
         if "{" in input_file:
             expanded = expand_date_pattern(input_file, start_date, end_date)
         else:
             expanded = [input_file]
 
         fs = fsspec.filesystem("s3", anon=S3_ANON)
+
+        candidate_urls: List[str] = []
         for candidate in expanded:
-            normalized = _normalize_s3_url(candidate)
-            if "*" in normalized or "?" in normalized:
+            normalized_url = _normalize_s3_url(candidate)
+            if "*" in normalized_url or "?" in normalized_url:
                 glob_target = (
-                    normalized[5:] if normalized.startswith("s3://") else normalized
+                    normalized_url[5:]
+                    if normalized_url.startswith("s3://")
+                    else normalized_url
                 )
                 matches = fs.glob(glob_target)
                 candidate_urls.extend(
-                    [
-                        match if match.startswith("s3://") else f"s3://{match}"
-                        for match in matches
-                    ]
+                    [m if m.startswith("s3://") else f"s3://{m}" for m in matches]
                 )
             else:
-                candidate_urls.append(normalized)
+                candidate_urls.append(normalized_url)
 
         if not candidate_urls:
             raise FileNotFoundError(
@@ -827,14 +928,14 @@ async def open_cloud_dataset(
 
         # Deduplicate while preserving order
         seen = set()
-        unique_urls = []
+        unique_urls: List[str] = []
         for url in candidate_urls:
             if url not in seen:
                 seen.add(url)
                 unique_urls.append(url)
         candidate_urls = unique_urls
 
-        # Verify remote assets exist; drop any stale entries
+        # Verify assets exist; drop stale entries
         verified_urls: List[str] = []
         for url in candidate_urls:
             check_path = url[5:] if url.startswith("s3://") else url
@@ -846,6 +947,7 @@ async def open_cloud_dataset(
 
         candidate_urls = verified_urls
 
+        # TLS special case: if nothing resolved, try to list bucket
         if (
             not candidate_urls
             and normalized_name == "mean layer temperature - noaa cdr"
@@ -875,7 +977,7 @@ async def open_cloud_dataset(
                 f"No accessible remote assets located for dataset {metadata['datasetName']}"
             )
 
-        # Keep processing manageable
+        # Keep processing manageable when using direct NetCDF access
         max_files = 12
         if len(candidate_urls) > max_files:
             logger.warning(
@@ -884,33 +986,9 @@ async def open_cloud_dataset(
             )
             candidate_urls = candidate_urls[:max_files]
 
-        kerchunk_hint = (metadata.get("kerchunkPath") or "").strip()
-
-        def _kerchunk_local_path() -> Optional[Path]:
-            if not kerchunk_hint or kerchunk_hint.lower() in ("none", "null"):
-                return None
-            cleaned = kerchunk_hint.lstrip("/\\")
-            if cleaned.startswith("kerchunk/"):
-                cleaned = cleaned[len("kerchunk/") :]  # noqa E203
-
-            # TRY KERCHUNK_PATH first, fallback to CACHE_DIR if not writable
-            try:
-                # Check if KERCHUNK_PATH exists and is writable
-                if KERCHUNK_PATH.exists():
-                    path = KERCHUNK_PATH / cleaned
-                    # Test write access
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    if os.access(path.parent, os.W_OK):
-                        logger.info(f"Using KERCHUNK_PATH: {path}")
-                        return path
-            except (OSError, PermissionError) as e:
-                logger.warning(f"KERCHUNK_PATH not writable: {e}")
-
-            # Fallback to writable cache directory
-            path = CACHE_DIR / "kerchunk" / cleaned
-            logger.info(f"Using CACHE_DIR for kerchunk: {path}")
-            path.parent.mkdir(parents=True, exist_ok=True)
-            return path
+        # NOTE: from here down, the logic is basically the same as before,
+        # except CMORPH & SST will almost never get here because kerchunk
+        # pre-built paths are handled above.
 
         if engine == "zarr":
             asset_url = candidate_urls[0]
@@ -928,7 +1006,7 @@ async def open_cloud_dataset(
                     except (OSError, PermissionError) as e:
                         logger.error(f"Failed to create kerchunk reference: {e}")
                         logger.info("Falling back to direct S3 access without kerchunk")
-                        local_ref = None  # Disable kerchunk, use direct access
+                        local_ref = None
 
                 if local_ref and local_ref.exists():
                     ds = await asyncio.to_thread(
@@ -944,7 +1022,6 @@ async def open_cloud_dataset(
                         },
                     )
                 else:
-                    # Fallback to direct zarr access
                     logger.warning("Kerchunk unavailable, using direct zarr access")
                     ds = await asyncio.to_thread(
                         xr.open_zarr,
@@ -952,13 +1029,6 @@ async def open_cloud_dataset(
                         consolidated=True,
                         storage_options={"anon": S3_ANON},
                     )
-            else:
-                ds = await asyncio.to_thread(
-                    xr.open_zarr,
-                    asset_url,
-                    consolidated=True,
-                    storage_options={"anon": S3_ANON},
-                )
 
         elif engine == "h5netcdf":
             local_ref = _kerchunk_local_path()
@@ -969,7 +1039,6 @@ async def open_cloud_dataset(
                         f"Generating kerchunk reference for {metadata['datasetName']} at {local_ref}"
                     )
                     try:
-                        # Use first resolved asset as representative for reference
                         await asyncio.to_thread(
                             create_kerchunk_reference, candidate_urls[0], str(local_ref)
                         )
@@ -992,7 +1061,6 @@ async def open_cloud_dataset(
                         },
                     )
                 else:
-                    # Fallback to direct NetCDF access
                     logger.warning("Kerchunk unavailable, using direct NetCDF access")
                     datasets = []
                     for url in candidate_urls:
@@ -1016,29 +1084,6 @@ async def open_cloud_dataset(
                         ds = await asyncio.to_thread(
                             xr.concat, datasets, dim="time", combine_attrs="override"
                         )
-            else:
-                datasets = []
-                for url in candidate_urls:
-                    logger.info(f"Opening S3 object {url}")
-                    url_clean = url[5:] if url.startswith("s3://") else url
-
-                    def _load():
-                        with fs.open(url_clean, mode="rb") as s3_file:
-                            ds_single = xr.open_dataset(s3_file, engine="h5netcdf")
-                            return ds_single.load()
-
-                    ds_single = await asyncio.to_thread(_load)
-                    datasets.append(ds_single)
-
-                if len(datasets) == 1:
-                    ds = datasets[0]
-                else:
-                    logger.info(
-                        f"Concatenating {len(datasets)} netCDF parts for {metadata['datasetName']}"
-                    )
-                    ds = await asyncio.to_thread(
-                        xr.concat, datasets, dim="time", combine_attrs="override"
-                    )
 
         else:
             asset_url = candidate_urls[0]
@@ -1052,8 +1097,6 @@ async def open_cloud_dataset(
         logger.info(f"Successfully opened: {metadata['datasetName']}")
         logger.info(f"   Dimensions: {dict(ds.dims)}")
         logger.info(f"   Variables: {list(ds.data_vars)}")
-
-        # Cache the dataset
         dataset_cache.set(cache_key, ds)
         return ds
 

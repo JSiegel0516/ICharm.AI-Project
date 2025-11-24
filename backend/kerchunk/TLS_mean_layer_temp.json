@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "refs": {
+    "latitude/0": [
+      "s3://noaa-cdr-mean-layer-temp-pds/data/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc",
+      19205,
+      152
+    ],
+    "latitude_bounds/0.0": [
+      "s3://noaa-cdr-mean-layer-temp-pds/data/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc",
+      18005906,
+      181
+    ],
+    "longitude/0": [
+      "s3://noaa-cdr-mean-layer-temp-pds/data/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc",
+      18004025,
+      283
+    ],
+    "longitude_bounds/0.0": [
+      "s3://noaa-cdr-mean-layer-temp-pds/data/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc",
+      18005539,
+      367
+    ],
+    "tcdr_MSU_AMSUA_ATMS_TLS/0.0.0": [
+      "s3://noaa-cdr-mean-layer-temp-pds/data/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc",
+      47067,
+      2121974
+    ],
+    "tcdr_MSU_AMSUA_ATMS_TLS/0.0.1": [
+      "s3://noaa-cdr-mean-layer-temp-pds/data/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc",
+      2169041,
+      2116059
+    ],
+    "tcdr_MSU_AMSUA_ATMS_TLS/0.1.0": [
+      "s3://noaa-cdr-mean-layer-temp-pds/data/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc",
+      4285100,
+      2101809
+    ],
+    "tcdr_MSU_AMSUA_ATMS_TLS/0.1.1": [
+      "s3://noaa-cdr-mean-layer-temp-pds/data/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc",
+      6386909,
+      2104187
+    ],
+    "tcdr_MSU_AMSUA_ATMS_TLS/1.0.0": [
+      "s3://noaa-cdr-mean-layer-temp-pds/data/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc",
+      18007940,
+      2182196
+    ],
+    "tcdr_MSU_AMSUA_ATMS_TLS/1.0.1": [
+      "s3://noaa-cdr-mean-layer-temp-pds/data/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc",
+      20190136,
+      2175111
+    ],
+    "tcdr_MSU_AMSUA_ATMS_TLS/1.1.0": [
+      "s3://noaa-cdr-mean-layer-temp-pds/data/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc",
+      22365247,
+      2160292
+    ],
+    "tcdr_MSU_AMSUA_ATMS_TLS/1.1.1": [
+      "s3://noaa-cdr-mean-layer-temp-pds/data/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc",
+      24525539,
+      2162810
+    ],
+    "tcdr_MSU_AMSUA_ATMS_TLS_anomaly/0.0.0": [
+      "s3://noaa-cdr-mean-layer-temp-pds/data/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc",
+      8494232,
+      2376859
+    ],
+    "tcdr_MSU_AMSUA_ATMS_TLS_anomaly/0.0.1": [
+      "s3://noaa-cdr-mean-layer-temp-pds/data/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc",
+      10871091,
+      2372603
+    ],
+    "tcdr_MSU_AMSUA_ATMS_TLS_anomaly/0.1.0": [
+      "s3://noaa-cdr-mean-layer-temp-pds/data/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc",
+      13243694,
+      2380258
+    ],
+    "tcdr_MSU_AMSUA_ATMS_TLS_anomaly/0.1.1": [
+      "s3://noaa-cdr-mean-layer-temp-pds/data/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc",
+      15623952,
+      2376937
+    ],
+    "tcdr_MSU_AMSUA_ATMS_TLS_anomaly/1.0.0": [
+      "s3://noaa-cdr-mean-layer-temp-pds/data/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc",
+      26688349,
+      2448629
+    ],
+    "tcdr_MSU_AMSUA_ATMS_TLS_anomaly/1.0.1": [
+      "s3://noaa-cdr-mean-layer-temp-pds/data/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc",
+      29136978,
+      2444156
+    ],
+    "tcdr_MSU_AMSUA_ATMS_TLS_anomaly/1.1.0": [
+      "s3://noaa-cdr-mean-layer-temp-pds/data/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc",
+      31581134,
+      2451095
+    ],
+    "tcdr_MSU_AMSUA_ATMS_TLS_anomaly/1.1.1": [
+      "s3://noaa-cdr-mean-layer-temp-pds/data/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc",
+      34032229,
+      2444948
+    ],
+    "tcdr_MSU_AMSUA_ATMS_TLS_climatology/0.0.0": [
+      "s3://noaa-cdr-mean-layer-temp-pds/data/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc",
+      36477177,
+      374141
+    ],
+    "time/0": [
+      "s3://noaa-cdr-mean-layer-temp-pds/data/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc",
+      18004308,
+      1231
+    ],
+    "time_bounds/0.0": [
+      "s3://noaa-cdr-mean-layer-temp-pds/data/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc",
+      18006087,
+      1853
+    ],
+    ".zgroup": "{\"zarr_format\":2}",
+    ".zattrs": "{\"Conventions\":\"CF-1.6, ACDD-1.3\",\"title\":\"NOAA Climate Data Record (CDR) for Mean Layer Temperature, Version 5: Lower-Stratospher (TLS)\",\"source\":\"NOAA Fundamental Climate Data Record (FCDR) of MSU and AMSU-A Level 1c Brightness Temperature, Version 1.0; and NOAA ATMS Reprocessed SDR Products (RPATMSTDR), Version 2.0.  http:\\/\\/doi.org\\/10.7289\\/V51Z429F, http:\\/\\/doi:10.7289\\/V5X63JT2, and https:\\/\\/www.avl.class.noaa.gov\\/saa\\/products\\/search?datatype_family=RPATMSSDR\",\"references\":\"Zou, C.-Z., H. Xu, X. Hao, and Q. Liu, 2023: Mid-Tropospheric Layer Temperature Record Derived from Satellite Microwave Sounder Observations with Backward Merging Approach, J. Geophys. Res.-Atmosphere. Published online: 03 March 2023. DOI: 10.1029\\/2022JD037472\",\"id\":\".\\/NCEI\\/delivery2\\/Mean-Layer-Temperature-NOAA_v05r00_TLS_S197812_E202510_C20251103.nc\",\"naming_authority\":\"gov.noaa.ncei\",\"date_created\":\"03-Nov-2025 14:56:13\",\"license\":\"These data were produced by NOAA and are not subject to copyright protection in the United States. NOAA waives any potential copyright and related rights in these data worldwide through the Creative Commons Zero 1.0 Universal Public Domain Dedication (CC0-1.0).\",\"summary\":\"The Mean Layer Temperature \\u2013 NOAA Climate Data Record (CDR) provides long-term temperature measurements for a thick layer of the upper atmosphere. Input data comes from Mean Layer Temperature (MLT) level-1c swath radiances taken by the Microwave Sounding Unit (MSU),and the Advanced Microwave Sounder Unit-A (AMSU-A) and the Advanced Technology Microwave Sounder (ATMS) aboard NOAA, NASA, and EUMETSAT satellites. The CDR was calibrated using the NOAA STAR Integrated Microwave Inter-Calibration Approach (IMICA) to remove calibration drifting errors. The final dataset incorporates inter-satellite bias corrections to ensure consistency, and adjustments that account for diurnal drift effect, differences between viewing angles, and channel frequency differences between sensors. The final record is a monthly global gridded dataset with 2.5\\u00b0x2.5\\u00b0 Latitude\\/Longituderesolution, and extends from 1978\\u2013present.\",\"keywords\":\"Atmosphere > Atmospheric Temperature > Air Temperature, Vertical Location > Stratosphere\",\"keywords_vocabulary\":\"NASA Global Change Master Directory (GCMD) Earth Science Keywords, Version 8.0\",\"institution\":\"NOAA\\/NESDIS\\/STAR>Center for Satellite Applications and Research, NESDIS, NOAA, U.S. Department of Commerce\",\"time_coverage_start\":\"1978-12-01 00:00:00Z\",\"time_coverage_end\":\"2025-10-31 23:59:59Z\",\"time_coverage_duration\":\"P563M\",\"time_coverage_resolution\":\"P1M\",\"contributor_name\":\"Cheng-Zhi Zou, Xianjun Hao, Hui Xu, Qian Liu\",\"contributor_role\":\"Principal Investigator and originator of NOAA\\/STAR MSU mean layer temperature product, software and algorithm development, algorithm development and testing.\",\"acknowledgment\":\"This project was supported by a grant from the NOAA Climate Data Record (CDR) Program for Satellites\",\"cdr_program\":\"NOAA Climate Data Record Program for Satellites\",\"cdr_variable\":\"tcdr_MSU_AMSUA_ATMS_TLS\",\"metadata_link\":\"gov.noaa.ncei:C00935\",\"uncertainty_estimate\":\"0.04 K\\/decade\",\"cdm_data_type\":\"Grid\",\"creator_name\":\"Cheng-Zhi Zou\",\"creator_email\":\"Cheng-Zhi.Zou@noaa.gov\",\"geospatial_lat_max\":90.0,\"geospatial_lat_min\":-90.0,\"geospatial_lon_max\":180.0,\"geospatial_lon_min\":-180.0,\"processing_level\":\"NOAA Level 3\",\"product_version\":\"5.0\",\"platform\":\"TIROS-N,NOAA-06,NOAA-07,NOAA-08,NOAA-09,NOAA-10,NOAA-11,NOAA-12,NOAA-14,NOAA-15,NOAA-18,NOAA-19,NOAA-20, MetOp-A, AQUA, SNPP\",\"sensor\":\"MSU>Microwave Sounding Unit; AMSU-A->Advanced Microwave Sounding Unit-A, ATMS->Advanced Technology Microwave Sounder\",\"spatial_resolution\":\"2.5 latitude by 2.5 longitude\",\"creation_date\":\"03-Nov-2025 14:56:13\"}",
+    "latitude/.zarray": "{\"shape\":[72],\"chunks\":[72],\"dtype\":\"<f4\",\"fill_value\":9.969209968386869e+36,\"order\":\"C\",\"filters\":[{\"id\":\"zlib\",\"level\":2}],\"dimension_separator\":\".\",\"compressor\":null,\"zarr_format\":2}",
+    "latitude/.zattrs": "{\"_ARRAY_DIMENSIONS\":[\"latitude\"],\"units\":\"degrees_north\",\"standard_name\":\"latitude\",\"valid_min\":-90.0,\"valid_max\":90.0,\"bounds\":\"latitude_bounds\"}",
+    "latitude_bounds/.zarray": "{\"shape\":[72,2],\"chunks\":[72,2],\"dtype\":\"<f4\",\"fill_value\":9.969209968386869e+36,\"order\":\"C\",\"filters\":[{\"id\":\"zlib\",\"level\":2}],\"dimension_separator\":\".\",\"compressor\":null,\"zarr_format\":2}",
+    "latitude_bounds/.zattrs": "{\"_ARRAY_DIMENSIONS\":[\"latitude\",\"bounds\"],\"long_name\":\"latitude bounds\",\"standard_name\":\"latitude\",\"units\":\"degrees_north\",\"valid_min\":-90.0,\"valid_max\":90.0}",
+    "longitude/.zarray": "{\"shape\":[144],\"chunks\":[144],\"dtype\":\"<f4\",\"fill_value\":9.969209968386869e+36,\"order\":\"C\",\"filters\":[{\"id\":\"zlib\",\"level\":2}],\"dimension_separator\":\".\",\"compressor\":null,\"zarr_format\":2}",
+    "longitude/.zattrs": "{\"_ARRAY_DIMENSIONS\":[\"longitude\"],\"units\":\"degrees_east\",\"standard_name\":\"longitude\",\"valid_min\":-180.0,\"valid_max\":180.0,\"bounds\":\"longitude_bounds\"}",
+    "longitude_bounds/.zarray": "{\"shape\":[144,2],\"chunks\":[144,2],\"dtype\":\"<f4\",\"fill_value\":9.969209968386869e+36,\"order\":\"C\",\"filters\":[{\"id\":\"zlib\",\"level\":2}],\"dimension_separator\":\".\",\"compressor\":null,\"zarr_format\":2}",
+    "longitude_bounds/.zattrs": "{\"_ARRAY_DIMENSIONS\":[\"longitude\",\"bounds\"],\"long_name\":\"longitude bounds\",\"standard_name\":\"longitude\",\"units\":\"degrees_east\",\"valid_min\":-180.0,\"valid_max\":180.0}",
+    "tcdr_MSU_AMSUA_ATMS_TLS/.zarray": "{\"shape\":[563,72,144],\"chunks\":[282,36,72],\"dtype\":\"<f4\",\"fill_value\":-9999.0,\"order\":\"C\",\"filters\":[{\"id\":\"zlib\",\"level\":2}],\"dimension_separator\":\".\",\"compressor\":null,\"zarr_format\":2}",
+    "tcdr_MSU_AMSUA_ATMS_TLS/.zattrs": "{\"_ARRAY_DIMENSIONS\":[\"time\",\"latitude\",\"longitude\"],\"standard_name\":\"brightness_temperature\",\"long_name\":\"NOAA Climate Data Record of MSU\\/AMSU-A\\/ATMS monthly mean layer temperature of lower-stratosphere\",\"units\":\"kelvin\",\"coordinates\":\"time latitude longitude\",\"valid_max\":300.0,\"valid_min\":150.0}",
+    "tcdr_MSU_AMSUA_ATMS_TLS_anomaly/.zarray": "{\"shape\":[563,72,144],\"chunks\":[282,36,72],\"dtype\":\"<f4\",\"fill_value\":-9999.0,\"order\":\"C\",\"filters\":[{\"id\":\"zlib\",\"level\":2}],\"dimension_separator\":\".\",\"compressor\":null,\"zarr_format\":2}",
+    "tcdr_MSU_AMSUA_ATMS_TLS_anomaly/.zattrs": "{\"_ARRAY_DIMENSIONS\":[\"time\",\"latitude\",\"longitude\"],\"standard_name\":\"brightness_temperature_anomaly\",\"long_name\":\"Anomaly of NOAA Climate Data Record of MSU\\/AMSU-A\\/ATMS monthly mean layer temperature of lower-stratosphere\",\"description\":\"Anomaly of monthly mean layer temperature of lower-stratosphere, the base period is from January 2000 to December 2019\",\"units\":\"kelvin\",\"coordinates\":\"time latitude longitude\",\"valid_max\":50.0,\"valid_min\":-50.0}",
+    "tcdr_MSU_AMSUA_ATMS_TLS_climatology/.zarray": "{\"shape\":[12,72,144],\"chunks\":[12,72,144],\"dtype\":\"<f4\",\"fill_value\":-9999.0,\"order\":\"C\",\"filters\":[{\"id\":\"zlib\",\"level\":2}],\"dimension_separator\":\".\",\"compressor\":null,\"zarr_format\":2}",
+    "tcdr_MSU_AMSUA_ATMS_TLS_climatology/.zattrs": "{\"_ARRAY_DIMENSIONS\":[\"month_of_year\",\"latitude\",\"longitude\"],\"standard_name\":\"brightness_temperature\",\"long_name\":\"Climatology of NOAA Climate Data Record of MSU\\/AMSU-A\\/ATMS monthly mean layer temperature of lower-stratosphere\",\"description\":\"Climatology of monthly mean layer temperature of lower-stratosphere, the base period is from January 2000 to December 2019\",\"units\":\"kelvin\",\"coordinates\":\"time latitude longitude\",\"valid_max\":300.0,\"valid_min\":150.0}",
+    "time/.zarray": "{\"shape\":[563],\"chunks\":[563],\"dtype\":\"<f8\",\"fill_value\":null,\"order\":\"C\",\"filters\":[{\"id\":\"zlib\",\"level\":2}],\"dimension_separator\":\".\",\"compressor\":null,\"zarr_format\":2}",
+    "time/.zattrs": "{\"_ARRAY_DIMENSIONS\":[\"time\"],\"standard_name\":\"time\",\"units\":\"days since 1978-01-01 00:00:00\",\"valid_min\":0.0,\"valid_max\":60000.0,\"calendar\":\"gregorian\",\"bounds\":\"time_bounds\"}",
+    "time_bounds/.zarray": "{\"shape\":[563,2],\"chunks\":[563,2],\"dtype\":\"<f8\",\"fill_value\":null,\"order\":\"C\",\"filters\":[{\"id\":\"zlib\",\"level\":2}],\"dimension_separator\":\".\",\"compressor\":null,\"zarr_format\":2}",
+    "time_bounds/.zattrs": "{\"_ARRAY_DIMENSIONS\":[\"time\",\"bounds\"],\"standard_name\":\"time bounds\",\"units\":\"days since 1978-01-01 00:00:00\",\"valid_min\":0.0,\"valid_max\":60000.0}"
+  }
+}
