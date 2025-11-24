@@ -21,6 +21,7 @@ import logging
 import asyncio
 from pathlib import Path
 import re
+import time
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
@@ -843,12 +844,26 @@ async def open_cloud_dataset(
     metadata: pd.Series, start_date: datetime, end_date: datetime
 ) -> xr.Dataset:
     """Open cloud-based dataset using S3 or pre-built kerchunk references."""
+    start_time = time.perf_counter()
+    dataset_name = metadata.get("datasetName", "Unknown")
+    logger.info(
+        f"[TIMING] open_cloud_dataset START: {dataset_name}, "
+        f"date range: {start_date.date()} to {end_date.date()}"
+    )
 
     cache_key = f"{metadata['id']}_{start_date.date()}_{end_date.date()}"
+    cache_check_start = time.perf_counter()
     cached = dataset_cache.get(cache_key)
+    cache_check_time = time.perf_counter()
     if cached is not None:
         logger.info(f"Using cached cloud dataset: {cache_key}")
+        logger.info(
+            f"[TIMING] open_cloud_dataset TOTAL (cached): {cache_check_time - start_time:.3f}s"
+        )
         return cached
+    logger.info(
+        f"[TIMING] Cache check took {cache_check_time - cache_check_start:.3f}s"
+    )
 
     try:
         input_file = str(metadata["inputFile"])
@@ -878,10 +893,24 @@ async def open_cloud_dataset(
         # NDVI keeps its own loader (very custom pattern)
         if normalized_name == "normalized difference vegetation index cdr":
             logger.info("Using NDVI-specific loader")
+            ndvi_start = time.perf_counter()
             ds = await asyncio.to_thread(_open_ndvi_dataset, metadata, start_date)
+            ndvi_open_time = time.perf_counter()
+            logger.info(
+                f"[TIMING] NDVI dataset open took {ndvi_open_time - ndvi_start:.3f}s"
+            )
             # keep monthly-sampling behavior for NDVI
+            sampling_start = time.perf_counter()
             ds = _apply_monthly_sampling(ds, start_date, end_date)
+            sampling_time = time.perf_counter()
+            logger.info(
+                f"[TIMING] Monthly sampling took {sampling_time - sampling_start:.3f}s"
+            )
             dataset_cache.set(cache_key, ds)
+            total_time = time.perf_counter() - start_time
+            logger.info(
+                f"[TIMING] open_cloud_dataset TOTAL (NDVI path): {total_time:.3f}s"
+            )
             return ds
 
         # ------------------------------------------------------------------
@@ -1118,14 +1147,32 @@ async def open_cloud_dataset(
         logger.info(f"   Variables: {list(ds.data_vars)}")
 
         # keep monthly sampling behavior for all generic cloud datasets
+        sampling_start = time.perf_counter()
         ds = _apply_monthly_sampling(ds, start_date, end_date)
+        sampling_time = time.perf_counter()
+        logger.info(
+            f"[TIMING] Monthly sampling took {sampling_time - sampling_start:.3f}s"
+        )
 
         dataset_cache.set(cache_key, ds)
+        total_time = time.perf_counter() - start_time
+        # Check if kerchunk was used (local_ref is only defined for zarr/h5netcdf engines)
+        try:
+            kerchunk_used = (
+                "kerchunk path" if local_ref and local_ref.exists() else "direct path"
+            )
+        except NameError:
+            kerchunk_used = "direct path"
+        logger.info(
+            f"[TIMING] open_cloud_dataset TOTAL ({kerchunk_used}): {total_time:.3f}s"
+        )
         return ds
 
     except Exception as e:
+        total_time = time.perf_counter() - start_time
         logger.error(f"Failed to open cloud dataset {metadata['datasetName']}: {e}")
         logger.error(f"Error type: {type(e).__name__}")
+        logger.info(f"[TIMING] open_cloud_dataset FAILED after {total_time:.3f}s")
         import traceback
 
         logger.error(f"Traceback: {traceback.format_exc()}")
@@ -1137,12 +1184,22 @@ async def open_cloud_dataset(
 
 async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
     """Open local dataset with caching"""
+    start_time = time.perf_counter()
+    dataset_name = metadata.get("datasetName", "Unknown")
+    logger.info(f"[TIMING] open_local_dataset START: {dataset_name}")
 
     cache_key = metadata["datasetName"]
+    cache_check_start = time.perf_counter()
     cached = dataset_cache.get(cache_key)
+    cache_check_time = time.perf_counter()
     if cached is not None:
         logger.info(f"Using cached dataset: {cache_key}")
+        total_time = time.perf_counter() - start_time
+        logger.info(f"[TIMING] open_local_dataset TOTAL (cached): {total_time:.3f}s")
         return cached
+    logger.info(
+        f"[TIMING] Cache check took {cache_check_time - cache_check_start:.3f}s"
+    )
 
     try:
         input_file = metadata["inputFile"]
@@ -1312,6 +1369,8 @@ async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
                     raise
 
         dataset_cache.set(cache_key, ds)
+        total_time = time.perf_counter() - start_time
+        logger.info(f"[TIMING] open_local_dataset TOTAL: {total_time:.3f}s")
         return ds
 
     except (ValueError, FileNotFoundError, KeyError) as e:
@@ -1350,16 +1409,24 @@ async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
 
             logger.info(f"Fallback successful! Variables: {list(ds.data_vars)}")
             dataset_cache.set(cache_key, ds)
+            total_time = time.perf_counter() - start_time
+            logger.info(
+                f"[TIMING] open_local_dataset TOTAL (fallback): {total_time:.3f}s"
+            )
             return ds
         else:
             logger.error(f"❌ No NetCDF fallback found: {nc_path}")
+            total_time = time.perf_counter() - start_time
+            logger.info(f"[TIMING] open_local_dataset FAILED after {total_time:.3f}s")
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to open {metadata['datasetName']}: Zarr incomplete and no NetCDF fallback found",
             )
 
     except Exception as e:
+        total_time = time.perf_counter() - start_time
         logger.error(f"❌ Unexpected error opening {metadata['datasetName']}: {e}")
+        logger.info(f"[TIMING] open_local_dataset FAILED after {total_time:.3f}s")
         import traceback
 
         logger.error(traceback.format_exc())
@@ -1411,24 +1478,51 @@ async def extract_time_series(
     NEW: If focus_coordinates are provided, extracts data from specific points
     instead of spatial aggregation
     """
+    start_time = time.perf_counter()
+    dataset_name = metadata.get("datasetName", "Unknown")
+    focus_coords_str = f"focus_coords={bool(focus_coordinates)}, "
+    spatial_bounds_str = f"spatial_bounds={bool(spatial_bounds)}"
+    logger.info(
+        f"[TIMING] extract_time_series START: {dataset_name}, "
+        f"date range: {start_date.date()} to {end_date.date()}, "
+        f"{focus_coords_str}{spatial_bounds_str}"
+    )
 
     if aggregation is None:
         aggregation = AggregationMethod.MEAN
 
+    coord_norm_start = time.perf_counter()
     lat_name, lon_name, time_name = normalize_coordinates(ds)
+    coord_norm_time = time.perf_counter()
+    logger.info(
+        f"[TIMING] Coordinate normalization took {coord_norm_time - coord_norm_start:.3f}s"
+    )
 
     # Time selection
+    time_sel_start = time.perf_counter()
     ds_time = ds.sel({time_name: slice(start_date, end_date)})
+    time_sel_time = time.perf_counter()
+    logger.info(f"[TIMING] Time selection took {time_sel_time - time_sel_start:.3f}s")
 
     # Get variable
+    var_extract_start = time.perf_counter()
     var_name = metadata["keyVariable"]
     var = ds_time[var_name]
+    var_extract_time = time.perf_counter()
+    logger.info(
+        f"[TIMING] Variable extraction took {var_extract_time - var_extract_start:.3f}s"
+    )
 
     # Level selection if applicable
     if level_value is not None:
+        level_sel_start = time.perf_counter()
         level_dims = [d for d in var.dims if d not in (time_name, lat_name, lon_name)]
         if level_dims:
             var = var.sel({level_dims[0]: level_value}, method="nearest")
+        level_sel_time = time.perf_counter()
+        logger.info(
+            f"[TIMING] Level selection took {level_sel_time - level_sel_start:.3f}s"
+        )
 
     # NEW: Point-based extraction if focus coordinates provided
     if focus_coordinates and len(focus_coordinates) > 0:
@@ -1436,12 +1530,14 @@ async def extract_time_series(
             f"Extracting data from {len(focus_coordinates)} specific coordinate(s)"
         )
 
+        focus_extract_start = time.perf_counter()
         point_series = []
 
         for coord in focus_coordinates:
             try:
                 # Select nearest point to the specified coordinate
                 if lat_name and lon_name:
+                    point_start = time.perf_counter()
                     point_data = var.sel(
                         {lat_name: coord["lat"], lon_name: coord["lon"]},
                         method="nearest",
@@ -1457,8 +1553,10 @@ async def extract_time_series(
                         )
 
                     point_series.append(point_series_data)
+                    point_extract_time = time.perf_counter()
                     logger.info(
-                        f"Extracted data from point: lat={coord['lat']}, lon={coord['lon']}"
+                        f"Extracted data from point: lat={coord['lat']}, lon={coord['lon']} "
+                        f"(took {point_extract_time - point_start:.3f}s)"
                     )
                 else:
                     logger.warning(
@@ -1483,6 +1581,14 @@ async def extract_time_series(
         else:
             result = point_series[0]
 
+        focus_extract_time = time.perf_counter()
+        logger.info(
+            f"[TIMING] Focus coordinates extraction took {focus_extract_time - focus_extract_start:.3f}s"
+        )
+        total_time = time.perf_counter() - start_time
+        logger.info(
+            f"[TIMING] extract_time_series TOTAL (focus path): {total_time:.3f}s"
+        )
         return result
 
     # ORIGINAL: Spatial aggregation (used when no focus coordinates)
@@ -1526,6 +1632,10 @@ async def extract_time_series(
         if not isinstance(series.index, pd.DatetimeIndex):
             series.index = pd.to_datetime(series.index)
 
+        total_time = time.perf_counter() - start_time
+        logger.info(
+            f"[TIMING] extract_time_series TOTAL (spatial aggregation path): {total_time:.3f}s"
+        )
         return series
 
 
