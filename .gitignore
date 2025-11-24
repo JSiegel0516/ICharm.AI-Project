@@ -66,4 +66,6 @@ package-lock.json
 
 # datasets
 backend/datasets/*.nc
+backend/datasets/cmorph
+backend/icharm/kerchunk/kerchunk*
 **/*.nc
