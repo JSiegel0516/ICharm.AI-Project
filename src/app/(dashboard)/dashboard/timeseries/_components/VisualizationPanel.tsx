@@ -115,11 +115,11 @@ export function VisualizationPanel({
   ]);
 
   // Calculate linear trend line data for each visible dataset
-  const trendLineData = useMemo(() => {
-    if (!showLinearTrend || chartData.length === 0) return {};
+  const chartDataWithTrends = useMemo(() => {
+    if (!showLinearTrend || chartData.length === 0) return chartData;
 
-    const trends: Record<string, any[]> = {};
     const visibleDatasetIds = Array.from(visibleDatasets);
+    const dataWithTrends = chartData.map((point) => ({ ...point }));
 
     visibleDatasetIds.forEach((datasetId) => {
       const points: { x: number; y: number }[] = [];
@@ -141,26 +141,25 @@ export function VisualizationPanel({
       const m = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
       const b = (sumY - m * sumX) / n;
 
-      const trendPoints = chartData.map((point, index) => ({
-        date: point.date,
-        [`${datasetId}_trend`]: m * index + b,
-      }));
-
-      trends[datasetId] = trendPoints;
+      // Add trend values to the main data
+      dataWithTrends.forEach((point, index) => {
+        point[`${datasetId}_trend`] = m * index + b;
+      });
     });
 
-    return trends;
+    return dataWithTrends;
   }, [chartData, visibleDatasets, showLinearTrend]);
 
   // Calculate Y-axis domain
   const yDomain = useMemo(() => {
-    if (chartData.length === 0) return undefined;
+    const dataToUse = showLinearTrend ? chartDataWithTrends : chartData;
+    if (dataToUse.length === 0) return undefined;
 
     const visibleDatasetIds = Array.from(visibleDatasets);
     let minY = Infinity;
     let maxY = -Infinity;
 
-    chartData.forEach((point) => {
+    dataToUse.forEach((point) => {
       visibleDatasetIds.forEach((datasetId) => {
         const value = point[datasetId];
         if (typeof value === "number" && !isNaN(value) && value !== null) {
@@ -176,7 +175,7 @@ export function VisualizationPanel({
 
     const padding = (maxY - minY) * 0.05;
     return [minY - padding, maxY + padding];
-  }, [chartData, visibleDatasets]);
+  }, [chartData, chartDataWithTrends, visibleDatasets, showLinearTrend]);
 
   // Get display unit for Y-axis
   const yAxisUnit = useMemo(() => {
@@ -224,8 +223,9 @@ export function VisualizationPanel({
     ];
 
     const visibleDatasetIds = Array.from(visibleDatasets);
+    const dataToRender = showLinearTrend ? chartDataWithTrends : chartData;
     const commonProps = {
-      data: chartData,
+      data: dataToRender,
       margin: { top: 5, right: 30, left: 60, bottom: 5 },
     };
 
@@ -308,12 +308,10 @@ export function VisualizationPanel({
           {showLinearTrend &&
             selectedDatasets.map(
               (dataset, idx) =>
-                visibleDatasetIds.includes(dataset.id) &&
-                trendLineData[dataset.id] && (
+                visibleDatasetIds.includes(dataset.id) && (
                   <Line
                     key={`trend-${dataset.id}`}
                     type="monotone"
-                    data={trendLineData[dataset.id]}
                     dataKey={`${dataset.id}_trend`}
                     name={`${(dataset as any).datasetName || dataset.name} (Trend)`}
                     stroke={colors[idx % colors.length]}
@@ -567,7 +565,7 @@ export function VisualizationPanel({
         </CardContent>
       </Card>
 
-      {/* Chart Options Panel  */}
+      {/* Chart Options Panel*/}
       <ChartOptionsPanel
         chartType={chartType}
         setChartType={setChartType}
