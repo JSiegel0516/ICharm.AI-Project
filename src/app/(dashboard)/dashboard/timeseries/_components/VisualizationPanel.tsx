@@ -1,15 +1,5 @@
 "use client";
-import React, { useState, useMemo } from "react";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import React, { useMemo } from "react";
 import {
   Card,
   CardContent,
@@ -17,7 +7,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Slider } from "@/components/ui/slider";
 import {
   LineChart,
   Line,
@@ -33,10 +22,10 @@ import {
   Tooltip as RechartsTooltip,
   Legend,
   ResponsiveContainer,
+  ComposedChart,
 } from "recharts";
 import {
   ChartType,
-  AnalysisModel,
   AggregationMethod,
   type DatasetInfo,
   type ProcessingInfo,
@@ -44,98 +33,133 @@ import {
   getDisplayUnit,
   convertUnits,
 } from "@/hooks/use-timeseries";
+import { applyTransformations } from "@/lib/client-transformations";
+import { ChartOptionsPanel } from "./ChartOptionsPanel";
 import { DataTable } from "./DataTable";
 
-type NormalizationMode = "all" | "selected";
-
-interface CoordinateSelection {
-  lat?: number;
-  lon?: number;
-}
-
 interface VisualizationPanelProps {
+  // Chart type & date range
   chartType: ChartType;
   setChartType: (type: ChartType) => void;
   dateRange: { start: string; end: string };
-  setDateRange: React.Dispatch<
-    React.SetStateAction<{ start: string; end: string }>
-  >;
-  analysisModel: AnalysisModel;
-  setAnalysisModel: (model: AnalysisModel) => void;
-  aggregation: AggregationMethod;
-  setAggregation: (method: AggregationMethod) => void;
-  normalize: boolean;
-  setNormalize: (normalize: boolean) => void;
-  smoothingWindow: number;
-  setSmoothingWindow: (window: number) => void;
-  resampleFreq: string | undefined;
-  setResampleFreq: (freq: string | undefined) => void;
-  focusCoordinates: string;
-  setFocusCoordinates: (coords: string) => void;
+  analysisModel: string;
+
+  // Data
   chartData: any[];
   selectedDatasets: DatasetInfo[];
   visibleDatasets: Set<string>;
   processingInfo: ProcessingInfo | null;
   statistics: Record<string, any> | null;
   metadata: Record<string, any> | null;
+
+  // Client-side transformation options
+  normalize: boolean;
+  setNormalize: (normalize: boolean) => void;
+  smoothingWindow: number;
+  setSmoothingWindow: (window: number) => void;
+  resampleFreq: string | undefined;
+  setResampleFreq: (freq: string | undefined) => void;
+  aggregation: AggregationMethod;
+  setAggregation: (method: AggregationMethod) => void;
+
+  // Overlays
+  showHistogram: boolean;
+  setShowHistogram: (show: boolean) => void;
+  showLinearTrend: boolean;
+  setShowLinearTrend: (show: boolean) => void;
 }
 
 export function VisualizationPanel({
   chartType,
   setChartType,
   dateRange,
-  setDateRange,
   analysisModel,
-  setAnalysisModel,
-  aggregation,
-  setAggregation,
+  chartData: rawChartData,
+  selectedDatasets,
+  visibleDatasets,
+  processingInfo,
+  statistics,
+  metadata,
   normalize,
   setNormalize,
   smoothingWindow,
   setSmoothingWindow,
   resampleFreq,
   setResampleFreq,
-  focusCoordinates,
-  setFocusCoordinates,
-  chartData,
-  selectedDatasets,
-  visibleDatasets,
-  processingInfo,
-  statistics,
-  metadata,
+  aggregation,
+  setAggregation,
+  showHistogram,
+  setShowHistogram,
+  showLinearTrend,
+  setShowLinearTrend,
 }: VisualizationPanelProps) {
-  const [normalizationMode, setNormalizationMode] =
-    useState<NormalizationMode>("all");
-  const [selectedCoordinates, setSelectedCoordinates] = useState<
-    CoordinateSelection[]
-  >([]);
-  const [tempLat, setTempLat] = useState("");
-  const [tempLon, setTempLon] = useState("");
+  // Apply client-side transformations
+  const chartData = useMemo(() => {
+    if (rawChartData.length === 0) return rawChartData;
 
-  const addCoordinate = () => {
-    const lat = parseFloat(tempLat);
-    const lon = parseFloat(tempLon);
+    const datasetIds = selectedDatasets.map((d) => d.id);
 
-    if (!isNaN(lat) && !isNaN(lon)) {
-      setSelectedCoordinates([...selectedCoordinates, { lat, lon }]);
-      setTempLat("");
-      setTempLon("");
-    }
-  };
+    return applyTransformations(rawChartData, datasetIds, {
+      normalize,
+      smoothingWindow: smoothingWindow > 1 ? smoothingWindow : undefined,
+      resampleFreq,
+      aggregation,
+    });
+  }, [
+    rawChartData,
+    selectedDatasets,
+    normalize,
+    smoothingWindow,
+    resampleFreq,
+    aggregation,
+  ]);
 
-  const removeCoordinate = (index: number) => {
-    setSelectedCoordinates(selectedCoordinates.filter((_, i) => i !== index));
-  };
+  // Calculate linear trend line data for each visible dataset
+  const chartDataWithTrends = useMemo(() => {
+    if (!showLinearTrend || chartData.length === 0) return chartData;
 
-  // Calculate Y-axis domain dynamically based on visible datasets
+    const visibleDatasetIds = Array.from(visibleDatasets);
+    const dataWithTrends = chartData.map((point) => ({ ...point }));
+
+    visibleDatasetIds.forEach((datasetId) => {
+      const points: { x: number; y: number }[] = [];
+      chartData.forEach((point, index) => {
+        const value = point[datasetId];
+        if (typeof value === "number" && !isNaN(value) && value !== null) {
+          points.push({ x: index, y: value });
+        }
+      });
+
+      if (points.length < 2) return;
+
+      const n = points.length;
+      const sumX = points.reduce((sum, p) => sum + p.x, 0);
+      const sumY = points.reduce((sum, p) => sum + p.y, 0);
+      const sumXY = points.reduce((sum, p) => sum + p.x * p.y, 0);
+      const sumX2 = points.reduce((sum, p) => sum + p.x * p.x, 0);
+
+      const m = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+      const b = (sumY - m * sumX) / n;
+
+      // Add trend values to the main data
+      dataWithTrends.forEach((point, index) => {
+        point[`${datasetId}_trend`] = m * index + b;
+      });
+    });
+
+    return dataWithTrends;
+  }, [chartData, visibleDatasets, showLinearTrend]);
+
+  // Calculate Y-axis domain
   const yDomain = useMemo(() => {
-    if (chartData.length === 0) return undefined;
+    const dataToUse = showLinearTrend ? chartDataWithTrends : chartData;
+    if (dataToUse.length === 0) return undefined;
 
     const visibleDatasetIds = Array.from(visibleDatasets);
     let minY = Infinity;
     let maxY = -Infinity;
 
-    chartData.forEach((point) => {
+    dataToUse.forEach((point) => {
       visibleDatasetIds.forEach((datasetId) => {
         const value = point[datasetId];
         if (typeof value === "number" && !isNaN(value) && value !== null) {
@@ -149,18 +173,40 @@ export function VisualizationPanel({
       return undefined;
     }
 
-    // Add 5% padding to top and bottom
     const padding = (maxY - minY) * 0.05;
     return [minY - padding, maxY + padding];
-  }, [chartData, visibleDatasets]);
+  }, [chartData, chartDataWithTrends, visibleDatasets, showLinearTrend]);
 
-  // Get display unit for Y-axis label
+  // Get display unit for Y-axis
   const yAxisUnit = useMemo(() => {
+    if (normalize) return "normalized";
     if (!metadata || selectedDatasets.length === 0) return "";
     const firstDataset = selectedDatasets[0];
     const originalUnit = metadata[firstDataset.id]?.units || "";
     return getDisplayUnit(originalUnit);
-  }, [metadata, selectedDatasets]);
+  }, [metadata, selectedDatasets, normalize]);
+
+  // Generate chart title
+  const chartTitle = useMemo(() => {
+    if (selectedDatasets.length === 0 || !metadata) {
+      return "Time Series Visualization";
+    }
+
+    const datasetNames = selectedDatasets
+      .map((dataset) => {
+        const meta = metadata[dataset.id];
+        const varName = meta?.variable || dataset.name;
+        const source = meta?.source || "Unknown Source";
+        return `${varName} (${source})`;
+      })
+      .join(" vs. ");
+
+    const startDate = dateRange.start || "Start";
+    const endDate = dateRange.end || "End";
+    const temporalRange = `${startDate} to ${endDate}`;
+
+    return `${datasetNames}: ${temporalRange}`;
+  }, [selectedDatasets, metadata, dateRange]);
 
   const renderChart = () => {
     const colors = [
@@ -177,42 +223,108 @@ export function VisualizationPanel({
     ];
 
     const visibleDatasetIds = Array.from(visibleDatasets);
+    const dataToRender = showLinearTrend ? chartDataWithTrends : chartData;
     const commonProps = {
-      data: chartData,
+      data: dataToRender,
       margin: { top: 5, right: 30, left: 60, bottom: 5 },
     };
 
-    // Enhanced Y-axis tick formatter
     const formatYAxis = (value: number) => {
-      // For very small numbers, use more precision
-      if (Math.abs(value) < 0.01) {
-        return value.toFixed(4);
-      }
-      // For moderate numbers
-      if (Math.abs(value) < 1) {
-        return value.toFixed(3);
-      }
-      // For large numbers, use k notation
-      if (Math.abs(value) >= 1000) {
-        return (value / 1000).toFixed(1) + "k";
-      }
+      if (normalize) return value.toFixed(2);
+      if (Math.abs(value) < 0.01) return value.toFixed(4);
+      if (Math.abs(value) < 1) return value.toFixed(3);
+      if (Math.abs(value) >= 1000) return (value / 1000).toFixed(1) + "k";
       return value.toFixed(2);
     };
 
-    // Enhanced tooltip formatter with unit display
     const formatTooltipValue = (value: any, name: string) => {
       if (typeof value !== "number" || isNaN(value) || value === null) {
         return "-";
       }
-
-      // Find the dataset to get the original unit
-      const dataset = selectedDatasets.find(
-        (d) => d.id === name || d.name === name,
-      );
-      const originalUnit = dataset ? metadata?.[dataset.id]?.units : "";
-
+      if (normalize) return value.toFixed(4);
       return formatValue(value, yAxisUnit, true);
     };
+
+    if (chartType === ChartType.LINE && (showHistogram || showLinearTrend)) {
+      return (
+        <ComposedChart {...commonProps}>
+          <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+          <XAxis
+            dataKey="date"
+            tick={{ fontSize: 12 }}
+            angle={-45}
+            textAnchor="end"
+            height={80}
+          />
+          <YAxis
+            tick={{ fontSize: 12 }}
+            domain={yDomain}
+            tickFormatter={formatYAxis}
+            width={80}
+            label={{
+              value: yAxisUnit,
+              angle: -90,
+              position: "insideLeft",
+              style: { textAnchor: "middle", fontSize: 12 },
+            }}
+          />
+          <RechartsTooltip
+            formatter={formatTooltipValue}
+            labelStyle={{ fontWeight: "bold" }}
+            contentStyle={{ fontSize: 12 }}
+          />
+          <Legend />
+
+          {showHistogram &&
+            selectedDatasets.map(
+              (dataset, idx) =>
+                visibleDatasetIds.includes(dataset.id) && (
+                  <Bar
+                    key={`bar-${dataset.id}`}
+                    dataKey={dataset.id}
+                    name={`${(dataset as any).datasetName || dataset.name} (Histogram)`}
+                    fill={colors[idx % colors.length]}
+                    fillOpacity={0.3}
+                  />
+                ),
+            )}
+
+          {selectedDatasets.map(
+            (dataset, idx) =>
+              visibleDatasetIds.includes(dataset.id) && (
+                <Line
+                  key={`line-${dataset.id}`}
+                  type="monotone"
+                  dataKey={dataset.id}
+                  name={(dataset as any).datasetName || dataset.name}
+                  stroke={colors[idx % colors.length]}
+                  strokeWidth={2}
+                  dot={false}
+                  connectNulls
+                />
+              ),
+          )}
+
+          {showLinearTrend &&
+            selectedDatasets.map(
+              (dataset, idx) =>
+                visibleDatasetIds.includes(dataset.id) && (
+                  <Line
+                    key={`trend-${dataset.id}`}
+                    type="monotone"
+                    dataKey={`${dataset.id}_trend`}
+                    name={`${(dataset as any).datasetName || dataset.name} (Trend)`}
+                    stroke={colors[idx % colors.length]}
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                    dot={false}
+                    connectNulls
+                  />
+                ),
+            )}
+        </ComposedChart>
+      );
+    }
 
     switch (chartType) {
       case ChartType.LINE:
@@ -240,7 +352,6 @@ export function VisualizationPanel({
             />
             <RechartsTooltip
               formatter={formatTooltipValue}
-              labelStyle={{ fontWeight: "bold" }}
               contentStyle={{ fontSize: 12 }}
             />
             <Legend />
@@ -255,7 +366,7 @@ export function VisualizationPanel({
                     stroke={colors[idx % colors.length]}
                     strokeWidth={2}
                     dot={false}
-                    connectNulls={false}
+                    connectNulls
                   />
                 ),
             )}
@@ -422,219 +533,55 @@ export function VisualizationPanel({
 
   return (
     <div className="space-y-6">
-      {/* Controls */}
-      <Card>
+      {/* Main Chart */}
+      <Card className="flex-1">
         <CardHeader>
-          <CardTitle className="text-lg">Visualization Controls</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Date Range & Chart Type */}
-          <div className="flex items-end gap-4">
-            <div className="flex-1 space-y-1">
-              <label className="text-sm font-medium">Start Date</label>
-              <Input
-                type="date"
-                value={dateRange.start}
-                onChange={(e) =>
-                  setDateRange((prev) => ({
-                    ...prev,
-                    start: e.target.value,
-                  }))
-                }
-              />
-            </div>
-            <div className="flex-1 space-y-1">
-              <label className="text-sm font-medium">End Date</label>
-              <Input
-                type="date"
-                value={dateRange.end}
-                onChange={(e) =>
-                  setDateRange((prev) => ({
-                    ...prev,
-                    end: e.target.value,
-                  }))
-                }
-              />
-            </div>
-            <div className="flex-1 space-y-1">
-              <label className="text-sm font-medium">Chart Type</label>
-              <Select
-                value={chartType}
-                onValueChange={(v) => setChartType(v as ChartType)}
-              >
-                <SelectTrigger className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.values(ChartType).map((type) => (
-                    <SelectItem key={type} value={type}>
-                      {type.toUpperCase()}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base leading-relaxed">
+              {chartTitle}
+            </CardTitle>
+            {processingInfo && (
+              <CardDescription>
+                {processingInfo.totalPoints} data points •{" "}
+                {processingInfo.datasetsProcessed} datasets • Processed in{" "}
+                {processingInfo.processingTime}
+                {yDomain && yAxisUnit && !normalize && (
+                  <>
+                    {" "}
+                    • Y-axis range: {yDomain[0].toFixed(2)} to{" "}
+                    {yDomain[1].toFixed(2)} {yAxisUnit}
+                  </>
+                )}
+              </CardDescription>
+            )}
           </div>
-
-          {/* Processing Options */}
-          <div className="space-y-3 border-t pt-4">
-            <h4 className="text-md font-medium">Processing Options</h4>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Analysis Model</label>
-                <Select
-                  value={analysisModel}
-                  onValueChange={(v) => setAnalysisModel(v as AnalysisModel)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(AnalysisModel).map(([key, value]) => (
-                      <SelectItem key={value} value={value}>
-                        {key}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium">
-                  Aggregation Method
-                </label>
-                <Select
-                  value={aggregation}
-                  onValueChange={(v) => setAggregation(v as AggregationMethod)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(AggregationMethod).map(([key, value]) => (
-                      <SelectItem key={value} value={value}>
-                        {key}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium">
-                  Resample Frequency
-                </label>
-                <Select
-                  value={resampleFreq || "none"}
-                  onValueChange={(v) =>
-                    setResampleFreq(v === "none" ? undefined : v)
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="No resampling" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No resampling</SelectItem>
-                    <SelectItem value="D">Daily</SelectItem>
-                    <SelectItem value="W">Weekly</SelectItem>
-                    <SelectItem value="M">Monthly</SelectItem>
-                    <SelectItem value="Q">Quarterly</SelectItem>
-                    <SelectItem value="Y">Yearly</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Normalization Options */}
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Normalization</label>
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="normalize"
-                    checked={normalize}
-                    onCheckedChange={(checked) =>
-                      setNormalize(checked as boolean)
-                    }
-                  />
-                  <label htmlFor="normalize" className="text-sm">
-                    Normalize (0-1)
-                  </label>
-                </div>
-              </div>
-
-              {analysisModel === AnalysisModel.MOVING_AVG && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium">
-                      Smoothing Window: {smoothingWindow} months
-                    </label>
-                  </div>
-                  <Slider
-                    value={[smoothingWindow]}
-                    onValueChange={(value) => setSmoothingWindow(value[0])}
-                    min={1}
-                    max={24}
-                    step={1}
-                    className="w-full"
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Focus Coordinates */}
-            <div className="space-y-2 pt-2">
-              <label className="text-sm font-medium">
-                Focus Coordinates (Optional)
-              </label>
-              <Input
-                type="text"
-                placeholder="e.g., 40.7128,-74.0060 or multiple: 40.7128,-74.0060; 34.0522,-118.2437"
-                value={focusCoordinates}
-                onChange={(e) => setFocusCoordinates(e.target.value)}
-                className="w-full"
-              />
-              <p className="text-muted-foreground text-xs">
-                Enter coordinates as latitude,longitude pairs. Separate multiple
-                coordinates with semicolons (;)
-              </p>
-            </div>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[500px]" data-chart-container>
+            <ResponsiveContainer width="100%" height="100%">
+              {renderChart()}
+            </ResponsiveContainer>
           </div>
         </CardContent>
       </Card>
 
-      {/* Main Chart */}
-      {chartData.length > 0 && (
-        <Card className="flex-1">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Time Series Visualization</CardTitle>
-                {processingInfo && (
-                  <CardDescription>
-                    {processingInfo.totalPoints} data points •{" "}
-                    {processingInfo.datasetsProcessed} datasets • Processed in{" "}
-                    {processingInfo.processingTime}
-                    {yDomain && yAxisUnit && (
-                      <>
-                        {" "}
-                        • Y-axis range: {yDomain[0].toFixed(2)} to{" "}
-                        {yDomain[1].toFixed(2)} {yAxisUnit}
-                      </>
-                    )}
-                  </CardDescription>
-                )}
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[500px]" data-chart-container>
-              <ResponsiveContainer width="100%" height="100%">
-                {renderChart()}
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Chart Options Panel*/}
+      <ChartOptionsPanel
+        chartType={chartType}
+        setChartType={setChartType}
+        normalize={normalize}
+        setNormalize={setNormalize}
+        smoothingWindow={smoothingWindow}
+        setSmoothingWindow={setSmoothingWindow}
+        resampleFreq={resampleFreq}
+        setResampleFreq={setResampleFreq}
+        aggregation={aggregation}
+        setAggregation={setAggregation}
+        showHistogram={showHistogram}
+        setShowHistogram={setShowHistogram}
+        showLinearTrend={showLinearTrend}
+        setShowLinearTrend={setShowLinearTrend}
+      />
 
       {/* Data Table */}
       {chartData.length > 0 && (
@@ -647,7 +594,7 @@ export function VisualizationPanel({
       )}
 
       {/* Statistics */}
-      {statistics && Object.keys(statistics).length > 0 && (
+      {statistics && Object.keys(statistics).length > 0 && !normalize && (
         <Card>
           <CardHeader>
             <CardTitle className="text-sm">Statistical Summary</CardTitle>
@@ -660,15 +607,6 @@ export function VisualizationPanel({
               {Object.entries(statistics).map(
                 ([datasetId, stats]: [string, any]) => {
                   const originalUnit = metadata?.[datasetId]?.units || "";
-
-                  // Debug logging
-                  console.log("Statistics for", datasetId, {
-                    originalStats: stats,
-                    originalUnit,
-                    yAxisUnit,
-                  });
-
-                  // Convert statistics to display units
                   const convertedStats = {
                     min: convertUnits(stats.min || 0, originalUnit).value,
                     max: convertUnits(stats.max || 0, originalUnit).value,
@@ -676,8 +614,6 @@ export function VisualizationPanel({
                     std: convertUnits(stats.std || 0, originalUnit).value,
                     trend: convertUnits(stats.trend || 0, originalUnit).value,
                   };
-
-                  console.log("Converted stats:", convertedStats);
 
                   return (
                     <Card key={datasetId} className="p-3">
