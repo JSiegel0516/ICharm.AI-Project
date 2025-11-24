@@ -868,7 +868,7 @@ async def open_cloud_dataset(
         dataset_name = str(metadata.get("datasetName") or "")
         normalized_name = dataset_name.lower().strip()
 
-        # TLS keeps its special-case loader behaviour
+        # TLS keeps its special-case loader behaviour (bucket listing + kerchunk)
         if normalized_name == "mean layer temperature - noaa cdr":
             logger.info(
                 "Using HDF5 loader for Mean Layer Temperature - NOAA CDR dataset"
@@ -879,38 +879,18 @@ async def open_cloud_dataset(
         if normalized_name == "normalized difference vegetation index cdr":
             logger.info("Using NDVI-specific loader")
             ds = await asyncio.to_thread(_open_ndvi_dataset, metadata, start_date)
+            # keep monthly-sampling behavior for NDVI
             ds = _apply_monthly_sampling(ds, start_date, end_date)
             dataset_cache.set(cache_key, ds)
             return ds
 
         # ------------------------------------------------------------------
-        # Kerchunk hint (from DB, possibly overridden for SST & CMORPH)
+        # Kerchunk hint (now fully driven by DB metadata)
         # ------------------------------------------------------------------
         kerchunk_hint = (metadata.get("kerchunkPath") or "").strip()
 
-        # TEMPORARY: override kerchunk path for SST & CMORPH until DB metadata is updated
-        if not kerchunk_hint:
-            # Make matching robust to fancy hyphens / spacing
-            if (
-                "sea surface temperature" in normalized_name
-                and "optimum interpolation" in normalized_name
-            ):
-                kerchunk_hint = "kerchunk/sst_combined.json"
-                logger.info(
-                    "Using hardcoded kerchunk path for SST OISST CDR: %s",
-                    kerchunk_hint,
-                )
-            elif "cmorph" in normalized_name:
-                kerchunk_hint = "kerchunk/cmorph_combined.json"
-                logger.info(
-                    "Using hardcoded kerchunk path for CMORPH CDR: %s",
-                    kerchunk_hint,
-                )
-
-        # ------------------------------------------------------------------
-        # Helper: resolve kerchunk_hint → local path inside container
-        # ------------------------------------------------------------------
         def _kerchunk_local_path() -> Optional[Path]:
+            """Resolve kerchunkPath -> local JSON inside container."""
             if not kerchunk_hint or kerchunk_hint.lower() in ("none", "null"):
                 return None
 
@@ -936,59 +916,7 @@ async def open_cloud_dataset(
             return path
 
         # ------------------------------------------------------------------
-        # NEW: use pre-built kerchunk JSON for SST & CMORPH when available
-        # ------------------------------------------------------------------
-        if (
-            "sea surface temperature" in normalized_name
-            and "optimum interpolation" in normalized_name
-        ) or ("cmorph" in normalized_name):
-            local_ref = _kerchunk_local_path()
-            if local_ref and local_ref.exists():
-                logger.info(
-                    "Opening %s via pre-built kerchunk reference: %s",
-                    metadata["datasetName"],
-                    local_ref,
-                )
-                ds = await asyncio.to_thread(
-                    xr.open_dataset,
-                    "reference://",
-                    engine="zarr",
-                    backend_kwargs={"consolidated": False},
-                    storage_options={
-                        "fo": str(local_ref),
-                        "remote_protocol": "s3",
-                        "remote_options": {"anon": S3_ANON},
-                        "asynchronous": False,
-                    },
-                )
-                logger.info(
-                    f"✅ Successfully opened (kerchunk): {metadata['datasetName']}"
-                )
-                logger.info(f"   Dimensions: {dict(ds.dims)}")
-                logger.info(f"   Variables: {list(ds.data_vars)}")
-                ds = _apply_monthly_sampling(ds, start_date, end_date)
-                dataset_cache.set(cache_key, ds)
-                return ds
-            else:
-                logger.warning(
-                    "Expected pre-built kerchunk reference for %s at %s, "
-                    "but it does not exist. Falling back to legacy loader.",
-                    metadata["datasetName"],
-                    local_ref or kerchunk_hint,
-                )
-                # For CMORPH, legacy loader still exists
-                if "cmorph" in normalized_name:
-                    logger.info("Using CMORPH-specific legacy loader as fallback")
-                    ds = await asyncio.to_thread(
-                        _open_cmorph_dataset, metadata, start_date, end_date
-                    )
-                    ds = _apply_monthly_sampling(ds, start_date, end_date)
-                    dataset_cache.set(cache_key, ds)
-                    return ds
-                # For SST, we just fall through to generic cloud logic below
-
-        # ------------------------------------------------------------------
-        # Generic cloud logic (for everything else, including TLS fallback)
+        # Generic cloud logic (for everything, incl. TLS fallback)
         # ------------------------------------------------------------------
         # Resolve concrete S3 object keys for requested date range
         if "{" in input_file:
@@ -1000,46 +928,17 @@ async def open_cloud_dataset(
 
         candidate_urls: List[str] = []
         for candidate in expanded:
-            normalized_url = _normalize_s3_url(candidate)
-            if "*" in normalized_url or "?" in normalized_url:
+            normalized = _normalize_s3_url(candidate)
+            if "*" in normalized or "?" in normalized:
                 glob_target = (
-                    normalized_url[5:]
-                    if normalized_url.startswith("s3://")
-                    else normalized_url
+                    normalized[5:] if normalized.startswith("s3://") else normalized
                 )
                 matches = fs.glob(glob_target)
                 candidate_urls.extend(
                     [m if m.startswith("s3://") else f"s3://{m}" for m in matches]
                 )
             else:
-                candidate_urls.append(normalized_url)
-
-        if not candidate_urls:
-            raise FileNotFoundError(
-                f"No remote assets resolved for dataset {metadata['datasetName']} between "
-                f"{start_date.date()} and {end_date.date()}"
-            )
-
-        # Deduplicate while preserving order
-        seen = set()
-        unique_urls: List[str] = []
-        for url in candidate_urls:
-            if url not in seen:
-                seen.add(url)
-                unique_urls.append(url)
-        candidate_urls = unique_urls
-
-        # Verify assets exist; drop stale entries
-        verified_urls: List[str] = []
-        for url in candidate_urls:
-            check_path = url[5:] if url.startswith("s3://") else url
-            try:
-                fs.info(check_path)
-                verified_urls.append(url)
-            except FileNotFoundError:
-                logger.warning("Remote asset not found: %s", url)
-
-        candidate_urls = verified_urls
+                candidate_urls.append(normalized)
 
         # TLS special case: if nothing resolved, try to list bucket
         if (
@@ -1068,6 +967,33 @@ async def open_cloud_dataset(
 
         if not candidate_urls:
             raise FileNotFoundError(
+                f"No remote assets resolved for dataset {metadata['datasetName']} between "
+                f"{start_date.date()} and {end_date.date()}"
+            )
+
+        # Deduplicate while preserving order
+        seen = set()
+        unique_urls: List[str] = []
+        for url in candidate_urls:
+            if url not in seen:
+                seen.add(url)
+                unique_urls.append(url)
+        candidate_urls = unique_urls
+
+        # Verify assets exist; drop stale entries
+        verified_urls: List[str] = []
+        for url in candidate_urls:
+            check_path = url[5:] if url.startswith("s3://") else url
+            try:
+                fs.info(check_path)
+                verified_urls.append(url)
+            except FileNotFoundError:
+                logger.warning("Remote asset not found: %s", url)
+
+        candidate_urls = verified_urls
+
+        if not candidate_urls:
+            raise FileNotFoundError(
                 f"No accessible remote assets located for dataset {metadata['datasetName']}"
             )
 
@@ -1080,10 +1006,10 @@ async def open_cloud_dataset(
             )
             candidate_urls = candidate_urls[:max_files]
 
-        # NOTE: from here down, the logic is basically the same as before,
-        # except CMORPH & SST will almost never get here because kerchunk
-        # pre-built paths are handled above.
-
+        # ------------------------------------------------------------------
+        # Engine-specific handling (zarr / NetCDF via h5netcdf / other)
+        # This will automatically use pre-built kerchunk JSON if kerchunkPath is set
+        # ------------------------------------------------------------------
         if engine == "zarr":
             asset_url = candidate_urls[0]
             local_ref = _kerchunk_local_path()
@@ -1178,7 +1104,6 @@ async def open_cloud_dataset(
                         ds = await asyncio.to_thread(
                             xr.concat, datasets, dim="time", combine_attrs="override"
                         )
-
         else:
             asset_url = candidate_urls[0]
             ds = await asyncio.to_thread(
@@ -1188,10 +1113,13 @@ async def open_cloud_dataset(
                 storage_options={"anon": S3_ANON},
             )
 
-        logger.info(f"Successfully opened: {metadata['datasetName']}")
+        logger.info(f"✅ Successfully opened: {metadata['datasetName']}")
         logger.info(f"   Dimensions: {dict(ds.dims)}")
         logger.info(f"   Variables: {list(ds.data_vars)}")
+
+        # keep monthly sampling behavior for all generic cloud datasets
         ds = _apply_monthly_sampling(ds, start_date, end_date)
+
         dataset_cache.set(cache_key, ds)
         return ds
 
