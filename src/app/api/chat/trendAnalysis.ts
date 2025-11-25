@@ -14,6 +14,24 @@ const TREND_KEYWORDS = [
   "past",
   "history",
   "historical",
+  "enso",
+  "el nino",
+  "la nina",
+  "nino",
+  "nina",
+  "enso-neutral",
+  "teleconnection",
+  "pdo",
+  "nao",
+  "amo",
+  "mjo",
+  "qbo",
+  "indian ocean dipole",
+  "iod",
+  "enso event",
+  "enso phase",
+  "monsoon onset",
+  "monsoon retreat",
   "increase",
   "increasing",
   "decrease",
@@ -176,6 +194,22 @@ const normalizeNumber = (value: unknown): number | null => {
     return value;
   }
   return null;
+};
+
+const clamp = (value: number, min: number, max: number): number =>
+  Math.max(min, Math.min(max, value));
+
+const buildBufferedBounds = (
+  lat: number,
+  lon: number,
+  bufferDeg = 1,
+): { lat_min: number; lat_max: number; lon_min: number; lon_max: number } => {
+  const half = Math.max(0.05, bufferDeg / 2);
+  const latMin = clamp(lat - half, -90, 90);
+  const latMax = clamp(lat + half, -90, 90);
+  const lonMin = clamp(lon - half, -180, 180);
+  const lonMax = clamp(lon + half, -180, 180);
+  return { lat_min: latMin, lat_max: latMax, lon_min: lonMin, lon_max: lonMax };
 };
 
 const clampWindowYear = (years?: number): number =>
@@ -491,7 +525,12 @@ export const buildTrendInsightResponse = async ({
 
   const datasetId = normalizeString(context.datasetId ?? undefined);
   if (!datasetId) {
-    return { type: "none" };
+    const datasetLabel =
+      normalizeString(context.datasetName) ?? "the current dataset";
+    return {
+      type: "error",
+      message: `I couldn’t determine which dataset is loaded to run a trend summary for ${datasetLabel}. Try reselecting the dataset and ask again.`,
+    };
   }
 
   const extractedLocation = extractLocationPhrase(query);
@@ -624,18 +663,17 @@ export const buildTrendInsightResponse = async ({
     analysisScope === "marker" && hasLocation && lat !== null && lon !== null;
 
   if (usingMarkerExtraction && lat !== null && lon !== null) {
-    if (geocodedLocation?.bbox) {
-      payload.spatialBounds = {
-        lat_min: geocodedLocation.bbox.south,
-        lat_max: geocodedLocation.bbox.north,
-        lon_min: geocodedLocation.bbox.west,
-        lon_max: geocodedLocation.bbox.east,
-      };
-      // Also include centroid as a fallback point extraction hint
-      payload.focusCoordinates = `${lat},${lon}`;
-    } else {
-      payload.focusCoordinates = `${lat},${lon}`;
-    }
+    const bounds = geocodedLocation?.bbox
+      ? {
+          lat_min: geocodedLocation.bbox.south,
+          lat_max: geocodedLocation.bbox.north,
+          lon_min: geocodedLocation.bbox.west,
+          lon_max: geocodedLocation.bbox.east,
+        }
+      : buildBufferedBounds(lat, lon, geocodedLocation ? 4 : 1);
+    payload.spatialBounds = bounds;
+    // Also include centroid as a fallback point extraction hint
+    payload.focusCoordinates = `${lat},${lon}`;
   } else {
     payload.spatialBounds = GLOBAL_BOUNDS;
   }
@@ -734,6 +772,27 @@ export const buildTrendInsightResponse = async ({
     locationLabel.toLowerCase().includes(datasetLabel.toLowerCase())
   ) {
     locationLabel = formattedLatLon;
+  }
+
+  // Avoid using dataset-like strings as the "location" (e.g., GPCP, precip dataset names)
+  if (locationLabel) {
+    const labelLower = locationLabel.toLowerCase();
+    const datasetIdLower = (datasetId ?? "").toLowerCase();
+    const datasetNameLower = (datasetLabel ?? "").toLowerCase();
+    const datasetishKeywords = [
+      "gpcp",
+      "precip",
+      "reanalysis",
+      "dataset",
+      "temp",
+    ];
+    const looksDatasetLike =
+      (datasetIdLower && labelLower.includes(datasetIdLower)) ||
+      (datasetNameLower && labelLower.includes(datasetNameLower)) ||
+      datasetishKeywords.some((kw) => labelLower.includes(kw));
+    if (looksDatasetLike) {
+      locationLabel = formattedLatLon;
+    }
   }
 
   // Ensure we always surface a location descriptor when we have one
