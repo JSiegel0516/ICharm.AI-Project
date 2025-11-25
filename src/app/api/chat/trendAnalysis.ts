@@ -361,12 +361,44 @@ const geocodeFromQuery = async (
 
 const extractLocationPhrase = (query: string | undefined): string | null => {
   if (!query) return null;
+
+  const isTemporalPhrase = (text: string): boolean => {
+    const lower = text.toLowerCase();
+    if (!lower.trim()) return false;
+    const temporalKeywords = [
+      "past",
+      "last",
+      "next",
+      "years",
+      "year",
+      "decade",
+      "century",
+      "months",
+      "weeks",
+      "days",
+      "seasons",
+      "season",
+      "winter",
+      "spring",
+      "summer",
+      "fall",
+      "autumn",
+      "monsoon",
+    ];
+    const temporalRegex =
+      /(?:past|last|next)\s+\d{1,3}\s*(?:years?|months?|weeks?|days?)/i;
+    if (temporalRegex.test(lower)) return true;
+    return temporalKeywords.some((kw) => lower.includes(kw));
+  };
   // Try to grab a location-like phrase after common prepositions
   const prepositionRegex =
     /\b(?:in|for|at|near|around|over|within|of)\s+(?:the\s+)?([A-Za-z][\w\s\-\.,']{2,}?)(?:\?|\.|,| over| during| for| in| at| near| around| of|$)/i;
   const match = query.match(prepositionRegex);
   if (match && match[1]) {
-    return match[1].trim();
+    const candidate = match[1].trim();
+    if (candidate && !isTemporalPhrase(candidate)) {
+      return candidate;
+    }
   }
 
   // Fallback: use trailing words as a location guess
@@ -374,7 +406,9 @@ const extractLocationPhrase = (query: string | undefined): string | null => {
   if (tokens.length >= 2) {
     const tail = tokens.slice(-6).join(" ").trim();
     if (tail.length >= 3) {
-      return tail;
+      if (!isTemporalPhrase(tail)) {
+        return tail;
+      }
     }
   }
 
@@ -385,7 +419,7 @@ const extractLocationPhrase = (query: string | undefined): string | null => {
       "",
     )
     .trim();
-  return cleaned.length >= 3 ? cleaned : null;
+  return cleaned.length >= 3 && !isTemporalPhrase(cleaned) ? cleaned : null;
 };
 
 type LocationSourceType = "marker" | "search" | "region" | "unknown";
@@ -760,8 +794,8 @@ export const buildTrendInsightResponse = async ({
       : null;
   let locationLabel =
     hasLocation && formattedLatLon
-      ? (normalizeString(context.location?.name) ??
-        geocodedLocation?.label ??
+      ? (normalizeString(geocodedLocation?.label) ??
+        normalizeString(context.location?.name) ??
         formattedLatLon)
       : null;
 
