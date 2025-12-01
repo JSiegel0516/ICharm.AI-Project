@@ -122,8 +122,31 @@ const NAMED_REGION_BOUNDS: Record<
     label: "Africa",
     bbox: { north: 38, south: -35, east: 55, west: -20 },
   },
+  europe: {
+    label: "Europe",
+    bbox: { north: 72, south: 35, east: 40, west: -25 },
+  },
+  asia: {
+    label: "Asia",
+    bbox: { north: 80, south: 5, east: 180, west: 25 },
+  },
+  northamerica: {
+    label: "North America",
+    bbox: { north: 83, south: 7, east: -30, west: -170 },
+  },
+  southamerica: {
+    label: "South America",
+    bbox: { north: 15, south: -56, east: -34, west: -82 },
+  },
+  australia: {
+    label: "Australia",
+    bbox: { north: -10, south: -48, east: 155, west: 110 },
+  },
+  antarctica: {
+    label: "Antarctica",
+    bbox: { north: -60, south: -90, east: 180, west: -180 },
+  },
 };
-
 type TrendInsightOptions = {
   query: string;
   context: ConversationContextPayload;
@@ -232,6 +255,7 @@ const clampWindowYear = (years?: number): number =>
 const YEAR_WINDOW_REGEX = /(?:last|past)\s+(\d{1,3})\s*(?:years|yrs|year)/i;
 const DECADE_REGEX = /(?:last|past)\s+(?:a\s+)?decade/i;
 const CENTURY_REGEX = /(?:last|past)\s+(?:a\s+)?century/i;
+const YEAR_REGEX = /\b(19|20)\d{2}\b/;
 const MONTHS = [
   "january",
   "february",
@@ -273,6 +297,23 @@ const parseRequestedWindow = (query: string | undefined): number | null => {
   if (!match) return null;
   const value = Number(match[1]);
   return Number.isFinite(value) ? value : null;
+};
+
+const parseRequestedYear = (
+  query: string | undefined,
+  fallbackDate?: Date | null,
+): number | null => {
+  if (query) {
+    const match = query.match(YEAR_REGEX);
+    if (match) {
+      const year = Number(match[0]);
+      if (Number.isFinite(year)) return year;
+    }
+  }
+  if (fallbackDate && !Number.isNaN(fallbackDate.getTime())) {
+    return fallbackDate.getFullYear();
+  }
+  return null;
 };
 
 const resolveNamedRegion = (
@@ -521,6 +562,107 @@ const extractNumericThreshold = (query: string | undefined): number | null => {
   return Number.isFinite(value) ? value : null;
 };
 
+const CONTINENT_KEYWORDS = [
+  "continent",
+  "continents",
+  "antarctica",
+  "africa",
+  "europe",
+  "asia",
+  "australia",
+  "north america",
+  "south america",
+];
+
+const isContinentComparisonQuery = (query: string): boolean =>
+  CONTINENT_KEYWORDS.some((kw) => query.includes(kw));
+
+const buildYearRange = (
+  year: number,
+  datasetStart: Date | null,
+  datasetEnd: Date | null,
+): { start: Date; end: Date } => {
+  const start = new Date(Date.UTC(year, 0, 1));
+  const end = new Date(Date.UTC(year, 11, 31));
+  const boundedStart =
+    datasetStart && datasetStart > start ? datasetStart : start;
+  const boundedEnd = datasetEnd && datasetEnd < end ? datasetEnd : end;
+  return { start: boundedStart, end: boundedEnd };
+};
+
+const computeRegionMean = async ({
+  dataServiceUrl,
+  datasetId,
+  bbox,
+  startDate,
+  endDate,
+  monthFilter,
+}: {
+  dataServiceUrl: string;
+  datasetId: string;
+  bbox: { north: number; south: number; east: number; west: number };
+  startDate: Date;
+  endDate: Date;
+  monthFilter: number | null;
+}): Promise<{ mean: number | null; count: number }> => {
+  const payload = {
+    datasetIds: [datasetId],
+    startDate: formatDateOnly(startDate),
+    endDate: formatDateOnly(endDate),
+    includeStatistics: true,
+    includeMetadata: false,
+    analysisModel: "raw",
+    aggregation: "mean",
+    chartType: null,
+    spatialBounds: bbox,
+  };
+
+  const response = await fetch(
+    `${dataServiceUrl.replace(/\/$/, "")}/api/v2/timeseries/extract`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+
+  if (!response.ok) {
+    return { mean: null, count: 0 };
+  }
+
+  const body = (await response.json()) as TimeSeriesResponsePayload;
+  const series =
+    Array.isArray(body.data) && body.data.length
+      ? body.data
+          .map((point) => {
+            if (!point || typeof point !== "object") return null;
+            const value = point.values?.[datasetId];
+            return typeof value === "number"
+              ? { date: point.date, value }
+              : null;
+          })
+          .filter((p): p is { date: string; value: number } => Boolean(p))
+      : [];
+
+  const filtered =
+    monthFilter !== null
+      ? series.filter((p) => {
+          const parsed = new Date(p.date);
+          return !Number.isNaN(parsed.getTime()) &&
+            parsed.getUTCFullYear() === startDate.getUTCFullYear() &&
+            parsed.getUTCMonth() === monthFilter
+            ? true
+            : false;
+        })
+      : series;
+
+  if (!filtered.length) return { mean: null, count: 0 };
+
+  const mean =
+    filtered.reduce((sum, curr) => sum + curr.value, 0) / filtered.length;
+  return { mean, count: filtered.length };
+};
+
 type LocationSourceType = "marker" | "search" | "region" | "unknown";
 
 const normalizeLocationSource = (
@@ -671,6 +813,9 @@ export const buildTrendInsightResponse = async ({
   const datasetId = normalizeString(context.datasetId ?? undefined);
   const datasetLabel =
     normalizeString(context.datasetName) ?? datasetId ?? "current dataset";
+  const datasetStart = parseDateSafe(context.datasetStartDate);
+  const datasetEnd = parseDateSafe(context.datasetEndDate);
+  const selectedDate = parseDateSafe(context.selectedDate);
 
   if (!datasetId) {
     return {
@@ -690,6 +835,85 @@ export const buildTrendInsightResponse = async ({
   const wantsThresholdCount = thresholdValue !== null && wantsCount;
   const wantsPercentage = wantsShare && !wantsThresholdCount;
   const monthFilter = extractMonthFilter(normalizedQuery);
+  const wantsContinentComparison = isContinentComparisonQuery(normalizedQuery);
+
+  if (wantsContinentComparison) {
+    const targetYear =
+      parseRequestedYear(query, selectedDate ?? datasetEnd ?? null) ??
+      (datasetEnd ? datasetEnd.getFullYear() : new Date().getFullYear());
+    const { start, end } = buildYearRange(targetYear, datasetStart, datasetEnd);
+    const results: Array<{
+      label: string;
+      mean: number;
+      count: number;
+    }> = [];
+
+    for (const [key, region] of Object.entries(NAMED_REGION_BOUNDS)) {
+      // Skip if asking about marker/continents but we only want landmasses
+      if (!region?.bbox) continue;
+      const { mean, count } = await computeRegionMean({
+        dataServiceUrl,
+        datasetId,
+        bbox: region.bbox,
+        startDate: start,
+        endDate: end,
+        monthFilter,
+      });
+      if (mean !== null && count > 0) {
+        results.push({ label: region.label, mean, count });
+      }
+    }
+
+    if (!results.length) {
+      return {
+        type: "error",
+        message: `I couldn’t compute continent means for ${datasetLabel} in ${targetYear}. Try a different year or dataset.`,
+      };
+    }
+
+    const coldest = results.reduce((prev, curr) =>
+      curr.mean < prev.mean ? curr : prev,
+    );
+    const runnerUp = results
+      .filter((r) => r.label !== coldest.label)
+      .sort((a, b) => a.mean - b.mean)[0];
+
+    const monthLabel =
+      monthFilter !== null
+        ? new Date(2000, monthFilter, 1).toLocaleString("en-US", {
+            month: "long",
+          })
+        : null;
+    const qualifier = monthLabel
+      ? `${monthLabel} ${targetYear}`
+      : `${targetYear}`;
+    const units =
+      normalizeString(context.datasetUnits) ??
+      normalizeString(context.datasetUnits) ??
+      "units";
+
+    const summaryParts = [
+      `${coldest.label} had the lowest mean ${units} in ${qualifier} at ${formatNumber(coldest.mean, 2)} ${units} (${coldest.count} value${coldest.count === 1 ? "" : "s"}).`,
+    ];
+    if (runnerUp) {
+      summaryParts.push(
+        `Next lowest: ${runnerUp.label} at ${formatNumber(runnerUp.mean, 2)} ${units}.`,
+      );
+    }
+
+    return {
+      type: "summary",
+      message: summaryParts.join(" "),
+      metadata: {
+        datasetId,
+        datasetLabel,
+        analysisScope: "global",
+        windowStart: formatDateOnly(start),
+        windowEnd: formatDateOnly(end),
+        locationLabel: null,
+      },
+    };
+  }
 
   if (wantsPercentage) {
     return {
@@ -800,9 +1024,6 @@ export const buildTrendInsightResponse = async ({
   const requestedWindowYears =
     typeof windowYears === "number" ? windowYears : parseRequestedWindow(query);
   const now = new Date();
-
-  const datasetStart = parseDateSafe(context.datasetStartDate);
-  const datasetEnd = parseDateSafe(context.datasetEndDate);
 
   const referenceEnd = (() => {
     if (context.selectedDate) {

@@ -307,7 +307,11 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         !viewerRef.current.isDestroyed()
       ) {
         try {
-          if (currentMarkerRef.current.layer) {
+          if (currentMarkerRef.current.primitive) {
+            viewerRef.current.scene.primitives.remove(
+              currentMarkerRef.current.primitive,
+            );
+          } else if (currentMarkerRef.current.layer) {
             viewerRef.current.scene.imageryLayers.remove(
               currentMarkerRef.current.layer,
               true,
@@ -349,21 +353,37 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       if (!viewerRef.current || !cesiumInstance) return;
 
       const scene = viewerRef.current.scene;
+      const camera = viewerRef.current.camera;
+      const occluder = new cesiumInstance.EllipsoidalOccluder(
+        cesiumInstance.Ellipsoid.WGS84,
+        camera.position,
+      );
 
-      if (searchMarkerRef.current && searchMarkerRef.current.position) {
-        const position = searchMarkerRef.current.position.getValue(
-          cesiumInstance.JulianDate.now(),
-        );
-        if (position) {
-          const camera = viewerRef.current.camera;
-          const occluder = new cesiumInstance.EllipsoidalOccluder(
-            cesiumInstance.Ellipsoid.WGS84,
-            camera.position,
+      const updateEntityVisibility = (entityRef: any) => {
+        if (entityRef && entityRef.position) {
+          const position = entityRef.position.getValue(
+            cesiumInstance.JulianDate.now(),
+          );
+          if (position) {
+            const visible = occluder.isPointVisible(position);
+            entityRef.show = visible;
+            if (entityRef.billboard) {
+              entityRef.billboard.show = visible;
+            }
+          }
+        } else if (entityRef && entityRef.primitive && entityRef.latitude) {
+          const position = Cesium.Cartesian3.fromDegrees(
+            entityRef.longitude,
+            entityRef.latitude,
+            0,
           );
           const visible = occluder.isPointVisible(position);
-          searchMarkerRef.current.show = visible;
+          entityRef.primitive.show = visible;
         }
-      }
+      };
+
+      updateEntityVisibility(searchMarkerRef.current);
+      updateEntityVisibility(currentMarkerRef.current);
 
       scene?.requestRender();
     }, [cesiumInstance]);
@@ -440,54 +460,59 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         isUpdatingMarkerRef.current = true;
 
         try {
+          // Remove existing marker before adding a new one
           if (
             currentMarkerRef.current &&
             viewerRef.current &&
             !viewerRef.current.isDestroyed()
           ) {
-            try {
-              if (currentMarkerRef.current.layer) {
-                viewerRef.current.scene.imageryLayers.remove(
-                  currentMarkerRef.current.layer,
-                  true,
-                );
-              }
-            } catch (err) {
-              console.warn("Failed to remove marker", err);
-            }
+            clearMarker();
           }
 
+          const camera = viewerRef.current.camera;
+          const canvas = viewerRef.current.scene.canvas;
+          const fovy =
+            camera.frustum && camera.frustum.fovy
+              ? camera.frustum.fovy
+              : Cesium.Math.toRadians(60);
           const cameraHeight =
             viewerRef.current.camera.positionCartographic.height;
-          const markerSize = Math.max(
-            0.05,
-            Math.min(2.0, cameraHeight / 8000000),
-          );
 
-          const rectangle = Cesium.Rectangle.fromDegrees(
-            longitude - markerSize,
-            latitude - markerSize,
-            longitude + markerSize,
-            latitude + markerSize,
-          );
+          // Approximate ground resolution (meters per pixel) at the current camera height
+          const metersPerPixel =
+            (2 * Math.tan(fovy / 2) * cameraHeight) / canvas.height;
 
-          const markerProvider = new Cesium.SingleTileImageryProvider({
-            url: "/images/selector.png",
-            rectangle: rectangle,
+          const targetPixelSize = 28;
+          const targetMeters = targetPixelSize * metersPerPixel;
+          const radiusMeters = Math.max(10, targetMeters / 2);
+
+          const geometry = new Cesium.EllipseGeometry({
+            center: Cesium.Cartesian3.fromDegrees(longitude, latitude, 0),
+            semiMajorAxis: radiusMeters,
+            semiMinorAxis: radiusMeters,
+            height: 0,
+            vertexFormat: Cesium.EllipsoidSurfaceAppearance.VERTEX_FORMAT,
           });
 
-          const markerLayer =
-            viewerRef.current.scene.imageryLayers.addImageryProvider(
-              markerProvider,
-            );
-          markerLayer.alpha = 1.0;
+          const primitive = new Cesium.GroundPrimitive({
+            geometryInstances: new Cesium.GeometryInstance({
+              geometry,
+            }),
+            appearance: new Cesium.EllipsoidSurfaceAppearance({
+              material: Cesium.Material.fromType("Image", {
+                image: "/images/selector.png",
+              }),
+            }),
+            classificationType: Cesium.ClassificationType.TERRAIN,
+          });
 
-          viewerRef.current.scene.imageryLayers.raiseToTop(markerLayer);
+          viewerRef.current.scene.primitives.add(primitive);
+          viewerRef.current.scene.requestRender();
 
           currentMarkerRef.current = {
-            layer: markerLayer,
-            latitude: latitude,
-            longitude: longitude,
+            primitive,
+            latitude,
+            longitude,
           };
 
           viewerRef.current.scene?.requestRender();
@@ -495,7 +520,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           isUpdatingMarkerRef.current = false;
         }
       },
-      [],
+      [clearMarker],
     );
 
     useImperativeHandle(
@@ -582,6 +607,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             selectionIndicator: false,
             imageryProvider: false,
           });
+          viewer.scene.globe.depthTestAgainstTerrain = true;
 
           const oceanMaterial = new Cesium.Material({
             fabric: {
