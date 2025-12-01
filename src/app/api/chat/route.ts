@@ -53,6 +53,9 @@ function buildDatasetSummaryPrompt(
     summary += ` Description: ${description}.`;
   }
   summary += ` Report values using ${units}. Temporal coverage spans ${coverageStart} to ${coverageEnd}.`;
+  if (context.datasetEndDate) {
+    summary += ` Do not claim values after ${coverageEnd}; if asked, explain that the archive stops on that date and use the last available data instead.`;
+  }
   summary +=
     " When the user refers to 'this dataset' or 'current dataset', they mean this dataset. Always base your answers on it unless the user explicitly switches datasets.";
 
