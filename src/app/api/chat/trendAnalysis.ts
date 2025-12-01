@@ -390,13 +390,19 @@ const extractLocationPhrase = (query: string | undefined): string | null => {
     if (temporalRegex.test(lower)) return true;
     return temporalKeywords.some((kw) => lower.includes(kw));
   };
+  const isDatasetReference = (text: string): boolean =>
+    /\bdata\s*set\b|\bdataset\b/i.test(text);
   // Try to grab a location-like phrase after common prepositions
   const prepositionRegex =
     /\b(?:in|for|at|near|around|over|within|of)\s+(?:the\s+)?([A-Za-z][\w\s\-\.,']{2,}?)(?:\?|\.|,| over| during| for| in| at| near| around| of|$)/i;
   const match = query.match(prepositionRegex);
   if (match && match[1]) {
     const candidate = match[1].trim();
-    if (candidate && !isTemporalPhrase(candidate)) {
+    if (
+      candidate &&
+      !isTemporalPhrase(candidate) &&
+      !isDatasetReference(candidate)
+    ) {
       return candidate;
     }
   }
@@ -406,7 +412,7 @@ const extractLocationPhrase = (query: string | undefined): string | null => {
   if (tokens.length >= 2) {
     const tail = tokens.slice(-6).join(" ").trim();
     if (tail.length >= 3) {
-      if (!isTemporalPhrase(tail)) {
+      if (!isTemporalPhrase(tail) && !isDatasetReference(tail)) {
         return tail;
       }
     }
@@ -419,7 +425,11 @@ const extractLocationPhrase = (query: string | undefined): string | null => {
       "",
     )
     .trim();
-  return cleaned.length >= 3 && !isTemporalPhrase(cleaned) ? cleaned : null;
+  return cleaned.length >= 3 &&
+    !isTemporalPhrase(cleaned) &&
+    !isDatasetReference(cleaned)
+    ? cleaned
+    : null;
 };
 
 type LocationSourceType = "marker" | "search" | "region" | "unknown";
@@ -520,7 +530,17 @@ export const isTrendQuery = (query: string | undefined): boolean => {
     return false;
   }
   const normalized = query.toLowerCase();
-  return TREND_KEYWORDS.some((keyword) => normalized.includes(keyword));
+  const wantsPercentageOrThreshold =
+    /\b(percent|percentage|fraction|share|portion|%|how much)\b/.test(
+      normalized,
+    ) ||
+    /\b(?:exceed|exceeded|exceeding|above|over|greater than)\s*\d+/.test(
+      normalized,
+    );
+  return (
+    TREND_KEYWORDS.some((keyword) => normalized.includes(keyword)) ||
+    wantsPercentageOrThreshold
+  );
 };
 
 type TrendInsightSummaryMetadata = {
@@ -553,17 +573,43 @@ export const buildTrendInsightResponse = async ({
   dataServiceUrl,
   windowYears,
 }: TrendInsightOptions): Promise<TrendInsightResult> => {
+  const normalizedQuery = (query ?? "").toLowerCase();
+
   if (!isTrendQuery(query)) {
     return { type: "none" };
   }
 
   const datasetId = normalizeString(context.datasetId ?? undefined);
+  const datasetLabel =
+    normalizeString(context.datasetName) ?? datasetId ?? "current dataset";
+
   if (!datasetId) {
-    const datasetLabel =
-      normalizeString(context.datasetName) ?? "the current dataset";
     return {
       type: "error",
       message: `I couldn’t determine which dataset is loaded to run a trend summary for ${datasetLabel}. Try reselecting the dataset and ask again.`,
+    };
+  }
+
+  const wantsPercentage =
+    /\b(percent|percentage|fraction|share|portion|%|how much)\b/.test(
+      normalizedQuery,
+    ) ||
+    /\b(?:exceed|exceeded|exceeding|above|greater than|over)\s*\d/.test(
+      normalizedQuery,
+    );
+
+  if (wantsPercentage) {
+    return {
+      type: "summary",
+      message: `I can’t compute the percentage of area above the requested threshold from the current time-series endpoint for ${datasetLabel}. Use a gridded map or histogram/threshold query for the month in question (e.g., July) to calculate the share of cells above that temperature.`,
+      metadata: {
+        datasetId,
+        datasetLabel,
+        analysisScope: "global",
+        windowStart: "",
+        windowEnd: "",
+        locationLabel: null,
+      },
     };
   }
 
@@ -623,9 +669,6 @@ export const buildTrendInsightResponse = async ({
   ) {
     analysisScope = "marker";
   }
-
-  const datasetLabel =
-    normalizeString(context.datasetName) ?? datasetId ?? "current dataset";
 
   if (!hasLocation && userSpecifiedLocation) {
     const prompt =
