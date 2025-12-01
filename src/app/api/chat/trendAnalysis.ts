@@ -111,6 +111,18 @@ const GLOBAL_BOUNDS = {
   east: 180,
   west: -180,
 };
+const NAMED_REGION_BOUNDS: Record<
+  string,
+  {
+    label: string;
+    bbox: { north: number; south: number; east: number; west: number };
+  }
+> = {
+  africa: {
+    label: "Africa",
+    bbox: { north: 38, south: -35, east: 55, west: -20 },
+  },
+};
 
 type TrendInsightOptions = {
   query: string;
@@ -220,6 +232,32 @@ const clampWindowYear = (years?: number): number =>
 const YEAR_WINDOW_REGEX = /(?:last|past)\s+(\d{1,3})\s*(?:years|yrs|year)/i;
 const DECADE_REGEX = /(?:last|past)\s+(?:a\s+)?decade/i;
 const CENTURY_REGEX = /(?:last|past)\s+(?:a\s+)?century/i;
+const MONTHS = [
+  "january",
+  "february",
+  "march",
+  "april",
+  "may",
+  "june",
+  "july",
+  "august",
+  "september",
+  "october",
+  "november",
+  "december",
+  "jan",
+  "feb",
+  "mar",
+  "apr",
+  "jun",
+  "jul",
+  "aug",
+  "sep",
+  "sept",
+  "oct",
+  "nov",
+  "dec",
+];
 
 const parseRequestedWindow = (query: string | undefined): number | null => {
   if (!query) return null;
@@ -235,6 +273,28 @@ const parseRequestedWindow = (query: string | undefined): number | null => {
   if (!match) return null;
   const value = Number(match[1]);
   return Number.isFinite(value) ? value : null;
+};
+
+const resolveNamedRegion = (
+  phrase: string | null | undefined,
+): {
+  label: string;
+  bbox: { north: number; south: number; east: number; west: number };
+  centroid: { lat: number; lon: number };
+} | null => {
+  if (!phrase) return null;
+  const lower = phrase.trim().toLowerCase();
+  const matchedKey = Object.keys(NAMED_REGION_BOUNDS).find((key) =>
+    lower.includes(key),
+  );
+  if (!matchedKey) return null;
+  const region = NAMED_REGION_BOUNDS[matchedKey];
+  const { north, south, east, west } = region.bbox;
+  return {
+    label: region.label,
+    bbox: region.bbox,
+    centroid: { lat: (north + south) / 2, lon: (east + west) / 2 },
+  };
 };
 
 const containsKeyword = (
@@ -374,6 +434,7 @@ const extractLocationPhrase = (query: string | undefined): string | null => {
       "decade",
       "century",
       "months",
+      "month",
       "weeks",
       "days",
       "seasons",
@@ -388,7 +449,10 @@ const extractLocationPhrase = (query: string | undefined): string | null => {
     const temporalRegex =
       /(?:past|last|next)\s+\d{1,3}\s*(?:years?|months?|weeks?|days?)/i;
     if (temporalRegex.test(lower)) return true;
-    return temporalKeywords.some((kw) => lower.includes(kw));
+    if (temporalKeywords.some((kw) => lower.includes(kw))) {
+      return true;
+    }
+    return MONTHS.some((month) => lower.includes(month));
   };
   const isDatasetReference = (text: string): boolean =>
     /\bdata\s*set\b|\bdataset\b/i.test(text);
@@ -430,6 +494,31 @@ const extractLocationPhrase = (query: string | undefined): string | null => {
     !isDatasetReference(cleaned)
     ? cleaned
     : null;
+};
+
+const extractMonthFilter = (query: string | undefined): number | null => {
+  if (!query) return null;
+  const lower = query.toLowerCase();
+  for (let i = 0; i < MONTHS.length; i++) {
+    if (lower.includes(MONTHS[i])) {
+      return i % 12; // short forms follow long names
+    }
+  }
+  return null;
+};
+
+const extractNumericThreshold = (query: string | undefined): number | null => {
+  if (!query) return null;
+  const thresholdMatch =
+    query.match(
+      /(?:above|over|greater than|>=|>|exceed(?:ed|ing)?)\s*(-?\d+(?:\.\d+)?)/i,
+    ) ||
+    query.match(
+      /(-?\d+(?:\.\d+)?)\s*(?:degc|deg c|celsius|c|kelvin|k)?\s*(?:threshold)?/i,
+    );
+  if (!thresholdMatch) return null;
+  const value = Number.parseFloat(thresholdMatch[1]);
+  return Number.isFinite(value) ? value : null;
 };
 
 type LocationSourceType = "marker" | "search" | "region" | "unknown";
@@ -590,13 +679,17 @@ export const buildTrendInsightResponse = async ({
     };
   }
 
-  const wantsPercentage =
-    /\b(percent|percentage|fraction|share|portion|%|how much)\b/.test(
-      normalizedQuery,
-    ) ||
-    /\b(?:exceed|exceeded|exceeding|above|greater than|over)\s*\d/.test(
+  const thresholdValue = extractNumericThreshold(normalizedQuery);
+  const wantsCount =
+    /\b(how many times?|number of times|count|how often|frequency)\b/.test(
       normalizedQuery,
     );
+  const wantsShare =
+    /\b(percent|percentage|fraction|share|portion|%)\b/.test(normalizedQuery) ||
+    /\bhow much\b/.test(normalizedQuery);
+  const wantsThresholdCount = thresholdValue !== null && wantsCount;
+  const wantsPercentage = wantsShare && !wantsThresholdCount;
+  const monthFilter = extractMonthFilter(normalizedQuery);
 
   if (wantsPercentage) {
     return {
@@ -615,13 +708,20 @@ export const buildTrendInsightResponse = async ({
 
   const extractedLocation = extractLocationPhrase(query);
   const parsedCoords = parseCoordinatesFromQuery(query);
-  const userSpecifiedLocation = Boolean(parsedCoords || extractedLocation);
+  const locationPhrase =
+    extractedLocation &&
+    !/\breach|times?\b/.test(extractedLocation.toLowerCase()) &&
+    !/\bover\s+-?\d/.test(extractedLocation.toLowerCase())
+      ? extractedLocation
+      : null;
+  const userSpecifiedLocation = Boolean(parsedCoords || locationPhrase);
 
   let lat: number | null = null;
   let lon: number | null = null;
   let locationSource = normalizeLocationSource(context.location?.source);
   const hasManualMarker = locationSource === "marker";
   let geocodedLocation: GeocodedLocation | null = null;
+  const namedRegion = resolveNamedRegion(locationPhrase ?? normalizedQuery);
 
   // 1) If the user explicitly provided coordinates in the query, use them and ignore prior marker.
   if (parsedCoords) {
@@ -634,9 +734,19 @@ export const buildTrendInsightResponse = async ({
       label: parsedCoords.label ?? parsedCoords.latitude.toString(),
       bbox: null,
     };
-  } else if (extractedLocation) {
+  } else if (namedRegion) {
+    lat = namedRegion.centroid.lat;
+    lon = namedRegion.centroid.lon;
+    locationSource = "region";
+    geocodedLocation = {
+      latitude: lat,
+      longitude: lon,
+      label: namedRegion.label,
+      bbox: namedRegion.bbox,
+    };
+  } else if (locationPhrase) {
     // 2) If they named a place, geocode it (do not rely on prior marker).
-    geocodedLocation = await geocodeFromQuery(extractedLocation);
+    geocodedLocation = await geocodeFromQuery(locationPhrase);
     if (geocodedLocation) {
       lat = geocodedLocation.latitude;
       lon = geocodedLocation.longitude;
@@ -672,7 +782,7 @@ export const buildTrendInsightResponse = async ({
 
   if (!hasLocation && userSpecifiedLocation) {
     const prompt =
-      `I couldn’t locate “${extractedLocation ?? "that place"}” for ${datasetLabel}. ` +
+      `I couldn’t locate “${locationPhrase ?? "that place"}” for ${datasetLabel}. ` +
       `Tell me a nearby city name or coordinates (lat, lon), or drop a marker, and I’ll run a location-specific summary.`;
     return { type: "needs-marker", message: prompt };
   }
@@ -882,6 +992,75 @@ export const buildTrendInsightResponse = async ({
     : "global";
   const windowStart = formatDateOnly(safeStart);
   const windowEnd = formatDateOnly(safeEnd);
+
+  const seriesForThreshold =
+    monthFilter !== null
+      ? series.filter((point) => {
+          const parsed = new Date(point.date);
+          return (
+            !Number.isNaN(parsed.getTime()) && parsed.getMonth() === monthFilter
+          );
+        })
+      : series;
+
+  if (wantsThresholdCount && thresholdValue !== null) {
+    const monthLabel =
+      monthFilter !== null
+        ? new Date(2000, monthFilter, 1).toLocaleString("en-US", {
+            month: "long",
+          })
+        : null;
+    const totalPoints = seriesForThreshold.length;
+    if (totalPoints === 0) {
+      return {
+        type: "error",
+        message: `I didn’t find any ${monthLabel ?? "requested"} data points for ${datasetLabel} in this window. Try expanding the date range or selecting a different dataset.`,
+      };
+    }
+
+    const exceedances = seriesForThreshold.filter(
+      (point) => point.value > thresholdValue,
+    );
+    const exceedCount = exceedances.length;
+    const exceedPercent = (exceedCount / totalPoints) * 100;
+    const mostRecentExceed = exceedances[exceedances.length - 1] ?? null;
+    const monthPhrase = monthLabel
+      ? `${monthLabel.toLowerCase()} values`
+      : "values";
+    const locationText =
+      namedRegion?.label ??
+      (locationPhrase && locationPhrase.length < 40 ? locationPhrase : null);
+
+    const thresholdSummary =
+      exceedCount > 0
+        ? `The most recent exceedance was ${formatNumber(mostRecentExceed!.value, 2)} ${units} on ${mostRecentExceed!.date}.`
+        : "No exceedances occurred in this period.";
+
+    const message = [
+      locationText
+        ? `From ${windowStart} to ${windowEnd}, ${exceedCount} of ${totalPoints} ${monthPhrase} for ${datasetLabel} at ${locationText} were above ${formatNumber(thresholdValue, 2)} ${units} (${formatNumber(exceedPercent, 1)}%).`
+        : `From ${windowStart} to ${windowEnd}, ${exceedCount} of ${totalPoints} ${monthPhrase} for ${datasetLabel} were above ${formatNumber(thresholdValue, 2)} ${units} (${formatNumber(exceedPercent, 1)}%).`,
+      thresholdSummary,
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    return {
+      type: "summary",
+      message,
+      metadata: {
+        datasetId,
+        datasetLabel,
+        analysisScope: analysisScopeMode,
+        windowStart,
+        windowEnd,
+        locationLabel:
+          analysisScopeMode === "marker"
+            ? (locationText ?? formattedLatLon ?? null)
+            : (locationText ?? formattedLatLon ?? null),
+      },
+    };
+  }
 
   const intro = usingMarkerExtraction
     ? `Here’s what ${datasetLabel} looks like at ${locationDescriptor ?? "the selected marker"} from ${windowStart} through ${windowEnd}.`
