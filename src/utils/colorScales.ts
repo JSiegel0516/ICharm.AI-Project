@@ -175,15 +175,47 @@ const COLOR_MAP_NAMES = [
   "Color Brewer 2.0|Sequential|Single-hue|9-class Reds",
   "Other|Blackbody Radiation",
   "Other|Cool to Warm",
+  "Other|Rainbow",
   "Other|Gray scale",
   "Other|Spatial Contrast Mesh 3 scale",
 ];
 
+// Palette overrides to match legacy/screenshot expectations.
+const COLOR_MAP_OVERRIDES: Record<string, string[]> = {
+  "Other|Blackbody Radiation": ["#ffff00", "#ff8000", "#b00000", "#000000"],
+  "Other|Cool to Warm": ["#b40426", "#f6f6f6", "#3b4cc0"],
+  "Other|Rainbow": [
+    "#ff0000",
+    "#ff7f00",
+    "#ffff00",
+    "#00ff00",
+    "#00ffff",
+    "#0000ff",
+    "#8b00ff",
+  ],
+  "Other|Gray scale": ["#000000", "#555555", "#aaaaaa", "#ffffff"],
+  "Other|Spatial Contrast Mesh 3 scale": [
+    "#3b82f6",
+    "#80d4ff",
+    "#ffffff",
+    "#ffb374",
+    "#ff4c2e",
+  ],
+};
+
+export const resolveColorMapColors = (name: string): string[] => {
+  if (name === "dataset-default") {
+    return ["#1d4ed8", "#10b981", "#facc15", "#f97316", "#ef4444"];
+  }
+  if (COLOR_MAP_OVERRIDES[name]) {
+    return COLOR_MAP_OVERRIDES[name];
+  }
+  return getColorMapColors(name);
+};
+
 export const COLOR_MAP_PRESETS = COLOR_MAP_NAMES.map((name) => {
   const isDefault = name === "dataset-default";
-  const baseColors = isDefault
-    ? ["#1d4ed8", "#10b981", "#facc15", "#f97316", "#ef4444"]
-    : getColorMapColors(name);
+  const baseColors = resolveColorMapColors(name);
   const colors = reducePalette(baseColors, Math.min(21, baseColors.length));
 
   const gradient = colors

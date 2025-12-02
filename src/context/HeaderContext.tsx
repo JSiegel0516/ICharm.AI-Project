@@ -17,7 +17,11 @@ import type {
 } from "@/types";
 import { mockDatasets } from "@/utils/constants";
 import { getColorMapColors } from "@/utils/colorMaps";
-import { AIR_TEMPERATURE_BASE, SHARP_BANDS } from "@/utils/colorScales";
+import {
+  AIR_TEMPERATURE_BASE,
+  SHARP_BANDS,
+  resolveColorMapColors,
+} from "@/utils/colorScales";
 
 const reducePalette = (colors: string[], count: number): string[] => {
   if (!colors.length) return [];
@@ -88,7 +92,7 @@ const applyColorMapToDataset = (
     };
   }
 
-  const base = getColorMapColors(presetName);
+  const base = resolveColorMapColors(presetName);
   const colors = reducePalette(
     invert ? [...base].reverse() : base,
     SHARP_BANDS,
