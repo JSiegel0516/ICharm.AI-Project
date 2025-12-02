@@ -5,6 +5,7 @@ export type DatasetProfile = {
   name: string;
   aliases: string[];
   units: string;
+  variables: string[];
   valueType: "absolute" | "anomaly";
   defaultAggregation: "monthly" | "annual";
   spatialResolution: string;
@@ -18,6 +19,7 @@ const profiles: DatasetProfile[] = [
     name: "NOAA/CIRES/DOE 20th Century Reanalysis (V3)",
     aliases: ["20th century reanalysis", "20cr v3", "20crv3", "20cr"],
     units: "K",
+    variables: ["air-temperature"],
     valueType: "absolute",
     defaultAggregation: "monthly",
     spatialResolution: "~1.0°",
@@ -33,6 +35,7 @@ const profiles: DatasetProfile[] = [
     name: "NOAA Global Surface Temperature (NOAAGlobalTemp)",
     aliases: ["noaa global temp", "noaa global surface temperature"],
     units: "°C anomaly",
+    variables: ["surface-temperature"],
     valueType: "anomaly",
     defaultAggregation: "monthly",
     spatialResolution: "~5.0°",
@@ -47,6 +50,7 @@ const profiles: DatasetProfile[] = [
     name: "NOAA ERSST V5",
     aliases: ["ersst", "ersst v5", "sea surface temperature", "sst"],
     units: "°C",
+    variables: ["sst", "surface-temperature"],
     valueType: "absolute",
     defaultAggregation: "monthly",
     spatialResolution: "~2.0°",
@@ -61,6 +65,7 @@ const profiles: DatasetProfile[] = [
     name: "GPCP Monthly",
     aliases: ["gpcp", "precipitation", "gpcp monthly"],
     units: "mm/day",
+    variables: ["precipitation"],
     valueType: "absolute",
     defaultAggregation: "monthly",
     spatialResolution: "~2.5°",
@@ -75,6 +80,7 @@ const profiles: DatasetProfile[] = [
     name: "NCEP GODAS",
     aliases: ["godas", "ocean reanalysis"],
     units: "varies",
+    variables: ["ocean", "sst"],
     valueType: "absolute",
     defaultAggregation: "monthly",
     spatialResolution: "~0.33° lon × 1.0° lat",
