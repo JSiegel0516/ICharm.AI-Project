@@ -680,7 +680,7 @@ const buildSeasonalitySummary = (
         ? "moderate seasonality"
         : "pronounced seasonality";
 
-  const narrative = `${locationLabel}: Wettest in ${describeMonthList(wetMonths)} (peak ${formatNumber(maxMean)} ${units}), driest in ${describeMonthList(dryMonths)} (~${formatNumber(minMean)} ${units}); seasonal range ~${formatNumber(amplitude)} ${units} (${seasonStrength}).`;
+  const narrative = `For ${locationLabel}, the wettest months cluster in ${describeMonthList(wetMonths)} (peaking around ${formatNumber(maxMean)} ${units}) while the driest fall in ${describeMonthList(dryMonths)} (~${formatNumber(minMean)} ${units}). The seasonal range is about ${formatNumber(amplitude)} ${units}, indicating ${seasonStrength}.`;
 
   return {
     locationLabel,
@@ -692,8 +692,16 @@ const buildSeasonalitySummary = (
 const buildStatsLine = (
   summary: ReturnType<typeof summarizeSeries>,
   units: string,
-) =>
-  `start ${formatNumber(summary.start.value)} ${units} (${formatDate(summary.start.date)}), end ${formatNumber(summary.end.value)} ${units} (${formatDate(summary.end.date)}), mean ${formatNumber(summary.mean)} ${units}; min ${formatNumber(summary.min.value)} ${units} (${formatDate(summary.min.date)}), max ${formatNumber(summary.max.value)} ${units} (${formatDate(summary.max.date)}), trend ${summary.perDecadeTrend !== null ? formatNumber(summary.perDecadeTrend, 2) + " " + units + "/decade" : "n/a"}`;
+) => {
+  const rangeText = `Values ranged from ${formatNumber(summary.min.value)} to ${formatNumber(summary.max.value)} ${units}`;
+  const startEndText = `started at ${formatNumber(summary.start.value)} ${units} (${formatDate(summary.start.date)}) and ended at ${formatNumber(summary.end.value)} ${units} (${formatDate(summary.end.date)})`;
+  const meanText = `average ${formatNumber(summary.mean)} ${units}`;
+  const trendText =
+    summary.perDecadeTrend !== null
+      ? `linear trend ~${formatNumber(summary.perDecadeTrend, 2)} ${units}/decade`
+      : "no clear linear trend";
+  return `${summary.locationLabel}: ${rangeText}; ${startEndText}; ${meanText}; ${trendText}.`;
+};
 
 const buildInterpretationLine = (
   summary: ReturnType<typeof summarizeSeries>,
@@ -703,22 +711,22 @@ const buildInterpretationLine = (
   const changeMagnitude = Math.abs(change);
   const direction =
     changeMagnitude < 0.01
-      ? "flat overall"
+      ? "has been nearly flat"
       : change > 0
-        ? `warming by ~${formatNumber(changeMagnitude, 2)} ${units}`
-        : `cooling by ~${formatNumber(changeMagnitude, 2)} ${units}`;
+        ? `has risen by roughly ${formatNumber(changeMagnitude, 2)} ${units}`
+        : `has dropped by roughly ${formatNumber(changeMagnitude, 2)} ${units}`;
   const trend =
     summary.perDecadeTrend !== null
       ? `${change >= 0 ? "rising" : "falling"} about ${formatNumber(Math.abs(summary.perDecadeTrend), 2)} ${units}/decade`
-      : "no clear per-decade trend reported";
+      : "not clear enough to quote a per-decade trend";
   const range = summary.max.value - summary.min.value;
   const volatility =
     range > changeMagnitude * 2
-      ? "large swings relative to the trend"
+      ? "variability is large compared to that drift"
       : "changes mostly follow the long-term drift";
-  const timing = `peaks near ${formatDate(summary.max.date)}, lows near ${formatDate(summary.min.date)}`;
+  const timing = `peaks near ${formatDate(summary.max.date)} and lows near ${formatDate(summary.min.date)}`;
 
-  return `${summary.locationLabel}: ${direction}; ${trend}; ${volatility} (${timing}).`;
+  return `For ${summary.locationLabel}, the series ${direction}. The trend is ${trend}, and ${volatility}; ${timing}.`;
 };
 
 const buildAnomalyNarrative = (
@@ -730,7 +738,7 @@ const buildAnomalyNarrative = (
   const dominant = posAnomaly >= negAnomaly ? "positive" : "negative";
   const dominantSize = Math.max(posAnomaly, negAnomaly);
   const swing = summary.max.value - summary.min.value;
-  return `${summary.locationLabel}: Largest ${dominant} anomaly ~${formatNumber(dominantSize)} ${units}; swing ${formatNumber(swing)} ${units} (${formatDate(summary.min.date)}–${formatDate(summary.max.date)}).`;
+  return `For ${summary.locationLabel}, the largest ${dominant} anomaly is about ${formatNumber(dominantSize)} ${units}, with a swing of ${formatNumber(swing)} ${units} between ${formatDate(summary.min.date)} and ${formatDate(summary.max.date)}.`;
 };
 
 const buildForecastLine = (
@@ -739,12 +747,12 @@ const buildForecastLine = (
   horizonYears = 10,
 ): string => {
   if (summary.perDecadeTrend === null) {
-    return `${summary.locationLabel}: No clear trend to extrapolate.`;
+    return `For ${summary.locationLabel}, there's no clear trend to extrapolate.`;
   }
   const perYear = summary.perDecadeTrend / 10;
   const projectedChange = perYear * horizonYears;
   const targetYear = new Date(summary.end.date).getUTCFullYear() + horizonYears;
-  return `${summary.locationLabel}: If the recent trend holds (~${formatNumber(summary.perDecadeTrend)} ${units}/decade), expect ~${formatNumber(projectedChange)} ${units} change by ~${targetYear} (rough extrapolation, not a forecast).`;
+  return `For ${summary.locationLabel}, if the recent trend holds (~${formatNumber(summary.perDecadeTrend)} ${units}/decade), expect roughly ${formatNumber(projectedChange)} ${units} change by about ${targetYear} (rough extrapolation, not a forecast).`;
 };
 
 const buildWhyExplanation = (
@@ -797,7 +805,7 @@ const buildCompareNarrative = (
       ? `${trendDiff > 0 ? a.locationLabel : b.locationLabel} is changing faster by ~${formatNumber(Math.abs(trendDiff), 2)} ${units}/decade.`
       : "Both show similar trend magnitudes.";
 
-  return `${diffText} ${trendText}`;
+  return `${diffText}. ${trendText}`;
 };
 
 const buildLimitsLine = (
@@ -951,12 +959,11 @@ export async function buildDatasetQAResponse({
   }
 
   const statsLines = summaries.map(
-    (summary) =>
-      `${summary.locationLabel}: ${buildStatsLine(summary, profile.units)}`,
+    (summary) => `${buildStatsLine(summary, profile.units)}`,
   );
 
   const performanceLine = performanceNotes.length
-    ? `Performance: ${performanceNotes.join(" | ")}.`
+    ? `Performance note: ${performanceNotes.join(" | ")}.`
     : "";
 
   let answerLine = "";
@@ -976,12 +983,12 @@ export async function buildDatasetQAResponse({
     const why = buildWhyExplanation(main, profile, windowText);
     answerLine = `Why it varies: ${why}`;
   } else if (intent === "anomaly") {
-    answerLine = `Anomalies: ${anomalyLines.join(" | ")}`;
+    answerLine = anomalyLines.join(" | ");
   } else if (intent === "seasonal" && seasonalitySummaries.length) {
-    answerLine = `Seasonality: ${seasonalitySummaries
+    answerLine = seasonalitySummaries
       .map((s) => s?.narrative ?? "")
       .filter(Boolean)
-      .join(" | ")}`;
+      .join(" | ");
   } else if (intent === "forecast") {
     answerLine = `Projection (simple extrapolation): ${forecastLines.join(" | ")}`;
   } else if (intent === "spatial-compare" && summaries.length === 2) {
@@ -1014,9 +1021,7 @@ export async function buildDatasetQAResponse({
       : null,
     answerLine,
     `Limits: ${buildLimitsLine(profile, clipped, { start: startDateStr, end: endDateStr })}`,
-    performanceNotes.length
-      ? `Performance: ${performanceNotes.join(" | ")}`
-      : null,
+    performanceLine || null,
   ]
     .filter(Boolean)
     .join("\n");
@@ -1032,7 +1037,7 @@ export async function buildDatasetQAResponse({
     conciseMessage = `${answerLine}. ${interpretation}${perf}`;
   } else if (intent === "anomaly") {
     const perf = performanceLine ? ` ${performanceLine}` : "";
-    conciseMessage = `${answerLine}.${perf} Want to inspect another window or location?`;
+    conciseMessage = `${answerLine}${perf ? `. ${perf}` : ""} Want to inspect another window or location?`;
   } else if (intent === "seasonal" && seasonalitySummaries.length) {
     const perf = performanceLine ? ` ${performanceLine}` : "";
     const main = seasonalitySummaries[0];
@@ -1040,10 +1045,10 @@ export async function buildDatasetQAResponse({
       main && Number.isFinite(main.amplitude)
         ? ` Seasonal range ~${formatNumber(main.amplitude)} ${profile.units}.`
         : "";
-    conciseMessage = `${answerLine}${rangeText}${perf} Anything else you want to explore?`;
+    conciseMessage = `${answerLine}${rangeText}${perf ? ` ${perf}` : ""} Anything else you want to explore?`;
   } else if (intent === "forecast") {
     const perf = performanceLine ? ` ${performanceLine}` : "";
-    conciseMessage = `${answerLine}. ${perf} Want a different horizon or location?`;
+    conciseMessage = `${answerLine}${perf ? `. ${perf}` : ""} Want a different horizon or location?`;
   } else if (intent === "spatial-compare" && summaries.length === 2) {
     const [a, b] = summaries;
     const trendA =
@@ -1056,7 +1061,7 @@ export async function buildDatasetQAResponse({
         : "n/a";
     const perf = performanceLine ? ` ${performanceLine}` : "";
     const compareNarrative = buildCompareNarrative(a, b, profile.units);
-    conciseMessage = `${compareNarrative} Trends — ${a.locationLabel}: ${trendA}; ${b.locationLabel}: ${trendB}.${perf} Anything else you want to compare?`;
+    conciseMessage = `${compareNarrative} Trends: ${a.locationLabel} ${trendA}, ${b.locationLabel} ${trendB}.${perf ? ` ${perf}` : ""} Anything else you want to compare?`;
   } else {
     const main = summaries[0];
     const trend =
@@ -1066,7 +1071,12 @@ export async function buildDatasetQAResponse({
     const minMax = `${formatNumber(main.min.value)}–${formatNumber(main.max.value)} ${profile.units}`;
     const interpretation = interpretationLines[0] ?? "";
     const perf = performanceLine ? ` ${performanceLine}` : "";
-    conciseMessage = `${interpretation} Stats: ${minMax} over ${startDateStr}–${endDateStr}, starting at ${formatNumber(main.start.value)} and ending at ${formatNumber(main.end.value)} ${profile.units}, trend ${trend}.${perf} Anything else you want to explore?`;
+    const trendSentence =
+      main.perDecadeTrend !== null
+        ? `Trend is about ${formatNumber(main.perDecadeTrend)} ${profile.units}/decade.`
+        : "No clear linear trend to quote.";
+    const sentence = `${interpretation} Over ${startDateStr}–${endDateStr}, values ranged ${minMax}. They started at ${formatNumber(main.start.value)} and ended at ${formatNumber(main.end.value)} ${profile.units}. ${trendSentence}`;
+    conciseMessage = `${sentence}${perf ? ` ${perf}` : ""} Anything else you want to explore?`;
   }
 
   const message = wantsDetails ? detailedMessage : conciseMessage;
