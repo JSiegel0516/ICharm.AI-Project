@@ -387,19 +387,37 @@ export default function NavigationIcons() {
                             </div>
                           </div>
                         </div>
-                        <select
-                          value={activeColorMapCategory}
-                          onChange={(e) =>
-                            setActiveColorMapCategory(e.target.value)
-                          }
-                          className="rounded-lg bg-gray-700 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                        >
-                          {colorMapCategories.map((cat) => (
-                            <option key={cat.id} value={cat.id}>
-                              {cat.label}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleColorMapSelect("dataset-default");
+                              setActiveColorMapCategory(
+                                DEFAULT_COLOR_MAP_CATEGORY,
+                              );
+                              setSelectedColorMapInverse(false);
+                              updateSetting("colorMapInverse", false);
+                            }}
+                            className="flex items-center gap-2 rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-200 transition-colors duration-200 hover:border-blue-500 hover:bg-blue-500/10"
+                            title="Reset to dataset default colors"
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                            Reset
+                          </button>
+                          <select
+                            value={activeColorMapCategory}
+                            onChange={(e) =>
+                              setActiveColorMapCategory(e.target.value)
+                            }
+                            className="rounded-lg bg-gray-700 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                          >
+                            {colorMapCategories.map((cat) => (
+                              <option key={cat.id} value={cat.id}>
+                                {cat.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
 
                       {/* Custom Color Maps */}
