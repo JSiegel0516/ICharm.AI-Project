@@ -7,6 +7,38 @@ type PlaybookEntry = {
 
 const climateQuestionPlaybook: PlaybookEntry[] = [
   {
+    id: "analysis-dynamic-datasets",
+    title: "Dynamic Dataset QA Framework",
+    category: "analysis-playbook",
+    content: `
+Goal: answer any climate question with the dataset(s) on hand by enforcing coverage, units, and a consistent comparison format.
+
+Workflow:
+1) Identify dataset(s): prefer what the user names; otherwise use the active selection. Check units (K vs °C vs anomalies), resolution, vertical level, and coverage window before answering. If outside coverage, say so and suggest the valid window.
+2) Resolve space/time: convert place names to coords or bounding boxes (e.g., San Diego ~32.7, -117.2; Texas ~25.8–36.5, -106.6–-93.5). Note the exact coords/time actually queried. If multiple regions are mentioned, keep them side-by-side.
+3) Choose the pipeline per question:
+   - Temporal/trend: monthly/annual point_timeseries or /api/v2/timeseries/extract (mean aggregation). Compute start/end, mean, min/max, linear slope per decade.
+   - Spatial slice: point_statistics or tiled stats for a box/region; cite min/mean/max and notable gradients.
+   - Comparisons: same window/aggregation for each dataset/region; present parallel stats before concluding which is warmer/cooler/wetter, etc.
+4) Answer format (reuse everywhere):
+   a) Dataset(s) + window used
+   b) Locations/bounds used
+   c) Key stats (start/end, mean, min/max, trend per decade)
+   d) Short interpretation of what those stats imply physically (warming vs cooling, volatility, timing of shifts)
+   e) Limits/assumptions (resolution, anomaly baseline, interpolation)
+5) Caveats: call out coarse grids for small places, coastal interpolation, anomaly baselines, and ensemble vs single-run data.
+
+Performance note: for global or multi-century windows, prefer annual or quarterly resampling and clipped windows to avoid timeouts; fall back to a shorter window if the full request stalls.
+
+Quick dataset profiles (use them to ground units/coverage):
+- NOAA/CIRES/DOE 20CR V3: air temp, K, monthly ensemble mean, ~1° grid, 1806–2015, multi-level.
+- NOAAGlobalTemp: surface air temp anomalies (°C vs 20th-century baseline), monthly, ~5° grid, 1850–present-ish.
+- NOAA ERSST V5: sea surface temp (°C), monthly, ~2° grid, 1854–present-ish.
+- GPCP Monthly: precipitation (mm/day), monthly, ~2.5° grid, 1979–present-ish.
+- GODAS (if selected): ocean variables, monthly, ~1/3° lon × 1° lat, 1980–present-ish, depth levels vary.
+`,
+  },
+  {
     id: "analysis-basic-data",
     title: "Basic Data Retrieval Questions",
     category: "analysis-playbook",
@@ -51,7 +83,7 @@ How to respond:
 1. Determine the spatial mask (region or marker) and the period to analyse. Default to dataset coverage if not provided.
 2. Request a long-window timeseries via "/api/v2/timeseries/extract" or "/seasonal_timeseries" to obtain monthly/annual records.
 3. Compute descriptive statistics (min/max anomalies, slope per decade, standard deviation) in code and summarise in natural language.
-4. Mention notable peaks/troughs, dates, and whether changes are statistically significant (based on trend magnitude vs noise).
+4. Translate stats into meaning (“warming steadily”, “swingy decade with sharp spikes”, “trend is tiny compared to seasonal swings”). Mention notable peaks/troughs, dates, and whether changes are statistically significant (based on trend magnitude vs noise).
 5. Offer optional visual guidance (e.g., “Use the Time Bar to animate 2010–2020 for a quick visual check”).`,
   },
   {
