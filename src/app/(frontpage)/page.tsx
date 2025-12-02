@@ -214,7 +214,7 @@ export default function HomePage() {
     satelliteLayerVisible: true,
     boundaryLinesVisible: true,
     geographicLinesVisible: false,
-    rasterOpacity: 0.65,
+    rasterOpacity: 1,
     hideZeroPrecipitation: false,
   });
 

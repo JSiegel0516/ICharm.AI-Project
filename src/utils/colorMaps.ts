@@ -7,7 +7,8 @@ type RawColorMapEntry = {
 
 const DEFAULT_PALETTE = ["#440154", "#3b528b", "#21918c", "#5ec962", "#fde725"];
 
-const SAMPLE_SIZE = 10;
+// Use a dense sample so quantized scales retain sharp banding without losing detail.
+const SAMPLE_SIZE = 64;
 
 let primaryLookup: Map<string, string[]> | null = null;
 let lowerLookup: Map<string, string[]> | null = null;

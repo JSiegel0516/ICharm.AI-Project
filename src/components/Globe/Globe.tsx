@@ -262,7 +262,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       satelliteLayerVisible = true,
       boundaryLinesVisible = true,
       geographicLinesVisible = false,
-      rasterOpacity = 0.65,
+      rasterOpacity = 1.0,
       hideZeroPrecipitation = false,
       onRasterMetadataChange,
     },

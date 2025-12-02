@@ -1,106 +1,184 @@
+import { getColorMapColors } from "@/utils/colorMaps";
+
 export interface ColorScale {
   name: string;
   description: string;
   colors: string[];
   domain: [number, number];
   type: "sequential" | "diverging" | "categorical";
+  quantized?: boolean;
 }
+
+const reducePalette = (colors: string[], count: number): string[] => {
+  if (!colors.length) return [];
+  if (count <= 1) return [colors[0]];
+
+  // Resample the palette so every scale has consistent sharp banding.
+  const result: string[] = [];
+  const step = (colors.length - 1) / (count - 1);
+
+  const hexToRgb = (hex: string) => {
+    const clean = hex.replace("#", "");
+    return {
+      r: parseInt(clean.slice(0, 2), 16),
+      g: parseInt(clean.slice(2, 4), 16),
+      b: parseInt(clean.slice(4, 6), 16),
+    };
+  };
+
+  const rgbToHex = (r: number, g: number, b: number) =>
+    `#${[r, g, b]
+      .map((v) =>
+        Math.max(0, Math.min(255, Math.round(v)))
+          .toString(16)
+          .padStart(2, "0"),
+      )
+      .join("")}`;
+
+  for (let i = 0; i < count; i += 1) {
+    const position = i * step;
+    const lowerIndex = Math.floor(position);
+    const upperIndex = Math.min(colors.length - 1, lowerIndex + 1);
+    const t = position - lowerIndex;
+
+    if (upperIndex === lowerIndex || t === 0) {
+      result.push(colors[lowerIndex]);
+    } else {
+      const lower = hexToRgb(colors[lowerIndex]);
+      const upper = hexToRgb(colors[upperIndex]);
+      const r = lower.r + (upper.r - lower.r) * t;
+      const g = lower.g + (upper.g - lower.g) * t;
+      const b = lower.b + (upper.b - lower.b) * t;
+      result.push(rgbToHex(r, g, b));
+    }
+  }
+
+  return result;
+};
+
+export const SHARP_BANDS = 10000;
+export const AIR_TEMPERATURE_BASE = [
+  "#4c1a7f", // Deep purple
+  "#3b4cc0", // Blue
+  "#1fa188", // Teal/green
+  "#5ac864", // Green
+  "#a5e26a", // Yellow-green
+  "#f5f9b5", // Pale yellow
+  "#f5cf71", // Warm yellow
+  "#f7a258", // Orange
+  "#ed7953", // Coral
+  "#d3504b", // Red-orange
+  "#c41e3a", // Deep red
+];
+const CLIP_LOWER = 0.02;
+const CLIP_UPPER = 0.98;
+const GAMMA = 0.85;
+
+const AIR_TEMPERATURE_COLORS = AIR_TEMPERATURE_BASE;
+
+// Bias toward sharper mid-blues to avoid blending near the neutral range.
+const SEA_SURFACE_TEMPERATURE_COLORS = getColorMapColors("Matlab|Jet", [
+  "#00008F", // Deep cold
+  "#0000AF",
+  "#0000DF",
+  "#0000FF",
+  "#0028FF",
+  "#0050FF",
+  "#0070FF",
+  "#008FFF", // Emphasized mid-blue
+  "#00BFFF",
+  "#00EFFF",
+  "#20FFDF",
+  "#60FF9F",
+  "#AFFF50",
+  "#FFFF00",
+  "#FF9F00",
+  "#FF3000",
+  "#BF0000",
+  "#800000", // Hottest
+]);
+
+const PRECIP_COLORS = getColorMapColors(
+  "Color Brewer 2.0|Sequential|Multi-hue|9-class YlGnBu",
+);
+
+const WIND_COLORS = getColorMapColors(
+  "Color Brewer 2.0|Sequential|Single-hue|9-class Greys",
+);
+
+const PRESSURE_COLORS = getColorMapColors("Matlab|Bone");
+
+const HUMIDITY_COLORS = getColorMapColors(
+  "Color Brewer 2.0|Sequential|Single-hue|9-class Greens",
+);
+
+const AIR_TEMPERATURE_BANDS = reducePalette(
+  AIR_TEMPERATURE_COLORS,
+  SHARP_BANDS,
+);
+const SEA_SURFACE_TEMPERATURE_BANDS = reducePalette(
+  SEA_SURFACE_TEMPERATURE_COLORS,
+  SHARP_BANDS,
+);
+const PRECIP_BANDS = reducePalette(PRECIP_COLORS, SHARP_BANDS);
+const WIND_BANDS = reducePalette(WIND_COLORS, SHARP_BANDS);
+const PRESSURE_BANDS = reducePalette(PRESSURE_COLORS, SHARP_BANDS);
+const HUMIDITY_BANDS = reducePalette(HUMIDITY_COLORS, SHARP_BANDS);
 
 // Predefined color scales for different data types
 export const colorScales: Record<string, ColorScale> = {
   temperature: {
     name: "Air Temperature",
     description: "Blue to red air temperature scale",
-    colors: [
-      "#313695", // Deep blue (coldest)
-      "#4575b4", // Blue
-      "#74add1", // Light blue
-      "#abd9e9", // Pale blue
-      "#e0f3f8", // Very pale blue
-      "#ffffbf", // Pale yellow (neutral)
-      "#fee090", // Light orange
-      "#fdae61", // Orange
-      "#f46d43", // Red-orange
-      "#d73027", // Red
-      "#a50026", // Deep red (hottest)
-    ],
+    colors: AIR_TEMPERATURE_BANDS,
     domain: [-40, 40],
     type: "diverging",
+    quantized: true,
   },
 
   precipitation: {
     name: "Precipitation",
     description: "Dry to wet precipitation scale",
-    colors: [
-      "#8B4513", // Saddle brown (very dry)
-      "#CD853F", // Peru/tan (dry)
-      "#DEB887", // Burlywood (dry-ish)
-      "#F0E68C", // Khaki (slightly dry)
-      "#90EE90", // Light green (moderate)
-      "#98FB98", // Pale green (moderate-wet)
-      "#00FA9A", // Medium spring green (wet)
-      "#48D1CC", // Medium turquoise (wetter)
-      "#4682B4", // Steel blue (very wet)
-      "#4169E1", // Royal blue (extremely wet)
-      "#0000CD", // Medium blue (wettest)
-    ],
+    colors: PRECIP_BANDS,
     domain: [0, 500],
     type: "sequential",
+    quantized: true,
   },
 
   seaSurfaceTemp: {
     name: "Sea Surface Temperature",
     description: "Ocean temperature color scale",
-    colors: [
-      "#08306b", // Very dark blue (coldest)
-      "#08519c", // Dark blue
-      "#2171b5", // Medium blue
-      "#4292c6", // Blue
-      "#6baed6", // Light blue
-      "#9ecae1", // Pale blue
-      "#c6dbef", // Very pale blue
-      "#deebf7", // Almost white blue
-      "#fee5d9", // Very pale pink
-      "#fcbba1", // Pale pink
-      "#fc9272", // Light red-pink
-      "#fb6a4a", // Pink-red
-      "#ef3b2c", // Red
-      "#cb181d", // Dark red
-      "#99000d", // Very dark red (warmest)
-    ],
+    colors: SEA_SURFACE_TEMPERATURE_BANDS,
     domain: [-2, 35],
     type: "sequential",
+    quantized: true,
   },
 
   windSpeed: {
     name: "Wind Speed",
     description: "Wind speed visualization",
-    colors: [
-      "#f8f9fa", // Calm
-      "#e9ecef",
-      "#adb5bd",
-      "#6c757d",
-      "#495057",
-      "#343a40",
-      "#212529", // Strong wind
-    ],
+    colors: WIND_BANDS,
     domain: [0, 25],
     type: "sequential",
+    quantized: true,
   },
 
   pressure: {
     name: "Atmospheric Pressure",
     description: "Pressure visualization",
-    colors: [
-      "#8e44ad", // Low pressure
-      "#3498db",
-      "#2ecc71",
-      "#f1c40f",
-      "#e67e22",
-      "#e74c3c", // High pressure
-    ],
+    colors: PRESSURE_BANDS,
     domain: [980, 1040],
     type: "diverging",
+    quantized: true,
+  },
+
+  humidity: {
+    name: "Humidity",
+    description: "Relative humidity visualization",
+    colors: HUMIDITY_BANDS,
+    domain: [0, 100],
+    type: "sequential",
+    quantized: true,
   },
 };
 
@@ -145,7 +223,18 @@ export function getColorFromScale(value: number, scale: ColorScale): string {
   const clampedValue = Math.max(min, Math.min(max, value));
 
   // Normalize to 0-1
-  const normalizedValue = (clampedValue - min) / (max - min);
+  const normalizedRaw = (clampedValue - min) / (max - min);
+  const normalizedClipped = Math.min(
+    1,
+    Math.max(0, (normalizedRaw - CLIP_LOWER) / (CLIP_UPPER - CLIP_LOWER)),
+  );
+  const normalizedValue = Math.pow(normalizedClipped, GAMMA);
+
+  // For quantized scales, snap to the nearest band for sharper separation.
+  if (scale.quantized) {
+    const idx = Math.round(normalizedValue * (colors.length - 1));
+    return colors[Math.min(colors.length - 1, Math.max(0, idx))];
+  }
 
   // Map to color array index
   const colorIndex = normalizedValue * (colors.length - 1);
@@ -175,7 +264,8 @@ export function getColorScale(datasetId: string): (value: number) => string {
   else if (
     id.includes("temperature") ||
     id.includes("temp") ||
-    id.includes("airtemp")
+    id.includes("airtemp") ||
+    id.includes("air")
   ) {
     scale = colorScales.temperature;
   }
@@ -190,6 +280,10 @@ export function getColorScale(datasetId: string): (value: number) => string {
   // Check for wind
   else if (id.includes("wind")) {
     scale = colorScales.windSpeed;
+  }
+  // Check for humidity
+  else if (id.includes("humidity") || id.includes("moisture")) {
+    scale = colorScales.humidity;
   }
   // Check for pressure
   else if (id.includes("pressure")) {
@@ -230,7 +324,8 @@ export function generateColorBarData(
   else if (
     id.includes("temperature") ||
     id.includes("temp") ||
-    id.includes("airtemp")
+    id.includes("airtemp") ||
+    id.includes("air")
   ) {
     scale = colorScales.temperature;
   }
@@ -245,6 +340,10 @@ export function generateColorBarData(
   // Check for wind
   else if (id.includes("wind")) {
     scale = colorScales.windSpeed;
+  }
+  // Check for humidity
+  else if (id.includes("humidity") || id.includes("moisture")) {
+    scale = colorScales.humidity;
   }
   // Check for pressure
   else if (id.includes("pressure")) {
@@ -270,6 +369,12 @@ export function generateColorBarData(
   // Create CSS gradient string
   const gradientStops = scale.colors
     .map((color, index) => {
+      if (scale.quantized) {
+        // Duplicate stops to create hard bands instead of smooth gradients.
+        const start = (index / scale.colors.length) * 100;
+        const end = ((index + 1) / scale.colors.length) * 100;
+        return `${color} ${start}%, ${color} ${end}%`;
+      }
       const position = (index / (scale.colors.length - 1)) * 100;
       return `${color} ${position}%`;
     })
