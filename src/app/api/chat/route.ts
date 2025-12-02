@@ -194,6 +194,7 @@ export async function POST(req: NextRequest) {
 
   let dynamicResult: Awaited<ReturnType<typeof buildDatasetQAResponse>> | null =
     null;
+  let datasetSkipNote: string | null = null;
 
   if (conversationContext && userQuery) {
     try {
@@ -244,37 +245,19 @@ export async function POST(req: NextRequest) {
   }
 
   if (dynamicResult && dynamicResult.type === "error") {
-    const assistantMessage = dynamicResult.message;
-
-    if (sessionId && assistantMessage) {
-      try {
-        await ChatDB.addMessage(sessionId, "assistant", assistantMessage);
-      } catch (assistantStoreError) {
-        console.error(
-          "Failed to persist assistant dynamic error message",
-          assistantStoreError,
-        );
-      }
-    }
-
-    return Response.json(
-      {
-        content: assistantMessage,
-        sessionId: sessionId ?? undefined,
-      },
-      {
-        headers: {
-          "Cache-Control": "no-store",
-        },
-      },
-    );
+    datasetSkipNote = dynamicResult.message;
   }
 
   let trendResult: Awaited<
     ReturnType<typeof buildTrendInsightResponse>
   > | null = null;
 
-  if (conversationContext && userQuery && !isDefinitionQuery(userQuery)) {
+  if (
+    conversationContext &&
+    userQuery &&
+    !isDefinitionQuery(userQuery) &&
+    !datasetSkipNote
+  ) {
     try {
       trendResult = await buildTrendInsightResponse({
         query: userQuery,
@@ -536,6 +519,10 @@ Instructions:
       );
     }
 
+    const assistantMessage = datasetSkipNote
+      ? `${datasetSkipNote}\n\n${completionText}`
+      : completionText;
+
     const providerModel =
       typeof result?.model === "string"
         ? result.model
@@ -543,17 +530,17 @@ Instructions:
           ? result.raw.model
           : undefined;
 
-    console.log("[llm] Success! Model response:", completionText);
+    console.log("[llm] Success! Model response:", assistantMessage);
     if (providerModel) {
       console.log("[llm] Provider used:", providerModel);
     }
 
-    if (sessionId && completionText) {
+    if (sessionId && assistantMessage) {
       try {
         await ChatDB.addMessage(
           sessionId,
           "assistant",
-          completionText,
+          assistantMessage,
           contextSources.length > 0 ? contextSources : undefined,
         );
       } catch (assistantStoreError) {
@@ -566,7 +553,7 @@ Instructions:
 
     return Response.json(
       {
-        content: completionText,
+        content: assistantMessage,
         sources: contextSources.length > 0 ? contextSources : undefined,
         sessionId: sessionId ?? undefined,
         model: providerModel,

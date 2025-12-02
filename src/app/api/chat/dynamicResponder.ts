@@ -164,6 +164,39 @@ const ANALYSIS_KEYWORDS = [
   "percentile",
   "median",
 ];
+const VARIABLE_KEYWORD_GROUPS: Record<string, string[]> = {
+  precipitation: [
+    "precip",
+    "precipitation",
+    "rain",
+    "rainfall",
+    "snow",
+    "wet season",
+    "dry season",
+    "monsoon",
+    "drizzle",
+    "mm/day",
+  ],
+  "surface-temperature": [
+    "surface temperature",
+    "land temperature",
+    "skin temperature",
+    "temperature",
+    "warming",
+    "cooling",
+    "heat",
+    "hotter",
+    "colder",
+  ],
+  "air-temperature": [
+    "air temperature",
+    "air temp",
+    "near-surface air",
+    "2m air",
+  ],
+  sst: ["sea surface temperature", "sst", "ocean surface temp"],
+  ocean: ["subsurface", "ocean heat", "ocean"],
+};
 const WHY_KEYWORDS = ["why", "cause", "reason", "drivers", "because"];
 const DEFINITION_PREFIXES = [
   /^what is\b/i,
@@ -401,6 +434,25 @@ const looksLikeClimateAnalysis = (query: string): boolean => {
   const hasYear = /\b(18|19|20|21)\d{2}\b/.test(normalized);
   const hasCoords = parseCoordinates(query).length > 0;
   return hits >= 2 || (hits >= 1 && (hasYear || hasCoords));
+};
+
+const inferVariablesFromQuery = (query: string): Set<string> => {
+  const normalized = query.toLowerCase();
+  const hits = new Set<string>();
+  Object.entries(VARIABLE_KEYWORD_GROUPS).forEach(([variable, keywords]) => {
+    if (keywords.some((kw) => normalized.includes(kw))) {
+      hits.add(variable);
+    }
+  });
+  return hits;
+};
+
+const isVariableAlignedWithProfile = (
+  profile: DatasetProfile,
+  queryVariables: Set<string>,
+): boolean => {
+  if (!queryVariables.size) return true;
+  return profile.variables.some((v) => queryVariables.has(v));
 };
 
 const fetchSeries = async ({
@@ -794,6 +846,16 @@ export async function buildDatasetQAResponse({
       type: "error",
       message:
         "I couldn’t determine which dataset ID to query. Select a dataset first, then ask your question again.",
+    };
+  }
+
+  const variableHints = inferVariablesFromQuery(query);
+  if (!isVariableAlignedWithProfile(profile, variableHints)) {
+    const askedAbout = Array.from(variableHints).join(" / ") || "that topic";
+    const offered = profile.variables.join(", ");
+    return {
+      type: "error",
+      message: `This question is about ${askedAbout}, but the loaded dataset (${profile.name}) covers ${offered}. I’ll skip dataset analysis and rely on general knowledge instead.`,
     };
   }
 
