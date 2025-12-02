@@ -13,6 +13,7 @@ import type {
   TemperatureUnit,
   RegionData,
   ColorBarOrientation,
+  ColorScale,
 } from "@/types";
 import { mockDatasets } from "@/utils/constants";
 import { getColorMapColors } from "@/utils/colorMaps";
@@ -63,6 +64,43 @@ const reducePalette = (colors: string[], count: number): string[] => {
   }
 
   return result;
+};
+
+const applyColorMapToDataset = (
+  dataset: Dataset,
+  presetName: string | null,
+  baselines: Record<string, ColorScale | undefined>,
+  invert: boolean,
+): Dataset => {
+  if (!presetName || presetName === "dataset-default") {
+    const baseline = baselines[dataset.id];
+    if (!baseline) return dataset;
+    const baseColors = invert
+      ? [...baseline.colors].reverse()
+      : [...baseline.colors];
+    return {
+      ...dataset,
+      colorScale: {
+        ...baseline,
+        colors: baseColors,
+        labels: [...baseline.labels],
+      },
+    };
+  }
+
+  const base = getColorMapColors(presetName);
+  const colors = reducePalette(
+    invert ? [...base].reverse() : base,
+    SHARP_BANDS,
+  );
+
+  return {
+    ...dataset,
+    colorScale: {
+      ...dataset.colorScale,
+      colors,
+    },
+  };
 };
 
 type DatabaseDataset = {
@@ -120,6 +158,8 @@ const AppStateContext = createContext<AppStateContextType | undefined>(
 );
 
 const COLOR_BAR_ORIENTATION_STORAGE_KEY = "icharm_colorBarOrientation";
+const DEFAULT_COLOR_MAP_PRESET = "dataset-default";
+const DEFAULT_COLOR_MAP_INVERSE = false;
 
 // Certain datasets report "present" in metadata even though archives stop earlier.
 const DATASET_END_OVERRIDES: Record<string, string> = {
@@ -330,14 +370,19 @@ const useAppStateInternal = () => {
       rasterOpacity: 1,
       hideZeroPrecipitation: false,
     },
-    colorBarOrientation: "horizontal",
-    globeSettings: {
-      satelliteLayerVisible: true,
-      boundaryLinesVisible: true,
-      geographicLinesVisible: false,
-      rasterOpacity: 1,
-      hideZeroPrecipitation: false,
-    },
+    selectedColorMap: "dataset-default",
+    selectedColorMapInverse: DEFAULT_COLOR_MAP_INVERSE,
+    colorScaleBaselines: mockDatasets.reduce<Record<string, ColorScale>>(
+      (acc, dataset) => {
+        acc[dataset.id] = {
+          ...dataset.colorScale,
+          colors: [...dataset.colorScale.colors],
+          labels: [...dataset.colorScale.labels],
+        };
+        return acc;
+      },
+      {},
+    ),
   });
 
   const [selectedYear, setSelectedYear] = useState<number>(
@@ -390,6 +435,25 @@ const useAppStateInternal = () => {
       console.warn("Failed to load color bar orientation preference:", error);
     }
   }, []);
+
+  // Re-apply selected color map to datasets and current dataset
+  useEffect(() => {
+    const preset = state.selectedColorMap ?? DEFAULT_COLOR_MAP_PRESET;
+    const invert = state.selectedColorMapInverse ?? DEFAULT_COLOR_MAP_INVERSE;
+    setState((prev) => {
+      const baselines = prev.colorScaleBaselines ?? {};
+      const apply = (dataset: Dataset) =>
+        applyColorMapToDataset(dataset, preset, baselines, invert);
+
+      return {
+        ...prev,
+        datasets: prev.datasets.map(apply),
+        currentDataset: prev.currentDataset
+          ? apply(prev.currentDataset)
+          : prev.currentDataset,
+      };
+    });
+  }, [state.selectedColorMap, state.selectedColorMapInverse]);
 
   const setShowSettings = useCallback((show: boolean) => {
     setState((prev) => ({ ...prev, showSettings: show }));
@@ -470,82 +534,166 @@ const useAppStateInternal = () => {
     [],
   );
 
-  const setCurrentDataset = useCallback((dataset: Dataset) => {
-    setState((prev) => ({ ...prev, currentDataset: dataset }));
+  const setSelectedColorMap = useCallback((preset: string | null) => {
+    setState((prev) => ({
+      ...prev,
+      selectedColorMap: preset ?? DEFAULT_COLOR_MAP_PRESET,
+    }));
   }, []);
 
-  const fetchDatasets = useCallback(async (signal?: AbortSignal) => {
-    setState((prev) => ({ ...prev, isLoading: true, error: null }));
+  const setSelectedColorMapInverse = useCallback((invert: boolean) => {
+    setState((prev) => ({
+      ...prev,
+      selectedColorMapInverse: invert,
+    }));
+  }, []);
 
-    try {
-      const response = await fetch("/api/datasets", {
-        cache: "no-store",
-        signal,
-      });
+  const setCurrentDataset = useCallback((dataset: Dataset) => {
+    setState((prev) => {
+      const baselines = prev.colorScaleBaselines ?? {};
+      const colorMap = prev.selectedColorMap ?? DEFAULT_COLOR_MAP_PRESET;
+      return {
+        ...prev,
+        currentDataset: applyColorMapToDataset(
+          dataset,
+          colorMap,
+          baselines,
+          prev.selectedColorMapInverse ?? DEFAULT_COLOR_MAP_INVERSE,
+        ),
+      };
+    });
+  }, []);
 
-      if (!response.ok) {
-        throw new Error(
-          `Dataset request failed with status ${response.status}`,
-        );
-      }
+  const fetchDatasets = useCallback(
+    async (signal?: AbortSignal) => {
+      setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
-      const payload = await response.json();
+      try {
+        const response = await fetch("/api/datasets", {
+          cache: "no-store",
+          signal,
+        });
 
-      // Transform database datasets to app format
-      const datasets: Dataset[] = Array.isArray(payload.datasets)
-        ? payload.datasets.map(transformDataset)
-        : [];
-
-      if (signal?.aborted) {
-        return false;
-      }
-
-      setState((prev) => {
-        if (!datasets.length) {
-          console.warn("No datasets returned from database, using mock data");
-          return {
-            ...prev,
-            datasets: mockDatasets,
-            currentDataset: mockDatasets[0],
-            isLoading: false,
-            error: "No datasets found in database",
-          };
+        if (!response.ok) {
+          throw new Error(
+            `Dataset request failed with status ${response.status}`,
+          );
         }
 
-        const currentId = prev.currentDataset?.id;
-        const nextCurrent =
-          datasets.find((item) => item.id === currentId) ?? datasets[0];
+        const payload = await response.json();
 
-        return {
-          ...prev,
-          datasets,
-          currentDataset: nextCurrent,
-          isLoading: false,
-          error: null,
-        };
-      });
+        // Transform database datasets to app format
+        const datasets: Dataset[] = Array.isArray(payload.datasets)
+          ? payload.datasets.map(transformDataset)
+          : [];
 
-      return true;
-    } catch (error) {
-      if (signal?.aborted) {
+        if (signal?.aborted) {
+          return false;
+        }
+
+        const preset = state.selectedColorMap ?? DEFAULT_COLOR_MAP_PRESET;
+        const invert =
+          state.selectedColorMapInverse ?? DEFAULT_COLOR_MAP_INVERSE;
+
+        setState((prev) => {
+          if (!datasets.length) {
+            console.warn("No datasets returned from database, using mock data");
+            const baselines = { ...(prev.colorScaleBaselines ?? {}) };
+            mockDatasets.forEach((ds) => {
+              if (!baselines[ds.id]) {
+                baselines[ds.id] = {
+                  ...ds.colorScale,
+                  colors: [...ds.colorScale.colors],
+                  labels: [...ds.colorScale.labels],
+                };
+              }
+            });
+
+            const apply = (dataset: Dataset) =>
+              applyColorMapToDataset(dataset, preset, baselines, invert);
+
+            return {
+              ...prev,
+              datasets: mockDatasets.map(apply),
+              currentDataset: apply(mockDatasets[0]),
+              colorScaleBaselines: baselines,
+              isLoading: false,
+              error: "No datasets found in database",
+            };
+          }
+
+          const baselines = { ...(prev.colorScaleBaselines ?? {}) };
+          datasets.forEach((ds) => {
+            if (!baselines[ds.id]) {
+              baselines[ds.id] = {
+                ...ds.colorScale,
+                colors: [...ds.colorScale.colors],
+                labels: [...ds.colorScale.labels],
+              };
+            }
+          });
+
+          const currentId = prev.currentDataset?.id;
+          const rawNextCurrent =
+            datasets.find((item) => item.id === currentId) ?? datasets[0];
+
+          const apply = (dataset: Dataset) =>
+            applyColorMapToDataset(dataset, preset, baselines, invert);
+
+          return {
+            ...prev,
+            datasets: datasets.map(apply),
+            currentDataset: apply(rawNextCurrent),
+            colorScaleBaselines: baselines,
+            isLoading: false,
+            error: null,
+          };
+        });
+
+        return true;
+      } catch (error) {
+        if (signal?.aborted) {
+          return false;
+        }
+
+        console.error("Failed to fetch datasets from database:", error);
+
+        // Fallback to mock data on error
+        const preset = state.selectedColorMap ?? DEFAULT_COLOR_MAP_PRESET;
+        const invert =
+          state.selectedColorMapInverse ?? DEFAULT_COLOR_MAP_INVERSE;
+        setState((prev) => {
+          const baselines = { ...(prev.colorScaleBaselines ?? {}) };
+          mockDatasets.forEach((ds) => {
+            if (!baselines[ds.id]) {
+              baselines[ds.id] = {
+                ...ds.colorScale,
+                colors: [...ds.colorScale.colors],
+                labels: [...ds.colorScale.labels],
+              };
+            }
+          });
+          const apply = (dataset: Dataset) =>
+            applyColorMapToDataset(dataset, preset, baselines, invert);
+
+          return {
+            ...prev,
+            datasets: mockDatasets.map(apply),
+            currentDataset: apply(mockDatasets[0]),
+            colorScaleBaselines: baselines,
+            isLoading: false,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Failed to load datasets",
+          };
+        });
+
         return false;
       }
-
-      console.error("Failed to fetch datasets from database:", error);
-
-      // Fallback to mock data on error
-      setState((prev) => ({
-        ...prev,
-        datasets: mockDatasets,
-        currentDataset: mockDatasets[0],
-        isLoading: false,
-        error:
-          error instanceof Error ? error.message : "Failed to load datasets",
-      }));
-
-      return false;
-    }
-  }, []);
+    },
+    [state.selectedColorMap],
+  );
 
   const refreshDatasets = useCallback(() => {
     return fetchDatasets();
@@ -579,7 +727,8 @@ const useAppStateInternal = () => {
     setShowChat,
     toggleColorbar,
     setColorBarOrientation,
-    setColorBarOrientation,
+    setSelectedColorMap,
+    setSelectedColorMapInverse,
     setCurrentDataset,
     refreshDatasets,
     currentLocationMarker: state.currentLocationMarker,
@@ -587,6 +736,8 @@ const useAppStateInternal = () => {
     requestLocationFocus,
     requestLocationMarkerClear,
     clearLocationFocusRequest,
+    selectedColorMap: state.selectedColorMap,
+    selectedColorMapInverse: state.selectedColorMapInverse,
   };
 };
 

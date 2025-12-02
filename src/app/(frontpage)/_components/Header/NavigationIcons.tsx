@@ -27,9 +27,18 @@ import { SettingsGearIcon } from "@/components/ui/settings-gear";
 import { Info } from "lucide-react";
 import { ModeToggle } from "@/components/ui/modetoggle";
 import { useAppState } from "@/context/HeaderContext";
+import { COLOR_MAP_PRESETS } from "@/utils/colorScales";
+import { Switch } from "@/components/ui/switch";
 
 export default function NavigationIcons() {
-  const { colorBarOrientation, setColorBarOrientation } = useAppState();
+  const {
+    colorBarOrientation,
+    setColorBarOrientation,
+    selectedColorMap,
+    setSelectedColorMap,
+    selectedColorMapInverse,
+    setSelectedColorMapInverse,
+  } = useAppState();
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
 
   const [settings, setSettings] = React.useState(() => ({
@@ -54,20 +63,39 @@ export default function NavigationIcons() {
     animationQuality: "high",
     cacheDuration: "6 hours",
     colorBarOrientation,
+    colorMapPreset: selectedColorMap ?? "dataset-default",
+    colorMapInverse: selectedColorMapInverse ?? false,
   }));
+
+  const DEFAULT_COLOR_MAP_CATEGORY = "cb-zero";
+  const [activeColorMapCategory, setActiveColorMapCategory] = React.useState(
+    DEFAULT_COLOR_MAP_CATEGORY,
+  );
 
   React.useEffect(() => {
     setSettings((prev) => ({
       ...prev,
       colorBarOrientation,
+      colorMapPreset: selectedColorMap ?? "dataset-default",
+      colorMapInverse: selectedColorMapInverse ?? false,
     }));
-  }, [colorBarOrientation]);
+  }, [colorBarOrientation, selectedColorMap, selectedColorMapInverse]);
 
   const updateSetting = (key: string, value: any) => {
     setSettings((prev) => ({
       ...prev,
       [key]: value,
     }));
+  };
+
+  const handleColorMapSelect = (preset: string) => {
+    updateSetting("colorMapPreset", preset);
+    setSelectedColorMap(preset);
+  };
+
+  const handleColorMapInverseToggle = (checked: boolean) => {
+    updateSetting("colorMapInverse", checked);
+    setSelectedColorMapInverse(checked);
   };
 
   const handleSave = () => {
@@ -92,8 +120,13 @@ export default function NavigationIcons() {
       animationQuality: "high",
       cacheDuration: "6 hours",
       colorBarOrientation: "horizontal",
+      colorMapPreset: "dataset-default",
+      colorMapInverse: false,
     });
     setColorBarOrientation("horizontal");
+    setSelectedColorMap("dataset-default");
+    setSelectedColorMapInverse(false);
+    setActiveColorMapCategory(DEFAULT_COLOR_MAP_CATEGORY);
   };
 
   const fontSizeOptions = [
@@ -114,28 +147,61 @@ export default function NavigationIcons() {
     { value: "ar", label: "العربية" },
   ];
 
-  const contrastOptions = [
+  const colorMapCategories = [
     {
-      value: "default",
-      label: "Default",
-      preview: "bg-linear-to-r from-blue-500 to-purple-600",
+      id: "cb-non",
+      label: "Color Brewer 2.0 | Non-Centered",
+      match: (id: string) =>
+        id.includes("Color Brewer 2.0|Diverging|Non Centered"),
     },
     {
-      value: "high",
-      label: "High Contrast",
-      preview: "bg-linear-to-r from-yellow-400 to-red-600",
+      id: "cb-zero",
+      label: "Color Brewer 2.0 | Zero-Centered",
+      match: (id: string) =>
+        id.includes("Color Brewer 2.0|Diverging|Zero Centered"),
     },
     {
-      value: "mono",
-      label: "Monochrome",
-      preview: "bg-linear-to-r from-gray-700 to-gray-900",
+      id: "cb-multi",
+      label: "Color Brewer 2.0 | Multi-hue",
+      match: (id: string) =>
+        id.includes("Color Brewer 2.0|Sequential|Multi-hue"),
     },
     {
-      value: "inverted",
-      label: "Inverted",
-      preview: "bg-linear-to-r from-white to-gray-300",
+      id: "cb-single",
+      label: "Color Brewer 2.0 | Single-hue",
+      match: (id: string) =>
+        id.includes("Color Brewer 2.0|Sequential|Single-hue"),
+    },
+    {
+      id: "matlab",
+      label: "Matlab",
+      match: (id: string) => id.startsWith("Matlab|"),
+    },
+    {
+      id: "other",
+      label: "Other",
+      match: (id: string) =>
+        id.startsWith("Other|") || id === "dataset-default",
     },
   ];
+
+  const buildLinearGradient = (colors: string[]) =>
+    colors
+      .map((color, index) => {
+        const position =
+          colors.length === 1
+            ? 0
+            : Math.round((index / (colors.length - 1)) * 100);
+        return `${color} ${position}%`;
+      })
+      .join(", ");
+
+  const filteredPresets = React.useMemo(() => {
+    const category =
+      colorMapCategories.find((cat) => cat.id === activeColorMapCategory) ??
+      colorMapCategories[0];
+    return COLOR_MAP_PRESETS.filter((preset) => category.match(preset.id));
+  }, [activeColorMapCategory]);
 
   return (
     <ButtonGroup>
@@ -322,47 +388,90 @@ export default function NavigationIcons() {
                           </div>
                         </div>
                         <select
-                          value={settings.colorContrast}
+                          value={activeColorMapCategory}
                           onChange={(e) =>
-                            updateSetting("colorContrast", e.target.value)
+                            setActiveColorMapCategory(e.target.value)
                           }
                           className="rounded-lg bg-gray-700 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
                         >
-                          {contrastOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
+                          {colorMapCategories.map((cat) => (
+                            <option key={cat.id} value={cat.id}>
+                              {cat.label}
                             </option>
                           ))}
                         </select>
                       </div>
 
-                      {/* Color Contrast Preview */}
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                        {contrastOptions.map((option) => (
-                          <button
-                            key={option.value}
-                            type="button"
-                            onClick={() =>
-                              updateSetting("colorContrast", option.value)
-                            }
-                            className={`cursor-pointer rounded-lg border-2 p-3 text-center text-xs transition-all duration-200 ${
-                              settings.colorContrast === option.value
-                                ? "border-blue-500 bg-blue-500/10"
-                                : "border-transparent hover:border-gray-500"
-                            }`}
-                          >
-                            <div
-                              className={`mb-2 h-12 rounded ${option.preview}`}
-                            ></div>
-                            <span
-                              className={
-                                option.value === "inverted" ? "text-black" : ""
-                              }
+                      {/* Custom Color Maps */}
+                      <div className="mt-4 space-y-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="text-sm font-medium">
+                            Color Maps (apply to colorbar and raster)
+                          </div>
+                          <label className="flex items-center gap-2 text-xs text-gray-300">
+                            <span>Inverse Color Maps</span>
+                            <Switch
+                              checked={settings.colorMapInverse}
+                              onCheckedChange={handleColorMapInverseToggle}
+                            />
+                          </label>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          {colorMapCategories.map((cat) => (
+                            <button
+                              key={cat.id}
+                              type="button"
+                              onClick={() => setActiveColorMapCategory(cat.id)}
+                              className={`rounded-lg border px-4 py-2 text-sm transition-all duration-200 ${
+                                activeColorMapCategory === cat.id
+                                  ? "border-blue-500 bg-blue-500/10 text-white shadow"
+                                  : "border-gray-700 bg-gray-800/60 text-gray-200 hover:border-gray-500"
+                              }`}
                             >
-                              {option.label}
-                            </span>
-                          </button>
-                        ))}
+                              {cat.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          {filteredPresets.map((preset) => {
+                            const displayColors = settings.colorMapInverse
+                              ? [...preset.colors].reverse()
+                              : preset.colors;
+                            const gradient = buildLinearGradient(displayColors);
+                            return (
+                              <button
+                                key={preset.id}
+                                type="button"
+                                onClick={() => handleColorMapSelect(preset.id)}
+                                className={`flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all duration-200 ${
+                                  settings.colorMapPreset === preset.id
+                                    ? "border-blue-500 bg-blue-500/10 shadow"
+                                    : "border-transparent hover:border-gray-500"
+                                }`}
+                              >
+                                <div
+                                  className="h-10 w-10 rounded-full border border-gray-700"
+                                  style={{
+                                    background: `conic-gradient(${gradient})`,
+                                  }}
+                                />
+                                <div className="flex-1">
+                                  <div className="text-sm font-medium">
+                                    {preset.label}
+                                  </div>
+                                  <div
+                                    className="mt-1 h-2 rounded"
+                                    style={{
+                                      background: `linear-gradient(90deg, ${gradient})`,
+                                    }}
+                                  />
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
 
