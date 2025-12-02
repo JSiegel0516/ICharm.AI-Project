@@ -14,14 +14,56 @@ import type {
   RegionData,
   ColorBarOrientation,
 } from "@/types";
-import type {
-  Dataset,
-  AppState,
-  TemperatureUnit,
-  RegionData,
-  ColorBarOrientation,
-} from "@/types";
 import { mockDatasets } from "@/utils/constants";
+import { getColorMapColors } from "@/utils/colorMaps";
+import { AIR_TEMPERATURE_BASE, SHARP_BANDS } from "@/utils/colorScales";
+
+const reducePalette = (colors: string[], count: number): string[] => {
+  if (!colors.length) return [];
+  if (count <= 1) return [colors[0]];
+
+  // Resample to a fixed band count for consistent sharp gradients.
+  const result: string[] = [];
+  const step = (colors.length - 1) / (count - 1);
+
+  const hexToRgb = (hex: string) => {
+    const clean = hex.replace("#", "");
+    return {
+      r: parseInt(clean.slice(0, 2), 16),
+      g: parseInt(clean.slice(2, 4), 16),
+      b: parseInt(clean.slice(4, 6), 16),
+    };
+  };
+
+  const rgbToHex = (r: number, g: number, b: number) =>
+    `#${[r, g, b]
+      .map((v) =>
+        Math.max(0, Math.min(255, Math.round(v)))
+          .toString(16)
+          .padStart(2, "0"),
+      )
+      .join("")}`;
+
+  for (let i = 0; i < count; i += 1) {
+    const position = i * step;
+    const lowerIndex = Math.floor(position);
+    const upperIndex = Math.min(colors.length - 1, lowerIndex + 1);
+    const t = position - lowerIndex;
+
+    if (upperIndex === lowerIndex || t === 0) {
+      result.push(colors[lowerIndex]);
+    } else {
+      const lower = hexToRgb(colors[lowerIndex]);
+      const upper = hexToRgb(colors[upperIndex]);
+      const r = lower.r + (upper.r - lower.r) * t;
+      const g = lower.g + (upper.g - lower.g) * t;
+      const b = lower.b + (upper.b - lower.b) * t;
+      result.push(rgbToHex(r, g, b));
+    }
+  }
+
+  return result;
+};
 
 type DatabaseDataset = {
   id: string;
@@ -141,6 +183,30 @@ function generateColorScale(
 ) {
   const name = datasetName.toLowerCase();
   const param = parameter.toLowerCase();
+  const unitsLower = (units || "").toLowerCase();
+
+  const buildScale = (
+    colors: string[],
+    labels: string[],
+    min: number,
+    max: number,
+  ) => ({
+    labels,
+    colors: reducePalette(colors, SHARP_BANDS),
+    min,
+    max,
+  });
+
+  const SST_COLORS = getColorMapColors("Matlab|Jet");
+  const AIR_COLORS = AIR_TEMPERATURE_BASE;
+  const PRECIP_COLORS = getColorMapColors(
+    "Color Brewer 2.0|Sequential|Multi-hue|9-class YlGnBu",
+  );
+  const WIND_COLORS = getColorMapColors(
+    "Color Brewer 2.0|Sequential|Single-hue|9-class Greys",
+  );
+  const PRESSURE_COLORS = getColorMapColors("Matlab|Bone");
+  const DEFAULT_COLORS = getColorMapColors("Other|Gray scale");
 
   // Check for Sea Surface Temperature first (more specific)
   if (
@@ -150,21 +216,12 @@ function generateColorScale(
     name.includes("modis") ||
     param.includes("sea surface")
   ) {
-    return {
-      labels: ["-2°C", "5°C", "12°C", "18°C", "25°C", "32°C"],
-      colors: [
-        "#08306b", // Very dark blue (coldest)
-        "#2171b5", // Medium blue
-        "#6baed6", // Light blue
-        "#c6dbef", // Very pale blue
-        "#fcbba1", // Pale pink
-        "#fb6a4a", // Pink-red
-        "#ef3b2c", // Red
-        "#99000d", // Very dark red (warmest)
-      ],
-      min: -2,
-      max: 35,
-    };
+    return buildScale(
+      SST_COLORS,
+      ["-2°C", "5°C", "12°C", "18°C", "25°C", "32°C"],
+      -2,
+      35,
+    );
   }
 
   // Air Temperature scales
@@ -173,23 +230,15 @@ function generateColorScale(
     name.includes("airtemp") ||
     param.includes("air temperature") ||
     param.includes("temperature") ||
-    units.includes("degc") ||
-    units.includes("kelvin")
+    unitsLower.includes("degc") ||
+    unitsLower.includes("kelvin")
   ) {
-    return {
-      labels: ["-40°C", "-20°C", "0°C", "20°C", "40°C"],
-      colors: [
-        "#313695", // Deep blue (coldest)
-        "#4575b4", // Blue
-        "#abd9e9", // Pale blue
-        "#ffffbf", // Pale yellow (neutral)
-        "#fdae61", // Orange
-        "#f46d43", // Red-orange
-        "#a50026", // Deep red (hottest)
-      ],
-      min: -40,
-      max: 40,
-    };
+    return buildScale(
+      AIR_COLORS,
+      ["-40°C", "-20°C", "0°C", "20°C", "40°C"],
+      -40,
+      40,
+    );
   }
 
   // Precipitation scales
@@ -198,46 +247,46 @@ function generateColorScale(
     name.includes("precipitation") ||
     name.includes("rain") ||
     param.includes("precipitation") ||
-    units.includes("mm")
+    unitsLower.includes("mm")
   ) {
-    return {
-      labels: ["0", "100", "200", "300", "400", "500"],
-      colors: [
-        "#8B4513", // Saddle brown (very dry)
-        "#CD853F", // Peru/tan (dry)
-        "#F0E68C", // Khaki (slightly dry)
-        "#90EE90", // Light green (moderate)
-        "#00FA9A", // Medium spring green (wet)
-        "#48D1CC", // Medium turquoise (wetter)
-        "#4169E1", // Royal blue (extremely wet)
-        "#0000CD", // Medium blue (wettest)
-      ],
-      min: 0,
-      max: 500,
-    };
+    return buildScale(
+      PRECIP_COLORS,
+      ["0", "100", "200", "300", "400", "500"],
+      0,
+      500,
+    );
   }
 
   // Wind/velocity scales
   if (
     param.includes("velocity") ||
     param.includes("wind") ||
-    units.includes("m/s")
+    unitsLower.includes("m/s")
   ) {
-    return {
-      labels: ["0 m/s", "2 m/s", "4 m/s", "6 m/s", "8 m/s"],
-      colors: ["#f0f0f0", "#90ee90", "#ffa500", "#ff4500", "#8b0000"],
-      min: 0,
-      max: 10,
-    };
+    return buildScale(
+      WIND_COLORS,
+      ["0 m/s", "5 m/s", "10 m/s", "15 m/s", "20 m/s", "25 m/s"],
+      0,
+      25,
+    );
+  }
+
+  if (param.includes("pressure")) {
+    return buildScale(
+      PRESSURE_COLORS,
+      ["900", "940", "980", "1020", "1050"],
+      900,
+      1050,
+    );
   }
 
   // Default scale
-  return {
-    labels: ["Low", "Medium-Low", "Medium", "Medium-High", "High"],
-    colors: ["#440154", "#31688e", "#35b779", "#fde724", "#ff0000"],
-    min: 0,
-    max: 100,
-  };
+  return buildScale(
+    DEFAULT_COLORS,
+    ["Low", "Medium-Low", "Medium", "Medium-High", "High"],
+    0,
+    100,
+  );
 }
 
 const useAppStateInternal = () => {
@@ -278,7 +327,7 @@ const useAppStateInternal = () => {
       satelliteLayerVisible: true,
       boundaryLinesVisible: true,
       geographicLinesVisible: false,
-      rasterOpacity: 0.65,
+      rasterOpacity: 1,
       hideZeroPrecipitation: false,
     },
     colorBarOrientation: "horizontal",
@@ -286,7 +335,7 @@ const useAppStateInternal = () => {
       satelliteLayerVisible: true,
       boundaryLinesVisible: true,
       geographicLinesVisible: false,
-      rasterOpacity: 0.65,
+      rasterOpacity: 1,
       hideZeroPrecipitation: false,
     },
   });

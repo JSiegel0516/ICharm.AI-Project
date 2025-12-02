@@ -1,4 +1,53 @@
 import type { ColorScale, Dataset, DatasetBackendDetails } from "@/types";
+import { getColorMapColors } from "@/utils/colorMaps";
+import { AIR_TEMPERATURE_BASE, SHARP_BANDS } from "@/utils/colorScales";
+
+const reducePalette = (colors: string[], count: number): string[] => {
+  if (!colors.length) return [];
+  if (count <= 1) return [colors[0]];
+
+  // Resample (upsample or downsample) so every scale gets the same sharp banding.
+  const result: string[] = [];
+  const step = (colors.length - 1) / (count - 1);
+
+  const hexToRgb = (hex: string) => {
+    const clean = hex.replace("#", "");
+    return {
+      r: parseInt(clean.slice(0, 2), 16),
+      g: parseInt(clean.slice(2, 4), 16),
+      b: parseInt(clean.slice(4, 6), 16),
+    };
+  };
+
+  const rgbToHex = (r: number, g: number, b: number) =>
+    `#${[r, g, b]
+      .map((v) =>
+        Math.max(0, Math.min(255, Math.round(v)))
+          .toString(16)
+          .padStart(2, "0"),
+      )
+      .join("")}`;
+
+  for (let i = 0; i < count; i += 1) {
+    const position = i * step;
+    const lowerIndex = Math.floor(position);
+    const upperIndex = Math.min(colors.length - 1, lowerIndex + 1);
+    const t = position - lowerIndex;
+
+    if (upperIndex === lowerIndex || t === 0) {
+      result.push(colors[lowerIndex]);
+    } else {
+      const lower = hexToRgb(colors[lowerIndex]);
+      const upper = hexToRgb(colors[upperIndex]);
+      const r = lower.r + (upper.r - lower.r) * t;
+      const g = lower.g + (upper.g - lower.g) * t;
+      const b = lower.b + (upper.b - lower.b) * t;
+      result.push(rgbToHex(r, g, b));
+    }
+  }
+
+  return result;
+};
 
 export interface BackendDatasetRecord {
   id?: string; // ⭐ Add database ID
@@ -26,43 +75,77 @@ export interface BackendDatasetRecord {
 
 type DataCategory = Dataset["dataType"] | "default";
 
+const COLORMAP_NAMES = {
+  temperature: "Color Brewer 2.0|Diverging|Zero Centered|11-class RdYlBu",
+  seaSurface: "Matlab|Jet",
+  precipitation: "Color Brewer 2.0|Sequential|Multi-hue|9-class YlGnBu",
+  wind: "Color Brewer 2.0|Sequential|Single-hue|9-class Greys",
+  pressure: "Matlab|Bone",
+  humidity: "Color Brewer 2.0|Sequential|Single-hue|9-class Greens",
+  default: "Other|Gray scale",
+};
+
+const buildColormapScale = (
+  colormapName: string,
+  min: number,
+  max: number,
+  labels: string[],
+  paletteOverride?: string[],
+): ColorScale => ({
+  min,
+  max,
+  colors: reducePalette(
+    paletteOverride ?? getColorMapColors(colormapName),
+    SHARP_BANDS,
+  ),
+  labels,
+});
+
 export const DEFAULT_COLOR_SCALES: Record<DataCategory, ColorScale> = {
-  temperature: {
-    min: -30,
-    max: 35,
-    colors: ["#2563eb", "#06b6d4", "#10b981", "#fbbf24", "#f59e0b", "#ef4444"],
-    labels: ["-30", "-20", "-10", "0", "10", "20", "30"],
-  },
-  precipitation: {
-    min: 0,
-    max: 500,
-    colors: ["#f8fafc", "#e2e8f0", "#94a3b8", "#475569", "#1e293b", "#0f172a"],
-    labels: ["0", "100", "200", "300", "400", "500"],
-  },
-  wind: {
-    min: 0,
-    max: 60,
-    colors: ["#f8fafc", "#c7d2fe", "#818cf8", "#4338ca", "#312e81"],
-    labels: ["0", "15", "30", "45", "60"],
-  },
-  pressure: {
-    min: 900,
-    max: 1050,
-    colors: ["#f1f5f9", "#94a3b8", "#64748b", "#334155", "#1e293b"],
-    labels: ["900", "940", "980", "1020", "1050"],
-  },
-  humidity: {
-    min: 0,
-    max: 100,
-    colors: ["#f1f5f9", "#bae6fd", "#38bdf8", "#0284c7", "#0f172a"],
-    labels: ["0", "25", "50", "75", "100"],
-  },
-  default: {
-    min: 0,
-    max: 1,
-    colors: ["#f1f5f9", "#94a3b8", "#475569", "#1e293b"],
-    labels: ["Low", "", "", "", "High"],
-  },
+  temperature: buildColormapScale(
+    COLORMAP_NAMES.temperature,
+    -40,
+    40,
+    ["-40", "-20", "0", "20", "40"],
+    AIR_TEMPERATURE_BASE,
+  ),
+  precipitation: buildColormapScale(COLORMAP_NAMES.precipitation, 0, 500, [
+    "0",
+    "100",
+    "200",
+    "300",
+    "400",
+    "500",
+  ]),
+  wind: buildColormapScale(COLORMAP_NAMES.wind, 0, 25, [
+    "0",
+    "5",
+    "10",
+    "15",
+    "20",
+    "25",
+  ]),
+  pressure: buildColormapScale(COLORMAP_NAMES.pressure, 900, 1050, [
+    "900",
+    "940",
+    "980",
+    "1020",
+    "1050",
+  ]),
+  humidity: buildColormapScale(COLORMAP_NAMES.humidity, 0, 100, [
+    "0",
+    "25",
+    "50",
+    "75",
+    "100",
+  ]),
+  default: buildColormapScale(COLORMAP_NAMES.default, 0, 1, [
+    "Low",
+    "",
+    "",
+    "",
+    "High",
+  ]),
 };
 
 export function cloneColorScale(scale: ColorScale): ColorScale {

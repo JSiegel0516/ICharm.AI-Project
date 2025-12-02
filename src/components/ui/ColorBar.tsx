@@ -246,10 +246,11 @@ const ColorBar: React.FC<ColorBarProps> = ({
       })
       .filter((v: any): v is number => v !== null);
 
-    const labelCount = Math.max(
-      dataset.colorScale.labels.length || 0,
-      dataset.colorScale.colors.length || 0,
-      2,
+    // Limit visible tick count so labels don't flood the UI while keeping band sharpness.
+    const MAX_TICKS = 7;
+    const labelCount = Math.min(
+      MAX_TICKS,
+      Math.max(dataset.colorScale.labels.length || 0, 2),
     );
 
     // Decide whether to use dynamic range
@@ -287,7 +288,15 @@ const ColorBar: React.FC<ColorBarProps> = ({
 
   const labels = isVertical ? [...displayLabels].reverse() : displayLabels;
 
-  const gradientBackground = `linear-gradient(${isVertical ? "to top" : "to right"}, ${colorScale.colors.join(", ")})`;
+  const gradientStops = colorScale.colors
+    .map((color: string, index: number) => {
+      const start = (index / colorScale.colors.length) * 100;
+      const end = ((index + 1) / colorScale.colors.length) * 100;
+      return `${color} ${start}%, ${color} ${end}%`;
+    })
+    .join(", ");
+
+  const gradientBackground = `linear-gradient(${isVertical ? "to top" : "to right"}, ${gradientStops})`;
 
   // ============================================================================
   // POSITIONING LOGIC
