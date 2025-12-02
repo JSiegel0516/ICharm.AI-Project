@@ -163,6 +163,9 @@ export interface AppState {
   error: string | null;
   globeSettings?: GlobeSettings; // NEW
   colorBarOrientation: ColorBarOrientation;
+  selectedColorMap?: string | null;
+  colorScaleBaselines?: Record<string, ColorScale>;
+  selectedColorMapInverse?: boolean;
   locationFocusRequest?: {
     id: number;
     latitude?: number;

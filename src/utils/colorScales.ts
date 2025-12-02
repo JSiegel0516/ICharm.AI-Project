@@ -56,7 +56,7 @@ const reducePalette = (colors: string[], count: number): string[] => {
   return result;
 };
 
-export const SHARP_BANDS = 10000;
+export const SHARP_BANDS = 101;
 export const AIR_TEMPERATURE_BASE = [
   "#4c1a7f", // Deep purple
   "#3b4cc0", // Blue
@@ -124,6 +124,85 @@ const PRECIP_BANDS = reducePalette(PRECIP_COLORS, SHARP_BANDS);
 const WIND_BANDS = reducePalette(WIND_COLORS, SHARP_BANDS);
 const PRESSURE_BANDS = reducePalette(PRESSURE_COLORS, SHARP_BANDS);
 const HUMIDITY_BANDS = reducePalette(HUMIDITY_COLORS, SHARP_BANDS);
+
+const COLOR_MAP_NAMES = [
+  "dataset-default",
+  "Matlab|Seasons|Autumn",
+  "Matlab|Seasons|Winter",
+  "Matlab|Seasons|Summer",
+  "Matlab|Seasons|Spring",
+  "Matlab|Jet",
+  "Matlab|Hsv",
+  "Matlab|Hot",
+  "Matlab|Cool",
+  "Matlab|Bone",
+  "Matlab|Copper",
+  "Color Brewer 2.0|Diverging|Zero Centered|11-class BrBG",
+  "Color Brewer 2.0|Diverging|Zero Centered|11-class PiYG",
+  "Color Brewer 2.0|Diverging|Zero Centered|11-class PRGn",
+  "Color Brewer 2.0|Diverging|Zero Centered|11-class PuOr",
+  "Color Brewer 2.0|Diverging|Zero Centered|11-class RdBu",
+  "Color Brewer 2.0|Diverging|Zero Centered|11-class RdGy",
+  "Color Brewer 2.0|Diverging|Zero Centered|11-class RdYlBu",
+  "Color Brewer 2.0|Diverging|Zero Centered|11-class RdYlGn",
+  "Color Brewer 2.0|Diverging|Zero Centered|11-class Spectral",
+  "Color Brewer 2.0|Diverging|Non Centered|11-class BrBG",
+  "Color Brewer 2.0|Diverging|Non Centered|11-class PiYG",
+  "Color Brewer 2.0|Diverging|Non Centered|11-class PRGn",
+  "Color Brewer 2.0|Diverging|Non Centered|11-class PuOr",
+  "Color Brewer 2.0|Diverging|Non Centered|11-class RdBu",
+  "Color Brewer 2.0|Diverging|Non Centered|11-class RdGy",
+  "Color Brewer 2.0|Diverging|Non Centered|11-class RdYlBu",
+  "Color Brewer 2.0|Diverging|Non Centered|11-class RdYlGn",
+  "Color Brewer 2.0|Diverging|Non Centered|11-class Spectral",
+  "Color Brewer 2.0|Sequential|Multi-hue|9-class BuGn",
+  "Color Brewer 2.0|Sequential|Multi-hue|9-class BuPu",
+  "Color Brewer 2.0|Sequential|Multi-hue|9-class GnBu",
+  "Color Brewer 2.0|Sequential|Multi-hue|9-class OrRd",
+  "Color Brewer 2.0|Sequential|Multi-hue|9-class PuBu",
+  "Color Brewer 2.0|Sequential|Multi-hue|9-class PuBuGn",
+  "Color Brewer 2.0|Sequential|Multi-hue|9-class PuRd",
+  "Color Brewer 2.0|Sequential|Multi-hue|9-class RdPu",
+  "Color Brewer 2.0|Sequential|Multi-hue|9-class YlGn",
+  "Color Brewer 2.0|Sequential|Multi-hue|9-class YlGnBu",
+  "Color Brewer 2.0|Sequential|Multi-hue|9-class YlOrBr",
+  "Color Brewer 2.0|Sequential|Multi-hue|9-class YlOrRd",
+  "Color Brewer 2.0|Sequential|Single-hue|9-class Blues",
+  "Color Brewer 2.0|Sequential|Single-hue|9-class Greens",
+  "Color Brewer 2.0|Sequential|Single-hue|9-class Greys",
+  "Color Brewer 2.0|Sequential|Single-hue|9-class Oranges",
+  "Color Brewer 2.0|Sequential|Single-hue|9-class Purples",
+  "Color Brewer 2.0|Sequential|Single-hue|9-class Reds",
+  "Other|Blackbody Radiation",
+  "Other|Cool to Warm",
+  "Other|Gray scale",
+  "Other|Spatial Contrast Mesh 3 scale",
+];
+
+export const COLOR_MAP_PRESETS = COLOR_MAP_NAMES.map((name) => {
+  const isDefault = name === "dataset-default";
+  const baseColors = isDefault
+    ? ["#1d4ed8", "#10b981", "#facc15", "#f97316", "#ef4444"]
+    : getColorMapColors(name);
+  const colors = reducePalette(baseColors, Math.min(21, baseColors.length));
+
+  const gradient = colors
+    .map((color, index) => {
+      const position =
+        colors.length === 1
+          ? 0
+          : Math.round((index / (colors.length - 1)) * 100);
+      return `${color} ${position}%`;
+    })
+    .join(", ");
+
+  return {
+    id: name,
+    label: isDefault ? "Dataset Default" : name.replace(/\|/g, " | "),
+    colors,
+    gradient,
+  };
+});
 
 // Predefined color scales for different data types
 export const colorScales: Record<string, ColorScale> = {
