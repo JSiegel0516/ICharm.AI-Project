@@ -52,7 +52,7 @@ const reducePalette = (colors: string[], count: number): string[] => {
       result.push(rgbToHex(r, g, b));
     }
   }
-
+  // *
   return result;
 };
 
