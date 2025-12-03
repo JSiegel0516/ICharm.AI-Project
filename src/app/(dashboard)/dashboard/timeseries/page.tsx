@@ -6,48 +6,23 @@ import React, {
   useCallback,
   useRef,
 } from "react";
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  Download,
-  BarChart3,
-  Activity,
-  TrendingUp,
-  Zap,
-  Loader2,
-  AlertCircle,
-  CheckCircle,
-  XCircle,
-} from "lucide-react";
+import { XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Progress } from "@/components/ui/progress";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
   useTimeSeries,
   AnalysisModel,
   ChartType,
   AggregationMethod,
-  formatDateForAPI,
   downloadBlob,
   generateFilename,
   validateFocusCoordinates,
   type DatasetInfo,
   type SpatialBounds,
 } from "@/hooks/use-timeseries";
-import { DatasetFilter } from "@/app/(dashboard)/dashboard/timeseries/_components/DatasetPanel";
+import { DatasetFilter } from "@/app/(dashboard)/dashboard/timeseries/_components/OptionsPanel";
 import { VisualizationPanel } from "@/app/(dashboard)/dashboard/timeseries/_components/VisualizationPanel";
 
 // ============================================================================
@@ -102,25 +77,24 @@ export default function TimeSeriesPage() {
     start: "2020-01-01",
     end: "2023-12-31",
   });
+
+  // Client-side chart options (moved to VisualizationPanel)
   const [chartType, setChartType] = useState<ChartType>(ChartType.LINE);
-  const [analysisModel, setAnalysisModel] = useState<AnalysisModel>(
-    AnalysisModel.RAW,
+  const [normalize, setNormalize] = useState(false);
+  const [smoothingWindow, setSmoothingWindow] = useState(1);
+  const [resampleFreq, setResampleFreq] = useState<string | undefined>(
+    undefined,
   );
   const [aggregation, setAggregation] = useState<AggregationMethod>(
     AggregationMethod.MEAN,
   );
-  const [normalize, setNormalize] = useState(false);
-  const [smoothingWindow, setSmoothingWindow] = useState(12);
-  const [resampleFreq, setResampleFreq] = useState<string | undefined>(
-    undefined,
+  const [showHistogram, setShowHistogram] = useState(false);
+  const [showLinearTrend, setShowLinearTrend] = useState(false);
+
+  // Server-side options (stay in OptionsPanel)
+  const [analysisModel, setAnalysisModel] = useState<AnalysisModel>(
+    AnalysisModel.RAW,
   );
-  const [showSpatialFilter, setShowSpatialFilter] = useState(false);
-  const [spatialBounds, setSpatialBounds] = useState<SpatialBounds>({
-    lat_min: -90,
-    lat_max: 90,
-    lon_min: -180,
-    lon_max: 180,
-  });
   const [dataSourceFilter, setDataSourceFilter] = useState<
     "all" | "local" | "cloud"
   >("all");
@@ -227,11 +201,6 @@ export default function TimeSeriesPage() {
     });
   }, [focusCoordinates]);
 
-  // Memoized chart data (already transformed in hook)
-  const chartData = useMemo(() => {
-    return data; // Data is already in chart-ready format from the hook
-  }, [data]);
-
   // Handle Extract button click with validation
   const handleExtract = useCallback(async () => {
     if (selectedDatasets.length === 0) {
@@ -251,7 +220,7 @@ export default function TimeSeriesPage() {
     const datasetIds = selectedDatasets.map((d) => d.id);
     setVisibleDatasets(new Set(datasetIds));
 
-    console.log("🚀 Extracting datasets:");
+    console.log("Extracting datasets:");
     console.log("  - UUIDs for API:", datasetIds);
     console.log(
       "  - Slugs for display:",
@@ -265,22 +234,19 @@ export default function TimeSeriesPage() {
     }
 
     try {
+      // NOTE: We request RAW data - client-side transformations applied in VisualizationPanel
       await extractTimeSeries({
-        datasetIds, // UUIDs for API
+        datasetIds,
         startDate: dateRange.start,
         endDate: dateRange.end,
-        analysisModel,
-        normalize,
+        analysisModel, // Server-side analysis only
+        normalize: false, // Done client-side
         chartType,
-        spatialBounds: showSpatialFilter ? spatialBounds : undefined,
-        aggregation,
-        resampleFreq,
+        aggregation: AggregationMethod.MEAN,
+        resampleFreq: undefined, // Done client-side
         includeStatistics: true,
         includeMetadata: true,
-        smoothingWindow:
-          analysisModel === AnalysisModel.MOVING_AVG
-            ? smoothingWindow
-            : undefined,
+        smoothingWindow: undefined, // Done client-side
         focusCoordinates: focusCoordinates.trim() || undefined,
       });
 
@@ -292,12 +258,6 @@ export default function TimeSeriesPage() {
     selectedDatasets,
     dateRange,
     analysisModel,
-    aggregation,
-    normalize,
-    smoothingWindow,
-    resampleFreq,
-    showSpatialFilter,
-    spatialBounds,
     chartType,
     focusCoordinates,
     coordinateValidation,
@@ -341,218 +301,79 @@ export default function TimeSeriesPage() {
   }, [error]);
 
   return (
-    <div className="flex flex-col">
-      {/* Header */}
-      <header className="bg-background border-b px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <BarChart3 className="text-primary h-6 w-6" />
-            <div>
-              <h1 className="text-2xl font-bold">Time Series Analysis</h1>
-              <p className="text-muted-foreground text-sm">
-                Extract and visualize climate data patterns
-              </p>
-            </div>
-          </div>
+    <div className="container mx-auto space-y-6 p-6">
+      {/* Dataset Filter - Server-side Controls Only */}
+      <DatasetFilter
+        selectedDatasets={selectedDatasets}
+        setSelectedDatasets={setSelectedDatasets}
+        availableDatasets={availableDatasets}
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        selectedCategory={selectedCategory}
+        setSelectedCategory={setSelectedCategory}
+        visibleDatasets={visibleDatasets}
+        setVisibleDatasets={setVisibleDatasets}
+        dataSourceFilter={dataSourceFilter}
+        setDataSourceFilter={setDataSourceFilter}
+        dateRange={dateRange}
+        setDateRange={setDateRange}
+        analysisModel={analysisModel}
+        setAnalysisModel={setAnalysisModel}
+        focusCoordinates={focusCoordinates}
+        setFocusCoordinates={setFocusCoordinates}
+        onExtract={handleExtract}
+        onExport={handleExport}
+        onReset={reset}
+        isLoading={isLoading}
+        hasData={data && data.length > 0}
+        progress={progress}
+        processingInfo={processingInfo}
+        coordinateValidation={coordinateValidation}
+      />
 
-          <div className="flex items-center gap-2">
-            {/* Action Buttons */}
-            <Button
-              onClick={handleExtract}
-              disabled={selectedDatasets.length === 0 || isLoading}
-              size="lg"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <Activity className="mr-2 h-4 w-4" />
-                  Extract Data
-                </>
-              )}
-            </Button>
+      {/* Error Alert */}
+      {error && (
+        <Alert variant="destructive">
+          <XCircle className="h-4 w-4" />
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => reset()}
+            className="mt-2"
+          >
+            Dismiss
+          </Button>
+        </Alert>
+      )}
 
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button
-                  variant="outline"
-                  disabled={!data || data.length === 0}
-                  size="lg"
-                >
-                  <Download className="mr-2 h-4 w-4" />
-                  Export
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Export Data</DialogTitle>
-                  <DialogDescription>
-                    Choose a format to download your time series data
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <Button
-                    onClick={() => handleExport("csv")}
-                    className="w-full justify-start"
-                    variant="outline"
-                  >
-                    <Download className="mr-2 h-4 w-4" />
-                    Export as CSV (Spreadsheet)
-                  </Button>
-                  <Button
-                    onClick={() => handleExport("json")}
-                    className="w-full justify-start"
-                    variant="outline"
-                  >
-                    <Download className="mr-2 h-4 w-4" />
-                    Export as JSON (Raw Data)
-                  </Button>
-                  <Button
-                    onClick={() => handleExport("png")}
-                    className="w-full justify-start"
-                    variant="outline"
-                  >
-                    <Download className="mr-2 h-4 w-4" />
-                    Export Chart as PNG (Image)
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-
-            <Button variant="ghost" onClick={() => reset()} size="lg">
-              Reset
-            </Button>
-          </div>
-        </div>
-
-        {/* Progress Bar */}
-        {isLoading && progress > 0 && (
-          <div className="mt-4">
-            <Progress value={progress} className="h-2" />
-            <p className="text-muted-foreground mt-1 text-xs">
-              Processing: {progress.toFixed(0)}%
-            </p>
-          </div>
-        )}
-
-        {/* Processing Info Display */}
-        {processingInfo && !isLoading && (
-          <div className="mt-3 flex items-center gap-4 text-sm">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="h-4 w-4 text-green-600" />
-              <span className="text-muted-foreground">
-                {processingInfo.datasetsProcessed} dataset(s) •{" "}
-                {processingInfo.totalPoints} points •{" "}
-                {processingInfo.processingTime}
-              </span>
-            </div>
-            {processingInfo.extractionMode && (
-              <div className="flex items-center gap-2">
-                <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                  {processingInfo.extractionMode === "point-based"
-                    ? `Point-based (${processingInfo.focusCoordinates} coord${processingInfo.focusCoordinates !== 1 ? "s" : ""})`
-                    : "Spatial aggregation"}
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Coordinate Validation Warning */}
-        {focusCoordinates.trim() && !coordinateValidation.isValid && (
-          <Alert variant="destructive" className="mt-3">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Invalid Coordinates</AlertTitle>
-            <AlertDescription>
-              <ul className="list-disc pl-4">
-                {coordinateValidation.errors.map((err, i) => (
-                  <li key={i}>{err}</li>
-                ))}
-              </ul>
-            </AlertDescription>
-          </Alert>
-        )}
-      </header>
-
-      {/* Main Content */}
-      <div className="flex-1 overflow-hidden">
-        <ResizablePanelGroup direction="horizontal">
-          {/* Left Panel - Controls */}
-          <ResizablePanel defaultSize={35} minSize={25}>
-            <div className="h-full space-y-4 overflow-y-auto p-4">
-              {/* Dataset Filter Component */}
-              <DatasetFilter
-                selectedDatasets={selectedDatasets}
-                setSelectedDatasets={setSelectedDatasets}
-                availableDatasets={availableDatasets}
-                searchTerm={searchTerm}
-                setSearchTerm={setSearchTerm}
-                selectedCategory={selectedCategory}
-                setSelectedCategory={setSelectedCategory}
-                visibleDatasets={visibleDatasets}
-                setVisibleDatasets={setVisibleDatasets}
-                dataSourceFilter={dataSourceFilter}
-                setDataSourceFilter={setDataSourceFilter}
-              />
-            </div>
-          </ResizablePanel>
-
-          <ResizableHandle withHandle />
-
-          {/* Right Panel - Visualization */}
-          <ResizablePanel defaultSize={65}>
-            <div
-              className="h-full space-y-4 overflow-y-auto p-4"
-              data-chart-container
-            >
-              {/* Error Alert */}
-              {error && (
-                <Alert variant="destructive">
-                  <XCircle className="h-4 w-4" />
-                  <AlertTitle>Error</AlertTitle>
-                  <AlertDescription>{error}</AlertDescription>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => reset()}
-                    className="mt-2"
-                  >
-                    Dismiss
-                  </Button>
-                </Alert>
-              )}
-
-              {/* Visualization Panel Component */}
-              <VisualizationPanel
-                chartType={chartType}
-                setChartType={setChartType}
-                dateRange={dateRange}
-                setDateRange={setDateRange}
-                analysisModel={analysisModel}
-                setAnalysisModel={setAnalysisModel}
-                aggregation={aggregation}
-                setAggregation={setAggregation}
-                normalize={normalize}
-                setNormalize={setNormalize}
-                smoothingWindow={smoothingWindow}
-                setSmoothingWindow={setSmoothingWindow}
-                resampleFreq={resampleFreq}
-                setResampleFreq={setResampleFreq}
-                focusCoordinates={focusCoordinates}
-                setFocusCoordinates={setFocusCoordinates}
-                chartData={chartData}
-                selectedDatasets={selectedDatasets}
-                visibleDatasets={visibleDatasets}
-                processingInfo={processingInfo}
-                statistics={statistics}
-                metadata={metadata}
-              />
-            </div>
-          </ResizablePanel>
-        </ResizablePanelGroup>
+      {/* Visualization Panel - Includes ChartOptionsPanel now */}
+      <div data-chart-container>
+        <VisualizationPanel
+          chartType={chartType}
+          setChartType={setChartType}
+          dateRange={dateRange}
+          analysisModel={analysisModel}
+          chartData={data}
+          selectedDatasets={selectedDatasets}
+          visibleDatasets={visibleDatasets}
+          processingInfo={processingInfo}
+          statistics={statistics}
+          metadata={metadata}
+          normalize={normalize}
+          setNormalize={setNormalize}
+          smoothingWindow={smoothingWindow}
+          setSmoothingWindow={setSmoothingWindow}
+          resampleFreq={resampleFreq}
+          setResampleFreq={setResampleFreq}
+          aggregation={aggregation}
+          setAggregation={setAggregation}
+          showHistogram={showHistogram}
+          setShowHistogram={setShowHistogram}
+          showLinearTrend={showLinearTrend}
+          setShowLinearTrend={setShowLinearTrend}
+        />
       </div>
     </div>
   );
