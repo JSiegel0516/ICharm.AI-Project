@@ -27,6 +27,8 @@ interface GlobeSettingsPanelProps {
   onRasterOpacityChange: (opacity: number) => void;
   hideZeroPrecipitation: boolean;
   onHideZeroPrecipitationToggle: (enabled: boolean) => void;
+  rasterBlurEnabled: boolean;
+  onRasterBlurToggle: (enabled: boolean) => void;
 }
 
 export function GlobeSettingsPanel({
@@ -42,6 +44,8 @@ export function GlobeSettingsPanel({
   onRasterOpacityChange,
   hideZeroPrecipitation,
   onHideZeroPrecipitationToggle,
+  rasterBlurEnabled,
+  onRasterBlurToggle,
 }: GlobeSettingsPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -180,6 +184,26 @@ export function GlobeSettingsPanel({
                     <span>Transparent</span>
                     <span>Opaque</span>
                   </div>
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
+                  <div className="space-y-0.5">
+                    <Label
+                      htmlFor="raster-blur-toggle"
+                      className="cursor-pointer text-sm font-medium text-white"
+                    >
+                      Raster Blur
+                    </Label>
+                    <p className="text-xs text-slate-400">
+                      Smooth or sharpen raster tile edges
+                    </p>
+                  </div>
+                  <Switch
+                    id="raster-blur-toggle"
+                    checked={rasterBlurEnabled}
+                    onCheckedChange={onRasterBlurToggle}
+                    className="data-[state=checked]:bg-rose-500"
+                  />
                 </div>
               </div>
 

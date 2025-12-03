@@ -40,6 +40,7 @@ interface SideButtonsProps {
   onGeographicLinesToggle: (visible: boolean) => void;
   onRasterOpacityChange: (opacity: number) => void;
   onHideZeroPrecipToggle: (enabled: boolean) => void;
+  onRasterBlurToggle: (enabled: boolean) => void;
 }
 
 const formatDisplayDate = (value?: string | null | Date) => {
@@ -66,6 +67,7 @@ export function SideButtons({
   onGeographicLinesToggle,
   onRasterOpacityChange,
   onHideZeroPrecipToggle,
+  onRasterBlurToggle,
 }: SideButtonsProps) {
   const { datasets, currentDataset, setCurrentDataset, isLoading, error } =
     useAppState();
@@ -586,6 +588,8 @@ export function SideButtons({
         onRasterOpacityChange={onRasterOpacityChange}
         hideZeroPrecipitation={globeSettings.hideZeroPrecipitation}
         onHideZeroPrecipitationToggle={onHideZeroPrecipToggle}
+        rasterBlurEnabled={globeSettings.rasterBlurEnabled}
+        onRasterBlurToggle={onRasterBlurToggle}
       />
     </>
   );
