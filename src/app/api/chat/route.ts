@@ -10,6 +10,7 @@ import {
   buildTrendInsightResponse,
 } from "./trendAnalysis";
 import { isDefinitionQuery } from "./dynamicResponder";
+import { fetchPointStatsSnippet } from "./pointStats";
 
 const HF_MODEL =
   process.env.LLAMA_MODEL ?? "meta-llama/Meta-Llama-3-8B-Instruct";
@@ -20,6 +21,8 @@ const LLM_SERVICE_URL = (
 ).replace(/\/$/, "");
 const DATA_SERVICE_URL =
   process.env.DATA_SERVICE_URL ?? "http://localhost:8000";
+const ENABLE_TREND_ANALYSIS =
+  (process.env.ENABLE_TREND_ANALYSIS ?? "").toLowerCase() === "true";
 
 type ChatMessage = {
   role: "system" | "user" | "assistant";
@@ -32,9 +35,10 @@ type ChatRequestPayload = {
   context?: ConversationContextPayload | null;
 };
 
-function buildDatasetSummaryPrompt(
+async function buildDatasetSummaryPrompt(
   context?: ConversationContextPayload,
-): string | null {
+  dataServiceUrl?: string,
+): Promise<string | null> {
   if (!context) {
     return null;
   }
@@ -59,6 +63,19 @@ function buildDatasetSummaryPrompt(
   }
   summary +=
     " When the user refers to 'this dataset' or 'current dataset', they mean this dataset. Always base your answers on it unless the user explicitly switches datasets.";
+
+  if (dataServiceUrl && context.location?.latitude !== undefined) {
+    const pointStats = await fetchPointStatsSnippet({
+      context,
+      dataServiceUrl,
+    });
+    if (pointStats) {
+      summary += `\n\nContext (point stats): ${pointStats}`;
+    }
+  }
+
+  summary +=
+    "\n\nInstructions: Use the above context only as background. Do not repeat or restate the summary. Do not describe steps, pipelines, or how you will analyze the data. Answer the user's question directly in 1–2 sentences. Include numbers only if the user explicitly asked for them or if they are essential to the answer; otherwise answer qualitatively. Never fabricate or guess numbers—only use numeric values present in the context; if they are not available, say you don’t have the data instead of guessing. If nothing here is relevant, answer with general knowledge and do not cite the summary. If the context lacks the needed data, say so briefly instead of speculating. Do not explain how you got the summary from the backend—just answer the question.";
 
   return summary;
 }
@@ -196,7 +213,12 @@ export async function POST(req: NextRequest) {
     ReturnType<typeof buildTrendInsightResponse>
   > | null = null;
 
-  if (conversationContext && userQuery && !isDefinitionQuery(userQuery)) {
+  if (
+    ENABLE_TREND_ANALYSIS &&
+    conversationContext &&
+    userQuery &&
+    !isDefinitionQuery(userQuery)
+  ) {
     try {
       trendResult = await buildTrendInsightResponse({
         query: userQuery,
@@ -208,7 +230,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  if (trendResult && trendResult.type !== "none") {
+  if (ENABLE_TREND_ANALYSIS && trendResult && trendResult.type !== "none") {
     const assistantMessage = trendResult.message;
     const trendSources =
       trendResult.type === "summary"
@@ -266,26 +288,11 @@ export async function POST(req: NextRequest) {
   }> = [];
   let enhancedMessages = [...messages];
 
-  const datasetSummaryPrompt = buildDatasetSummaryPrompt(conversationContext);
-  if (datasetSummaryPrompt) {
-    if (enhancedMessages[0]?.role === "system") {
-      enhancedMessages = [
-        {
-          role: "system",
-          content: `${datasetSummaryPrompt}\n\n${enhancedMessages[0].content}`,
-        },
-        ...enhancedMessages.slice(1),
-      ];
-    } else {
-      enhancedMessages = [
-        {
-          role: "system",
-          content: datasetSummaryPrompt,
-        },
-        ...enhancedMessages,
-      ];
-    }
-  }
+  const datasetSummaryPrompt = await buildDatasetSummaryPrompt(
+    conversationContext,
+    DATA_SERVICE_URL,
+  );
+  let systemApplied = false;
 
   if (userQuery) {
     console.log("🔍 Analyzing query...");
@@ -308,6 +315,9 @@ export async function POST(req: NextRequest) {
               ? "analysis"
               : (contextType as "tutorial" | "about"),
         );
+        const combinedContext = datasetSummaryPrompt
+          ? `${contextString}\n\nDataset context (do not quote):\n${datasetSummaryPrompt}`
+          : contextString;
 
         // Store sources for response
         contextSources = relevantSections.map((section) => ({
@@ -327,11 +337,13 @@ export async function POST(req: NextRequest) {
         if (contextType === "about") {
           systemPrompt = `You are an AI assistant for iCharm/4DVD, a climate visualization platform. Use the following context about the platform's history, development, and information to answer the user's question.
 
-${contextString}
+${combinedContext}
 
 Instructions:
-- Be informative and accurate based on the provided context
-- Reference specific details when applicable (names, dates, citations)
+ - If the context does not contain the needed answer, ignore it and answer from your general knowledge with a concise qualitative reply; do not invent details or numbers. Do not say the context is missing; just answer.
+ - Never fabricate or guess numerical values. Only use numbers that are explicitly present in the context; if a numeric answer is requested but not available, say you don’t have the data instead of guessing.
+ - Be informative and accurate based on the provided context
+ - Reference specific details when applicable (names, dates, citations)
 - If asked about licensing or technical details, be precise
 - If the answer is not in the context, acknowledge that and offer general guidance
 - Do not make up data or information
@@ -342,22 +354,26 @@ Instructions:
         } else if (contextType === "analysis") {
           systemPrompt = `You are the iCharm climate analysis assistant. Use the Climate Question Playbook snippets below only as background. Ignore any procedural "steps" in that text. Respond with the final answer to the user's question—do not list steps, methods, or how you will proceed.
 
-${contextString}
+${combinedContext}
 
 Instructions:
-- Answer the user's question directly in 1–3 sentences; keep it concise and actionable.
-- Use the provided dataset/context and location (if given); mention dataset name and units when relevant.
+ - If the context does not contain the needed answer, ignore it and answer from your general knowledge with a concise qualitative reply; do not invent details or numbers. Do not say the context is missing; just answer.
+ - Never fabricate or guess numerical values. Only use numbers that are explicitly present in the context; if a numeric answer is requested but not available, say you don’t have the data instead of guessing.
+ - Answer the user's question directly in 1–2 sentences; keep it concise and actionable.
+ - Use the provided dataset/context and location (if given); mention dataset name and units when relevant.
+- Only include numeric values if the user explicitly asked for numbers or if they are essential; otherwise, describe the trend qualitatively.
 - If you truly need more inputs, ask for them in one short sentence; otherwise avoid follow-up process descriptions.
-
 - Do not describe your workflow, steps, or how you will compute something—just provide the result or the single next input needed.`;
         } else {
           systemPrompt = `You are an AI assistant for iCharm, a climate visualization platform. Use the following context from the tutorial to answer the user's question.
 
-${contextString}
+${combinedContext}
 
 Instructions:
-- Be concise and helpful
-- Reference the relevant tutorial sections when applicable
+ - If the context does not contain the needed answer, ignore it and answer from your general knowledge with a concise qualitative reply; do not invent details or numbers. Do not say the context is missing; just answer.
+ - Never fabricate or guess numerical values. Only use numbers that are explicitly present in the context; if a numeric answer is requested but not available, say you don’t have the data instead of guessing.
+ - Be concise and helpful
+ - Reference the relevant tutorial sections when applicable
 - Provide step-by-step guidance for how-to questions
 - If the user asks about features not covered in the context, acknowledge that and provide general guidance
 - Use a friendly, professional tone`;
@@ -369,18 +385,21 @@ Instructions:
         };
 
         // Insert system message at the beginning or update existing system message
-        const hasSystemMessage = messages[0]?.role === "system";
+        const hasSystemMessage = enhancedMessages[0]?.role === "system";
         if (hasSystemMessage) {
-          enhancedMessages = [systemMessage, ...messages.slice(1)];
+          enhancedMessages = [systemMessage, ...enhancedMessages.slice(1)];
         } else {
-          enhancedMessages = [systemMessage, ...messages];
+          enhancedMessages = [systemMessage, ...enhancedMessages];
         }
+        systemApplied = true;
       }
     } catch (error) {
       console.error("❌ RAG retrieval error:", error);
       // Continue without RAG enhancement if it fails
     }
   }
+
+  // If no RAG system message was applied, fall back to general knowledge (no extra dataset summary injection).
   // === RAG ENHANCEMENT END ===
 
   try {
