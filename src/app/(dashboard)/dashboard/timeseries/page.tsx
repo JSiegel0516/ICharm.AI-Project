@@ -73,6 +73,47 @@ export default function TimeSeriesPage() {
   const [visibleDatasets, setVisibleDatasets] = useState<Set<string>>(
     new Set(),
   );
+
+  // Dynamically expand selectedDatasets to include point-based series (e.g., uuid_point_1, uuid_point_2)
+  const expandedSelectedDatasets = useMemo(() => {
+    if (!metadata || !data || data.length === 0) return selectedDatasets;
+
+    const metadataKeys = Object.keys(metadata);
+    const expanded: DatasetInfo[] = [];
+
+    selectedDatasets.forEach((dataset) => {
+      // Check if this dataset has point-based variants in metadata
+      const pointVariants = metadataKeys.filter((key) =>
+        key.startsWith(`${dataset.id}_point_`),
+      );
+
+      if (pointVariants.length > 0) {
+        // Dataset has multiple points - add each as separate series
+        pointVariants.forEach((pointKey) => {
+          const pointMetadata = metadata[pointKey];
+          expanded.push({
+            ...dataset,
+            id: pointKey,
+            name: pointMetadata?.name || dataset.name,
+            datasetName: pointMetadata?.name || dataset.name,
+          });
+        });
+      } else {
+        // No point variants - use original dataset
+        expanded.push(dataset);
+      }
+    });
+
+    return expanded;
+  }, [selectedDatasets, metadata, data]);
+
+  // Auto-update visibleDatasets when expanded datasets change
+  useEffect(() => {
+    if (expandedSelectedDatasets.length > 0 && data && data.length > 0) {
+      const expandedIds = new Set(expandedSelectedDatasets.map((d) => d.id));
+      setVisibleDatasets(expandedIds);
+    }
+  }, [expandedSelectedDatasets, data]);
   const [dateRange, setDateRange] = useState({
     start: "2020-01-01",
     end: "2023-12-31",
@@ -356,7 +397,7 @@ export default function TimeSeriesPage() {
           dateRange={dateRange}
           analysisModel={analysisModel}
           chartData={data}
-          selectedDatasets={selectedDatasets}
+          selectedDatasets={expandedSelectedDatasets}
           visibleDatasets={visibleDatasets}
           processingInfo={processingInfo}
           statistics={statistics}

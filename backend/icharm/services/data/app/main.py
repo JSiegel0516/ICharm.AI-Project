@@ -130,6 +130,10 @@ if not POSTRGRES_URL:
         f"Please create a .env file at {env_path} with POSTRGRES_URL=postgresql://..."
     )
 
+# CMORPH PostgreSQL database configuration (new year-based database)
+CMORPH_DB_NAME = os.getenv("CMORPH_DB_NAME", "cmorph_daily_by_year")
+# CMORPH_DB_URL = os.getenv("CMORPH_DB_URL")  # Optional: separate connection URL for CMORPH DB
+
 # File paths configuration
 LOCAL_DATASETS_PATH = _resolve_env_path(
     os.getenv("LOCAL_DATASETS_PATH"), "datasets", ensure_exists=True
@@ -1067,6 +1071,270 @@ async def open_cloud_dataset(
         )
 
 
+def extract_timeseries_from_postgres(
+    start_date: datetime,
+    end_date: datetime,
+    lat: float,
+    lon: float,
+    database_name: str = "cmorph_daily_by_year",
+) -> pd.Series:
+    """
+    Extract time series data for a specific point from PostgreSQL database.
+
+    Queries the pre-processed PostgreSQL database created by netcdf_to_db_by_year.py
+    for a specific lat/lon coordinate. Much faster than loading NetCDF files.
+
+    Args:
+        start_date: Start date for extraction
+        end_date: End date for extraction
+        lat: Latitude of point to extract
+        lon: Longitude of point to extract
+        database_name: Name of the PostgreSQL database (default: cmorph_daily_by_year)
+
+    Returns:
+        pd.Series with datetime index and values for the nearest gridbox
+    """
+
+    # Build connection URL
+    # if CMORPH_DB_URL:
+    #     db_url = CMORPH_DB_URL
+    # Extract base connection info from main postgres URL and change database name
+    base_url = POSTRGRES_URL.rsplit("/", 1)[0] if POSTRGRES_URL else None
+    if not base_url:
+        raise ValueError("Cannot construct CMORPH database URL")
+    db_url = f"{base_url}/{database_name}"
+
+    logger.info(
+        f"[PostgresExtractor] Connecting to PostgreSQL database: {database_name}"
+    )
+    logger.info(
+        f"[PostgresExtractor] Date range: {start_date.date()} to {end_date.date()}"
+    )
+
+    # Create engine for the CMORPH database
+    cmorph_engine = create_engine(db_url, poolclass=NullPool)
+
+    try:
+        with cmorph_engine.connect() as conn:
+            # Discover what value columns exist in grid_data table
+            column_query = text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'grid_data'
+                AND column_name LIKE 'value_%'
+                ORDER BY column_name
+            """)
+            column_results = conn.execute(column_query).fetchall()
+            value_columns = [row[0] for row in column_results]
+
+            if not value_columns:
+                raise ValueError("No value columns found in grid_data table")
+
+            logger.info(f"[PostgresExtractor] Found {len(value_columns)} value columns")
+
+            # Determine if we have year-based columns (value_1998, value_1999, etc.)
+            is_year_based = any(
+                col.startswith("value_")
+                and col.replace("value_", "").isdigit()
+                and len(col.replace("value_", "")) == 4
+                for col in value_columns
+            )
+
+            logger.info(f"[PostgresExtractor] Point extraction: lat={lat}, lon={lon}")
+
+            # Find nearest lat/lon indices
+            lat_query = text("""
+                SELECT lat_id, lat, ABS(lat - :target_lat) as dist
+                FROM lat
+                ORDER BY dist
+                LIMIT 1
+            """)
+            lat_result = conn.execute(lat_query, {"target_lat": lat}).fetchone()
+
+            lon_query = text("""
+                SELECT lon_id, lon, ABS(lon - :target_lon) as dist
+                FROM lon
+                ORDER BY dist
+                LIMIT 1
+            """)
+            lon_result = conn.execute(lon_query, {"target_lon": lon}).fetchone()
+
+            if not lat_result or not lon_result:
+                raise ValueError("Could not find nearest lat/lon in database")
+
+            lat_id = lat_result[0]
+            lon_id = lon_result[0]
+            actual_lat = lat_result[1]
+            actual_lon = lon_result[1]
+
+            logger.info(
+                f"[PostgresExtractor] Nearest point: lat={actual_lat} (id={lat_id}), lon={actual_lon} (id={lon_id})"
+            )
+
+            # Get gridbox_id for this lat/lon
+            gridbox_query = text("""
+                SELECT gridbox_id
+                FROM gridbox
+                WHERE lat_id = :lat_id AND lon_id = :lon_id
+            """)
+            gridbox_result = conn.execute(
+                gridbox_query, {"lat_id": lat_id, "lon_id": lon_id}
+            ).fetchone()
+
+            if not gridbox_result:
+                raise ValueError(
+                    f"No gridbox found for lat_id={lat_id}, lon_id={lon_id}"
+                )
+
+            gridbox_id = gridbox_result[0]
+            logger.info(f"[PostgresExtractor] Using gridbox_id: {gridbox_id}")
+
+            # Build query based on whether we have year-based columns or not
+            if is_year_based:
+                # Extract time series for this gridbox with year-based columns
+                year_columns_sql = ", ".join([f"g.{col}" for col in value_columns])
+
+                data_query = text(f"""
+                    SELECT
+                        t.timestamp_val,
+                        {year_columns_sql}
+                    FROM grid_data g
+                    JOIN timestamp_dim t ON g.timestamp_id = t.timestamp_id
+                    WHERE g.gridbox_id = :gridbox_id
+                    ORDER BY t.timestamp_id
+                """)
+
+                results = conn.execute(
+                    data_query, {"gridbox_id": gridbox_id}
+                ).fetchall()
+                logger.info(
+                    f"[PostgresExtractor] Retrieved {len(results)} records from database"
+                )
+
+                # Build year to column index mapping
+                year_to_col_idx = {}
+                for idx, col in enumerate(value_columns):
+                    year = int(col.replace("value_", ""))
+                    year_to_col_idx[year] = (
+                        idx + 1
+                    )  # +1 because timestamp_val is index 0
+
+                data_dict = {}
+                current_year = start_date.year
+                end_year = end_date.year
+
+                logger.info(
+                    f"[PostgresExtractor] Processing year range: {current_year} to {end_year}"
+                )
+                logger.info(
+                    f"[PostgresExtractor] Available year columns: {sorted(year_to_col_idx.keys())}"
+                )
+
+                points_added = 0
+                skipped_invalid_dates = 0
+                for row in results:
+                    mmdd = row[0]
+
+                    try:
+                        month = int(mmdd[:2])
+                        day = int(mmdd[2:])
+
+                        # For each year in range, get the value from the corresponding column
+                        for year in range(current_year, end_year + 1):
+                            if year in year_to_col_idx:
+                                try:
+                                    timestamp = datetime(year, month, day)
+
+                                    if start_date <= timestamp <= end_date:
+                                        value = row[year_to_col_idx[year]]
+                                        if value is not None:
+                                            data_dict[timestamp] = value
+                                            points_added += 1
+                                except ValueError:
+                                    # Invalid date (e.g., Feb 30, Sep 31) - skip it
+                                    skipped_invalid_dates += 1
+                                    continue
+                    except (ValueError, IndexError) as e:
+                        logger.warning(
+                            f"[PostgresExtractor] Could not parse timestamp: {mmdd}, error: {e}"
+                        )
+                        continue
+
+                logger.info(
+                    f"[PostgresExtractor] Added {points_added} data points from year-based columns"
+                )
+                if skipped_invalid_dates > 0:
+                    logger.info(
+                        f"[PostgresExtractor] Skipped {skipped_invalid_dates} invalid dates (e.g., Feb 30)"
+                    )
+
+                logger.info(
+                    f"[PostgresExtractor] Added {points_added} data points from year-based columns"
+                )
+            else:
+                # Simple case: just one value column
+                value_col = value_columns[0]
+                data_query = text(f"""
+                    SELECT
+                        t.timestamp_val,
+                        g.{value_col}
+                    FROM grid_data g
+                    JOIN timestamp_dim t ON g.timestamp_id = t.timestamp_id
+                    WHERE g.gridbox_id = :gridbox_id
+                    ORDER BY t.timestamp_id
+                """)
+
+                results = conn.execute(
+                    data_query, {"gridbox_id": gridbox_id}
+                ).fetchall()
+                logger.info(
+                    f"[PostgresExtractor] Retrieved {len(results)} records from database"
+                )
+
+                data_dict = {}
+                current_year = start_date.year
+                end_year = end_date.year
+
+                for year in range(current_year, end_year + 1):
+                    for row in results:
+                        mmdd = row[0]
+                        value = row[1]
+
+                        try:
+                            month = int(mmdd[:2])
+                            day = int(mmdd[2:])
+                            timestamp = datetime(year, month, day)
+
+                            if start_date <= timestamp <= end_date:
+                                data_dict[timestamp] = value
+                        except (ValueError, IndexError) as e:
+                            logger.warning(
+                                f"[PostgresExtractor] Could not parse timestamp: {mmdd}, error: {e}"
+                            )
+                            continue
+
+            # Convert to pandas Series
+            series = pd.Series(data_dict)
+            series.index = pd.to_datetime(series.index)
+            series = series.sort_index()
+
+            if len(series) > 0:
+                logger.info(f"[PostgresExtractor] Extracted {len(series)} data points")
+                logger.info(
+                    f"[PostgresExtractor] Date range in result: {series.index[0].date()} to {series.index[-1].date()}"
+                )
+            else:
+                logger.warning("[PostgresExtractor] No data points extracted!")
+
+            return series
+
+    except Exception as e:
+        logger.error(f"[PostgresExtractor] Error extracting data from PostgreSQL: {e}")
+        raise
+    finally:
+        cmorph_engine.dispose()
+
+
 async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
     """Open local dataset with caching"""
 
@@ -1335,13 +1603,16 @@ async def extract_time_series(
     spatial_bounds: Optional[Dict[str, float]] = None,
     aggregation: Optional[AggregationMethod] = AggregationMethod.MEAN,
     level_value: Optional[float] = None,
-    focus_coordinates: Optional[List[Dict[str, float]]] = None,  # NEW PARAMETER
+    focus_coordinates: Optional[List[Dict[str, float]]] = None,
 ) -> pd.Series:
     """
-    Extract time series with advanced spatial selection
+    Extract time series with advanced spatial selection.
 
-    NEW: If focus_coordinates are provided, extracts data from specific points
-    instead of spatial aggregation
+    If focus_coordinates are provided, extracts data from a single point.
+    For spatial aggregation, use spatialBounds instead.
+
+    Note: Caller should handle multiple points by calling this function
+    once per coordinate.
     """
 
     if aggregation is None:
@@ -1362,60 +1633,29 @@ async def extract_time_series(
         if level_dims:
             var = var.sel({level_dims[0]: level_value}, method="nearest")
 
-    # NEW: Point-based extraction if focus coordinates provided
+    # Point-based extraction if focus coordinates provided
     if focus_coordinates and len(focus_coordinates) > 0:
-        logger.info(
-            f"Extracting data from {len(focus_coordinates)} specific coordinate(s)"
-        )
+        coord = focus_coordinates[0]
 
-        point_series = []
-
-        for coord in focus_coordinates:
-            try:
-                # Select nearest point to the specified coordinate
-                if lat_name and lon_name:
-                    point_data = var.sel(
-                        {lat_name: coord["lat"], lon_name: coord["lon"]},
-                        method="nearest",
-                    )
-
-                    # Convert to pandas Series
-                    point_series_data = point_data.to_pandas()
-
-                    # Ensure datetime index
-                    if not isinstance(point_series_data.index, pd.DatetimeIndex):
-                        point_series_data.index = pd.to_datetime(
-                            point_series_data.index
-                        )
-
-                    point_series.append(point_series_data)
-                    logger.info(
-                        f"Extracted data from point: lat={coord['lat']}, lon={coord['lon']}"
-                    )
-                else:
-                    logger.warning(
-                        "Cannot extract point data: lat/lon coordinates not found in dataset"
-                    )
-
-            except Exception as e:
-                logger.error(f"Failed to extract data from coordinate {coord}: {e}")
-                continue
-
-        if not point_series:
-            raise ValueError(
-                "Failed to extract data from any of the specified coordinates"
+        if lat_name and lon_name:
+            # Select nearest point to the specified coordinate
+            point_data = var.sel(
+                {lat_name: coord["lat"], lon_name: coord["lon"]},
+                method="nearest",
             )
 
-        # If multiple points, average them
-        if len(point_series) > 1:
-            logger.info(f"Averaging data from {len(point_series)} points")
-            # Align all series and take mean
-            combined = pd.concat(point_series, axis=1)
-            result = combined.mean(axis=1)
-        else:
-            result = point_series[0]
+            # Convert to pandas Series
+            series = point_data.to_pandas()
 
-        return result
+            # Ensure datetime index
+            if not isinstance(series.index, pd.DatetimeIndex):
+                series.index = pd.to_datetime(series.index)
+
+            return series
+        else:
+            raise ValueError(
+                "Cannot extract point data: lat/lon coordinates not found in dataset"
+            )
 
     # ORIGINAL: Spatial aggregation (used when no focus coordinates)
     else:
@@ -1707,6 +1947,8 @@ async def extract_timeseries(request: TimeSeriesRequest):
         for _, meta_row in metadata_df.iterrows():
             try:
                 is_local = meta_row["Stored"] == "local"
+                dataset_name = str(meta_row.get("datasetName") or "")
+                normalized_name = dataset_name.lower()
 
                 # Clip requested range to dataset coverage when metadata is available
                 effective_start = start_date
@@ -1745,15 +1987,17 @@ async def extract_timeseries(request: TimeSeriesRequest):
                         meta_date_error,
                     )
 
-                # Open dataset
-                if is_local:
-                    ds = await open_local_dataset(meta_row)
-                else:
-                    ds = await open_cloud_dataset(
-                        meta_row, effective_start, effective_end
-                    )
+                # DETERMINE EXTRACTION METHOD: PostgreSQL vs Xarray
+                use_postgres = (
+                    "cmorph" in normalized_name
+                    and focus_coords
+                    and len(focus_coords) > 0
+                )
 
-                # Determine level if multi-level
+                if use_postgres:
+                    logger.info("Using PostgreSQL extraction for CMORPH dataset")
+
+                # Determine level if multi-level (needed for xarray)
                 level_value = None
                 if (
                     meta_row.get("levelValues")
@@ -1765,62 +2009,110 @@ async def extract_timeseries(request: TimeSeriesRequest):
                     ]
                     level_value = np.median(level_vals)
 
-                # Extract time series - NOW WITH FOCUS COORDINATES
-                series = await extract_time_series(
-                    ds,
-                    meta_row,
-                    effective_start,
-                    effective_end,
-                    spatial_bounds=request.spatialBounds
-                    if not focus_coords
-                    else None,  # Ignore bounds if using coords
-                    aggregation=request.aggregation,
-                    level_value=level_value,
-                    focus_coordinates=focus_coords,  # NEW: Pass parsed coordinates
-                )
+                # EXTRACT EACH POINT AS SEPARATE SERIES (OR SINGLE SERIES)
+                coords_to_process = focus_coords if focus_coords else []
 
-                # Apply analysis model
-                series = apply_analysis_model(
-                    series, request.analysisModel, request.smoothingWindow
-                )
+                # Open dataset once for xarray path (reuse for multiple points)
+                ds = None
+                if not use_postgres:
+                    if is_local:
+                        ds = await open_local_dataset(meta_row)
+                    else:
+                        ds = await open_cloud_dataset(
+                            meta_row, effective_start, effective_end
+                        )
 
-                # Normalize if requested
-                if request.normalize:
-                    series_min = series.min()
-                    series_max = series.max()
-                    if series_max > series_min:
-                        series = (series - series_min) / (series_max - series_min)
+                for coord_idx, coord in enumerate(coords_to_process):
+                    try:
+                        # STEP 1: Extract raw series
+                        if use_postgres and coord:
+                            # PostgreSQL extraction (CMORPH only, point-based)
+                            series = await asyncio.to_thread(
+                                extract_timeseries_from_postgres,
+                                start_date=effective_start,
+                                end_date=effective_end,
+                                lat=coord["lat"],
+                                lon=coord["lon"],
+                                database_name=CMORPH_DB_NAME,
+                            )
+                            logger.info(
+                                f"PostgreSQL extracted {len(series)} points for point {coord_idx + 1}"
+                            )
+                        else:
+                            # Xarray extraction (all other datasets or spatial aggregation)
+                            series = await extract_time_series(
+                                ds,
+                                meta_row,
+                                effective_start,
+                                effective_end,
+                                spatial_bounds=request.spatialBounds
+                                if not coord
+                                else None,
+                                aggregation=request.aggregation,
+                                level_value=level_value,
+                                focus_coordinates=[coord] if coord else None,
+                            )
 
-                # Resample if requested
-                if request.resampleFreq:
-                    series = series.resample(request.resampleFreq).mean()
+                        # STEP 2: Apply post-processing
+                        series = apply_analysis_model(
+                            series, request.analysisModel, request.smoothingWindow
+                        )
 
-                # Use ID as the key (what frontend sends)
-                dataset_id = str(meta_row["id"])
-                all_series[dataset_id] = series
+                        if request.normalize:
+                            series_min = series.min()
+                            series_max = series.max()
+                            if series_max > series_min:
+                                series = (series - series_min) / (
+                                    series_max - series_min
+                                )
 
-                # Add metadata
-                if request.includeMetadata:
-                    dataset_metadata[dataset_id] = DatasetMetadata(
-                        id=str(meta_row["id"]),
-                        slug=meta_row.get("slug"),
-                        name=meta_row["datasetName"],
-                        source=meta_row["sourceName"],
-                        units=meta_row["units"],
-                        spatialResolution=meta_row.get("spatialResolution"),
-                        temporalResolution=meta_row.get("statistic", "Monthly"),
-                        startDate=meta_row["startDate"],
-                        endDate=meta_row["endDate"],
-                        isLocal=is_local,
-                        level=f"{level_value} {meta_row.get('levelUnits', '')}"
-                        if level_value
-                        else None,
-                        description=meta_row.get("description"),
-                    )
+                        if request.resampleFreq:
+                            series = series.resample(request.resampleFreq).mean()
 
-                # Calculate statistics
-                if request.includeStatistics and statistics is not None:
-                    statistics[dataset_id] = calculate_statistics(series)
+                        # STEP 3: Create series key and metadata
+                        dataset_id = str(meta_row["id"])
+
+                        # Determine series key based on number of coordinates
+                        if focus_coords and len(focus_coords) > 1:
+                            series_key = f"{dataset_id}_point_{coord_idx + 1}"
+                            point_label = f" (Point {coord_idx + 1}: {coord['lat']:.2f}, {coord['lon']:.2f})"
+                            description = f"Lat: {coord['lat']}, Lon: {coord['lon']}"
+                        else:
+                            series_key = dataset_id
+                            point_label = ""
+                            description = meta_row.get("description")
+
+                        # Store series
+                        all_series[series_key] = series
+
+                        # Add metadata
+                        if request.includeMetadata:
+                            dataset_metadata[series_key] = DatasetMetadata(
+                                id=series_key,
+                                slug=meta_row.get("slug"),
+                                name=meta_row["datasetName"] + point_label,
+                                source=meta_row["sourceName"],
+                                units=meta_row["units"],
+                                spatialResolution=meta_row.get("spatialResolution"),
+                                temporalResolution=meta_row.get("statistic", "Monthly"),
+                                startDate=meta_row["startDate"],
+                                endDate=meta_row["endDate"],
+                                isLocal=is_local,
+                                level=f"{level_value} {meta_row.get('levelUnits', '')}"
+                                if level_value
+                                else None,
+                                description=description,
+                            )
+
+                        # Calculate statistics
+                        if request.includeStatistics and statistics is not None:
+                            statistics[series_key] = calculate_statistics(series)
+
+                    except Exception as point_error:
+                        logger.error(
+                            f"Failed to extract point {coord_idx + 1}: {point_error}"
+                        )
+                        continue
 
             except Exception as e:
                 logger.error(f"Error processing dataset {meta_row['datasetName']}: {e}")
@@ -1832,9 +2124,17 @@ async def extract_timeseries(request: TimeSeriesRequest):
                 status_code=500, detail="Failed to extract data from any dataset"
             )
 
+        # Log what series we have
+        logger.info(f"Building response with {len(all_series)} series:")
+        for series_key, series_data in all_series.items():
+            logger.info(
+                f"  - {series_key}: {len(series_data)} points, range: {series_data.index[0]} to {series_data.index[-1]}"
+            )
+
         # Align all series to common time index
         common_index = pd.concat(all_series.values(), axis=1).index
         common_index = common_index.sort_values()
+        logger.info(f"Common index has {len(common_index)} timestamps")
 
         # Build response data
         data_points = []
@@ -1856,6 +2156,13 @@ async def extract_timeseries(request: TimeSeriesRequest):
 
             data_points.append(point)
 
+        logger.info(f"Built {len(data_points)} data points for response")
+
+        # Log metadata
+        logger.info(f"Metadata for {len(dataset_metadata)} series:")
+        for meta_key, meta_data in dataset_metadata.items():
+            logger.info(f"  - {meta_key}: {meta_data.name}")
+
         # Generate chart configuration
         chart_config = None
         if request.chartType and dataset_metadata:
@@ -1865,10 +2172,24 @@ async def extract_timeseries(request: TimeSeriesRequest):
 
         # Processing info
         processing_time = (datetime.now() - start_time).total_seconds()
+
+        # Calculate total data points across all series
+        total_data_points = sum(len(series) for series in all_series.values())
+
+        # Count unique datasets (remove _point_N suffix if present)
+        unique_datasets = set()
+        for series_key in all_series.keys():
+            # Remove _point_N suffix to get base dataset ID
+            base_id = series_key.rsplit("_point_", 1)[0]
+            unique_datasets.add(base_id)
+
         processing_info = {
             "processingTime": f"{processing_time:.2f}s",
-            "totalPoints": len(data_points),
-            "datasetsProcessed": len(all_series),
+            "totalPoints": total_data_points,
+            "datasetsProcessed": len(unique_datasets),
+            "seriesGenerated": len(
+                all_series
+            ),  # Number of separate series (may be > datasets if multiple points)
             "dateRange": {
                 "start": common_index[0].strftime("%Y-%m-%d")
                 if len(common_index) > 0
@@ -1879,13 +2200,14 @@ async def extract_timeseries(request: TimeSeriesRequest):
             },
             "analysisModel": request.analysisModel.value,
             "aggregation": request.aggregation.value,
-            "focusCoordinates": len(focus_coords)
-            if focus_coords
-            else None,  # NEW: Include in response
-            "extractionMode": "point-based"
-            if focus_coords
-            else "spatial-aggregation",  # NEW: Show mode
+            "focusCoordinates": len(focus_coords) if focus_coords else None,
+            "extractionMode": "point-based" if focus_coords else "spatial-aggregation",
         }
+
+        logger.info(
+            f"Returning response with {len(data_points)} data points, "
+            f"{len(dataset_metadata) if dataset_metadata else 0} metadata entries"
+        )
 
         return TimeSeriesResponse(
             data=data_points,
@@ -2339,6 +2661,11 @@ async def startup_event():
     logger.info(f"Cache directory: {CACHE_DIR}")
     logger.info(f"Database connected: {POSTRGRES_URL is not None}")
     logger.info(f"S3 Anonymous access: {S3_ANON}")
+    logger.info("=" * 60)
+    logger.info("CMORPH PostgreSQL Database Configuration:")
+    logger.info(f"  Database name: {CMORPH_DB_NAME}")
+    logger.info("  CMORPH datasets will use PostgreSQL for FAST extraction")
+    logger.info("=" * 60)
 
     # Check if kerchunk directory exists
     if KERCHUNK_PATH.exists():
@@ -2369,6 +2696,7 @@ if __name__ == "__main__":
     print("📚 API docs at: http://localhost:8000/docs")
     print("🔧 Features:")
     print("   - Local and cloud dataset support")
+    print("   - 🗄️  PostgreSQL-based CMORPH extraction (NEW - FAST!)")
     print("   - Kerchunk optimized cloud access")
     print("   - Multi-file cloud dataset support")
     print("   - Advanced analysis models (trend, anomaly, seasonal)")

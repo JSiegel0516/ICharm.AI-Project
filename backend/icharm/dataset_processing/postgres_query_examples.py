@@ -2,6 +2,9 @@ import os
 import random
 
 from icharm.dataset_processing.postgres_common import PostgresCommon
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 class PostgresQueryExamples:
