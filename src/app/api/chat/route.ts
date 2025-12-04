@@ -9,7 +9,7 @@ import {
   sanitizeConversationContext,
   buildTrendInsightResponse,
 } from "./trendAnalysis";
-import { buildDatasetQAResponse, isDefinitionQuery } from "./dynamicResponder";
+import { isDefinitionQuery } from "./dynamicResponder";
 
 const HF_MODEL =
   process.env.LLAMA_MODEL ?? "meta-llama/Meta-Llama-3-8B-Instruct";
@@ -192,72 +192,11 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let dynamicResult: Awaited<ReturnType<typeof buildDatasetQAResponse>> | null =
-    null;
-  let datasetSkipNote: string | null = null;
-
-  if (conversationContext && userQuery) {
-    try {
-      if (!isDefinitionQuery(userQuery)) {
-        dynamicResult = await buildDatasetQAResponse({
-          query: userQuery,
-          context: conversationContext,
-          dataServiceUrl: DATA_SERVICE_URL,
-        });
-      }
-    } catch (error) {
-      console.error("Dynamic dataset QA generation failed:", error);
-    }
-  }
-
-  if (dynamicResult && dynamicResult.type === "summary") {
-    const assistantMessage = dynamicResult.message;
-    const sources = dynamicResult.sources;
-
-    if (sessionId && assistantMessage) {
-      try {
-        await ChatDB.addMessage(
-          sessionId,
-          "assistant",
-          assistantMessage,
-          sources,
-        );
-      } catch (assistantStoreError) {
-        console.error(
-          "Failed to persist assistant dynamic message",
-          assistantStoreError,
-        );
-      }
-    }
-
-    return Response.json(
-      {
-        content: assistantMessage,
-        sources,
-        sessionId: sessionId ?? undefined,
-      },
-      {
-        headers: {
-          "Cache-Control": "no-store",
-        },
-      },
-    );
-  }
-
-  if (dynamicResult && dynamicResult.type === "error") {
-    datasetSkipNote = dynamicResult.message;
-  }
-
   let trendResult: Awaited<
     ReturnType<typeof buildTrendInsightResponse>
   > | null = null;
 
-  if (
-    conversationContext &&
-    userQuery &&
-    !isDefinitionQuery(userQuery) &&
-    !datasetSkipNote
-  ) {
+  if (conversationContext && userQuery && !isDefinitionQuery(userQuery)) {
     try {
       trendResult = await buildTrendInsightResponse({
         query: userQuery,
@@ -519,9 +458,7 @@ Instructions:
       );
     }
 
-    const assistantMessage = datasetSkipNote
-      ? `${datasetSkipNote}\n\n${completionText}`
-      : completionText;
+    const assistantMessage = completionText;
 
     const providerModel =
       typeof result?.model === "string"
