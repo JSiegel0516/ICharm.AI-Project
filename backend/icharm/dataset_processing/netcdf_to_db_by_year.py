@@ -14,6 +14,10 @@ from typing import Any
 from icharm.dataset_processing.postgres_common import PostgresCommon
 from icharm.utils.benchmark import benchmark
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 TIME_VAR_CANDIDATES = ["time"]
 LAT_VAR_CANDIDATES = ["lat", "latitude"]
 LON_VAR_CANDIDATES = ["lon", "longitude"]
@@ -599,9 +603,7 @@ class NetCDFtoDB:
 
 def main():
     if True:
-        data_path = (
-            "/home/mrsharky/dev/sdsu/ICharm.AI-Project/backend/datasets/cmorph/daily"
-        )
+        data_path = "/Users/willruff/Desktop/GitHub/ICharm.AI-Project/backend/datasets/cmorph/daily"
         dataset_name = "cmorph_daily_by_year"
         variable_of_interest_name = "cmorph"
     else:
