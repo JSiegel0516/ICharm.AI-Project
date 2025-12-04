@@ -263,6 +263,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       boundaryLinesVisible = true,
       geographicLinesVisible = false,
       rasterOpacity = 1.0,
+      rasterBlurEnabled = true,
       hideZeroPrecipitation = false,
       onRasterMetadataChange,
     },
@@ -904,10 +905,12 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             layer.saturation = 1.0;
             layer.gamma = 1.0;
 
-            layer.minificationFilter =
-              cesiumInstance.TextureMinificationFilter.LINEAR;
-            layer.magnificationFilter =
-              cesiumInstance.TextureMagnificationFilter.LINEAR;
+            layer.minificationFilter = rasterBlurEnabled
+              ? cesiumInstance.TextureMinificationFilter.LINEAR
+              : cesiumInstance.TextureMinificationFilter.NEAREST;
+            layer.magnificationFilter = rasterBlurEnabled
+              ? cesiumInstance.TextureMagnificationFilter.LINEAR
+              : cesiumInstance.TextureMagnificationFilter.NEAREST;
 
             viewer.scene.imageryLayers.raiseToTop(layer);
             newLayers.push(layer);
@@ -919,7 +922,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         rasterLayerRef.current = newLayers;
         viewer.scene.requestRender();
       },
-      [cesiumInstance, rasterOpacity, viewerReady],
+      [cesiumInstance, rasterOpacity, rasterBlurEnabled, viewerReady],
     );
 
     useEffect(() => {

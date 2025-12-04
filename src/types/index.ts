@@ -136,6 +136,7 @@ export interface GlobeSettings {
   geographicLinesVisible: boolean;
   rasterOpacity: number;
   hideZeroPrecipitation: boolean;
+  rasterBlurEnabled: boolean;
 }
 
 export interface AppState {
@@ -236,6 +237,7 @@ export interface GlobeProps {
   geographicLinesVisible?: boolean;
   rasterOpacity?: number;
   hideZeroPrecipitation?: boolean;
+  rasterBlurEnabled?: boolean;
   onRasterMetadataChange?: (
     meta: {
       units?: string | null;
@@ -369,4 +371,6 @@ export interface GlobeSettingsPanelProps {
   onRasterOpacityChange: (opacity: number) => void;
   hideZeroPrecipitation: boolean;
   onHideZeroPrecipitationToggle: (enabled: boolean) => void;
+  rasterBlurEnabled: boolean;
+  onRasterBlurToggle: (enabled: boolean) => void;
 }

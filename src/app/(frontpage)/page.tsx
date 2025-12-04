@@ -216,6 +216,7 @@ export default function HomePage() {
     geographicLinesVisible: false,
     rasterOpacity: 1,
     hideZeroPrecipitation: false,
+    rasterBlurEnabled: true,
   });
 
   // Event Handlers
@@ -277,6 +278,10 @@ export default function HomePage() {
 
   const handleGeographicLinesToggle = useCallback((visible: boolean) => {
     setGlobeSettings((prev) => ({ ...prev, geographicLinesVisible: visible }));
+  }, []);
+
+  const handleRasterBlurToggle = useCallback((enabled: boolean) => {
+    setGlobeSettings((prev) => ({ ...prev, rasterBlurEnabled: enabled }));
   }, []);
 
   const handleRasterOpacityChange = useCallback((opacity: number) => {
@@ -382,6 +387,7 @@ export default function HomePage() {
         boundaryLinesVisible={globeSettings.boundaryLinesVisible}
         geographicLinesVisible={globeSettings.geographicLinesVisible}
         rasterOpacity={globeSettings.rasterOpacity}
+        rasterBlurEnabled={globeSettings.rasterBlurEnabled}
         onRasterMetadataChange={setRasterMeta}
       />
     ),
@@ -394,6 +400,7 @@ export default function HomePage() {
       globeSettings.boundaryLinesVisible,
       globeSettings.geographicLinesVisible,
       globeSettings.rasterOpacity,
+      globeSettings.rasterBlurEnabled,
       globeSettings.hideZeroPrecipitation,
       globeSettings.hideZeroPrecipitation,
     ],
@@ -446,6 +453,7 @@ export default function HomePage() {
             onGeographicLinesToggle={handleGeographicLinesToggle}
             onRasterOpacityChange={handleRasterOpacityChange}
             onHideZeroPrecipToggle={handleHideZeroPrecipToggle}
+            onRasterBlurToggle={handleRasterBlurToggle}
           />
         </div>
 
