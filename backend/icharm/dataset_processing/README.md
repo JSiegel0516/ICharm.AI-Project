@@ -85,3 +85,11 @@ aws s3 sync s3://noaa-cdr-precip-cmorph-pds/data/hourly ./hourly --no-sign-reque
 ```bash
 aws s3 sync s3://noaa-cdr-precip-cmorph-pds/data/30min ./30min --no-sign-request
 ```
+
+## Downloading all of sst locally [netcdf_indexer.py](./netcdf_indexer.py)
+
+### Daily (~25 GB)
+
+```bash
+aws s3 sync s3://noaa-cdr-sea-surface-temp-optimum-interpolation-pds/data/v2.1/avhrr ./daily --no-sign-request
+```

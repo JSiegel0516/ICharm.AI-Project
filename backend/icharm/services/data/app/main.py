@@ -130,9 +130,8 @@ if not POSTRGRES_URL:
         f"Please create a .env file at {env_path} with POSTRGRES_URL=postgresql://..."
     )
 
-# CMORPH PostgreSQL database configuration (new year-based database)
-CMORPH_DB_NAME = os.getenv("CMORPH_DB_NAME", "cmorph_daily_by_year")
-# CMORPH_DB_URL = os.getenv("CMORPH_DB_URL")  # Optional: separate connection URL for CMORPH DB
+# PostgreSQL database support for datasets with Stored="postgres" in metadata
+# Database names are read from the inputFile column in metadata
 
 # File paths configuration
 LOCAL_DATASETS_PATH = _resolve_env_path(
@@ -1948,7 +1947,6 @@ async def extract_timeseries(request: TimeSeriesRequest):
             try:
                 is_local = meta_row["Stored"] == "local"
                 dataset_name = str(meta_row.get("datasetName") or "")
-                normalized_name = dataset_name.lower()
 
                 # Clip requested range to dataset coverage when metadata is available
                 effective_start = start_date
@@ -1988,14 +1986,19 @@ async def extract_timeseries(request: TimeSeriesRequest):
                     )
 
                 # DETERMINE EXTRACTION METHOD: PostgreSQL vs Xarray
+                # Check metadata: if Stored="postgres", use PostgreSQL extraction
                 use_postgres = (
-                    "cmorph" in normalized_name
+                    str(meta_row.get("Stored", "")).lower() == "postgres"
                     and focus_coords
                     and len(focus_coords) > 0
                 )
 
                 if use_postgres:
-                    logger.info("Using PostgreSQL extraction for CMORPH dataset")
+                    postgres_db_name = str(meta_row.get("inputFile", ""))
+                    logger.info(
+                        f"Using PostgreSQL extraction for dataset: {dataset_name}"
+                    )
+                    logger.info(f"  Database: {postgres_db_name}")
 
                 # Determine level if multi-level (needed for xarray)
                 level_value = None
@@ -2026,14 +2029,14 @@ async def extract_timeseries(request: TimeSeriesRequest):
                     try:
                         # STEP 1: Extract raw series
                         if use_postgres and coord:
-                            # PostgreSQL extraction (CMORPH only, point-based)
+                            # PostgreSQL extraction (point-based)
                             series = await asyncio.to_thread(
                                 extract_timeseries_from_postgres,
                                 start_date=effective_start,
                                 end_date=effective_end,
                                 lat=coord["lat"],
                                 lon=coord["lon"],
-                                database_name=CMORPH_DB_NAME,
+                                database_name=postgres_db_name,
                             )
                             logger.info(
                                 f"PostgreSQL extracted {len(series)} points for point {coord_idx + 1}"
@@ -2662,9 +2665,10 @@ async def startup_event():
     logger.info(f"Database connected: {POSTRGRES_URL is not None}")
     logger.info(f"S3 Anonymous access: {S3_ANON}")
     logger.info("=" * 60)
-    logger.info("CMORPH PostgreSQL Database Configuration:")
-    logger.info(f"  Database name: {CMORPH_DB_NAME}")
-    logger.info("  CMORPH datasets will use PostgreSQL for FAST extraction")
+    logger.info("PostgreSQL Direct Extraction:")
+    logger.info("  Datasets with Stored='postgres' use direct database queries")
+    logger.info("  Database names read from metadata.inputFile column")
+    logger.info("  Supports: CMORPH, SST, and any future PostgreSQL datasets")
     logger.info("=" * 60)
 
     # Check if kerchunk directory exists
@@ -2696,7 +2700,7 @@ if __name__ == "__main__":
     print("📚 API docs at: http://localhost:8000/docs")
     print("🔧 Features:")
     print("   - Local and cloud dataset support")
-    print("   - 🗄️  PostgreSQL-based CMORPH extraction (NEW - FAST!)")
+    print("   - PostgreSQL-based extraction (CMORPH, SST, etc.) - FAST!")
     print("   - Kerchunk optimized cloud access")
     print("   - Multi-file cloud dataset support")
     print("   - Advanced analysis models (trend, anomaly, seasonal)")
