@@ -170,6 +170,9 @@ async function seedDatasets() {
   });
 
   try {
+    console.log("🧹 Clearing existing datasets table...");
+    await db.delete(climateDataset);
+
     console.log("\n💾 Inserting datasets into database...");
     await db.insert(climateDataset).values(datasets);
     console.log(`Successfully seeded ${datasets.length} datasets with slugs`);
