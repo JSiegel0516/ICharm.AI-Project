@@ -2012,10 +2012,7 @@ async def extract_timeseries(request: TimeSeriesRequest):
                     ]
                     level_value = np.median(level_vals)
 
-                # EXTRACT EACH POINT AS SEPARATE SERIES (OR SINGLE SERIES)
-                coords_to_process = focus_coords if focus_coords else []
-
-                # Open dataset once for xarray path (reuse for multiple points)
+                # Open dataset once (reuse for multiple points or spatial aggregation)
                 ds = None
                 if not use_postgres:
                     if is_local:
@@ -2025,36 +2022,20 @@ async def extract_timeseries(request: TimeSeriesRequest):
                             meta_row, effective_start, effective_end
                         )
 
-                for coord_idx, coord in enumerate(coords_to_process):
+                # Handle spatial aggregation (no coordinates provided)
+                if not focus_coords or len(focus_coords) == 0:
                     try:
-                        # STEP 1: Extract raw series
-                        if use_postgres and coord:
-                            # PostgreSQL extraction (point-based)
-                            series = await asyncio.to_thread(
-                                extract_timeseries_from_postgres,
-                                start_date=effective_start,
-                                end_date=effective_end,
-                                lat=coord["lat"],
-                                lon=coord["lon"],
-                                database_name=postgres_db_name,
-                            )
-                            logger.info(
-                                f"PostgreSQL extracted {len(series)} points for point {coord_idx + 1}"
-                            )
-                        else:
-                            # Xarray extraction (all other datasets or spatial aggregation)
-                            series = await extract_time_series(
-                                ds,
-                                meta_row,
-                                effective_start,
-                                effective_end,
-                                spatial_bounds=request.spatialBounds
-                                if not coord
-                                else None,
-                                aggregation=request.aggregation,
-                                level_value=level_value,
-                                focus_coordinates=[coord] if coord else None,
-                            )
+                        # STEP 1: Extract raw series with spatial aggregation
+                        series = await extract_time_series(
+                            ds,
+                            meta_row,
+                            effective_start,
+                            effective_end,
+                            spatial_bounds=request.spatialBounds,
+                            aggregation=request.aggregation,
+                            level_value=level_value,
+                            focus_coordinates=None,
+                        )
 
                         # STEP 2: Apply post-processing
                         series = apply_analysis_model(
@@ -2074,16 +2055,7 @@ async def extract_timeseries(request: TimeSeriesRequest):
 
                         # STEP 3: Create series key and metadata
                         dataset_id = str(meta_row["id"])
-
-                        # Determine series key based on number of coordinates
-                        if focus_coords and len(focus_coords) > 1:
-                            series_key = f"{dataset_id}_point_{coord_idx + 1}"
-                            point_label = f" (Point {coord_idx + 1}: {coord['lat']:.2f}, {coord['lon']:.2f})"
-                            description = f"Lat: {coord['lat']}, Lon: {coord['lon']}"
-                        else:
-                            series_key = dataset_id
-                            point_label = ""
-                            description = meta_row.get("description")
+                        series_key = dataset_id
 
                         # Store series
                         all_series[series_key] = series
@@ -2093,7 +2065,7 @@ async def extract_timeseries(request: TimeSeriesRequest):
                             dataset_metadata[series_key] = DatasetMetadata(
                                 id=series_key,
                                 slug=meta_row.get("slug"),
-                                name=meta_row["datasetName"] + point_label,
+                                name=meta_row["datasetName"],
                                 source=meta_row["sourceName"],
                                 units=meta_row["units"],
                                 spatialResolution=meta_row.get("spatialResolution"),
@@ -2104,18 +2076,114 @@ async def extract_timeseries(request: TimeSeriesRequest):
                                 level=f"{level_value} {meta_row.get('levelUnits', '')}"
                                 if level_value
                                 else None,
-                                description=description,
+                                description=meta_row.get("description"),
                             )
 
                         # Calculate statistics
                         if request.includeStatistics and statistics is not None:
                             statistics[series_key] = calculate_statistics(series)
 
-                    except Exception as point_error:
+                    except Exception as e:
                         logger.error(
-                            f"Failed to extract point {coord_idx + 1}: {point_error}"
+                            f"Failed to extract spatial aggregation for {meta_row['datasetName']}: {e}"
                         )
                         continue
+
+                # Handle point-based extraction (coordinates provided)
+                else:
+                    for coord_idx, coord in enumerate(focus_coords):
+                        try:
+                            # STEP 1: Extract raw series
+                            if use_postgres and coord:
+                                # PostgreSQL extraction (point-based)
+                                series = await asyncio.to_thread(
+                                    extract_timeseries_from_postgres,
+                                    start_date=effective_start,
+                                    end_date=effective_end,
+                                    lat=coord["lat"],
+                                    lon=coord["lon"],
+                                    database_name=postgres_db_name,
+                                )
+                                logger.info(
+                                    f"PostgreSQL extracted {len(series)} points for point {coord_idx + 1}"
+                                )
+                            else:
+                                # Xarray extraction (point-based)
+                                series = await extract_time_series(
+                                    ds,
+                                    meta_row,
+                                    effective_start,
+                                    effective_end,
+                                    spatial_bounds=None,
+                                    aggregation=request.aggregation,
+                                    level_value=level_value,
+                                    focus_coordinates=[coord],
+                                )
+
+                            # STEP 2: Apply post-processing
+                            series = apply_analysis_model(
+                                series, request.analysisModel, request.smoothingWindow
+                            )
+
+                            if request.normalize:
+                                series_min = series.min()
+                                series_max = series.max()
+                                if series_max > series_min:
+                                    series = (series - series_min) / (
+                                        series_max - series_min
+                                    )
+
+                            if request.resampleFreq:
+                                series = series.resample(request.resampleFreq).mean()
+
+                            # STEP 3: Create series key and metadata
+                            dataset_id = str(meta_row["id"])
+
+                            # Determine series key based on number of coordinates
+                            if len(focus_coords) > 1:
+                                series_key = f"{dataset_id}_point_{coord_idx + 1}"
+                                point_label = f" (Point {coord_idx + 1}: {coord['lat']:.2f}, {coord['lon']:.2f})"
+                                description = (
+                                    f"Lat: {coord['lat']}, Lon: {coord['lon']}"
+                                )
+                            else:
+                                series_key = dataset_id
+                                point_label = ""
+                                description = meta_row.get("description")
+
+                            # Store series
+                            all_series[series_key] = series
+
+                            # Add metadata
+                            if request.includeMetadata:
+                                dataset_metadata[series_key] = DatasetMetadata(
+                                    id=series_key,
+                                    slug=meta_row.get("slug"),
+                                    name=meta_row["datasetName"] + point_label,
+                                    source=meta_row["sourceName"],
+                                    units=meta_row["units"],
+                                    spatialResolution=meta_row.get("spatialResolution"),
+                                    temporalResolution=meta_row.get(
+                                        "statistic", "Monthly"
+                                    ),
+                                    startDate=meta_row["startDate"],
+                                    endDate=meta_row["endDate"],
+                                    isLocal=is_local,
+                                    level=f"{level_value} {meta_row.get('levelUnits', '')}"
+                                    if level_value
+                                    else None,
+                                    description=description,
+                                )
+
+                            # Calculate statistics
+                            if request.includeStatistics and statistics is not None:
+                                statistics[series_key] = calculate_statistics(series)
+
+                        except Exception as point_error:
+                            logger.error(
+                                f"Failed to extract point {coord_idx + 1}: {point_error}"
+                            )
+                            continue
 
             except Exception as e:
                 logger.error(f"Error processing dataset {meta_row['datasetName']}: {e}")
