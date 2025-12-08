@@ -580,35 +580,6 @@ export function VisualizationPanel({
 
   return (
     <div className="space-y-6">
-      {/* Chart Options Panel - Appears above the chart */}
-      <ChartOptionsPanel
-        chartType={chartType}
-        setChartType={setChartType}
-        normalize={normalize}
-        setNormalize={setNormalize}
-        smoothingWindow={smoothingWindow}
-        setSmoothingWindow={setSmoothingWindow}
-        resampleFreq={resampleFreq}
-        setResampleFreq={setResampleFreq}
-        aggregation={aggregation}
-        setAggregation={setAggregation}
-        showHistogram={showHistogram}
-        setShowHistogram={setShowHistogram}
-        showLinearTrend={showLinearTrend}
-        setShowLinearTrend={setShowLinearTrend}
-      />
-
-      {/* Histogram - Distribution Analysis */}
-      {chartData.length > 0 && showHistogram && (
-        <HistogramPanel
-          chartData={chartData}
-          selectedDatasets={selectedDatasets}
-          visibleDatasets={visibleDatasets}
-          metadata={metadata}
-          yAxisUnit={yAxisUnit}
-        />
-      )}
-
       {/* Main Chart */}
       <Card className="flex-1">
         <CardHeader>
@@ -640,6 +611,35 @@ export function VisualizationPanel({
           </div>
         </CardContent>
       </Card>
+
+      {/* Chart Options Panel */}
+      <ChartOptionsPanel
+        chartType={chartType}
+        setChartType={setChartType}
+        normalize={normalize}
+        setNormalize={setNormalize}
+        smoothingWindow={smoothingWindow}
+        setSmoothingWindow={setSmoothingWindow}
+        resampleFreq={resampleFreq}
+        setResampleFreq={setResampleFreq}
+        aggregation={aggregation}
+        setAggregation={setAggregation}
+        showHistogram={showHistogram}
+        setShowHistogram={setShowHistogram}
+        showLinearTrend={showLinearTrend}
+        setShowLinearTrend={setShowLinearTrend}
+      />
+
+      {/* Histogram - Distribution Analysis */}
+      {chartData.length > 0 && showHistogram && (
+        <HistogramPanel
+          chartData={chartData}
+          selectedDatasets={selectedDatasets}
+          visibleDatasets={visibleDatasets}
+          metadata={metadata}
+          yAxisUnit={yAxisUnit}
+        />
+      )}
 
       {/* Data Table */}
       {chartData.length > 0 && (
