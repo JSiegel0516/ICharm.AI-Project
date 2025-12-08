@@ -35,6 +35,9 @@ import {
 } from "@/hooks/use-timeseries";
 import { applyTransformations } from "@/lib/client-transformations";
 import { ChartOptionsPanel } from "./ChartOptionsPanel";
+import { HistogramPanel } from "./HistogramPanel";
+import { PeriodogramPanel } from "./PeriodogramPanel";
+import { SpectrogramPanel } from "./SpectrogramPanel";
 import { DataTable } from "./DataTable";
 
 interface VisualizationPanelProps {
@@ -245,7 +248,7 @@ export function VisualizationPanel({
       return formatValue(value, yAxisUnit, true);
     };
 
-    if (chartType === ChartType.LINE && (showHistogram || showLinearTrend)) {
+    if (chartType === ChartType.LINE && showLinearTrend) {
       return (
         <ComposedChart {...commonProps}>
           <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
@@ -274,20 +277,6 @@ export function VisualizationPanel({
             contentStyle={{ fontSize: 12 }}
           />
           <Legend />
-
-          {showHistogram &&
-            selectedDatasets.map(
-              (dataset, idx) =>
-                visibleDatasetIds.includes(dataset.id) && (
-                  <Bar
-                    key={`bar-${dataset.id}`}
-                    dataKey={dataset.id}
-                    name={`${(dataset as any).datasetName || dataset.name} (Histogram)`}
-                    fill={colors[idx % colors.length]}
-                    fillOpacity={0.3}
-                  />
-                ),
-            )}
 
           {selectedDatasets.map(
             (dataset, idx) =>
@@ -565,7 +554,7 @@ export function VisualizationPanel({
         </CardContent>
       </Card>
 
-      {/* Chart Options Panel*/}
+      {/* Chart Options Panel - Appears above the chart */}
       <ChartOptionsPanel
         chartType={chartType}
         setChartType={setChartType}
@@ -583,6 +572,17 @@ export function VisualizationPanel({
         setShowLinearTrend={setShowLinearTrend}
       />
 
+      {/* Histogram - Distribution Analysis */}
+      {chartData.length > 0 && showHistogram && (
+        <HistogramPanel
+          chartData={chartData}
+          selectedDatasets={selectedDatasets}
+          visibleDatasets={visibleDatasets}
+          metadata={metadata}
+          yAxisUnit={yAxisUnit}
+        />
+      )}
+
       {/* Data Table */}
       {chartData.length > 0 && (
         <DataTable
@@ -590,6 +590,26 @@ export function VisualizationPanel({
           selectedDatasets={selectedDatasets}
           metadata={metadata}
           yAxisUnit={yAxisUnit}
+        />
+      )}
+
+      {/* Periodogram - Frequency Domain Analysis */}
+      {chartData.length > 0 && (
+        <PeriodogramPanel
+          chartData={chartData}
+          selectedDatasets={selectedDatasets}
+          visibleDatasets={visibleDatasets}
+          metadata={metadata}
+        />
+      )}
+
+      {/* Spectrogram - Time-Frequency Analysis */}
+      {chartData.length > 0 && (
+        <SpectrogramPanel
+          chartData={chartData}
+          selectedDatasets={selectedDatasets}
+          visibleDatasets={visibleDatasets}
+          metadata={metadata}
         />
       )}
 

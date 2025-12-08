@@ -17,7 +17,15 @@ import {
   RotateCcw,
   AlertCircle,
   CheckCircle,
+  CircleAlert,
 } from "lucide-react";
+import {
+  Banner,
+  BannerAction,
+  BannerClose,
+  BannerIcon,
+  BannerTitle,
+} from "@/components/ui/shadcn-io/banner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -544,33 +552,6 @@ export function DatasetFilter({
             <p className="text-muted-foreground mt-2 text-xs">
               Processing: {progress.toFixed(0)}%
             </p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Processing Info Display */}
-      {processingInfo && !isLoading && (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex flex-col gap-3 text-sm">
-              <div className="flex items-center gap-2">
-                <CheckCircle className="h-4 w-4 text-green-600" />
-                <span className="text-muted-foreground">
-                  {processingInfo.datasetsProcessed} dataset(s) •{" "}
-                  {processingInfo.totalPoints} points •{" "}
-                  {processingInfo.processingTime}
-                </span>
-              </div>
-              {processingInfo.extractionMode && (
-                <div className="flex items-center gap-2">
-                  <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                    {processingInfo.extractionMode === "point-based"
-                      ? `Point-based (${processingInfo.focusCoordinates} coord${processingInfo.focusCoordinates !== 1 ? "s" : ""})`
-                      : "Spatial aggregation"}
-                  </span>
-                </div>
-              )}
-            </div>
           </CardContent>
         </Card>
       )}
