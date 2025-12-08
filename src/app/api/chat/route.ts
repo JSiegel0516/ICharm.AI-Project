@@ -5,12 +5,7 @@ import {
 } from "@/utils/ragRetriever";
 import { ChatDB } from "@/lib/db";
 import { ConversationContextPayload } from "@/types";
-import {
-  sanitizeConversationContext,
-  buildTrendInsightResponse,
-} from "./trendAnalysis";
-import { isDefinitionQuery } from "./dynamicResponder";
-import { fetchPointStatsSnippet } from "./pointStats";
+import { fetchDatasetSnippet, shouldFetchDatasetSnippet } from "./datasetQuery";
 
 const HF_MODEL =
   process.env.LLAMA_MODEL ?? "meta-llama/Meta-Llama-3-8B-Instruct";
@@ -21,8 +16,6 @@ const LLM_SERVICE_URL = (
 ).replace(/\/$/, "");
 const DATA_SERVICE_URL =
   process.env.DATA_SERVICE_URL ?? "http://localhost:8000";
-const ENABLE_TREND_ANALYSIS =
-  (process.env.ENABLE_TREND_ANALYSIS ?? "").toLowerCase() === "true";
 
 type ChatMessage = {
   role: "system" | "user" | "assistant";
@@ -35,7 +28,71 @@ type ChatRequestPayload = {
   context?: ConversationContextPayload | null;
 };
 
+const normalizeString = (value?: string | null): string | null => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : null;
+};
+
+const normalizeNumber = (value?: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+
+type LocationSourceType = "marker" | "search" | "region" | "unknown";
+const normalizeLocationSource = (
+  value?: string | null,
+): LocationSourceType | null => {
+  if (!value || typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (
+    normalized === "marker" ||
+    normalized === "search" ||
+    normalized === "region" ||
+    normalized === "unknown"
+  ) {
+    return normalized as LocationSourceType;
+  }
+  if (normalized === "manual" || normalized === "click") {
+    return "marker";
+  }
+  return null;
+};
+
+const sanitizeConversationContext = (
+  raw: unknown,
+): ConversationContextPayload | null => {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  const ctx = raw as Record<string, any>;
+  const locationRaw = ctx.location;
+  let location: ConversationContextPayload["location"];
+
+  if (locationRaw && typeof locationRaw === "object") {
+    location = {
+      latitude: normalizeNumber(locationRaw.latitude),
+      longitude: normalizeNumber(locationRaw.longitude),
+      name: normalizeString(locationRaw.name ?? locationRaw.label),
+      source: normalizeLocationSource(
+        locationRaw.source ?? locationRaw.origin ?? locationRaw.type,
+      ),
+    };
+  }
+
+  return {
+    datasetId: normalizeString(ctx.datasetId),
+    datasetName: normalizeString(ctx.datasetName) ?? undefined,
+    datasetUnits: normalizeString(ctx.datasetUnits) ?? undefined,
+    datasetDescription: normalizeString(ctx.datasetDescription) ?? undefined,
+    datasetStartDate: normalizeString(ctx.datasetStartDate) ?? undefined,
+    datasetEndDate: normalizeString(ctx.datasetEndDate) ?? undefined,
+    selectedDate: normalizeString(ctx.selectedDate) ?? undefined,
+    location,
+  };
+};
+
 async function buildDatasetSummaryPrompt(
+  userQuery: string,
   context?: ConversationContextPayload,
   dataServiceUrl?: string,
 ): Promise<string | null> {
@@ -53,29 +110,36 @@ async function buildDatasetSummaryPrompt(
   const coverageStart = context.datasetStartDate ?? "start unknown";
   const coverageEnd = context.datasetEndDate ?? "present";
 
-  let summary = `You are answering questions about the dataset "${datasetLabel}".`;
-  if (description) {
-    summary += ` Description: ${description}.`;
-  }
-  summary += ` Report values using ${units}. Temporal coverage spans ${coverageStart} to ${coverageEnd}.`;
-  if (context.datasetEndDate) {
-    summary += ` Do not claim values after ${coverageEnd}; if asked, explain that the archive stops on that date and use the last available data instead.`;
-  }
-  summary +=
-    " When the user refers to 'this dataset' or 'current dataset', they mean this dataset. Always base your answers on it unless the user explicitly switches datasets.";
+  let summary = `CRITICAL INSTRUCTIONS - READ FIRST:
+- NEVER fabricate or guess numbers. Only use values explicitly present in the context below.
+- If asked for a number not in the context, say "I don't have that specific data available."
+- Answer directly in 1-2 sentences. NO methodology descriptions.
+- Do NOT mention this context, the backend, or how you got the data.
+- If context doesn't help, give a brief qualitative answer from general knowledge.
 
-  if (dataServiceUrl && context.location?.latitude !== undefined) {
-    const pointStats = await fetchPointStatsSnippet({
+Dataset: "${datasetLabel}"`;
+
+  if (description) {
+    summary += `\nDescription: ${description}`;
+  }
+
+  summary += `\nUnits: ${units}`;
+  summary += `\nTemporal coverage: ${coverageStart} to ${coverageEnd}`;
+
+  if (context.datasetEndDate) {
+    summary += `\nIMPORTANT: Data ends on ${coverageEnd}. For dates after this, explain the data stops there and use the last available value.`;
+  }
+
+  if (dataServiceUrl && shouldFetchDatasetSnippet(userQuery)) {
+    const dataSnippet = await fetchDatasetSnippet({
+      query: userQuery,
       context,
       dataServiceUrl,
     });
-    if (pointStats) {
-      summary += `\n\nContext (point stats): ${pointStats}`;
+    if (dataSnippet) {
+      summary += `\n\nQueried Data:\n${dataSnippet}`;
     }
   }
-
-  summary +=
-    "\n\nInstructions: Use the above context only as background. Do not repeat or restate the summary. Do not describe steps, pipelines, or how you will analyze the data. Answer the user's question directly in 1–2 sentences. Include numbers only if the user explicitly asked for them or if they are essential to the answer; otherwise answer qualitatively. Never fabricate or guess numbers—only use numeric values present in the context; if they are not available, say you don’t have the data instead of guessing. If nothing here is relevant, answer with general knowledge and do not cite the summary. If the context lacks the needed data, say so briefly instead of speculating. Do not explain how you got the summary from the backend—just answer the question.";
 
   return summary;
 }
@@ -131,7 +195,151 @@ function deriveSessionTitle(lastUserMessage?: ChatMessage): string | undefined {
   return words.length > maxWords ? `${title}…` : title;
 }
 
-export const maxDuration = 120; // Allow up to 120 seconds
+function detectProblematicResponse(
+  response: string,
+  contextSources: Array<{ title: string }>,
+): { hasIssues: boolean; issues: string[] } {
+  const issues: string[] = [];
+  const lower = response.toLowerCase();
+
+  const methodologyPhrases = [
+    "i will calculate",
+    "i will analyze",
+    "methodology:",
+    "i can suggest that you examine",
+    "i would extract",
+    "assuming",
+    "we can estimate",
+    "based on the linear trend",
+  ];
+
+  for (const phrase of methodologyPhrases) {
+    if (lower.includes(phrase)) {
+      issues.push(`Contains methodology language: "${phrase}"`);
+    }
+  }
+
+  const contextMentions = [
+    "the provided context",
+    "based on the available data",
+    "the dataset does not provide",
+    "the context does not include",
+  ];
+
+  for (const mention of contextMentions) {
+    if (lower.includes(mention)) {
+      issues.push(`Mentions context explicitly: "${mention}"`);
+    }
+  }
+
+  if (
+    (lower.includes("i don't have") || lower.includes("not available")) &&
+    !lower.includes("you can") &&
+    response.length < 150
+  ) {
+    issues.push("Unhelpful refusal without offering alternatives");
+  }
+
+  return {
+    hasIssues: issues.length > 0,
+    issues,
+  };
+}
+
+async function callLLMWithRetry(
+  llmServiceUrl: string,
+  hfModel: string,
+  messages: ChatMessage[],
+  maxRetries = 1,
+): Promise<{ content: string; model?: string }> {
+  let lastResponse = "";
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const llmResponse = await fetch(`${llmServiceUrl}/v1/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: hfModel,
+        messages,
+        temperature: attempt > 0 ? 0.4 : 0.6,
+        stream: false,
+      }),
+    });
+
+    if (!llmResponse.ok) {
+      const contentType = llmResponse.headers.get("content-type") ?? "";
+      let result: any;
+
+      if (contentType.includes("application/json")) {
+        result = await llmResponse.json();
+      } else {
+        const text = await llmResponse.text();
+        result = { detail: text };
+      }
+
+      let detail: string;
+      if (typeof result?.detail === "string") {
+        detail = result.detail;
+      } else if (result?.detail && typeof result.detail === "object") {
+        const innerDetail = result.detail as Record<string, unknown>;
+        if (typeof innerDetail.error === "string") {
+          const statusInfo = innerDetail.status
+            ? ` (status ${innerDetail.status})`
+            : "";
+          detail = `${innerDetail.error}${statusInfo}`;
+          if (typeof innerDetail.body === "string" && innerDetail.body.trim()) {
+            detail += `: ${innerDetail.body.slice(0, 240)}${innerDetail.body.length > 240 ? "…" : ""}`;
+          }
+        } else {
+          detail = JSON.stringify(innerDetail);
+        }
+      } else if (result?.error) {
+        detail =
+          typeof result.error === "string"
+            ? result.error
+            : JSON.stringify(result.error);
+      } else {
+        detail = "LLM service error";
+      }
+
+      throw new Error(detail);
+    }
+
+    const result = await llmResponse.json();
+    const content = typeof result?.content === "string" ? result.content : "";
+
+    if (!content.trim()) {
+      throw new Error("Empty response from model");
+    }
+
+    lastResponse = content;
+
+    const validation = detectProblematicResponse(content, []);
+
+    if (!validation.hasIssues || attempt === maxRetries) {
+      return {
+        content,
+        model: result?.model || result?.raw?.model,
+      };
+    }
+
+    console.warn(
+      `Response has issues (attempt ${attempt + 1}):`,
+      validation.issues,
+    );
+    messages.push(
+      { role: "assistant", content },
+      {
+        role: "user",
+        content: `Please revise your response. Issues: ${validation.issues.join("; ")}. Remember: Answer directly in 1-2 sentences, never describe methodology or mention the context, and only use numbers explicitly provided.`,
+      },
+    );
+  }
+
+  return { content: lastResponse };
+}
+
+export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
@@ -209,77 +417,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let trendResult: Awaited<
-    ReturnType<typeof buildTrendInsightResponse>
-  > | null = null;
-
-  if (
-    ENABLE_TREND_ANALYSIS &&
-    conversationContext &&
-    userQuery &&
-    !isDefinitionQuery(userQuery)
-  ) {
-    try {
-      trendResult = await buildTrendInsightResponse({
-        query: userQuery,
-        context: conversationContext,
-        dataServiceUrl: DATA_SERVICE_URL,
-      });
-    } catch (error) {
-      console.error("Trend insight generation failed:", error);
-    }
-  }
-
-  if (ENABLE_TREND_ANALYSIS && trendResult && trendResult.type !== "none") {
-    const assistantMessage = trendResult.message;
-    const trendSources =
-      trendResult.type === "summary"
-        ? [
-            {
-              id: `${trendResult.metadata.datasetId}:${trendResult.metadata.analysisScope}`,
-              title: `${trendResult.metadata.datasetLabel} ${
-                trendResult.metadata.analysisScope === "marker"
-                  ? "marker"
-                  : "global"
-              } summary`,
-              category: "timeseries",
-              score: 1,
-            },
-          ]
-        : undefined;
-
-    if (sessionId && assistantMessage) {
-      try {
-        await ChatDB.addMessage(
-          sessionId,
-          "assistant",
-          assistantMessage,
-          trendSources,
-        );
-      } catch (assistantStoreError) {
-        console.error(
-          "Failed to persist assistant trend message",
-          assistantStoreError,
-        );
-      }
-    }
-
-    return Response.json(
-      {
-        content: assistantMessage,
-        sources: trendSources,
-        sessionId: sessionId ?? undefined,
-      },
-      {
-        headers: {
-          "Cache-Control": "no-store",
-        },
-      },
-    );
-  }
-
-  // === RAG ENHANCEMENT START ===
-
   let contextSources: Array<{
     id: string;
     title: string;
@@ -289,6 +426,7 @@ export async function POST(req: NextRequest) {
   let enhancedMessages = [...messages];
 
   const datasetSummaryPrompt = await buildDatasetSummaryPrompt(
+    userQuery,
     conversationContext,
     DATA_SERVICE_URL,
   );
@@ -306,7 +444,6 @@ export async function POST(req: NextRequest) {
           `📚 Found ${relevantSections.length} relevant sections (${contextType})`,
         );
 
-        // Build context string
         const contextString = buildContextString(
           relevantSections,
           contextType === "general"
@@ -319,7 +456,6 @@ export async function POST(req: NextRequest) {
           ? `${contextString}\n\nDataset context (do not quote):\n${datasetSummaryPrompt}`
           : contextString;
 
-        // Store sources for response
         contextSources = relevantSections.map((section) => ({
           id: section.id,
           title: section.title,
@@ -332,51 +468,50 @@ export async function POST(req: NextRequest) {
           contextSources.map((s) => s.title).join(", "),
         );
 
-        // Create appropriate system message based on context type
         let systemPrompt = "";
         if (contextType === "about") {
-          systemPrompt = `You are an AI assistant for iCharm/4DVD, a climate visualization platform. Use the following context about the platform's history, development, and information to answer the user's question.
+          systemPrompt = `You are an AI assistant for iCharm/4DVD, a climate visualization platform.
 
+CRITICAL RULES (MUST FOLLOW):
+1. NEVER invent numbers or details not in the context below.
+2. If information isn't in the context, briefly answer from general knowledge WITHOUT specific numbers.
+3. Do NOT mention that context is missing - just answer what you can.
+4. Do NOT explain your process or how you retrieved information.
+5. Be concise and informative.
+
+Context (use only if directly relevant):
 ${combinedContext}
 
-Instructions:
- - If the context does not contain the needed answer, ignore it and answer from your general knowledge with a concise qualitative reply; do not invent details or numbers. Do not say the context is missing; just answer.
- - Never fabricate or guess numerical values. Only use numbers that are explicitly present in the context; if a numeric answer is requested but not available, say you don’t have the data instead of guessing.
- - Be informative and accurate based on the provided context
- - Reference specific details when applicable (names, dates, citations)
-- If asked about licensing or technical details, be precise
-- If the answer is not in the context, acknowledge that and offer general guidance
-- Do not make up data or information
-- Do not explain the steps you take to find the answer; just provide the answer to the user's question
-- Do not explain how you computed or got the data for your answer unless the user specifically asks
-- Do not explain how the backend code is being retrieved for you response
-- Use a professional, informative tone`;
+Remember: Only cite specific numbers/dates if they appear in the context.`;
         } else if (contextType === "analysis") {
-          systemPrompt = `You are the iCharm climate analysis assistant. Use the Climate Question Playbook snippets below only as background. Ignore any procedural "steps" in that text. Respond with the final answer to the user's question—do not list steps, methods, or how you will proceed.
+          systemPrompt = `You are the iCharm climate analysis assistant. Answer user questions directly and concisely.
 
+CRITICAL RULES (MUST FOLLOW):
+1. NEVER invent, estimate, or extrapolate numbers. Only use exact values from the context below.
+2. If a number isn't explicitly provided, say "I don't have that specific data" - do NOT calculate or guess it.
+3. Answer in 1-2 clear sentences. Be direct.
+4. Do NOT describe steps, methodology, processes, or how you'll analyze something.
+5. Do NOT mention the context, backend, or how you got information.
+6. If the context doesn't answer the question, give a brief qualitative answer from general knowledge WITHOUT numbers.
+
+Context (use only if directly relevant):
 ${combinedContext}
 
-Instructions:
- - If the context does not contain the needed answer, ignore it and answer from your general knowledge with a concise qualitative reply; do not invent details or numbers. Do not say the context is missing; just answer.
- - Never fabricate or guess numerical values. Only use numbers that are explicitly present in the context; if a numeric answer is requested but not available, say you don’t have the data instead of guessing.
- - Answer the user's question directly in 1–2 sentences; keep it concise and actionable.
- - Use the provided dataset/context and location (if given); mention dataset name and units when relevant.
-- Only include numeric values if the user explicitly asked for numbers or if they are essential; otherwise, describe the trend qualitatively.
-- If you truly need more inputs, ask for them in one short sentence; otherwise avoid follow-up process descriptions.
-- Do not describe your workflow, steps, or how you will compute something—just provide the result or the single next input needed.`;
+Remember: NO invented numbers. NO process descriptions. Direct answers only.`;
         } else {
-          systemPrompt = `You are an AI assistant for iCharm, a climate visualization platform. Use the following context from the tutorial to answer the user's question.
+          systemPrompt = `You are an AI assistant for iCharm, a climate visualization platform.
 
+CRITICAL RULES (MUST FOLLOW):
+1. NEVER invent numbers not in the context below.
+2. If information isn't available, briefly answer from general knowledge WITHOUT specific numbers.
+3. Do NOT mention missing context - just provide helpful guidance.
+4. Be concise and helpful.
+5. Reference tutorial sections when applicable.
+
+Context (use only if directly relevant):
 ${combinedContext}
 
-Instructions:
- - If the context does not contain the needed answer, ignore it and answer from your general knowledge with a concise qualitative reply; do not invent details or numbers. Do not say the context is missing; just answer.
- - Never fabricate or guess numerical values. Only use numbers that are explicitly present in the context; if a numeric answer is requested but not available, say you don’t have the data instead of guessing.
- - Be concise and helpful
- - Reference the relevant tutorial sections when applicable
-- Provide step-by-step guidance for how-to questions
-- If the user asks about features not covered in the context, acknowledge that and provide general guidance
-- Use a friendly, professional tone`;
+Remember: Only use numbers that appear explicitly in the context.`;
         }
 
         const systemMessage: ChatMessage = {
@@ -384,7 +519,6 @@ Instructions:
           content: systemPrompt,
         };
 
-        // Insert system message at the beginning or update existing system message
         const hasSystemMessage = enhancedMessages[0]?.role === "system";
         if (hasSystemMessage) {
           enhancedMessages = [systemMessage, ...enhancedMessages.slice(1)];
@@ -395,96 +529,12 @@ Instructions:
       }
     } catch (error) {
       console.error("❌ RAG retrieval error:", error);
-      // Continue without RAG enhancement if it fails
     }
   }
 
-  // If no RAG system message was applied, fall back to general knowledge (no extra dataset summary injection).
-  // === RAG ENHANCEMENT END ===
-
   try {
-    const llmResponse = await fetch(`${LLM_SERVICE_URL}/v1/chat`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: HF_MODEL,
-        messages: enhancedMessages, // Use enhanced messages with RAG context
-        temperature: 0.6,
-        stream: false,
-      }),
-    });
-
-    const contentType = llmResponse.headers.get("content-type") ?? "";
-    let result: any;
-
-    if (contentType.includes("application/json")) {
-      result = await llmResponse.json();
-    } else {
-      const text = await llmResponse.text();
-      result = { detail: text };
-    }
-
-    if (!llmResponse.ok) {
-      let detail: string;
-      if (typeof result?.detail === "string") {
-        detail = result.detail;
-      } else if (result?.detail && typeof result.detail === "object") {
-        const innerDetail = result.detail as Record<string, unknown>;
-        if (typeof innerDetail.error === "string") {
-          const statusInfo = innerDetail.status
-            ? ` (status ${innerDetail.status})`
-            : "";
-          detail = `${innerDetail.error}${statusInfo}`;
-          if (typeof innerDetail.body === "string" && innerDetail.body.trim()) {
-            detail += `: ${innerDetail.body.slice(0, 240)}${innerDetail.body.length > 240 ? "…" : ""}`;
-          }
-        } else {
-          detail = JSON.stringify(innerDetail);
-        }
-      } else if (result?.error) {
-        detail =
-          typeof result.error === "string"
-            ? result.error
-            : JSON.stringify(result.error);
-      } else {
-        detail = "LLM service error";
-      }
-
-      console.error("LLM service error:", detail);
-
-      return Response.json(
-        {
-          error: "LLM request failed",
-          details: detail,
-          sessionId: sessionId ?? undefined,
-        },
-        { status: llmResponse.status },
-      );
-    }
-
-    const completionText =
-      typeof result?.content === "string" ? result.content : "";
-
-    if (!completionText.trim()) {
-      return Response.json(
-        {
-          error: "Empty response from model",
-          sessionId: sessionId ?? undefined,
-        },
-        { status: 502 },
-      );
-    }
-
-    const assistantMessage = completionText;
-
-    const providerModel =
-      typeof result?.model === "string"
-        ? result.model
-        : typeof result?.raw?.model === "string"
-          ? result.raw.model
-          : undefined;
+    const { content: assistantMessage, model: providerModel } =
+      await callLLMWithRetry(LLM_SERVICE_URL, HF_MODEL, enhancedMessages, 1);
 
     console.log("[llm] Success! Model response:", assistantMessage);
     if (providerModel) {
