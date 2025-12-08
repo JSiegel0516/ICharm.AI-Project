@@ -110,14 +110,7 @@ async function buildDatasetSummaryPrompt(
   const coverageStart = context.datasetStartDate ?? "start unknown";
   const coverageEnd = context.datasetEndDate ?? "present";
 
-  let summary = `CRITICAL INSTRUCTIONS - READ FIRST:
-- NEVER fabricate or guess numbers. Only use values explicitly present in the context below.
-- If asked for a number not in the context, say "I don't have that specific data available."
-- Answer directly in 1-2 sentences. NO methodology descriptions.
-- Do NOT mention this context, the backend, or how you got the data.
-- If context doesn't help, give a brief qualitative answer from general knowledge.
-
-Dataset: "${datasetLabel}"`;
+  let summary = `Dataset: "${datasetLabel}"`;
 
   if (description) {
     summary += `\nDescription: ${description}`;
@@ -127,7 +120,7 @@ Dataset: "${datasetLabel}"`;
   summary += `\nTemporal coverage: ${coverageStart} to ${coverageEnd}`;
 
   if (context.datasetEndDate) {
-    summary += `\nIMPORTANT: Data ends on ${coverageEnd}. For dates after this, explain the data stops there and use the last available value.`;
+    summary += `\nNote: Data ends on ${coverageEnd}. For dates after this, use the last available value.`;
   }
 
   if (dataServiceUrl && shouldFetchDatasetSnippet(userQuery)) {
@@ -137,7 +130,7 @@ Dataset: "${datasetLabel}"`;
       dataServiceUrl,
     });
     if (dataSnippet) {
-      summary += `\n\nQueried Data:\n${dataSnippet}`;
+      summary += `\n\n=== ACTUAL DATA FROM BACKEND ===\n${dataSnippet}\n=== USE THIS DATA TO ANSWER ===`;
     }
   }
 
@@ -208,7 +201,6 @@ function detectProblematicResponse(
     "methodology:",
     "i can suggest that you examine",
     "i would extract",
-    "assuming",
     "we can estimate",
     "based on the linear trend",
   ];
@@ -232,12 +224,19 @@ function detectProblematicResponse(
     }
   }
 
+  // Check for unhelpful refusals when data is actually present
+  const hasNumber = /\d+\.?\d*\s*(°c|degc|degrees|celsius|degk|kelvin)/i.test(
+    response,
+  );
+
   if (
-    (lower.includes("i don't have") || lower.includes("not available")) &&
-    !lower.includes("you can") &&
-    response.length < 150
+    (lower.includes("no dataset information") ||
+      lower.includes("not available") ||
+      lower.includes("i don't have")) &&
+    !hasNumber &&
+    response.length < 200
   ) {
-    issues.push("Unhelpful refusal without offering alternatives");
+    issues.push("Refusing to answer when data may be available");
   }
 
   return {
@@ -261,7 +260,7 @@ async function callLLMWithRetry(
       body: JSON.stringify({
         model: hfModel,
         messages,
-        temperature: attempt > 0 ? 0.4 : 0.6,
+        temperature: attempt > 0 ? 0.3 : 0.5,
         stream: false,
       }),
     });
@@ -331,7 +330,7 @@ async function callLLMWithRetry(
       { role: "assistant", content },
       {
         role: "user",
-        content: `Please revise your response. Issues: ${validation.issues.join("; ")}. Remember: Answer directly in 1-2 sentences, never describe methodology or mention the context, and only use numbers explicitly provided.`,
+        content: `Please revise. The data IS provided above - use it to answer directly. ${validation.issues.join("; ")}. Answer in 1-3 sentences using the actual numbers from the data.`,
       },
     );
   }
@@ -433,7 +432,7 @@ export async function POST(req: NextRequest) {
   let systemApplied = false;
 
   if (userQuery) {
-    console.log("🔍 Analyzing query...");
+    console.log("Analyzing query...");
 
     try {
       const { results: relevantSections, contextType } =
@@ -441,7 +440,7 @@ export async function POST(req: NextRequest) {
 
       if (relevantSections.length > 0) {
         console.log(
-          `📚 Found ${relevantSections.length} relevant sections (${contextType})`,
+          `Found ${relevantSections.length} relevant sections (${contextType})`,
         );
 
         const contextString = buildContextString(
@@ -453,7 +452,7 @@ export async function POST(req: NextRequest) {
               : (contextType as "tutorial" | "about"),
         );
         const combinedContext = datasetSummaryPrompt
-          ? `${contextString}\n\nDataset context (do not quote):\n${datasetSummaryPrompt}`
+          ? `${contextString}\n\n${datasetSummaryPrompt}`
           : contextString;
 
         contextSources = relevantSections.map((section) => ({
@@ -464,7 +463,7 @@ export async function POST(req: NextRequest) {
         }));
 
         console.log(
-          "📖 Retrieved sources:",
+          "Retrieved sources:",
           contextSources.map((s) => s.title).join(", "),
         );
 
@@ -472,46 +471,40 @@ export async function POST(req: NextRequest) {
         if (contextType === "about") {
           systemPrompt = `You are an AI assistant for iCharm/4DVD, a climate visualization platform.
 
-CRITICAL RULES (MUST FOLLOW):
-1. NEVER invent numbers or details not in the context below.
-2. If information isn't in the context, briefly answer from general knowledge WITHOUT specific numbers.
-3. Do NOT mention that context is missing - just answer what you can.
-4. Do NOT explain your process or how you retrieved information.
-5. Be concise and informative.
+INSTRUCTIONS:
+1. If data is provided below (marked "=== ACTUAL DATA FROM BACKEND ==="), USE IT to answer the question directly and precisely.
+2. NEVER say "no data available" if data is actually provided.
+3. If no specific data is provided, give a helpful general answer from climate science knowledge.
+4. Answer in 1-3 clear sentences. Do NOT describe methodology or processes.
+5. Do NOT mention "the context" or "the backend" - just state the answer naturally.
 
-Context (use only if directly relevant):
-${combinedContext}
-
-Remember: Only cite specific numbers/dates if they appear in the context.`;
+Context:
+${combinedContext}`;
         } else if (contextType === "analysis") {
-          systemPrompt = `You are the iCharm climate analysis assistant. Answer user questions directly and concisely.
+          systemPrompt = `You are the iCharm climate analysis assistant.
 
-CRITICAL RULES (MUST FOLLOW):
-1. NEVER invent, estimate, or extrapolate numbers. Only use exact values from the context below.
-2. If a number isn't explicitly provided, say "I don't have that specific data" - do NOT calculate or guess it.
-3. Answer in 1-2 clear sentences. Be direct.
-4. Do NOT describe steps, methodology, processes, or how you'll analyze something.
-5. Do NOT mention the context, backend, or how you got information.
-6. If the context doesn't answer the question, give a brief qualitative answer from general knowledge WITHOUT numbers.
+CRITICAL INSTRUCTIONS:
+1. If data appears below marked "=== ACTUAL DATA FROM BACKEND ===" or "=== USE THIS DATA TO ANSWER ===", you MUST use it.
+2. NEVER say "no dataset information available" when data is clearly provided above.
+3. Extract the numbers from the provided data and state them directly in your answer.
+4. If no specific data is provided, use general climate knowledge to give a helpful answer.
+5. Answer in 1-3 sentences. Be direct. Do NOT describe steps or methodology.
+6. Do NOT mention "the context", "the backend", or "the data provided" - just answer naturally.
 
-Context (use only if directly relevant):
-${combinedContext}
-
-Remember: NO invented numbers. NO process descriptions. Direct answers only.`;
+Context:
+${combinedContext}`;
         } else {
-          systemPrompt = `You are an AI assistant for iCharm, a climate visualization platform.
+          systemPrompt = `You are an AI assistant for iCharm climate platform.
 
-CRITICAL RULES (MUST FOLLOW):
-1. NEVER invent numbers not in the context below.
-2. If information isn't available, briefly answer from general knowledge WITHOUT specific numbers.
-3. Do NOT mention missing context - just provide helpful guidance.
-4. Be concise and helpful.
-5. Reference tutorial sections when applicable.
+INSTRUCTIONS:
+1. If data is provided (marked "=== ACTUAL DATA ==="), USE IT in your answer.
+2. Extract specific numbers and state them clearly.
+3. If no data provided, give helpful general guidance.
+4. Answer concisely in 1-3 sentences.
+5. Do NOT mention the context or backend.
 
-Context (use only if directly relevant):
-${combinedContext}
-
-Remember: Only use numbers that appear explicitly in the context.`;
+Context:
+${combinedContext}`;
         }
 
         const systemMessage: ChatMessage = {
@@ -529,6 +522,33 @@ Remember: Only use numbers that appear explicitly in the context.`;
       }
     } catch (error) {
       console.error("❌ RAG retrieval error:", error);
+    }
+  }
+
+  // If no context was applied but we have a dataset, still add dataset context
+  if (!systemApplied && datasetSummaryPrompt) {
+    const systemPrompt = `You are the iCharm climate analysis assistant.
+
+CRITICAL INSTRUCTIONS:
+1. If data is marked "=== ACTUAL DATA FROM BACKEND ===" below, you MUST use it to answer.
+2. NEVER say "no data available" when data is provided.
+3. Extract the specific numbers and state them in your answer.
+4. If no data is provided, use general climate knowledge.
+5. Answer directly in 1-3 sentences.
+6. Do NOT mention the context or backend.
+
+${datasetSummaryPrompt}`;
+
+    const systemMessage: ChatMessage = {
+      role: "system",
+      content: systemPrompt,
+    };
+
+    const hasSystemMessage = enhancedMessages[0]?.role === "system";
+    if (hasSystemMessage) {
+      enhancedMessages = [systemMessage, ...enhancedMessages.slice(1)];
+    } else {
+      enhancedMessages = [systemMessage, ...enhancedMessages];
     }
   }
 
