@@ -587,13 +587,30 @@ def serialize_raster_array(
     if data.ndim != 2:
         raise ValueError("Raster slice is not 2-dimensional after selection.")
 
+    finite_mask = np.isfinite(data)
+
+    # Normalize 0–360 longitude grids to -180–180 and re-sort data accordingly
+    try:
+        lon_min = float(np.nanmin(lon_values))
+        lon_max = float(np.nanmax(lon_values))
+        lon_range = lon_max - lon_min
+        if lon_range > 300 and lon_min >= 0.0 and lon_max <= 360.0001:
+            shifted = ((lon_values + 180.0) % 360.0) - 180.0
+            order = np.argsort(shifted)
+            lon_values = shifted[order]
+            data = data[:, order]
+            finite_mask = finite_mask[:, order]
+            print(
+                f"[RasterViz] Normalized longitudes from 0–360 to -180–180 for global wrap (range {lon_range:.2f})"
+            )
+    except Exception as e:
+        print(f"[RasterViz] Longitude normalization skipped due to error: {e}")
+
     # Remove known fill values
     fill_values: List[float] = []
     for key in _FILL_ATTR_KEYS:
         fill_values.extend(_decode_fill_values(array.attrs.get(key)))
     fill_values.extend(_decode_fill_values(row.get("fillValue")))
-
-    finite_mask = np.isfinite(data)
 
     if fill_values:
         data = data.copy()
