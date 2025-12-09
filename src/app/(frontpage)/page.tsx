@@ -219,6 +219,7 @@ export default function HomePage() {
     rasterBlurEnabled: true,
     colorbarCustomMin: null,
     colorbarCustomMax: null,
+    viewMode: "3d",
   });
 
   // Event Handlers
@@ -315,6 +316,16 @@ export default function HomePage() {
       colorbarCustomMax: null,
     }));
   }, []);
+
+  const handleViewModeChange = useCallback(
+    (mode: GlobeSettings["viewMode"]) => {
+      setGlobeSettings((prev) => ({
+        ...prev,
+        viewMode: mode ?? "3d",
+      }));
+    },
+    [],
+  );
 
   useEffect(() => {
     setRasterMeta(null);
@@ -416,6 +427,7 @@ export default function HomePage() {
         geographicLinesVisible={globeSettings.geographicLinesVisible}
         rasterOpacity={globeSettings.rasterOpacity}
         rasterBlurEnabled={globeSettings.rasterBlurEnabled}
+        viewMode={globeSettings.viewMode ?? "3d"}
         onRasterMetadataChange={setRasterMeta}
       />
     ),
@@ -432,6 +444,7 @@ export default function HomePage() {
       globeSettings.hideZeroPrecipitation,
       globeSettings.colorbarCustomMin,
       globeSettings.colorbarCustomMax,
+      globeSettings.viewMode,
     ],
   );
 
@@ -485,6 +498,8 @@ export default function HomePage() {
             onRasterBlurToggle={handleRasterBlurToggle}
             onColorbarRangeChange={handleColorbarRangeChange}
             onColorbarRangeReset={handleColorbarRangeReset}
+            viewMode={globeSettings.viewMode ?? "3d"}
+            onViewModeChange={handleViewModeChange}
           />
         </div>
 

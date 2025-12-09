@@ -37,6 +37,8 @@ interface GlobeSettingsPanelProps {
     max: number | null;
   }) => void;
   onColorbarRangeReset: () => void;
+  viewMode?: GlobeSettings["viewMode"];
+  onViewModeChange?: (mode: GlobeSettings["viewMode"]) => void;
 }
 
 export function GlobeSettingsPanel({
@@ -58,6 +60,8 @@ export function GlobeSettingsPanel({
   colorbarCustomMax,
   onColorbarRangeChange,
   onColorbarRangeReset,
+  viewMode = "3d",
+  onViewModeChange,
 }: GlobeSettingsPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -337,6 +341,27 @@ export function GlobeSettingsPanel({
                       Reset
                     </Button>
                   </div>
+                </div>
+              </div>
+
+              {/* Globe View */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-white">View Mode</h3>
+                <div className="space-y-2 rounded-lg border border-neutral-600 bg-neutral-700/50 p-3">
+                  <p className="text-xs text-slate-400">
+                    Choose between the interactive 3D globe or a flat 2D map
+                    view.
+                  </p>
+                  <select
+                    className="w-full rounded-md border border-slate-600 bg-neutral-800 px-3 py-2 text-sm text-white shadow-sm focus:border-white focus:outline-none"
+                    value={viewMode ?? "3d"}
+                    onChange={(e) =>
+                      onViewModeChange?.(e.target.value === "2d" ? "2d" : "3d")
+                    }
+                  >
+                    <option value="3d">3D</option>
+                    <option value="2d">2D</option>
+                  </select>
                 </div>
               </div>
 
