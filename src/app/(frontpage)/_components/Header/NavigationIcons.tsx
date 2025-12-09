@@ -250,16 +250,16 @@ export default function NavigationIcons() {
           </Tooltip>
           <DialogContent className="sm:max-w-[825px]">
             <DialogHeader>
-              <DialogTitle className="text-center">About iCharm</DialogTitle>
+              <DialogTitle className="text-center">About iCHARM</DialogTitle>
             </DialogHeader>
             <div className="grid gap-4">
               Interactive Climate and Atmospheric Research Model
             </div>
             <DialogDescription>
-              To be written: information about the iCharm project
+              To be written: information about the iCHARM project
             </DialogDescription>
             <DialogFooter>
-              <div className="text-sm text-gray-400">© 2025 iCharm</div>
+              <div className="text-sm text-gray-400">© 2025 iCHARM</div>
               <div className="text-sm text-gray-400">Version 1.0.0</div>
             </DialogFooter>
           </DialogContent>
@@ -288,7 +288,7 @@ export default function NavigationIcons() {
             <DialogHeader>
               <DialogTitle className="text-center">Site Settings</DialogTitle>
               <DialogDescription className="text-center">
-                Configure your iCharm experience
+                Configure your iCHARM experience
               </DialogDescription>
             </DialogHeader>
 

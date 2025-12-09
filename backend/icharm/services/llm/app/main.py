@@ -17,7 +17,7 @@ HF_CHAT_URL = os.getenv(
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="ICharm LLM Service")
+app = FastAPI(title="iCHARM LLM Service")
 app.include_router(geocode_router)
 
 TRANSIENT_STATUS_CODES = {429, 500, 502, 503, 504}

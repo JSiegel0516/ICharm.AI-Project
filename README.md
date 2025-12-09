@@ -1,4 +1,4 @@
-# ICharm.AI-Project
+# iCHARM.AI-Project
 
 AI-powered climate data exploration combining interactive visualization, tutorial guidance, and a local Retrieval-Augmented Generation (RAG) chatbot.
 
