@@ -1,13 +1,13 @@
 # Notes
 
-## Created a [netcdf_to_db.py](./netcdf_to_db.py) that can load data netcdf files into postgres
+## Created a [netcdf_to_db.py](netcdf_to_db/netcdf_to_db.py) that can load data netcdf files into postgres
 
 - I haven't tested this with that many datasets.
 - `cmorph` was taking way to long to load with it, but other datasets seemed to load fine
   - `cmonph` has too many individual observations (691,200 per day). Need to do something a bit different or querying this will also be slow in the end
 - I found an ncep dataset that had different layers and it works fine with this as there isn't as much data as cmorph
 
-## Created a [netcdf_to_db_by_year.py](./netcdf_to_db_by_year.py) that can load data netcdf files into postgres
+## Created a [netcdf_to_db_by_year.py](netcdf_to_db/netcdf_to_db_by_year.py) that can load data netcdf files into postgres
 
 - This version can handle `cmorph`. I do some tricks by having each year be its own column.
   - It's still a bit messy and needs to be cleaned up.
@@ -20,7 +20,7 @@
 - It's running fast enough that we actually don't need to generate 2 copies of the data
 - However, the data takes up ~10x the size of the netcdf. We're sitting at ~44 gigs right now
 
-## Created [postgres_query_examples.py](./postgres_query_examples.py) as an example of how to query data.
+## Created [postgres_query_examples.py](netcdf_to_db/postgres_query_examples.py) as an example of how to query data.
 
 - Not pretty, very bare bones and need to get other queries going, but it works.
 - Well need to create queries similar to how I did it in the old mysql code.

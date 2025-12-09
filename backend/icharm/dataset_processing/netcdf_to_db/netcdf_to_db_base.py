@@ -1,5 +1,4 @@
 import io
-import numpy
 import os
 import pandas
 import itertools
@@ -7,12 +6,10 @@ import itertools
 from pathlib import Path
 
 from datetime import datetime
-from netCDF4 import Dataset, num2date
-from tqdm import tqdm
+from netCDF4 import Dataset
 from typing import Any
 
 from icharm.dataset_processing.postgres_common import PostgresCommon
-from icharm.utils.benchmark import benchmark
 
 TIME_VAR_CANDIDATES = ["time"]
 LAT_VAR_CANDIDATES = ["lat", "latitude"]
@@ -20,7 +17,7 @@ LON_VAR_CANDIDATES = ["lon", "longitude"]
 LEVEL_VAR_CANDIDATES = ["level"]
 
 
-class NetCDFtoDB:
+class NetCDFtoDbBase:
     longitudes: dict[int, float] = {}
     latitudes: dict[int, float] = {}
     timestamps: dict[str, Any] = {}
@@ -51,13 +48,9 @@ class NetCDFtoDB:
         self.latitude_variable_name = latitude_variable_name
         self.level_variable_name = level_variable_name
         self.variable_of_interest_name = variable_of_interest_name
-
-        # Find all the important required feature names
-        self._find_features()
-
         return
 
-    def _guess_varible_name(
+    def _guess_variable_name(
         self, nc: Dataset, candidates: list[str], raise_error: bool = True
     ) -> str | None:
         var_names = set(nc.variables.keys())
@@ -68,25 +61,33 @@ class NetCDFtoDB:
             raise RuntimeError(f"Could not find any of {candidates} in {var_names}")
         return None
 
+    def _set_metadata_levels_from_netcdf(self, nc: Dataset):
+        if self.level_variable_name is not None:
+            levels = {}
+            raw_levels = nc.variables[self.level_variable_name][:]
+            for idx, value in enumerate(list(raw_levels)):
+                levels[idx] = str(value)
+            self.levels = levels
+
     def _get_metadata_from_file(self, example_path: Path):
         with Dataset(example_path, "r") as nc:
             # Required base variables
             if self.time_variable_name is None:
-                self.time_variable_name = self._guess_varible_name(
+                self.time_variable_name = self._guess_variable_name(
                     nc, TIME_VAR_CANDIDATES
                 )
             if self.latitude_variable_name is None:
-                self.latitude_variable_name = self._guess_varible_name(
+                self.latitude_variable_name = self._guess_variable_name(
                     nc, LAT_VAR_CANDIDATES
                 )
             if self.longitude_variable_name is None:
-                self.longitude_variable_name = self._guess_varible_name(
+                self.longitude_variable_name = self._guess_variable_name(
                     nc, LON_VAR_CANDIDATES
                 )
 
             # Level is optional (not all datasets are multi-level)
             if self.level_variable_name is None:
-                self.level_variable_name = self._guess_varible_name(
+                self.level_variable_name = self._guess_variable_name(
                     nc, LEVEL_VAR_CANDIDATES, False
                 )
 
@@ -124,12 +125,7 @@ class NetCDFtoDB:
                 latitudes[idx] = float(value)
             self.latitudes = latitudes
 
-            if self.level_variable_name is not None:
-                levels = {}
-                raw_levels = nc.variables[self.level_variable_name][:]
-                for idx, value in enumerate(list(raw_levels)):
-                    levels[idx] = str(value)
-                self.levels = levels
+            self._set_metadata_levels_from_netcdf(nc)
 
             # Then create grid box ids based off of this
             gridboxes: dict[int, tuple[int, int]] = {}
@@ -187,8 +183,9 @@ class NetCDFtoDB:
     def _generate_postgres_tables(self, conn):
         with conn.cursor() as cur:
             # Latitude table creation
+            cur.execute("DROP TABLE IF EXISTS lat")
             create_lat_table_sql = """
-                CREATE TABLE IF NOT EXISTS lat (
+                CREATE TABLE lat (
                     lat_id   SMALLINT         NOT NULL,
                     lat      REAL NOT NULL,
                     PRIMARY KEY (lat_id),
@@ -198,8 +195,9 @@ class NetCDFtoDB:
             cur.execute(create_lat_table_sql)
 
             # Longitude table creation
+            cur.execute("DROP TABLE IF EXISTS lon")
             create_lon_table_sql = """
-                CREATE TABLE IF NOT EXISTS lon (
+                CREATE TABLE lon (
                     lon_id   SMALLINT         NOT NULL,
                     lon      REAL NOT NULL,
                     PRIMARY KEY (lon_id),
@@ -209,8 +207,9 @@ class NetCDFtoDB:
             cur.execute(create_lon_table_sql)
 
             # Gridbox table creation
+            cur.execute("DROP TABLE IF EXISTS gridbox")
             create_gridbox_table_sql = """
-                CREATE TABLE IF NOT EXISTS gridbox (
+                CREATE TABLE gridbox (
                     gridbox_id INTEGER        NOT NULL,
                     lat_id   SMALLINT         NOT NULL,
                     lon_id   SMALLINT         NOT NULL,
@@ -221,8 +220,9 @@ class NetCDFtoDB:
             cur.execute(create_gridbox_table_sql)
 
             # timestamp table creation
+            cur.execute("DROP TABLE IF EXISTS timestamp_dim")
             create_gridbox_table_sql = """
-                CREATE TABLE IF NOT EXISTS timestamp_dim (
+                CREATE TABLE timestamp_dim (
                     timestamp_id   INTEGER NOT NULL,
                     timestamp_val  TIMESTAMP WITHOUT TIME ZONE NOT NULL UNIQUE,
                     PRIMARY KEY (timestamp_id),
@@ -233,8 +233,9 @@ class NetCDFtoDB:
 
             # Levels (if applicable)
             if len(self.levels.keys()) > 0:
+                cur.execute("DROP TABLE IF EXISTS level")
                 create_level_table_sql = """
-                    CREATE TABLE IF NOT EXISTS level  (
+                    CREATE TABLE level  (
                         level_id            SMALLINT NOT NULL,
                         name                VARCHAR(500) NOT NULL,
                         description			VARCHAR(2000) NULL,
@@ -245,41 +246,44 @@ class NetCDFtoDB:
                 cur.execute(create_level_table_sql)
 
             # Generate grid_data table
+            cur.execute("DROP TABLE IF EXISTS grid_data")
             if len(self.levels.keys()) == 0:
                 create_grid_data_table_sql = """
                     -- Table is unlogged for now, will add log back in later
-                    CREATE UNLOGGED TABLE IF NOT EXISTS grid_data (
+                    CREATE UNLOGGED TABLE grid_data (
                         gridbox_id		   INTEGER NOT NULL,
                         timestamp_id       INTEGER NOT NULL,
                         value_0            REAL
                         -- We will add keys back in after insertion is done
                         --PRIMARY KEY (gridbox_id, timestamp_id)
                     );
+                    -- We will add the indexes later (after insertion is completed)
                     --CREATE INDEX IF NOT EXISTS grid_data_gridbox_idx ON grid_data (gridbox_id);
                     --CREATE INDEX IF NOT EXISTS grid_data_ts_idx      ON grid_data (timestamp_id);
                     """
             else:
                 values = [
-                    f"value_{i}              REAL" for i in list(self.levels.keys())
+                    f"""
+                        value_{i}          REAL"""
+                    for i in list(self.levels.keys())
                 ]
                 values_str = ",\n".join(values)
                 create_grid_data_table_sql = f"""
                     -- Table is unlogged for now, will add log back in later
-                    CREATE UNLOGGED TABLE IF NOT EXISTS grid_data (
+                    CREATE UNLOGGED TABLE grid_data (
                         gridbox_id		   INTEGER NOT NULL,
                         timestamp_id       INTEGER NOT NULL,
                         {values_str}
                         -- We will add keys back in after insertion is done
                         --PRIMARY KEY (gridbox_id, timestamp_id)
                     );
+                    -- We will add the indexes later (after insertion is completed)
                     --CREATE INDEX IF NOT EXISTS grid_data_gridbox_idx ON grid_data (gridbox_id);
                     --CREATE INDEX IF NOT EXISTS grid_data_ts_idx      ON grid_data (timestamp_id);
                     """
 
             cur.execute(create_grid_data_table_sql)
-
             conn.commit()
-
         return
 
     def _update_grid_box_table(self, conn) -> None:
@@ -302,6 +306,9 @@ class NetCDFtoDB:
                 print(statement)
                 cur.execute(statement)
         return
+
+    def _create_sql_functions(self, conn):
+        raise NotImplementedError
 
     def _truncate_postgres_tables(self, conn):
         with conn.cursor() as cur:
@@ -387,143 +394,13 @@ class NetCDFtoDB:
 
         return
 
-    @benchmark
     def _populate_postgres_data_tables(self, conn):
-        files = sorted(self.folder_path.rglob("*.nc"))
-
-        time_idx = 0
-        with conn.cursor() as cur:
-            # For speed increase
-            cur.execute("SET synchronous_commit TO OFF;")
-
-            for file_idx, file in enumerate(tqdm(files)):
-                if file_idx > 4_000:
-                    break
-
-                # filename_path = str(file)
-                with Dataset(file, "r") as nc:
-                    # Get all dates in the current file (there can be more than 1)
-                    time_variable = nc.variables[self.time_variable_name]
-                    # time_values = nc.variables[self.time_variable_name][:]
-                    times_dt = num2date(
-                        times=time_variable[:],
-                        units=time_variable.units,
-                        calendar=getattr(time_variable, "calendar", "standard"),
-                    )
-                    # it's possible there are multiple dates per file. If there are
-                    # get the idx so we know which index to grab from the file.
-
-                    variable = nc[self.variable_of_interest_name]
-
-                    full_dims = variable.dimensions
-                    spatial_dims = [
-                        d for d in full_dims if d != self.time_variable_name
-                    ]
-
-                    fill_value = None
-                    if hasattr(variable, "_FillValue"):
-                        fill_value = float(variable._FillValue)
-                    elif hasattr(variable, "missing_value"):
-                        fill_value = float(variable.missing_value)
-
-                    for idx, time_dt in enumerate(tqdm(times_dt)):
-                        iso_formatted_time = time_dt.isoformat()
-
-                        # Insert the datetime into the datetime_dim table
-                        timestamp_rows = [(time_idx, iso_formatted_time)]
-                        cur.executemany(
-                            """
-                            INSERT INTO timestamp_dim (timestamp_id, timestamp_val)
-                            VALUES (%s, %s) ON CONFLICT (timestamp_id) DO NOTHING
-                            """,
-                            timestamp_rows,
-                        )
-
-                        # The time variable could be in many places, slice the data in the correct one
-                        time_idx_loc = self.all_variable_locations[
-                            self.time_variable_name
-                        ]
-                        indexer = tuple(
-                            (idx if axis == time_idx_loc else slice(None))
-                            for axis in range(variable.ndim)
-                        )
-                        data = variable[indexer]
-
-                        self._process_multi_level_gridbox_data(
-                            data=data,
-                            dim_names=spatial_dims,
-                            fill_value=fill_value,
-                            time_id=time_idx,
-                            cur=cur,
-                        )
-
-                        time_idx += 1
-        return
+        raise NotImplementedError
 
     def _process_multi_level_gridbox_data(
         self, data, dim_names, fill_value, time_id, cur
     ):
-        n_lat = len(self.latitudes.keys())
-        n_lon = len(self.longitudes.keys())
-        n_levels = len(self.levels.keys())
-
-        # If it's a masked array, fill masked with NaN
-        if numpy.ma.isMaskedArray(data):
-            data = data.filled(numpy.nan)
-
-        # Replace values with fill_value with numpy.nan
-        if fill_value is not None:
-            data = numpy.where(data == fill_value, numpy.nan, data)
-
-        # Map dim names -> axis indices in `data`
-        name_to_axis = {name: i for i, name in enumerate(dim_names)}
-
-        # Find lat & lon axes
-        try:
-            lat_axis = name_to_axis[self.latitude_variable_name]  # e.g. 'lat'
-            lon_axis = name_to_axis[self.longitude_variable_name]  # e.g. 'lon'
-        except KeyError as e:
-            raise ValueError(
-                f"Could not find lat/lon dims in {dim_names}. "
-                f"lat name={self.latitude_variable_name}, lon name={self.longitude_variable_name}"
-            ) from e
-
-        # Does this dataset have levels?
-        level_axis = (
-            name_to_axis.get(self.level_variable_name) if n_levels > 0 else None
-        )
-
-        if level_axis is None:
-            data_lat_lon = numpy.transpose(data, (lat_axis, lon_axis))
-            assert data_lat_lon.shape == (n_lat, n_lon)
-
-            flat_values = data_lat_lon.reshape(-1)
-            value_cols = ["value_0"]
-
-        else:
-            data_lat_lon_level = numpy.transpose(data, (lat_axis, lon_axis, level_axis))
-            assert data_lat_lon_level.shape == (n_lat, n_lon, n_levels)
-
-            flat_values = data_lat_lon_level.reshape(-1, n_levels)
-            value_cols = [f"value_{k}" for k in list(self.levels.keys())]
-
-        df_griddata = pandas.DataFrame(flat_values, columns=value_cols)
-        df_griddata.insert(0, "gridbox_id", self.gridbox_ids)
-        df_griddata.insert(1, "timestamp_id", time_id)
-
-        # Reshape data to gridbox_id, timestamp_id, value
-        with io.StringIO() as csv_buffer_grid_date:
-            df_griddata.to_csv(csv_buffer_grid_date, index=False)
-            csv_buffer_grid_date.seek(0)
-            values_str = ",".join(value_cols)
-            cur.copy_expert(
-                f"""
-                COPY grid_data (gridbox_id, timestamp_id, {values_str})
-                FROM STDIN WITH (FORMAT csv, HEADER true, NULL '')
-                """,
-                csv_buffer_grid_date,
-            )
-        return
+        raise NotImplementedError
 
     def export_data_to_postgres(
         self,
@@ -542,7 +419,7 @@ class NetCDFtoDB:
             port=port,
         )
 
-        # Create the index table
+        # Create the connection
         conn = PostgresCommon.create_connection(
             database_name=database_name,
             user=user,
@@ -566,6 +443,9 @@ class NetCDFtoDB:
         # Modify gridbox table to add indexes
         self._update_grid_box_table(conn)
 
+        # Add the sql methods
+        self._create_sql_functions(conn)
+
         return
 
 
@@ -577,7 +457,7 @@ def main():
         dataset_name = "cmorph_daily"
         variable_of_interest_name = None
     else:
-        data_path = "/home/mrsharky/dev/sdsu/ICharm.AI-Project/backend/datasets/ncep"
+        data_path = "/datasets/ncep"
         dataset_name = "ncep"
         variable_of_interest_name = "air"
 
@@ -588,7 +468,7 @@ def main():
     if database_password is None:
         raise ValueError("POSTGRES_PASSWORD environment variable not set")
 
-    netcdf_to_db = NetCDFtoDB(
+    netcdf_to_db = NetCDFtoDbBase(
         folder_root=data_path,
         variable_of_interest_name=variable_of_interest_name,
     )
