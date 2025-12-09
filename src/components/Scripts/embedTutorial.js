@@ -24,21 +24,21 @@ async function generateEmbeddings() {
       id: "site-identity",
       title: "What Is This Website",
       content:
-        'This website is the iCharm climate intelligence platform (iCharm.AI). When users ask about "this website" they are referring to iCharm, a climate visualization and analysis experience operated by NOAA collaborators and SDSU researchers.',
+        'This website is the iCHARM climate intelligence platform (iCHARM.AI). When users ask about "this website" they are referring to iCHARM, a climate visualization and analysis experience operated by NOAA collaborators and SDSU researchers.',
       category: "site-meta",
     },
     {
       id: "site-purpose",
-      title: "iCharm Purpose and Capabilities",
+      title: "iCHARM Purpose and Capabilities",
       content:
-        "iCharm combines an interactive 3D globe, NOAA climate datasets, tutorial guidance, and a Retrieval-Augmented Generation chatbot to help people understand global climate patterns. The site emphasizes accessibility of scientific data and provides guided walkthroughs and explanations.",
+        "iCHARM combines an interactive 3D globe, NOAA climate datasets, tutorial guidance, and a Retrieval-Augmented Generation chatbot to help people understand global climate patterns. The site emphasizes accessibility of scientific data and provides guided walkthroughs and explanations.",
       category: "site-meta",
     },
     {
       id: "site-identity-cues",
       title: "On-Site Identity Cues",
       content:
-        'Visual and textual cues across the interface reference iCharm, ICharm.AI, NOAA datasets, tutorial tours, and the local RAG chatbot. When asked "tell me about this website", the correct answer is to describe iCharm and the features available on the current site.',
+        'Visual and textual cues across the interface reference iCHARM, iCHARM.AI, NOAA datasets, tutorial tours, and the local RAG chatbot. When asked "tell me about this website", the correct answer is to describe iCHARM and the features available on the current site.',
       category: "site-meta",
     },
   ];

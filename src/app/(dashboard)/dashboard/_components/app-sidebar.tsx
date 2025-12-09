@@ -164,7 +164,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   className="h-8 w-8 rounded-lg"
                 />
                 <h1 className="bg-linear-to-r from-red-400 via-green-400 to-blue-400 bg-clip-text text-xl font-semibold text-transparent">
-                  iCharm
+                  iCHARM
                 </h1>
               </Link>
             </SidebarMenuButton>

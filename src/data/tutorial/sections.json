@@ -2,8 +2,8 @@
   "sections": [
     {
       "id": "intro",
-      "title": "Introduction to iCharm",
-      "content": "iCharm is a climate visualization platform that displays NOAA datasets on an interactive 3D globe. The platform allows users to explore various climate and geographical data through an intuitive interface. Users can interact with the globe, select different datasets, adjust time periods, and analyze climate patterns across different regions and atmospheric pressure levels.",
+      "title": "Introduction to iCHARM",
+      "content": "iCHARM is a climate visualization platform that displays NOAA datasets on an interactive 3D globe. The platform allows users to explore various climate and geographical data through an intuitive interface. Users can interact with the globe, select different datasets, adjust time periods, and analyze climate patterns across different regions and atmospheric pressure levels.",
       "category": "tutorial"
     },
     {
@@ -20,14 +20,14 @@
     },
     {
       "id": "about-section",
-      "title": "About iCharm",
-      "content": "The About Me section provides a comprehensive description of iCharm, including its purpose, capabilities, and the data sources it uses. This section explains the platform's mission to make climate data accessible and understandable through interactive visualization.",
+      "title": "About iCHARM",
+      "content": "The About Me section provides a comprehensive description of iCHARM, including its purpose, capabilities, and the data sources it uses. This section explains the platform's mission to make climate data accessible and understandable through interactive visualization.",
       "category": "tutorial"
     },
     {
       "id": "site-settings",
       "title": "Site Settings and Preferences",
-      "content": "Site Settings allow users to adjust page settings for iCharm. This includes various configuration options to customize the user experience, interface preferences, and display settings to suit individual needs and preferences.",
+      "content": "Site Settings allow users to adjust page settings for iCHARM. This includes various configuration options to customize the user experience, interface preferences, and display settings to suit individual needs and preferences.",
       "category": "tutorial"
     },
     {

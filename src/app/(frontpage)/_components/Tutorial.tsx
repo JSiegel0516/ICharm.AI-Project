@@ -30,7 +30,7 @@ export const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
       steps: [
         {
           popover: {
-            title: "Welcome to iCharm!",
+            title: "Welcome to iCHARM!",
             description: "Begin the tutorial to learn the controls.",
           },
         },
@@ -58,7 +58,7 @@ export const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
           element: "#about-me-button",
           popover: {
             title: "About Me",
-            description: "Description of iCharm",
+            description: "Description of iCHARM",
             side: "bottom",
             align: "center",
           },
@@ -67,7 +67,7 @@ export const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
           element: "#site-settings-button",
           popover: {
             title: "Site Settings",
-            description: "Adjust the page settings for iCharm",
+            description: "Adjust the page settings for iCHARM",
             side: "bottom",
             align: "center",
           },

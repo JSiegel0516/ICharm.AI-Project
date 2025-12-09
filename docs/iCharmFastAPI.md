@@ -1,4 +1,4 @@
-# iCharmFastAPI Service
+# iCHARMFastAPI Service
 
 This document describes how the dataset FastAPI service fits into the project, how it discovers climate datasets, and how the CMORPH timeseries feature reaches the frontend.
 
