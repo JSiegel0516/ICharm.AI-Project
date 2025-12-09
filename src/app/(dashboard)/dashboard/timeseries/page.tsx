@@ -409,7 +409,7 @@ export default function TimeSeriesPage() {
           <div className="">
             <Banner className="rounded-lg bg-red-200 dark:bg-red-800">
               <BannerIcon icon={XCircle} />
-              <BannerTitle>Error: {error}</BannerTitle>
+              <BannerTitle className="text-primary">Error: {error}</BannerTitle>
               <BannerClose className="text-primary hover:bg-card-foreground/30 dark:hover:bg-card-foreground/30" />
             </Banner>
           </div>
