@@ -66,29 +66,46 @@ const TimeBar: React.FC<TimeBarProps> = ({
     }
   }, [selectedDate, isDragging]);
 
+  const minMonthIndex = minDate.getFullYear() * 12 + minDate.getMonth();
+  const maxMonthIndex = maxDate.getFullYear() * 12 + maxDate.getMonth();
   const minYear = minDate.getFullYear();
   const maxYear = maxDate.getFullYear();
-  const yearRange = maxYear - minYear;
+  const monthRange = Math.max(1, maxMonthIndex - minMonthIndex);
 
-  const getPositionFromYear = useCallback(
-    (year: number) => ((year - minYear) / yearRange) * 100,
-    [minYear, yearRange],
+  const getPositionFromMonthIndex = useCallback(
+    (monthIndex: number) => ((monthIndex - minMonthIndex) / monthRange) * 100,
+    [minMonthIndex, monthRange],
   );
 
-  const getYearFromPosition = useCallback(
+  const getMonthIndexFromPosition = useCallback(
     (percentage: number) =>
-      Math.round(minYear + (percentage / 100) * yearRange),
-    [minYear, yearRange],
+      Math.round(minMonthIndex + (percentage / 100) * monthRange),
+    [minMonthIndex, monthRange],
   );
 
   const formatDate = useCallback(
-    (date: Date) =>
-      date.toLocaleDateString("en-US", {
+    (date: Date) => {
+      const name = currentDataset?.name?.toLowerCase() ?? "";
+      const backendName =
+        currentDataset?.backend?.datasetName?.toLowerCase() ?? "";
+      const isDaily =
+        name.includes("cmorph") ||
+        backendName.includes("cmorph") ||
+        name.includes("cdr sst") ||
+        backendName.includes("cdr sst");
+
+      const options: Intl.DateTimeFormatOptions = {
         year: "numeric",
         month: "long",
-        day: "numeric",
-      }),
-    [],
+      };
+
+      if (isDaily) {
+        options.day = "numeric";
+      }
+
+      return date.toLocaleDateString("en-US", options);
+    },
+    [currentDataset],
   );
 
   const setDate = useCallback(
@@ -115,7 +132,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
     [minDate, maxDate, onDateChange],
   );
 
-  const updateYear = useCallback(
+  const updateMonth = useCallback(
     (clientX: number) => {
       if (!trackRef.current) return;
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
@@ -127,12 +144,12 @@ const TimeBar: React.FC<TimeBarProps> = ({
           0,
           Math.min(100, ((clientX - rect.left) / rect.width) * 100),
         );
-        const newYear = getYearFromPosition(percentage);
+        const monthIndex = getMonthIndexFromPosition(percentage);
 
         const baseDate = isDragging ? previewDate : selectedDate;
         const tentative = new Date(
-          newYear,
-          baseDate.getMonth(),
+          Math.floor(monthIndex / 12),
+          monthIndex % 12,
           baseDate.getDate(),
         );
 
@@ -149,7 +166,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
       selectedDate,
       previewDate,
       isDragging,
-      getYearFromPosition,
+      getMonthIndexFromPosition,
       minDate,
       maxDate,
     ],
@@ -160,16 +177,16 @@ const TimeBar: React.FC<TimeBarProps> = ({
       setPreviewDate(selectedDate);
       setIsDragging(true);
       setShowTooltip(true);
-      updateYear(clientX);
+      updateMonth(clientX);
     },
-    [updateYear, selectedDate],
+    [updateMonth, selectedDate],
   );
 
   const handleInteractionMove = useCallback(
     (clientX: number) => {
-      if (isDragging) updateYear(clientX);
+      if (isDragging) updateMonth(clientX);
     },
-    [isDragging, updateYear],
+    [isDragging, updateMonth],
   );
 
   const handleInteractionEnd = useCallback(() => {
@@ -233,7 +250,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
     if (isPlaying && !playIntervalRef.current) {
       playIntervalRef.current = setInterval(() => {
         const next = new Date(selectedDate);
-        next.setFullYear(selectedDate.getFullYear() + 1);
+        next.setMonth(selectedDate.getMonth() + 1);
         if (next > maxDate) {
           onPlayPause?.(false);
         } else {
@@ -279,7 +296,9 @@ const TimeBar: React.FC<TimeBarProps> = ({
 
   const isActive = isHovered || isDragging || isPlaying;
   const displayDate = isDragging ? previewDate : selectedDate;
-  const sliderPosition = getPositionFromYear(displayDate.getFullYear());
+  const sliderPosition = getPositionFromMonthIndex(
+    displayDate.getFullYear() * 12 + displayDate.getMonth(),
+  );
 
   return (
     <div
