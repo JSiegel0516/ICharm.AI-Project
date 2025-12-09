@@ -251,10 +251,9 @@ const ColorBar: React.FC<ColorBarProps> = ({
     const safeMin = Number.isFinite(min) ? Number(min) : 0;
     const safeMax = Number.isFinite(max) ? Number(max) : safeMin;
 
-    // Zero-center the range using the larger magnitude
-    const magnitude = Math.max(Math.abs(safeMin), Math.abs(safeMax));
-    const centeredMin = magnitude > 0 ? -magnitude : -1;
-    const centeredMax = magnitude > 0 ? magnitude : 1;
+    // Use the actual range (no forced zero-centering)
+    const rangeMin = safeMin;
+    const rangeMax = safeMax;
 
     // Limit visible tick count so labels don't flood the UI while keeping band sharpness.
     const MAX_TICKS = 7;
@@ -263,15 +262,13 @@ const ColorBar: React.FC<ColorBarProps> = ({
       Math.max(dataset.colorScale.labels.length || 0, 2),
     );
 
-    // Generate symmetric labels around zero
+    // Generate labels across the actual range
     const labels =
-      labelCount <= 1 || Math.abs(centeredMax - centeredMin) < 1e-9
-        ? Array(labelCount).fill(0)
+      labelCount <= 1 || Math.abs(rangeMax - rangeMin) < 1e-9
+        ? Array(labelCount).fill(rangeMin)
         : Array.from(
             { length: labelCount },
-            (_, i) =>
-              centeredMin +
-              ((centeredMax - centeredMin) * i) / (labelCount - 1),
+            (_, i) => rangeMin + ((rangeMax - rangeMin) * i) / (labelCount - 1),
           );
 
     return { labels, colors: dataset.colorScale.colors };
