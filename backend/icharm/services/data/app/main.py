@@ -285,6 +285,19 @@ class RasterRequest(BaseModel):
         False,
         description="Hide exact zero values (used for CMORPH/local precipitation datasets)",
     )
+    minValue: Optional[float] = Field(
+        None, description="Override minimum value for color mapping (zero-centered)"
+    )
+    maxValue: Optional[float] = Field(
+        None, description="Override maximum value for color mapping (zero-centered)"
+    )
+    # Backward/alias support
+    min: Optional[float] = Field(
+        None, description="Alias for minValue to support legacy callers"
+    )
+    max: Optional[float] = Field(
+        None, description="Alias for maxValue to support legacy callers"
+    )
 
 
 class DataPoint(BaseModel):
@@ -2486,9 +2499,7 @@ async def extract_timeseries(request: TimeSeriesRequest):
 async def visualize_raster(request: RasterRequest):
     """
     Generate raster visualization for 3D globe display
-
-    Returns base64-encoded PNG textures and metadata for Cesium rendering
-    Now supports CSS colors from frontend ColorBar for exact color matching
+    Now supports custom min/max range for color mapping
     """
     start_time = datetime.now()
 
@@ -2496,28 +2507,31 @@ async def visualize_raster(request: RasterRequest):
         # Parse date
         target_date = datetime.strptime(request.date, "%Y-%m-%d")
 
-        # Log CSS colors if provided
-        if request.cssColors:
-            logger.info(
-                f"[RasterViz] Received {len(request.cssColors)} CSS colors from frontend"
-            )
-            logger.info(f"[RasterViz] Colors: {request.cssColors}")
-        else:
-            logger.info("[RasterViz] No CSS colors provided, will use default colormap")
+        # CRITICAL FIX: Properly extract custom range from request
+        # Try both field names for compatibility
+        chosen_min = request.minValue if request.minValue is not None else request.min
+        chosen_max = request.maxValue if request.maxValue is not None else request.max
+
+        # Log the incoming request
+        logger.info("[RasterViz] Request received:")
+        logger.info(f"  datasetId: {request.datasetId}")
+        logger.info(f"  date: {request.date}")
+        logger.info(f"  level: {request.level}")
+        logger.info(f"  Custom range: min={chosen_min}, max={chosen_max}")
+        logger.info(f"  CSS colors: {len(request.cssColors or [])}")
 
         # Get metadata
         metadata_df = get_metadata_by_ids([request.datasetId])
-
         if len(metadata_df) == 0:
             raise HTTPException(
                 status_code=404, detail=f"Dataset not found: {request.datasetId}"
             )
+
         metadata_df = metadata_df.reset_index(drop=True)
         meta_row = metadata_df.iloc[0]
 
         # Open dataset
         is_local = meta_row["Stored"] == "local"
-
         if is_local:
             ds = await open_local_dataset(meta_row)
         else:
@@ -2543,6 +2557,7 @@ async def visualize_raster(request: RasterRequest):
             if level_dims:
                 var = var.sel({level_dims[0]: request.level}, method="nearest")
 
+        # Apply zero masking if requested
         zero_mask_applied = False
         zero_mask_pixels = 0
 
@@ -2580,13 +2595,18 @@ async def visualize_raster(request: RasterRequest):
                     meta_row["datasetName"],
                 )
 
-        # CRITICAL: Pass CSS colors to serialize_raster_array
-        logger.info(f"Generating raster visualization for {meta_row['datasetName']}")
+        # Generate raster visualization with custom range
+        logger.info(
+            f"[RasterViz] Generating visualization with custom range: [{chosen_min}, {chosen_max}]"
+        )
+
         raster_data = serialize_raster_array(
             var,
             meta_row,
             meta_row["datasetName"],
-            css_colors=request.cssColors,  # THIS IS THE KEY LINE - ADD THIS!
+            css_colors=request.cssColors,
+            value_min_override=chosen_min,  # Pass the custom min
+            value_max_override=chosen_max,  # Pass the custom max
         )
 
         # Add processing info
@@ -2601,10 +2621,18 @@ async def visualize_raster(request: RasterRequest):
             else "Default colormap",
             "maskZeroValuesApplied": zero_mask_applied,
             "maskedZeroPixels": zero_mask_pixels if zero_mask_applied else 0,
+            "customRangeApplied": chosen_min is not None or chosen_max is not None,
+            "effectiveRange": {
+                "min": chosen_min,
+                "max": chosen_max,
+            },
         }
 
         logger.info(
-            f"Raster visualization generated successfully in {processing_time:.2f}s"
+            f"[RasterViz] Raster visualization generated successfully in {processing_time:.2f}s"
+        )
+        logger.info(
+            f"[RasterViz] Value range used: [{raster_data['valueRange']['min']}, {raster_data['valueRange']['max']}]"
         )
 
         return raster_data
@@ -2612,7 +2640,10 @@ async def visualize_raster(request: RasterRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error generating raster visualization: {e}")
+        logger.error(f"[RasterViz] Error generating raster visualization: {e}")
+        import traceback
+
+        logger.error(traceback.format_exc())
         raise HTTPException(
             status_code=500, detail=f"Failed to generate raster visualization: {str(e)}"
         )

@@ -23,6 +23,11 @@ interface ColorBarProps {
   collapsed?: boolean;
   rasterMeta?: any;
   orientation?: "horizontal" | "vertical";
+  customRange?: {
+    enabled?: boolean;
+    min?: number | null;
+    max?: number | null;
+  };
 }
 
 interface Position {
@@ -112,6 +117,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
   collapsed = false,
   rasterMeta = null,
   orientation = "horizontal",
+  customRange,
 }) => {
   const colorBarRef = useRef<HTMLDivElement>(null);
   const isVertical = orientation === "vertical";
@@ -217,6 +223,20 @@ const ColorBar: React.FC<ColorBarProps> = ({
   // ============================================================================
 
   const colorScale = useMemo(() => {
+    const customRangeEnabled = Boolean(customRange?.enabled);
+    const overrideMin =
+      customRangeEnabled &&
+      typeof customRange?.min === "number" &&
+      Number.isFinite(customRange.min)
+        ? Number(customRange.min)
+        : null;
+    const overrideMax =
+      customRangeEnabled &&
+      typeof customRange?.max === "number" &&
+      Number.isFinite(customRange.max)
+        ? Number(customRange.max)
+        : null;
+
     const metaMin =
       typeof rasterMeta?.min === "number" && Number.isFinite(rasterMeta.min)
         ? rasterMeta.min
@@ -226,25 +246,15 @@ const ColorBar: React.FC<ColorBarProps> = ({
         ? rasterMeta.max
         : null;
 
-    const min = metaMin ?? dataset.colorScale.min;
-    const max = metaMax ?? dataset.colorScale.max;
+    const min = overrideMin ?? metaMin ?? dataset.colorScale.min;
+    const max = overrideMax ?? metaMax ?? dataset.colorScale.max;
     const safeMin = Number.isFinite(min) ? Number(min) : 0;
     const safeMax = Number.isFinite(max) ? Number(max) : safeMin;
 
-    // Parse numeric labels from dataset
-    const numericLabels = dataset.colorScale.labels
-      .map((label: any) => {
-        if (typeof label === "number" && Number.isFinite(label)) return label;
-        if (typeof label === "string") {
-          const match = label.trim().match(/-?\d+(\.\d+)?/);
-          if (match) {
-            const num = Number(match[0]);
-            if (Number.isFinite(num)) return num;
-          }
-        }
-        return null;
-      })
-      .filter((v: any): v is number => v !== null);
+    // Zero-center the range using the larger magnitude
+    const magnitude = Math.max(Math.abs(safeMin), Math.abs(safeMax));
+    const centeredMin = magnitude > 0 ? -magnitude : -1;
+    const centeredMax = magnitude > 0 ? magnitude : 1;
 
     // Limit visible tick count so labels don't flood the UI while keeping band sharpness.
     const MAX_TICKS = 7;
@@ -253,25 +263,19 @@ const ColorBar: React.FC<ColorBarProps> = ({
       Math.max(dataset.colorScale.labels.length || 0, 2),
     );
 
-    // Decide whether to use dynamic range
-    const useDynamicRange =
-      (metaMin !== null && metaMax !== null) || unitInfo.symbol === "K";
-
-    // Generate labels
-    let labels: number[];
-    if (numericLabels.length && !useDynamicRange) {
-      labels = numericLabels;
-    } else if (labelCount <= 1 || Math.abs(safeMax - safeMin) < 1e-9) {
-      labels = Array(labelCount).fill(safeMin);
-    } else {
-      labels = Array.from(
-        { length: labelCount },
-        (_, i) => safeMin + ((safeMax - safeMin) * i) / (labelCount - 1),
-      );
-    }
+    // Generate symmetric labels around zero
+    const labels =
+      labelCount <= 1 || Math.abs(centeredMax - centeredMin) < 1e-9
+        ? Array(labelCount).fill(0)
+        : Array.from(
+            { length: labelCount },
+            (_, i) =>
+              centeredMin +
+              ((centeredMax - centeredMin) * i) / (labelCount - 1),
+          );
 
     return { labels, colors: dataset.colorScale.colors };
-  }, [dataset.colorScale, rasterMeta, unitInfo.symbol]);
+  }, [customRange, dataset.colorScale, rasterMeta, unitInfo.symbol]);
 
   const displayLabels = useMemo(() => {
     const values =
@@ -279,11 +283,22 @@ const ColorBar: React.FC<ColorBarProps> = ({
         ? colorScale.labels.map((v) => (v * 9) / 5 + 32)
         : colorScale.labels;
 
-    return values.map((v) => {
+    const span =
+      Math.max(...values.map((v) => Math.abs(v))) * 2 ||
+      Math.abs(values[values.length - 1] - values[0]) ||
+      1;
+
+    const formatTick = (v: number) => {
       if (!Number.isFinite(v)) return "–";
-      const rounded = Math.round(v);
-      return (Object.is(rounded, -0) ? 0 : rounded).toString();
-    });
+      const absSpan = Math.abs(span);
+      let decimals = 0;
+      if (absSpan < 1) decimals = 2;
+      else if (absSpan < 10) decimals = 1;
+      const fixed = Number(v.toFixed(decimals));
+      return (Object.is(fixed, -0) ? 0 : fixed).toString();
+    };
+
+    return values.map(formatTick);
   }, [colorScale.labels, unitInfo.allowToggle, unit]);
 
   const labels = isVertical ? [...displayLabels].reverse() : displayLabels;

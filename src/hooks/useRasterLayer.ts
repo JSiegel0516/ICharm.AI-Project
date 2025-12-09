@@ -25,6 +25,11 @@ type UseRasterLayerOptions = {
   date?: Date;
   level?: number | null;
   maskZeroValues?: boolean;
+  colorbarRange?: {
+    enabled?: boolean;
+    min?: number | null;
+    max?: number | null;
+  };
 };
 
 export type UseRasterLayerResult = {
@@ -62,6 +67,57 @@ const decodeFloat32 = (base64: string | undefined): Float32Array => {
     bytes[i] = binary.charCodeAt(i);
   }
   return new Float32Array(bytes.buffer);
+};
+
+const computeValueRange = (
+  values: Float32Array,
+): { min: number | null; max: number | null } => {
+  // Some NetCDF rasters use huge sentinel values (e.g., 1e20) for missing data.
+  // Ignore anything non-finite or beyond this threshold when computing the range.
+  const FILL_VALUE_THRESHOLD = 1e20;
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+
+  for (let i = 0; i < values.length; i += 1) {
+    const value = values[i];
+    if (!Number.isFinite(value)) continue;
+    if (Math.abs(value) >= FILL_VALUE_THRESHOLD) continue;
+    if (value < min) min = value;
+    if (value > max) max = value;
+  }
+
+  if (min === Number.POSITIVE_INFINITY || max === Number.NEGATIVE_INFINITY) {
+    return { min: null, max: null };
+  }
+
+  return { min, max };
+};
+
+const deriveCustomRange = (range?: {
+  enabled?: boolean;
+  min?: number | null;
+  max?: number | null;
+}): { min: number; max: number } | null => {
+  const enabled = Boolean(range?.enabled);
+  if (!enabled) return null;
+
+  const rawMin =
+    typeof range?.min === "number" && Number.isFinite(range.min)
+      ? Number(range.min)
+      : 0;
+  const rawMax =
+    typeof range?.max === "number" && Number.isFinite(range.max)
+      ? Number(range.max)
+      : 0;
+
+  const hasUserValue =
+    (typeof range?.min === "number" && Number.isFinite(range.min)) ||
+    (typeof range?.max === "number" && Number.isFinite(range.max));
+  if (!hasUserValue) return null;
+
+  const magnitude = Math.max(Math.abs(rawMin), Math.abs(rawMax));
+  const safeMagnitude = magnitude > 0 ? magnitude : 1;
+  return { min: -safeMagnitude, max: safeMagnitude };
 };
 
 const normalizeLon = (lon: number) => {
@@ -127,6 +183,7 @@ export const useRasterLayer = ({
   date,
   level,
   maskZeroValues = false,
+  colorbarRange,
 }: UseRasterLayerOptions): UseRasterLayerResult => {
   const [data, setData] = useState<RasterLayerData | undefined>();
   const [isLoading, setIsLoading] = useState(false);
@@ -177,8 +234,11 @@ export const useRasterLayer = ({
     }
     const colorKey = cssColors ? cssColors.join("|") : "default";
     const maskKey = maskZeroValues ? "mask" : "nomask";
-    return `${backendDatasetId}::${dateKey}::${level ?? "surface"}::${colorKey}::${maskKey}`;
-  }, [backendDatasetId, date, level, cssColors, maskZeroValues]);
+    const customRangeKey = colorbarRange?.enabled
+      ? `range-${Number.isFinite(colorbarRange?.min as number) ? colorbarRange?.min : "auto"}-${Number.isFinite(colorbarRange?.max as number) ? colorbarRange?.max : "auto"}`
+      : "norange";
+    return `${backendDatasetId}::${dateKey}::${level ?? "surface"}::${colorKey}::${maskKey}::${customRangeKey}`;
+  }, [backendDatasetId, date, level, cssColors, maskZeroValues, colorbarRange]);
 
   const requiresExplicitLevel = useMemo(() => {
     if (!dataset?.backend) {
@@ -239,6 +299,23 @@ export const useRasterLayer = ({
       setError(null);
 
       try {
+        // Extract custom range values
+        const customMin =
+          colorbarRange?.enabled && colorbarRange?.min != null
+            ? Number(colorbarRange.min)
+            : null;
+
+        const customMax =
+          colorbarRange?.enabled && colorbarRange?.max != null
+            ? Number(colorbarRange.max)
+            : null;
+
+        console.log("[useRasterLayer] Sending request with custom range:", {
+          enabled: colorbarRange?.enabled,
+          min: customMin,
+          max: customMax,
+        });
+
         const response = await fetch("/api/raster/visualize", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -248,6 +325,11 @@ export const useRasterLayer = ({
             level: level ?? undefined,
             cssColors,
             maskZeroValues: maskZeroValues || undefined,
+            // Send custom range - use both field names for compatibility
+            minValue: customMin,
+            maxValue: customMax,
+            min: customMin,
+            max: customMax,
           }),
           signal: controller.signal,
         });
@@ -260,6 +342,12 @@ export const useRasterLayer = ({
         }
 
         const payload = await response.json();
+
+        console.log("[useRasterLayer] Response received:", {
+          valueRange: payload.valueRange,
+          actualRange: payload.actualRange,
+          customRangeApplied: payload.processingInfo?.customRangeApplied,
+        });
         const textures: RasterLayerTexture[] = Array.isArray(payload?.textures)
           ? payload.textures
           : [];
@@ -271,12 +359,17 @@ export const useRasterLayer = ({
         const lonArray = Float64Array.from(payload?.lon ?? []);
 
         const sampler = buildSampler(latArray, lonArray, values, rows, cols);
+        const computedRange = computeValueRange(values);
+        const fallbackMin =
+          payload?.valueRange?.min ?? payload?.actualRange?.min ?? null;
+        const fallbackMax =
+          payload?.valueRange?.max ?? payload?.actualRange?.max ?? null;
 
         setData({
           textures,
           units: payload?.units ?? dataset?.units,
-          min: payload?.valueRange?.min ?? payload?.actualRange?.min,
-          max: payload?.valueRange?.max ?? payload?.actualRange?.max,
+          min: computedRange.min ?? fallbackMin ?? undefined,
+          max: computedRange.max ?? fallbackMax ?? undefined,
           sampleValue: sampler,
         });
       } catch (err) {
@@ -309,6 +402,7 @@ export const useRasterLayer = ({
     cssColors,
     maskZeroValues,
     waitingForLevel,
+    colorbarRange,
   ]);
 
   return { data, isLoading, error, requestKey };
