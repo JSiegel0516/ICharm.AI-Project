@@ -260,6 +260,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       selectedDate,
       selectedLevel,
       colorbarRange,
+      viewMode = "3d",
       satelliteLayerVisible = true,
       boundaryLinesVisible = true,
       geographicLinesVisible = false,
@@ -411,6 +412,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             outlineColor: cesiumInstance.Color.WHITE,
             outlineWidth: 2,
             heightReference: cesiumInstance.HeightReference.NONE,
+            // Keep marker visible above raster/terrain when zoomed in
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
           label: label
             ? {
@@ -422,6 +425,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
                 style: cesiumInstance.LabelStyle.FILL_AND_OUTLINE,
                 verticalOrigin: cesiumInstance.VerticalOrigin.BOTTOM,
                 pixelOffset: new cesiumInstance.Cartesian2(0, -18),
+                // Prevent label from being occluded by terrain/raster when close
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                eyeOffset: new cesiumInstance.Cartesian3(0, 0, -10),
               }
             : undefined,
         });
@@ -961,6 +967,46 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       }
     }, [rasterState.error]);
 
+    const applyViewMode = useCallback(() => {
+      if (!viewerRef.current || !cesiumInstance) return;
+      const viewer = viewerRef.current;
+      const Cesium = cesiumInstance;
+
+      if (viewMode === "2d") {
+        viewer.scene.morphTo2D(0.0);
+        viewer.scene.globe.show = true;
+        viewer.scene.requestRender();
+        // Ensure camera frames the whole world in 2D
+        viewer.camera.setView({
+          destination: Cesium.Rectangle.fromDegrees(-180.0, -90.0, 180.0, 90.0),
+        });
+        return;
+      }
+
+      viewer.scene.morphTo3D(0.0);
+      viewer.scene.globe.show = true;
+
+      const canvas = viewer.scene.canvas;
+      const cameraHeight = viewer.scene.camera.positionCartographic.height;
+      const globeRadius = Cesium.Ellipsoid.WGS84.maximumRadius;
+      const aspectRatio =
+        canvas && canvas.clientHeight
+          ? canvas.clientWidth / canvas.clientHeight
+          : 1;
+
+      // Keep the far plane comfortably beyond the globe so it doesn't disappear when zoomed out.
+      const farPlane = Math.max(globeRadius * 8, cameraHeight * 4, 50_000_000);
+
+      viewer.scene.camera.frustum = new Cesium.PerspectiveFrustum({
+        fov: Cesium.Math.toRadians(60),
+        near: 1.0,
+        far: farPlane,
+        aspectRatio,
+      });
+
+      viewer.scene.requestRender();
+    }, [viewMode, cesiumInstance]);
+
     useEffect(() => {
       if (!satelliteLayerRef.current) return;
 
@@ -1001,6 +1047,11 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       rasterState.requestKey,
       viewerReady,
     ]);
+
+    useEffect(() => {
+      if (!viewerReady) return;
+      applyViewMode();
+    }, [viewerReady, applyViewMode]);
 
     useEffect(() => {
       rasterDataRef.current = rasterState.data;

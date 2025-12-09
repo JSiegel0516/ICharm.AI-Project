@@ -139,6 +139,7 @@ export interface GlobeSettings {
   rasterBlurEnabled: boolean;
   colorbarCustomMin?: number | null;
   colorbarCustomMax?: number | null;
+  viewMode?: GlobeViewMode;
 }
 
 export interface AppState {
@@ -229,6 +230,7 @@ export interface GlobeProps {
     min?: number | null;
     max?: number | null;
   };
+  viewMode?: GlobeViewMode;
   position?: { latitude: number; longitude: number; zoom: number };
   onPositionChange?: (pos: {
     latitude: number;
@@ -253,6 +255,8 @@ export interface GlobeProps {
     } | null,
   ) => void;
 }
+
+export type GlobeViewMode = "3d" | "2d";
 
 export interface RegionData {
   name: string;

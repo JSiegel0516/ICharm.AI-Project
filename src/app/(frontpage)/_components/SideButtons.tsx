@@ -46,6 +46,8 @@ interface SideButtonsProps {
     max: number | null;
   }) => void;
   onColorbarRangeReset: () => void;
+  viewMode?: GlobeSettings["viewMode"];
+  onViewModeChange?: (mode: GlobeSettings["viewMode"]) => void;
 }
 
 const formatDisplayDate = (value?: string | null | Date) => {
@@ -75,6 +77,8 @@ export function SideButtons({
   onRasterBlurToggle,
   onColorbarRangeChange,
   onColorbarRangeReset,
+  viewMode,
+  onViewModeChange,
 }: SideButtonsProps) {
   const { datasets, currentDataset, setCurrentDataset, isLoading, error } =
     useAppState();
@@ -601,6 +605,8 @@ export function SideButtons({
         colorbarCustomMax={globeSettings.colorbarCustomMax}
         onColorbarRangeChange={onColorbarRangeChange}
         onColorbarRangeReset={onColorbarRangeReset}
+        viewMode={viewMode ?? "3d"}
+        onViewModeChange={onViewModeChange ?? (() => {})}
       />
     </>
   );
