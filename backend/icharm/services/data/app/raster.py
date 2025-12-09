@@ -551,18 +551,17 @@ def serialize_raster_array(
     row: pd.Series,
     dataset_name: str,
     css_colors: Optional[List[str]] = None,
+    value_min_override: Optional[float] = None,
+    value_max_override: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
-    Serialize raster array - STRICTLY respects original data boundaries
-
-    Note: Zero-value masking should be done via .where() in the calling code
-    before passing the DataArray to this function.
+    Serialize raster array with custom min/max overrides (zero-centered overrides already handled upstream).
     """
-    print(f"[RasterViz DEBUG] Serializing raster for dataset: {dataset_name}")
-    if css_colors:
-        print(f"[RasterViz DEBUG] Using CSS colors from frontend: {css_colors}")
-    else:
-        print("[RasterViz DEBUG] No CSS colors provided")
+    print("[RasterViz DEBUG] serialize_raster_array called:")
+    print(f"  dataset_name: {dataset_name}")
+    print(f"  value_min_override: {value_min_override}")
+    print(f"  value_max_override: {value_max_override}")
+    print(f"  css_colors: {len(css_colors) if css_colors else 0}")
 
     array = da.squeeze()
     if array.ndim > 2:
@@ -594,6 +593,8 @@ def serialize_raster_array(
         fill_values.extend(_decode_fill_values(array.attrs.get(key)))
     fill_values.extend(_decode_fill_values(row.get("fillValue")))
 
+    finite_mask = np.isfinite(data)
+
     if fill_values:
         data = data.copy()
         fill_values_arr = np.array(fill_values, dtype=np.float64)
@@ -609,26 +610,11 @@ def serialize_raster_array(
                     f"{np.unique(fill_values_arr)[:5]}...",
                 )
                 data[fill_mask] = np.nan
+                finite_mask &= ~fill_mask
 
-    # Handle longitude normalization (0-360 to -180-180) if needed
-    if lon_values[-1] > 180 and lon_values[0] >= 0:
-        print(
-            f"[RasterViz] Normalizing longitude from 0-{lon_values[-1]:.0f} to -180-180"
-        )
-        shifted = ((lon_values + 180.0) % 360.0) - 180.0
-        sort_idx = np.argsort(shifted)
-        lon_values = shifted[sort_idx]
-        data = data[:, sort_idx]
+    finite_mask = np.isfinite(data) & finite_mask
 
-    # Initial mask: only NaN/Inf are invalid
-    # (Zero masking is handled by .where() before this function is called)
-    finite_mask = np.isfinite(data)
-
-    print(
-        f"[RasterViz DEBUG] Initial finite_mask - valid pixels: {finite_mask.sum()} / {finite_mask.size}"
-    )
-
-    # Apply land mask detection ONLY for GODAS
+    # Apply land/ocean mask for special datasets
     data, finite_mask = _apply_land_ocean_mask(dataset_name, data, finite_mask)
 
     print(
@@ -643,6 +629,16 @@ def serialize_raster_array(
     meta_min = _maybe_float(row.get("valueMin"))
     meta_max = _maybe_float(row.get("valueMax"))
 
+    if value_min_override is not None and np.isfinite(value_min_override):
+        meta_min = float(value_min_override)
+        print(f"[RasterViz DEBUG] Overriding min: {meta_min}")
+
+    if value_max_override is not None and np.isfinite(value_max_override):
+        meta_max = float(value_max_override)
+        print(f"[RasterViz DEBUG] Overriding max: {meta_max}")
+
+    print(f"[RasterViz DEBUG] Final range for color mapping: [{meta_min}, {meta_max}]")
+
     units = array.attrs.get("units") or row.get("units") or row.get("unit") or "units"
 
     textures, texture_scale = _generate_textures(
@@ -650,8 +646,8 @@ def serialize_raster_array(
         finite_mask,
         lat_values,
         lon_values,
-        meta_min if meta_min is not None else data_min,
-        meta_max if meta_max is not None else data_max,
+        meta_min if meta_min is not None else data_min,  # Use overridden min
+        meta_max if meta_max is not None else data_max,  # Use overridden max
         _stringify_palette_name(row.get("colorMap")),
         css_colors=css_colors,
     )

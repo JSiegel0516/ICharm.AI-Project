@@ -14,6 +14,8 @@ export async function POST(request: NextRequest) {
       datasetId: payload.datasetId,
       date: payload.date,
       level: payload.level,
+      minValue: payload.minValue ?? payload.min,
+      maxValue: payload.maxValue ?? payload.max,
       serviceUrl: DATA_SERVICE_URL,
     });
 

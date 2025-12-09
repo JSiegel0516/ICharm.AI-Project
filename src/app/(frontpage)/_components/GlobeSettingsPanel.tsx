@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
+import { Input } from "@/components/ui/input";
 
 interface GlobeSettingsPanelProps {
   isOpen: boolean;
@@ -29,6 +30,13 @@ interface GlobeSettingsPanelProps {
   onHideZeroPrecipitationToggle: (enabled: boolean) => void;
   rasterBlurEnabled: boolean;
   onRasterBlurToggle: (enabled: boolean) => void;
+  colorbarCustomMin?: number | null;
+  colorbarCustomMax?: number | null;
+  onColorbarRangeChange: (payload: {
+    min: number | null;
+    max: number | null;
+  }) => void;
+  onColorbarRangeReset: () => void;
 }
 
 export function GlobeSettingsPanel({
@@ -46,6 +54,10 @@ export function GlobeSettingsPanel({
   onHideZeroPrecipitationToggle,
   rasterBlurEnabled,
   onRasterBlurToggle,
+  colorbarCustomMin,
+  colorbarCustomMax,
+  onColorbarRangeChange,
+  onColorbarRangeReset,
 }: GlobeSettingsPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -230,6 +242,101 @@ export function GlobeSettingsPanel({
                     onCheckedChange={onHideZeroPrecipitationToggle}
                     className="data-[state=checked]:bg-rose-500"
                   />
+                </div>
+              </div>
+
+              {/* Colorbar Range */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-white">
+                  Colorbar Range
+                </h3>
+
+                <div className="space-y-2 rounded-lg border border-neutral-600 bg-neutral-700/50 p-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label
+                        htmlFor="colorbar-min"
+                        className="text-xs font-medium text-slate-300"
+                      >
+                        Min
+                      </Label>
+                      <Input
+                        id="colorbar-min"
+                        type="number"
+                        step="any"
+                        inputMode="decimal"
+                        value={
+                          Number.isFinite(colorbarCustomMin as number)
+                            ? (colorbarCustomMin as number)
+                            : ""
+                        }
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          const parsed =
+                            raw === "" ? null : Number.parseFloat(raw);
+                          if (raw === "" || Number.isFinite(parsed)) {
+                            onColorbarRangeChange({
+                              min: raw === "" ? null : parsed,
+                              max:
+                                Number.isFinite(colorbarCustomMax as number) &&
+                                colorbarCustomMax !== null
+                                  ? (colorbarCustomMax as number)
+                                  : null,
+                            });
+                          }
+                        }}
+                        className="bg-neutral-800 text-white"
+                        placeholder="Auto"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label
+                        htmlFor="colorbar-max"
+                        className="text-xs font-medium text-slate-300"
+                      >
+                        Max
+                      </Label>
+                      <Input
+                        id="colorbar-max"
+                        type="number"
+                        step="any"
+                        inputMode="decimal"
+                        value={
+                          Number.isFinite(colorbarCustomMax as number)
+                            ? (colorbarCustomMax as number)
+                            : ""
+                        }
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          const parsed =
+                            raw === "" ? null : Number.parseFloat(raw);
+                          if (raw === "" || Number.isFinite(parsed)) {
+                            onColorbarRangeChange({
+                              min:
+                                Number.isFinite(colorbarCustomMin as number) &&
+                                colorbarCustomMin !== null
+                                  ? (colorbarCustomMin as number)
+                                  : null,
+                              max: raw === "" ? null : parsed,
+                            });
+                          }
+                        }}
+                        className="bg-neutral-800 text-white"
+                        placeholder="Auto"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-slate-400">
+                    <span>Leave blank for auto; scale stays centered on 0</span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="border-slate-600 bg-transparent px-3 py-1 text-xs text-slate-200 hover:bg-slate-700"
+                      onClick={onColorbarRangeReset}
+                    >
+                      Reset
+                    </Button>
+                  </div>
                 </div>
               </div>
 

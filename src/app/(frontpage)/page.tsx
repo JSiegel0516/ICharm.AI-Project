@@ -217,6 +217,8 @@ export default function HomePage() {
     rasterOpacity: 1,
     hideZeroPrecipitation: false,
     rasterBlurEnabled: true,
+    colorbarCustomMin: null,
+    colorbarCustomMax: null,
   });
 
   // Event Handlers
@@ -292,6 +294,25 @@ export default function HomePage() {
     setGlobeSettings((prev) => ({
       ...prev,
       hideZeroPrecipitation: enabled,
+    }));
+  }, []);
+
+  const handleColorbarRangeChange = useCallback(
+    (payload: { min: number | null; max: number | null }) => {
+      setGlobeSettings((prev) => ({
+        ...prev,
+        colorbarCustomMin: payload.min,
+        colorbarCustomMax: payload.max,
+      }));
+    },
+    [],
+  );
+
+  const handleColorbarRangeReset = useCallback(() => {
+    setGlobeSettings((prev) => ({
+      ...prev,
+      colorbarCustomMin: null,
+      colorbarCustomMax: null,
     }));
   }, []);
 
@@ -381,6 +402,13 @@ export default function HomePage() {
         currentDataset={currentDataset}
         selectedDate={selectedDate}
         selectedLevel={selectedLevelValue}
+        colorbarRange={{
+          enabled:
+            globeSettings.colorbarCustomMin !== null ||
+            globeSettings.colorbarCustomMax !== null,
+          min: globeSettings.colorbarCustomMin,
+          max: globeSettings.colorbarCustomMax,
+        }}
         hideZeroPrecipitation={globeSettings.hideZeroPrecipitation}
         onRegionClick={handleRegionClick}
         satelliteLayerVisible={globeSettings.satelliteLayerVisible}
@@ -402,7 +430,8 @@ export default function HomePage() {
       globeSettings.rasterOpacity,
       globeSettings.rasterBlurEnabled,
       globeSettings.hideZeroPrecipitation,
-      globeSettings.hideZeroPrecipitation,
+      globeSettings.colorbarCustomMin,
+      globeSettings.colorbarCustomMax,
     ],
   );
 
@@ -454,6 +483,8 @@ export default function HomePage() {
             onRasterOpacityChange={handleRasterOpacityChange}
             onHideZeroPrecipToggle={handleHideZeroPrecipToggle}
             onRasterBlurToggle={handleRasterBlurToggle}
+            onColorbarRangeChange={handleColorbarRangeChange}
+            onColorbarRangeReset={handleColorbarRangeReset}
           />
         </div>
 
@@ -478,6 +509,13 @@ export default function HomePage() {
             onToggleCollapse={setColorBarCollapsed}
             rasterMeta={rasterMeta}
             orientation={colorBarOrientation}
+            customRange={{
+              enabled:
+                globeSettings.colorbarCustomMin !== null ||
+                globeSettings.colorbarCustomMax !== null,
+              min: globeSettings.colorbarCustomMin ?? null,
+              max: globeSettings.colorbarCustomMax ?? null,
+            }}
           />
         </div>
 

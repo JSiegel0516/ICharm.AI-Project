@@ -137,6 +137,8 @@ export interface GlobeSettings {
   rasterOpacity: number;
   hideZeroPrecipitation: boolean;
   rasterBlurEnabled: boolean;
+  colorbarCustomMin?: number | null;
+  colorbarCustomMax?: number | null;
 }
 
 export interface AppState {
@@ -222,6 +224,11 @@ export interface GlobeProps {
   currentDataset?: Dataset;
   selectedDate?: Date;
   selectedLevel?: number | null;
+  colorbarRange?: {
+    enabled?: boolean;
+    min?: number | null;
+    max?: number | null;
+  };
   position?: { latitude: number; longitude: number; zoom: number };
   onPositionChange?: (pos: {
     latitude: number;
@@ -373,4 +380,11 @@ export interface GlobeSettingsPanelProps {
   onHideZeroPrecipitationToggle: (enabled: boolean) => void;
   rasterBlurEnabled: boolean;
   onRasterBlurToggle: (enabled: boolean) => void;
+  colorbarCustomMin?: number | null;
+  colorbarCustomMax?: number | null;
+  onColorbarRangeChange: (payload: {
+    min: number | null;
+    max: number | null;
+  }) => void;
+  onColorbarRangeReset: () => void;
 }

@@ -259,6 +259,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       onRegionClick,
       selectedDate,
       selectedLevel,
+      colorbarRange,
       satelliteLayerVisible = true,
       boundaryLinesVisible = true,
       geographicLinesVisible = false,
@@ -299,6 +300,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       date: selectedDate,
       level: selectedLevel ?? null,
       maskZeroValues: shouldHideZero,
+      colorbarRange,
     });
 
     const clearMarker = useCallback(() => {

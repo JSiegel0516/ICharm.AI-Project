@@ -41,6 +41,11 @@ interface SideButtonsProps {
   onRasterOpacityChange: (opacity: number) => void;
   onHideZeroPrecipToggle: (enabled: boolean) => void;
   onRasterBlurToggle: (enabled: boolean) => void;
+  onColorbarRangeChange: (payload: {
+    min: number | null;
+    max: number | null;
+  }) => void;
+  onColorbarRangeReset: () => void;
 }
 
 const formatDisplayDate = (value?: string | null | Date) => {
@@ -68,6 +73,8 @@ export function SideButtons({
   onRasterOpacityChange,
   onHideZeroPrecipToggle,
   onRasterBlurToggle,
+  onColorbarRangeChange,
+  onColorbarRangeReset,
 }: SideButtonsProps) {
   const { datasets, currentDataset, setCurrentDataset, isLoading, error } =
     useAppState();
@@ -590,6 +597,10 @@ export function SideButtons({
         onHideZeroPrecipitationToggle={onHideZeroPrecipToggle}
         rasterBlurEnabled={globeSettings.rasterBlurEnabled}
         onRasterBlurToggle={onRasterBlurToggle}
+        colorbarCustomMin={globeSettings.colorbarCustomMin}
+        colorbarCustomMax={globeSettings.colorbarCustomMax}
+        onColorbarRangeChange={onColorbarRangeChange}
+        onColorbarRangeReset={onColorbarRangeReset}
       />
     </>
   );
