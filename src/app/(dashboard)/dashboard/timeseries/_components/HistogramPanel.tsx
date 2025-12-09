@@ -181,7 +181,7 @@ export function HistogramPanel({
                   value={selectedDatasetId}
                   onValueChange={setSelectedDatasetId}
                 >
-                  <SelectTrigger className="h-8 w-[180px] text-xs">
+                  <SelectTrigger className="h-8 w-full text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

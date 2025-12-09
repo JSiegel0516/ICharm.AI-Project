@@ -588,10 +588,9 @@ export function VisualizationPanel({
               {chartTitle}
             </CardTitle>
             {processingInfo && (
-              <CardDescription>
+              <CardDescription className="ml-1">
                 {processingInfo.totalPoints} data points •{" "}
-                {processingInfo.datasetsProcessed} datasets • Processed in{" "}
-                {processingInfo.processingTime}
+                {processingInfo.datasetsProcessed} datasets
                 {yDomain && yAxisUnit && !normalize && (
                   <>
                     {" "}
