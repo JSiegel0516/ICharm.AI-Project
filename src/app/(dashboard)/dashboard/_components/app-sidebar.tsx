@@ -159,7 +159,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             >
               <Link href="/" className="flex items-center gap-4">
                 <img
-                  src="/images/4DVD.png"
+                  src="/images/icharmlogo.png"
                   alt="IC Logo"
                   className="h-8 w-8 rounded-lg"
                 />

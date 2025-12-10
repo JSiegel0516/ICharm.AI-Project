@@ -11,7 +11,7 @@ const Header: React.FC = () => {
       <div className="fixed top-6 left-8 z-50 flex items-center gap-4 leading-relaxed">
         <Link href="/" className="flex items-center gap-4">
           <img
-            src="/images/4DVD.png"
+            src="/images/icharmlogo.png"
             alt="IC Logo"
             className="h-10 w-10 rounded-lg"
           />
