@@ -128,6 +128,7 @@ export default function HomePage() {
     setTemperatureUnit,
   } = useAppState();
   const globeRef = useRef<GlobeRef>(null);
+  const lastDatasetIdRef = useRef<string | null>(null);
 
   // Date & Time State
   const [isTimebarPlaying, setIsTimebarPlaying] = useState(false);
@@ -221,6 +222,41 @@ export default function HomePage() {
     colorbarCustomMax: null,
     viewMode: "3d",
   });
+
+  useEffect(() => {
+    const datasetId = currentDataset?.id;
+    if (!datasetId) {
+      return;
+    }
+
+    const isCmorphDataset = [
+      currentDataset?.name,
+      currentDataset?.description,
+      currentDataset?.backend?.datasetName,
+      currentDataset?.backend?.slug,
+      currentDataset?.backendId,
+      currentDataset?.backendSlug,
+    ]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes("cmorph"));
+
+    const isNewDataset = lastDatasetIdRef.current !== datasetId;
+    if (isNewDataset) {
+      lastDatasetIdRef.current = datasetId;
+      setGlobeSettings((prev) => {
+        if (isCmorphDataset) {
+          return prev.hideZeroPrecipitation
+            ? prev
+            : { ...prev, hideZeroPrecipitation: true };
+        }
+
+        // Non-CMORPH datasets should default to showing all values.
+        return prev.hideZeroPrecipitation
+          ? { ...prev, hideZeroPrecipitation: false }
+          : prev;
+      });
+    }
+  }, [currentDataset]);
 
   // Event Handlers
   const handleDateChange = useCallback(
