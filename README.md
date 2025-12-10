@@ -101,6 +101,67 @@ Install Docker before attempting to run the database
 
 Use `docker compose down` to stop the database or `docker compose down -v` to reset the data directory and re-run the initialization script.
 
+4. Setting Up PostgreSQL Databases for Datasets
+
+To load cloud-hosted datasets into your local PostgreSQL instance, follow these steps:
+
+### 1. Download NetCDF Files
+
+First, download the datasets you wish to import. These example AWS S3 commands pull the daily products for CMORPH and Sea Surface Temperature (SST):
+
+#### ⬇️ CMORPH (~4.1 GB, ~5 min download)
+
+```bash
+aws s3 sync s3://noaa-cdr-precip-cmorph-pds/data/daily ./daily --no-sign-request
+```
+
+#### ⬇️ Sea Surface Temperature (~25 GB, ~30 min download)
+
+```bash
+aws s3 sync s3://noaa-cdr-sea-surface-temp-optimum-interpolation-pds/data/v2.1/avhrr ./daily --no-sign-request
+```
+
+### 2. Prepare the Backend
+
+Change directory to the project backend:
+
+```bash
+cd backend
+```
+
+---
+
+### 3. Import the Dataset to PostgreSQL
+
+**A. For Sea Surface Temperature (SST)**
+
+1. **Update data path:**
+   Open `netcdf_to_db_by_year_sst.py` and update the path variable at **line 623** to point to your downloaded dataset folder.
+
+2. **Run the import script:**
+
+   ```bash
+   python -m icharm.dataset_processing.netcdf_to_db_by_year_sst
+   ```
+
+---
+
+**B. For CMORPH**
+
+1. **Update data path:**
+   Open `netcdf_to_db_by_year.py` and update the path variable at **line 434** to point to your downloaded dataset folder.
+
+2. **Run the import script:**
+
+   ```bash
+   python -m icharm.dataset_processing.netcdf_to_db_by_year
+   ```
+
+---
+
+> **Note:**
+> Make sure your PostgreSQL instance (e.g., the Docker container) is running and credentials are set in your environment before running these import scripts.
+
 ## LLM Service (FastAPI)
 
 - The FastAPI microservice wraps Hugging Face chat completions and runs alongside Postgres via Docker Compose.
