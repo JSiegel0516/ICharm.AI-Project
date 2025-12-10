@@ -417,7 +417,7 @@ export function SpectrogramPanel({
                   value={selectedDatasetId}
                   onValueChange={setSelectedDatasetId}
                 >
-                  <SelectTrigger className="h-8 w-[180px] text-xs">
+                  <SelectTrigger className="h-8 w-[350px] text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
