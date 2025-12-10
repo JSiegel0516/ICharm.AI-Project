@@ -17,57 +17,90 @@ export interface SpectrogramData {
 }
 
 /**
- * Compute periodogram from time series data
- * Based on R code: FF = abs(fft(x)/sqrt(length(x)))^2
+ * Compute periodogram from climate time series data
+ * Returns power spectrum preserving variance interpretation
  */
 export function computePeriodogram(
   data: number[],
-  samplingRate: number = 1.0,
+  samplingRate: number = 1.0, // For daily data: 1.0, for monthly: 12.0
 ): PeriodogramData {
-  // Remove mean (anomaly data)
-  const mean = data.reduce((sum, val) => sum + val, 0) / data.length;
-  const anomalyData = data.map((val) => val - mean);
-
-  // Find next power of 2 for FFT efficiency
-  const n = Math.pow(2, Math.ceil(Math.log2(anomalyData.length)));
+  const N = data.length;
   
-  // Pad with zeros if necessary
+  // 1. DETREND (not just remove mean) - Important for climate!
+  const detrended = detrendLinear(data);
+  
+  // 2. Apply window (Hanning) to reduce spectral leakage
+  const windowed = applyHanningWindow(detrended);
+  
+  // 3. Pad to next power of 2 for efficient FFT
+  const n = Math.pow(2, Math.ceil(Math.log2(N)));
   const paddedData = new Array(n).fill(0);
-  for (let i = 0; i < anomalyData.length; i++) {
-    paddedData[i] = anomalyData[i];
+  for (let i = 0; i < N; i++) {
+    paddedData[i] = windowed[i];
   }
 
-  // Perform FFT
+  // 4. Compute FFT
   const fft = new FFT(n);
   const out = fft.createComplexArray();
   fft.realTransform(out, paddedData);
 
-  // Compute power: abs(fft(x)/sqrt(length(x)))^2
   const power: number[] = [];
   const frequencies: number[] = [];
-  
-  // Only need first half of FFT (Nyquist)
   const halfN = Math.floor(n / 2);
-  
+
+  // 5. Compute Power Spectral Density
   for (let i = 0; i < halfN; i++) {
     const real = out[2 * i];
     const imag = out[2 * i + 1];
+    const magnitude = Math.sqrt(real * real + imag * imag);
     
-    // Magnitude squared, normalized
-    const magnitude = Math.sqrt(real * real + imag * imag) / Math.sqrt(n);
-    const powerValue = magnitude * magnitude;
+    // Power Spectral Density (variance per frequency bin)
+    // Correct normalization: 2 * |FFT|^2 / (N * W)
+    // Factor of 2: because we only use positive frequencies
+    // W: sum of squared window values (for Hanning: N * 3/8)
+    const W = N * 0.375; // Hanning window correction factor
+    const psd = (2 * magnitude * magnitude) / (N * W);
     
-    // Convert to dB: 10 * log10(power)
-    const powerDB = powerValue > 0 ? 10 * Math.log10(powerValue) : -100;
+    power.push(psd); // Keep in linear scale (variance units)
     
-    power.push(powerDB);
-    
-    // Frequency corresponding to this bin
+    // Frequency in cycles per unit time
     const freq = (i * samplingRate) / n;
     frequencies.push(freq);
   }
 
   return { frequencies, power };
+}
+
+/**
+ * Linear detrending - removes linear trend
+ */
+function detrendLinear(data: number[]): number[] {
+  const N = data.length;
+  
+  // Calculate linear regression
+  let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+  for (let i = 0; i < N; i++) {
+    sumX += i;
+    sumY += data[i];
+    sumXY += i * data[i];
+    sumX2 += i * i;
+  }
+  
+  const slope = (N * sumXY - sumX * sumY) / (N * sumX2 - sumX * sumX);
+  const intercept = (sumY - slope * sumX) / N;
+  
+  // Remove trend
+  return data.map((val, i) => val - (slope * i + intercept));
+}
+
+/**
+ * Apply Hanning window
+ */
+function applyHanningWindow(data: number[]): number[] {
+  const N = data.length;
+  return data.map((val, i) => 
+    val * 0.5 * (1 - Math.cos(2 * Math.PI * i / (N - 1)))
+  );
 }
 
 /**

@@ -68,12 +68,20 @@ export function PeriodogramPanel({
 
       maxFreqIndex = Math.max(maxFreqIndex, periodogram.frequencies.length);
 
-      // Add to combined data
+      // Add to combined data with index-based X-axis
       periodogram.frequencies.forEach((freq, i) => {
         if (!combinedData[i]) {
-          combinedData[i] = { frequency: freq };
+          combinedData[i] = {
+            index: i, // Index for X-axis (0, 1, 2, 3...)
+            frequency: freq, // Actual frequency for tooltip
+          };
         }
-        combinedData[i][datasetId] = periodogram.power[i];
+        // Convert power to dB scale
+        const powerDB =
+          periodogram.power[i] > 0
+            ? 10 * Math.log10(periodogram.power[i])
+            : -100; // Floor for zero/negative values
+        combinedData[i][datasetId] = powerDB;
       });
     });
 
@@ -105,13 +113,6 @@ export function PeriodogramPanel({
     );
   }
 
-  const formatFrequency = (value: number) => {
-    if (value === 0) return "0";
-    if (value < 0.001) return value.toExponential(1);
-    if (value < 1) return value.toFixed(3);
-    return value.toFixed(2);
-  };
-
   const formatPower = (value: number) => {
     return value.toFixed(1);
   };
@@ -134,10 +135,9 @@ export function PeriodogramPanel({
             >
               <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
               <XAxis
-                dataKey="frequency"
-                tickFormatter={formatFrequency}
+                dataKey="index"
                 label={{
-                  value: "Frequency (cycles per unit time)",
+                  value: "Frequency Index",
                   position: "insideBottom",
                   offset: -5,
                   style: { fontSize: 12 },
@@ -155,11 +155,12 @@ export function PeriodogramPanel({
                 tick={{ fontSize: 11 }}
               />
               <Tooltip
-                formatter={(value: any) => `${formatPower(value)} dB`}
-                labelFormatter={(label) =>
-                  `Frequency: ${formatFrequency(label)}`
-                }
-                contentStyle={{ fontSize: 12 }}
+                formatter={(value: any) => `${value.toFixed(2)} dB`}
+                labelFormatter={(index) => {
+                  // Access frequency from the data array
+                  const freq = periodogramData.data[index]?.frequency;
+                  return `Index: ${index}${freq ? ` (${freq.toFixed(4)} cycles/day)` : ""}`;
+                }}
               />
               <Legend />
               {periodogramData.datasetIds.map((datasetId, idx) => {
@@ -194,7 +195,8 @@ export function PeriodogramPanel({
           <p>
             <strong>Interpretation:</strong> Peaks in the periodogram indicate
             dominant periodic components in the data. Higher peaks represent
-            stronger periodic signals at those frequencies.
+            stronger periodic signals at those frequencies. The power is shown
+            in decibels (dB) for better visualization of the dynamic range.
           </p>
         </div>
       </CardContent>
