@@ -472,7 +472,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         isUpdatingMarkerRef.current = true;
 
         try {
-          // Remove existing marker before adding a new one
           if (
             currentMarkerRef.current &&
             viewerRef.current &&
@@ -481,66 +480,69 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             clearMarker();
           }
 
-          const camera = viewerRef.current.camera;
-          const canvas = viewerRef.current.scene.canvas;
-          const fovy =
-            camera.frustum && camera.frustum.fovy
-              ? camera.frustum.fovy
-              : Cesium.Math.toRadians(60);
-          const cameraHeight =
-            viewerRef.current.camera.positionCartographic.height;
+          const is2D =
+            viewerRef.current?.scene?.mode === Cesium.SceneMode.SCENE2D;
 
-          // Approximate ground resolution (meters per pixel) at the current camera height
-          const metersPerPixel =
-            (2 * Math.tan(fovy / 2) * cameraHeight) / canvas.height;
+          if (is2D) {
+            const entity = viewerRef.current.entities.add({
+              position: Cesium.Cartesian3.fromDegrees(longitude, latitude, 0),
+              billboard: {
+                image: "/images/selector.png",
+                width: 28,
+                height: 28,
+                heightReference: Cesium.HeightReference.NONE,
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              },
+            });
 
-          let targetPixelSize = 28;
+            currentMarkerRef.current = entity;
+          } else {
+            const camera = viewerRef.current.camera;
+            const canvas = viewerRef.current.scene.canvas;
+            const fovy =
+              camera.frustum && camera.frustum.fovy
+                ? camera.frustum.fovy
+                : Cesium.Math.toRadians(60);
+            const cameraHeight =
+              viewerRef.current.camera.positionCartographic.height;
 
-          // When in 2D and fully zoomed out, gently shrink the marker so it
-          // doesn't dominate the view while keeping close-up scaling intact.
-          if (viewerRef.current?.scene?.mode === Cesium.SceneMode.SCENE2D) {
-            const minHeight = 15_000_000;
-            const maxHeight = 40_000_000;
-            const t = Math.min(
-              Math.max((cameraHeight - minHeight) / (maxHeight - minHeight), 0),
-              1,
-            );
-            const minScale = 0.55; // ~45% smaller at max zoom-out
-            targetPixelSize = targetPixelSize * (1 - (1 - minScale) * t);
+            const metersPerPixel =
+              (2 * Math.tan(fovy / 2) * cameraHeight) / canvas.height;
+
+            const targetPixelSize = 28;
+            const targetMeters = targetPixelSize * metersPerPixel;
+            const radiusMeters = Math.max(10, targetMeters / 2);
+
+            const geometry = new Cesium.EllipseGeometry({
+              center: Cesium.Cartesian3.fromDegrees(longitude, latitude, 0),
+              semiMajorAxis: radiusMeters,
+              semiMinorAxis: radiusMeters,
+              height: 0,
+              vertexFormat: Cesium.EllipsoidSurfaceAppearance.VERTEX_FORMAT,
+            });
+
+            const primitive = new Cesium.GroundPrimitive({
+              geometryInstances: new Cesium.GeometryInstance({
+                geometry,
+              }),
+              appearance: new Cesium.EllipsoidSurfaceAppearance({
+                material: Cesium.Material.fromType("Image", {
+                  image: "/images/selector.png",
+                }),
+              }),
+              classificationType: Cesium.ClassificationType.TERRAIN,
+            });
+
+            viewerRef.current.scene.primitives.add(primitive);
+
+            currentMarkerRef.current = {
+              primitive,
+              latitude,
+              longitude,
+            };
           }
 
-          const targetMeters = targetPixelSize * metersPerPixel;
-          const radiusMeters = Math.max(10, targetMeters / 2);
-
-          const geometry = new Cesium.EllipseGeometry({
-            center: Cesium.Cartesian3.fromDegrees(longitude, latitude, 0),
-            semiMajorAxis: radiusMeters,
-            semiMinorAxis: radiusMeters,
-            height: 0,
-            vertexFormat: Cesium.EllipsoidSurfaceAppearance.VERTEX_FORMAT,
-          });
-
-          const primitive = new Cesium.GroundPrimitive({
-            geometryInstances: new Cesium.GeometryInstance({
-              geometry,
-            }),
-            appearance: new Cesium.EllipsoidSurfaceAppearance({
-              material: Cesium.Material.fromType("Image", {
-                image: "/images/selector.png",
-              }),
-            }),
-            classificationType: Cesium.ClassificationType.TERRAIN,
-          });
-
-          viewerRef.current.scene.primitives.add(primitive);
           viewerRef.current.scene.requestRender();
-
-          currentMarkerRef.current = {
-            primitive,
-            latitude,
-            longitude,
-          };
-
           viewerRef.current.scene?.requestRender();
         } finally {
           isUpdatingMarkerRef.current = false;
