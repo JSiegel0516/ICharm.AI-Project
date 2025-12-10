@@ -283,11 +283,14 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const [cesiumInstance, setCesiumInstance] = useState<any>(null);
     const [viewerReady, setViewerReady] = useState(false);
     const [isRasterTransitioning, setIsRasterTransitioning] = useState(false);
+    const [isRasterImageryLoading, setIsRasterImageryLoading] = useState(false);
 
     const satelliteLayerRef = useRef<any>(null);
     const boundaryEntitiesRef = useRef<any[]>([]);
     const geographicLineEntitiesRef = useRef<any[]>([]);
     const rasterLayerRef = useRef<any[]>([]);
+    const textureLoadIdRef = useRef(0);
+    const isComponentUnmountedRef = useRef(false);
     const isUpdatingMarkerRef = useRef(false);
 
     const rasterDataRef = useRef<RasterLayerData | undefined>(undefined);
@@ -557,6 +560,12 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     );
 
     useEffect(() => {
+      return () => {
+        isComponentUnmountedRef.current = true;
+      };
+    }, []);
+
+    useEffect(() => {
       const handleResize = () => {
         if (viewerRef.current && !viewerRef.current.isDestroyed()) {
           viewerRef.current.resize();
@@ -574,7 +583,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
 
-      if (rasterState.isLoading) {
+      if (rasterState.isLoading || isRasterImageryLoading) {
         setIsRasterTransitioning(true);
         return;
       }
@@ -594,6 +603,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       rasterState.isLoading,
       rasterState.error,
       rasterState.requestKey,
+      isRasterImageryLoading,
     ]);
 
     useEffect(() => {
@@ -900,9 +910,34 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           !layerData.textures ||
           layerData.textures.length === 0
         ) {
+          setIsRasterImageryLoading(false);
           viewer.scene.requestRender();
           return;
         }
+
+        const loadId = textureLoadIdRef.current + 1;
+        textureLoadIdRef.current = loadId;
+        setIsRasterImageryLoading(true);
+
+        Promise.all(
+          layerData.textures.map(
+            (texture) =>
+              new Promise<void>((resolve) => {
+                const image = new Image();
+                image.crossOrigin = "anonymous";
+                image.onload = () => resolve();
+                image.onerror = () => resolve();
+                image.src = texture.imageUrl;
+              }),
+          ),
+        ).finally(() => {
+          if (
+            textureLoadIdRef.current === loadId &&
+            !isComponentUnmountedRef.current
+          ) {
+            setIsRasterImageryLoading(false);
+          }
+        });
 
         const newLayers: any[] = [];
 
