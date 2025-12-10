@@ -69,141 +69,158 @@ export function ChartOptionsPanel({
           Adjust visualization settings (applied instantly)
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-row gap-2 space-y-6">
-        {/* Chart Type */}
-        <div className="space-y-2">
-          <Label className="text-sm font-medium">Chart Type</Label>
-          <Select
-            value={chartType}
-            onValueChange={(v) => setChartType(v as ChartType)}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ChartType.LINE}>Line Chart</SelectItem>
-              <SelectItem value={ChartType.BAR}>Bar Chart</SelectItem>
-              <SelectItem value={ChartType.AREA}>Area Chart</SelectItem>
-              <SelectItem value={ChartType.SCATTER}>Scatter Plot</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Overlays (only for line charts) */}
-        {chartType === ChartType.LINE && (
+      <CardContent>
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-3 lg:grid-cols-6">
+          {/* Column 1: Chart Type */}
           <div className="space-y-2">
-            <Label className="text-sm font-medium">Chart Overlays</Label>
-            <div className="space-y-2">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="show-histogram"
-                  checked={showHistogram}
-                  onCheckedChange={(checked) =>
-                    setShowHistogram(checked as boolean)
-                  }
-                />
-                <label
-                  htmlFor="show-histogram"
-                  className="cursor-pointer text-sm font-normal"
-                >
-                  Show Histogram Bars
-                </label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="show-trend"
-                  checked={showLinearTrend}
-                  onCheckedChange={(checked) =>
-                    setShowLinearTrend(checked as boolean)
-                  }
-                />
-                <label
-                  htmlFor="show-trend"
-                  className="cursor-pointer text-sm font-normal"
-                >
-                  Show Linear Trend
-                </label>
-              </div>
-            </div>
-          </div>
-        )}
-        <div className="space-y-2 space-x-2">
-          <Label className="text-sm font-medium">Data Transformations</Label>
-          <Checkbox
-            id="normalize"
-            checked={normalize}
-            onCheckedChange={(checked) => setNormalize(checked as boolean)}
-          />
-          <label
-            htmlFor="normalize"
-            className="cursor-pointer text-sm font-normal"
-          >
-            Normalize (0-1 scale)
-          </label>
-        </div>
-
-        {/* Resample Frequency */}
-        <div className="space-y-2">
-          <Label className="text-sm">Resample Frequency</Label>
-          <Select
-            value={resampleFreq || "none"}
-            onValueChange={(v) => setResampleFreq(v === "none" ? undefined : v)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="No resampling" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">No resampling</SelectItem>
-              <SelectItem value="D">Daily</SelectItem>
-              <SelectItem value="W">Weekly</SelectItem>
-              <SelectItem value="M">Monthly</SelectItem>
-              <SelectItem value="Q">Quarterly</SelectItem>
-              <SelectItem value="Y">Yearly</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Aggregation Method (for resampling) */}
-        {resampleFreq && resampleFreq !== "none" && (
-          <div className="space-y-2">
-            <Label className="text-sm">Aggregation Method</Label>
+            <Label className="text-sm font-medium">Chart Type</Label>
             <Select
-              value={aggregation}
-              onValueChange={(v) => setAggregation(v as AggregationMethod)}
+              value={chartType}
+              onValueChange={(v) => setChartType(v as ChartType)}
             >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={AggregationMethod.MEAN}>Mean</SelectItem>
-                <SelectItem value={AggregationMethod.MAX}>Max</SelectItem>
-                <SelectItem value={AggregationMethod.MIN}>Min</SelectItem>
-                <SelectItem value={AggregationMethod.SUM}>Sum</SelectItem>
-                <SelectItem value={AggregationMethod.MEDIAN}>Median</SelectItem>
-                <SelectItem value={AggregationMethod.STD}>Std Dev</SelectItem>
+                <SelectItem value={ChartType.LINE}>Line</SelectItem>
+                <SelectItem value={ChartType.BAR}>Bar</SelectItem>
+                <SelectItem value={ChartType.AREA}>Area</SelectItem>
+                <SelectItem value={ChartType.SCATTER}>Scatter</SelectItem>
               </SelectContent>
             </Select>
           </div>
-        )}
-        <div className="w-lg space-y-2">
-          <div className="items-center justify-between">
-            <Label htmlFor="smoothing" className="text-sm">
-              Smoothing Window
-            </Label>
-            <span className="text-muted-foreground text-xs">
-              {smoothingWindow === 1 ? "Off" : `${smoothingWindow} points`}
-            </span>
+
+          {/* Column 2: Additional Charts - Histogram */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Additional</Label>
+            <div className="flex items-center space-x-2 pt-1">
+              <Checkbox
+                id="show-histogram"
+                checked={showHistogram}
+                onCheckedChange={(checked) =>
+                  setShowHistogram(checked as boolean)
+                }
+                disabled={chartType !== ChartType.LINE}
+              />
+              <label
+                htmlFor="show-histogram"
+                className={`cursor-pointer text-sm font-normal ${chartType !== ChartType.LINE ? "opacity-50" : ""}`}
+              >
+                Histogram
+              </label>
+            </div>
           </div>
-          <Slider
-            id="smoothing"
-            value={[smoothingWindow]}
-            onValueChange={(value) => setSmoothingWindow(value[0])}
-            min={1}
-            max={24}
-            step={1}
-            className="w-full"
-          />
+
+          {/* Column 3: Linear Trend */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Overlays</Label>
+            <div className="flex items-center space-x-2 pt-1">
+              <Checkbox
+                id="show-trend"
+                checked={showLinearTrend}
+                onCheckedChange={(checked) =>
+                  setShowLinearTrend(checked as boolean)
+                }
+                disabled={chartType !== ChartType.LINE}
+              />
+              <label
+                htmlFor="show-trend"
+                className={`cursor-pointer text-sm font-normal ${chartType !== ChartType.LINE ? "opacity-50" : ""}`}
+              >
+                Linear Trend
+              </label>
+            </div>
+          </div>
+
+          {/* Column 4: Normalization */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Normalization</Label>
+            <div className="flex items-center space-x-2 pt-1">
+              <Checkbox
+                id="normalize"
+                checked={normalize}
+                onCheckedChange={(checked) => setNormalize(checked as boolean)}
+              />
+              <label
+                htmlFor="normalize"
+                className="cursor-pointer text-sm font-normal"
+              >
+                0-1 scale
+              </label>
+            </div>
+          </div>
+
+          {/* Column 5: Smoothing Window */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="smoothing" className="text-sm font-medium">
+                Smoothing
+              </Label>
+              <span className="text-muted-foreground text-xs">
+                {smoothingWindow === 1 ? "Off" : `${smoothingWindow}`}
+              </span>
+            </div>
+            <Slider
+              id="smoothing"
+              value={[smoothingWindow]}
+              onValueChange={(value) => setSmoothingWindow(value[0])}
+              min={1}
+              max={24}
+              step={1}
+              className="w-full"
+            />
+          </div>
+
+          {/* Column 6: Resample Frequency */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Resample</Label>
+            <Select
+              value={resampleFreq || "none"}
+              onValueChange={(v) =>
+                setResampleFreq(v === "none" ? undefined : v)
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="None" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                <SelectItem value="D">Daily</SelectItem>
+                <SelectItem value="W">Weekly</SelectItem>
+                <SelectItem value="M">Monthly</SelectItem>
+                <SelectItem value="Q">Quarterly</SelectItem>
+                <SelectItem value="Y">Yearly</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
+
+        {/* Second Row: Aggregation Method (only shown when resampling) */}
+        {resampleFreq && resampleFreq !== "none" && (
+          <div className="mt-4 grid grid-cols-1 gap-6 border-t pt-4 md:grid-cols-3 lg:grid-cols-6">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Aggregation</Label>
+              <Select
+                value={aggregation}
+                onValueChange={(v) => setAggregation(v as AggregationMethod)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={AggregationMethod.MEAN}>Mean</SelectItem>
+                  <SelectItem value={AggregationMethod.MAX}>Max</SelectItem>
+                  <SelectItem value={AggregationMethod.MIN}>Min</SelectItem>
+                  <SelectItem value={AggregationMethod.SUM}>Sum</SelectItem>
+                  <SelectItem value={AggregationMethod.MEDIAN}>
+                    Median
+                  </SelectItem>
+                  <SelectItem value={AggregationMethod.STD}>Std Dev</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

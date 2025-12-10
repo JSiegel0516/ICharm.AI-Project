@@ -35,6 +35,9 @@ import {
 } from "@/hooks/use-timeseries";
 import { applyTransformations } from "@/lib/client-transformations";
 import { ChartOptionsPanel } from "./ChartOptionsPanel";
+import { HistogramPanel } from "./HistogramPanel";
+import { PeriodogramPanel } from "./PeriodogramPanel";
+import { SpectrogramPanel } from "./SpectrogramPanel";
 import { DataTable } from "./DataTable";
 
 interface VisualizationPanelProps {
@@ -116,10 +119,15 @@ export function VisualizationPanel({
 
   // Calculate linear trend line data for each visible dataset
   const chartDataWithTrends = useMemo(() => {
-    if (!showLinearTrend || chartData.length === 0) return chartData;
+    if (!showLinearTrend || chartData.length === 0)
+      return { data: chartData, equations: {} };
 
     const visibleDatasetIds = Array.from(visibleDatasets);
     const dataWithTrends = chartData.map((point) => ({ ...point }));
+    const equations: Record<
+      string,
+      { slope: number; intercept: number; r2: number }
+    > = {};
 
     visibleDatasetIds.forEach((datasetId) => {
       const points: { x: number; y: number }[] = [];
@@ -137,9 +145,25 @@ export function VisualizationPanel({
       const sumY = points.reduce((sum, p) => sum + p.y, 0);
       const sumXY = points.reduce((sum, p) => sum + p.x * p.y, 0);
       const sumX2 = points.reduce((sum, p) => sum + p.x * p.x, 0);
+      const sumY2 = points.reduce((sum, p) => sum + p.y * p.y, 0);
 
       const m = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
       const b = (sumY - m * sumX) / n;
+
+      // Calculate R² (coefficient of determination)
+      const meanY = sumY / n;
+      const ssTotal = points.reduce(
+        (sum, p) => sum + Math.pow(p.y - meanY, 2),
+        0,
+      );
+      const ssResidual = points.reduce((sum, p) => {
+        const predicted = m * p.x + b;
+        return sum + Math.pow(p.y - predicted, 2);
+      }, 0);
+      const r2 = 1 - ssResidual / ssTotal;
+
+      // Store equation
+      equations[datasetId] = { slope: m, intercept: b, r2 };
 
       // Add trend values to the main data
       dataWithTrends.forEach((point, index) => {
@@ -147,12 +171,12 @@ export function VisualizationPanel({
       });
     });
 
-    return dataWithTrends;
+    return { data: dataWithTrends, equations };
   }, [chartData, visibleDatasets, showLinearTrend]);
 
   // Calculate Y-axis domain
   const yDomain = useMemo(() => {
-    const dataToUse = showLinearTrend ? chartDataWithTrends : chartData;
+    const dataToUse = showLinearTrend ? chartDataWithTrends.data : chartData;
     if (dataToUse.length === 0) return undefined;
 
     const visibleDatasetIds = Array.from(visibleDatasets);
@@ -223,7 +247,8 @@ export function VisualizationPanel({
     ];
 
     const visibleDatasetIds = Array.from(visibleDatasets);
-    const dataToRender = showLinearTrend ? chartDataWithTrends : chartData;
+    const dataToRender = showLinearTrend ? chartDataWithTrends.data : chartData;
+    const trendEquations = showLinearTrend ? chartDataWithTrends.equations : {};
     const commonProps = {
       data: dataToRender,
       margin: { top: 5, right: 30, left: 60, bottom: 5 },
@@ -237,15 +262,50 @@ export function VisualizationPanel({
       return value.toFixed(2);
     };
 
-    const formatTooltipValue = (value: any, name: string) => {
+    const formatTooltipValue = (value: any, name: string, props: any) => {
       if (typeof value !== "number" || isNaN(value) || value === null) {
         return "-";
       }
+
+      // Check if this is a trend line
+      if (name.includes("(Trend)")) {
+        // Extract the original dataset name
+        const datasetName = name.replace(" (Trend)", "");
+        const dataset = selectedDatasets.find(
+          (d) => ((d as any).datasetName || d.name) === datasetName,
+        );
+        if (dataset && metadata?.[dataset.id]) {
+          const originalUnit = metadata[dataset.id].units || "";
+          const displayUnit = normalize
+            ? "normalized"
+            : getDisplayUnit(originalUnit);
+          return normalize
+            ? value.toFixed(4)
+            : formatValue(value, displayUnit, true);
+        }
+      }
+
+      // Find the dataset for this series
+      const dataset = selectedDatasets.find(
+        (d) => ((d as any).datasetName || d.name) === name || d.id === name,
+      );
+
+      if (dataset && metadata?.[dataset.id]) {
+        const originalUnit = metadata[dataset.id].units || "";
+        const displayUnit = normalize
+          ? "normalized"
+          : getDisplayUnit(originalUnit);
+        return normalize
+          ? value.toFixed(4)
+          : formatValue(value, displayUnit, true);
+      }
+
+      // Fallback
       if (normalize) return value.toFixed(4);
       return formatValue(value, yAxisUnit, true);
     };
 
-    if (chartType === ChartType.LINE && (showHistogram || showLinearTrend)) {
+    if (chartType === ChartType.LINE && showLinearTrend) {
       return (
         <ComposedChart {...commonProps}>
           <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
@@ -275,20 +335,6 @@ export function VisualizationPanel({
           />
           <Legend />
 
-          {showHistogram &&
-            selectedDatasets.map(
-              (dataset, idx) =>
-                visibleDatasetIds.includes(dataset.id) && (
-                  <Bar
-                    key={`bar-${dataset.id}`}
-                    dataKey={dataset.id}
-                    name={`${(dataset as any).datasetName || dataset.name} (Histogram)`}
-                    fill={colors[idx % colors.length]}
-                    fillOpacity={0.3}
-                  />
-                ),
-            )}
-
           {selectedDatasets.map(
             (dataset, idx) =>
               visibleDatasetIds.includes(dataset.id) && (
@@ -308,12 +354,13 @@ export function VisualizationPanel({
           {showLinearTrend &&
             selectedDatasets.map(
               (dataset, idx) =>
-                visibleDatasetIds.includes(dataset.id) && (
+                visibleDatasetIds.includes(dataset.id) &&
+                trendEquations[dataset.id] && (
                   <Line
                     key={`trend-${dataset.id}`}
                     type="monotone"
                     dataKey={`${dataset.id}_trend`}
-                    name={`${(dataset as any).datasetName || dataset.name} (Trend)`}
+                    name={`${(dataset as any).datasetName || dataset.name} (Trend: y=${trendEquations[dataset.id].slope >= 0 ? "" : "-"}${Math.abs(trendEquations[dataset.id].slope).toFixed(4)}x${trendEquations[dataset.id].intercept >= 0 ? "+" : ""}${trendEquations[dataset.id].intercept.toFixed(2)}, R²=${trendEquations[dataset.id].r2.toFixed(3)})`}
                     stroke={colors[idx % colors.length]}
                     strokeWidth={2}
                     strokeDasharray="5 5"
@@ -541,10 +588,9 @@ export function VisualizationPanel({
               {chartTitle}
             </CardTitle>
             {processingInfo && (
-              <CardDescription>
+              <CardDescription className="ml-1">
                 {processingInfo.totalPoints} data points •{" "}
-                {processingInfo.datasetsProcessed} datasets • Processed in{" "}
-                {processingInfo.processingTime}
+                {processingInfo.datasetsProcessed} datasets
                 {yDomain && yAxisUnit && !normalize && (
                   <>
                     {" "}
@@ -565,7 +611,7 @@ export function VisualizationPanel({
         </CardContent>
       </Card>
 
-      {/* Chart Options Panel*/}
+      {/* Chart Options Panel */}
       <ChartOptionsPanel
         chartType={chartType}
         setChartType={setChartType}
@@ -583,6 +629,17 @@ export function VisualizationPanel({
         setShowLinearTrend={setShowLinearTrend}
       />
 
+      {/* Histogram - Distribution Analysis */}
+      {chartData.length > 0 && showHistogram && (
+        <HistogramPanel
+          chartData={chartData}
+          selectedDatasets={selectedDatasets}
+          visibleDatasets={visibleDatasets}
+          metadata={metadata}
+          yAxisUnit={yAxisUnit}
+        />
+      )}
+
       {/* Data Table */}
       {chartData.length > 0 && (
         <DataTable
@@ -590,6 +647,26 @@ export function VisualizationPanel({
           selectedDatasets={selectedDatasets}
           metadata={metadata}
           yAxisUnit={yAxisUnit}
+        />
+      )}
+
+      {/* Periodogram - Frequency Domain Analysis */}
+      {chartData.length > 0 && (
+        <PeriodogramPanel
+          chartData={chartData}
+          selectedDatasets={selectedDatasets}
+          visibleDatasets={visibleDatasets}
+          metadata={metadata}
+        />
+      )}
+
+      {/* Spectrogram - Time-Frequency Analysis */}
+      {chartData.length > 0 && (
+        <SpectrogramPanel
+          chartData={chartData}
+          selectedDatasets={selectedDatasets}
+          visibleDatasets={visibleDatasets}
+          metadata={metadata}
         />
       )}
 

@@ -7,9 +7,16 @@ import React, {
   useRef,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { XCircle } from "lucide-react";
+import { XCircle, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Banner,
+  BannerAction,
+  BannerClose,
+  BannerIcon,
+  BannerTitle,
+} from "@/components/ui/shadcn-io/banner";
 import { toast } from "sonner";
 import {
   useTimeSeries,
@@ -334,6 +341,30 @@ export default function TimeSeriesPage() {
     [data, exportData, selectedDatasets, dateRange],
   );
 
+  // Handle reset - clear all state and URL params
+  const handleReset = useCallback(() => {
+    reset(); // Call the hook's reset function
+
+    // Clear URL parameters
+    router.replace(window.location.pathname, { scroll: false });
+
+    // Reset local state
+    setSelectedDatasets([]);
+    setVisibleDatasets(new Set());
+    setChartType(ChartType.LINE);
+    setNormalize(false);
+    setSmoothingWindow(1);
+    setResampleFreq(undefined);
+    setAggregation(AggregationMethod.MEAN);
+    setShowHistogram(false);
+    setShowLinearTrend(false);
+    setAnalysisModel(AnalysisModel.RAW);
+    setFocusCoordinates("");
+
+    // Reset the initialization flag so URL params can work again
+    initializedFromUrl.current = false;
+  }, [reset, router]);
+
   // Show error toast when API error occurs
   useEffect(() => {
     if (error) {
@@ -343,6 +374,48 @@ export default function TimeSeriesPage() {
 
   return (
     <div className="container mx-auto space-y-6 p-6">
+      {/* Sticky Banner Container - Processing Info & Errors */}
+      <div className="sticky top-2 z-50">
+        {/* Processing Info Banner */}
+        {processingInfo && !isLoading && (
+          <Banner className="rounded-lg bg-green-200 dark:bg-green-800">
+            <BannerIcon icon={CheckCircle} className="text-green-600" />
+            <BannerTitle>
+              <span className="text-foreground">
+                Processed: {processingInfo.datasetsProcessed} dataset(s) •{" "}
+                {processingInfo.totalPoints} points •{" "}
+                {processingInfo.processingTime}
+              </span>
+            </BannerTitle>
+            <BannerAction>
+              <div className="flex flex-col gap-3 text-sm">
+                {processingInfo.extractionMode && (
+                  <div className="flex items-center gap-2">
+                    <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                      {processingInfo.extractionMode === "point-based"
+                        ? `Point-based (${processingInfo.focusCoordinates} coord${processingInfo.focusCoordinates !== 1 ? "s" : ""})`
+                        : "Spatial aggregation"}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </BannerAction>
+            <BannerClose className="text-primary hover:bg-card-foreground/30 dark:hover:bg-card-foreground/30" />
+          </Banner>
+        )}
+
+        {/* Error Banner */}
+        {error && (
+          <div className="">
+            <Banner className="rounded-lg bg-red-200 dark:bg-red-800">
+              <BannerIcon icon={XCircle} />
+              <BannerTitle className="text-primary">Error: {error}</BannerTitle>
+              <BannerClose className="text-primary hover:bg-card-foreground/30 dark:hover:bg-card-foreground/30" />
+            </Banner>
+          </div>
+        )}
+      </div>
+
       {/* Dataset Filter - Server-side Controls Only */}
       <DatasetFilter
         selectedDatasets={selectedDatasets}
@@ -364,30 +437,13 @@ export default function TimeSeriesPage() {
         setFocusCoordinates={setFocusCoordinates}
         onExtract={handleExtract}
         onExport={handleExport}
-        onReset={reset}
+        onReset={handleReset}
         isLoading={isLoading}
         hasData={data && data.length > 0}
         progress={progress}
         processingInfo={processingInfo}
         coordinateValidation={coordinateValidation}
       />
-
-      {/* Error Alert */}
-      {error && (
-        <Alert variant="destructive">
-          <XCircle className="h-4 w-4" />
-          <AlertTitle>Error</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => reset()}
-            className="mt-2"
-          >
-            Dismiss
-          </Button>
-        </Alert>
-      )}
 
       {/* Visualization Panel - Includes ChartOptionsPanel now */}
       <div data-chart-container>
