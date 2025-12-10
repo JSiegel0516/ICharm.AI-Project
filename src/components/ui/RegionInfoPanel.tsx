@@ -120,7 +120,6 @@ const chartConfig = {
   desktop: {
     label: "Desktop",
     icon: Monitor,
-    // A color like 'hsl(220, 98%, 61%)' or 'var(--color-name)'
     color: "#2563eb",
   },
 } satisfies ChartConfig;
@@ -128,14 +127,14 @@ const chartConfig = {
 const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   show,
   onClose,
-  latitude = 21.25,
-  longitude = -71.25,
+  latitude = 0,
+  longitude = 0,
   regionData = {
-    name: "GPCP V2.3 Precipitation",
-    precipitation: 0.9,
-    temperature: 24.5,
-    dataset: "Global Precipitation Climatology Project",
-    unit: "mm/day",
+    name: "No data",
+    precipitation: null,
+    temperature: null,
+    dataset: "No dataset selected",
+    unit: "units",
   },
   colorBarPosition = { x: 24, y: 300 },
   colorBarCollapsed = false,
@@ -149,7 +148,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     if (typeof window !== "undefined") {
       return { x: window.innerWidth - 350, y: 200 };
     }
-    return { x: 1000, y: 200 };
+    return { x: 800, y: 200 };
   };
 
   const [position, setPosition] = useState(getDefaultPosition);
@@ -176,7 +175,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     currentDataset?.backend?.datasetName ??
     currentDataset?.name ??
     regionData.dataset ??
-    "";
+    "No dataset";
 
   const datasetUnitInfo = useMemo(
     () => normalizeTemperatureUnit(datasetUnit),
@@ -205,15 +204,19 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       ? regionData.temperature
       : typeof regionData.precipitation === "number"
         ? regionData.precipitation
-        : 0;
+        : null;
 
-  const convertedPrimaryValue = useFahrenheit
-    ? celsiusToFahrenheit(primaryValueSource)
-    : primaryValueSource;
+  const convertedPrimaryValue =
+    primaryValueSource !== null
+      ? useFahrenheit
+        ? celsiusToFahrenheit(primaryValueSource)
+        : primaryValueSource
+      : null;
 
-  const formattedPrimaryValue = Number.isFinite(convertedPrimaryValue)
-    ? convertedPrimaryValue.toFixed(2)
-    : "0.00";
+  const formattedPrimaryValue =
+    convertedPrimaryValue !== null && Number.isFinite(convertedPrimaryValue)
+      ? convertedPrimaryValue.toFixed(2)
+      : "--";
 
   const chartData = useMemo(() => {
     return timeseriesSeries.map((entry) => {
@@ -365,7 +368,11 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
 
     const cardWidth = 280;
     const verticalOffset = Math.round(window.innerHeight * 0.2);
-    return { x: window.innerWidth - cardWidth - margin, y: verticalOffset };
+    // Shifted 200px more to the left
+    return {
+      x: window.innerWidth - cardWidth - margin - 200,
+      y: verticalOffset,
+    };
   }, [colorBarOrientation]);
 
   useEffect(() => {
@@ -802,7 +809,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
           </div>
         </div>
       ) : (
-        <Card className="bg-card w-full max-w-sm">
+        <Card className="max-w-xs">
           <CardHeader>
             <div className="flex items-center justify-between gap-1">
               <button
@@ -833,22 +840,23 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                 <X className="h-3 w-3" />
               </button>
             </div>
-            <div className="flex items-center justify-between gap-2">
-              <CardTitle className="flex flex-row gap-2">
-                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
-                {latitude.toFixed(2)}°, {longitude.toFixed(2)}°
-              </CardTitle>
-            </div>
-            <CardDescription></CardDescription>
+            <CardTitle className="flex flex-row items-center justify-center gap-2 text-center text-xl">
+              <MapPin className="h-4 w-4 text-gray-400" />
+              {Math.abs(latitude).toFixed(2)}° {latitude >= 0 ? "N" : "S"},{" "}
+              {Math.abs(longitude).toFixed(2)}° {longitude >= 0 ? "E" : "W"}
+            </CardTitle>
+            <CardDescription className="text-center">
+              Latitude, Longitude
+            </CardDescription>
           </CardHeader>
 
           <CardContent className="">
             <div className="space-y-3">
-              <div className="bg-secondary/40 border-border rounded-lg border p-3">
+              <div className="bg-secondary/40 border-border rounded-lg border p-2">
                 <div className="text-center">
-                  <div className="mb-1 font-mono text-2xl font-bold text-white">
+                  <div className="mb-1 font-mono text-xl font-bold text-white">
                     {formattedPrimaryValue}{" "}
-                    <span className="text-base font-normal text-gray-400">
+                    <span className="text-xl font-normal text-white">
                       {displayUnitLabel}
                     </span>
                   </div>
@@ -856,23 +864,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                     {currentDataset?.name ||
                       regionData.name ||
                       datasetIdentifier ||
-                      "Value"}
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div className="border-border bg-secondary/40 rounded-lg border p-2">
-                  <div className="mb-1 text-xs text-gray-400">Lat</div>
-                  <div className="font-mono text-sm font-medium text-white">
-                    {Math.abs(latitude).toFixed(2)}° {latitude >= 0 ? "N" : "S"}
-                  </div>
-                </div>
-                <div className="border-border bg-secondary/40 rounded-lg border p-2">
-                  <div className="mb-1 text-xs text-gray-400">Lon</div>
-                  <div className="font-mono text-sm font-medium text-white">
-                    {Math.abs(longitude).toFixed(2)}°{" "}
-                    {longitude >= 0 ? "E" : "W"}
+                      "No dataset selected"}
                   </div>
                 </div>
               </div>
@@ -1054,10 +1046,10 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                           </svg>
                         </div>
                         <p className="text-sm text-gray-400">
-                          No timeseries data available
+                          Click on the globe to select a location
                         </p>
                         <p className="text-xs text-gray-500">
-                          Try selecting a different date range or location
+                          Time series data will appear here
                         </p>
                       </div>
                     </div>
