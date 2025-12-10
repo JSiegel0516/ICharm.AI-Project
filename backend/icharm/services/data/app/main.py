@@ -1347,6 +1347,23 @@ def extract_timeseries_from_postgres(
         cmorph_engine.dispose()
 
 
+def _open_postgres_raster_dataset(metadata: pd.Series):
+    """
+    Placeholder for raster access from Postgres-backed datasets.
+    The current Postgres ingestion (see netcdf_to_db_by_year_*.py) stores
+    values in relational tables, so we cannot reconstruct a full raster grid
+    without a dedicated query/tiling pipeline.
+    """
+    dataset_name = metadata.get("datasetName") or metadata.get("slug")
+    raise HTTPException(
+        status_code=501,
+        detail=(
+            f"Raster visualization is not yet implemented for Postgres-backed "
+            f"dataset '{dataset_name}'."
+        ),
+    )
+
+
 async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
     """Open local dataset with caching"""
 
@@ -2531,9 +2548,11 @@ async def visualize_raster(request: RasterRequest):
         meta_row = metadata_df.iloc[0]
 
         # Open dataset
-        is_local = meta_row["Stored"] == "local"
-        if is_local:
+        stored = str(meta_row.get("Stored", "")).lower()
+        if stored == "local":
             ds = await open_local_dataset(meta_row)
+        elif stored == "postgres":
+            ds = _open_postgres_raster_dataset(meta_row)
         else:
             ds = await open_cloud_dataset(meta_row, target_date, target_date)
 
