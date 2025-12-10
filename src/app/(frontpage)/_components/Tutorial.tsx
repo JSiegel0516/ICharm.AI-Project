@@ -57,7 +57,7 @@ export const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
         {
           element: "#about-me-button",
           popover: {
-            title: "About Me",
+            title: "About",
             description: "Description of iCHARM",
             side: "bottom",
             align: "center",
