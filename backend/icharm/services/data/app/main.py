@@ -1347,6 +1347,119 @@ def extract_timeseries_from_postgres(
         cmorph_engine.dispose()
 
 
+def _open_postgres_raster_dataset(
+    metadata: pd.Series, target_date: datetime
+) -> xr.Dataset:
+    """
+    Reconstruct a spatial grid for a single date from PostgreSQL database.
+    Optimized with single JOIN query for fast retrieval.
+    """
+    database_name = str(metadata.get("inputFile", ""))
+    base_url = POSTRGRES_URL.rsplit("/", 1)[0] if POSTRGRES_URL else None
+    if not base_url:
+        raise ValueError("Cannot construct database URL")
+    db_url = f"{base_url}/{database_name}"
+
+    logger.info(f"[PostgresRaster] Opening raster from database: {database_name}")
+    logger.info(f"[PostgresRaster] Date: {target_date.date()}")
+
+    db_engine = create_engine(db_url, poolclass=NullPool)
+
+    try:
+        with db_engine.connect() as conn:
+            # Get value columns to determine structure
+            column_query = text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'grid_data'
+                AND column_name LIKE 'value_%'
+                ORDER BY column_name
+                LIMIT 5
+            """)
+            column_results = conn.execute(column_query).fetchall()
+            value_columns = [row[0] for row in column_results]
+
+            if not value_columns:
+                raise ValueError("No value columns found in grid_data table")
+
+            # Check if year-based columns
+            is_year_based = any(
+                col.startswith("value_")
+                and col.replace("value_", "").isdigit()
+                and len(col.replace("value_", "")) == 4
+                for col in value_columns
+            )
+
+            # Determine which column to query
+            if is_year_based:
+                year_col = f"value_{target_date.year}"
+                value_col = year_col
+            else:
+                value_col = value_columns[0]
+
+            mmdd = f"{target_date.month:02d}{target_date.day:02d}"
+
+            combined_query = text(f"""
+                SELECT
+                    lat.lat,
+                    lon.lon,
+                    g.{value_col} as value
+                FROM grid_data g
+                JOIN timestamp_dim t ON g.timestamp_id = t.timestamp_id
+                JOIN gridbox gb ON g.gridbox_id = gb.gridbox_id
+                JOIN lat ON gb.lat_id = lat.lat_id
+                JOIN lon ON gb.lon_id = lon.lon_id
+                WHERE t.timestamp_val = :mmdd
+                ORDER BY lat.lat, lon.lon
+            """)
+
+            results = conn.execute(combined_query, {"mmdd": mmdd}).fetchall()
+
+            if not results:
+                raise ValueError(f"No data found for date {target_date.date()}")
+
+            logger.info(
+                f"[PostgresRaster] Retrieved {len(results)} gridpoints in single query"
+            )
+
+            # Convert to pandas DataFrame for faster processing
+            df = pd.DataFrame(results, columns=["lat", "lon", "value"])
+
+            # Get unique sorted coordinates
+            lat_array = np.sort(df["lat"].unique())
+            lon_array = np.sort(df["lon"].unique())
+
+            # Create coordinate to index mapping
+            lat_to_idx = {lat: idx for idx, lat in enumerate(lat_array)}
+            lon_to_idx = {lon: idx for idx, lon in enumerate(lon_array)}
+
+            # Initialize grid
+            data_grid = np.full(
+                (len(lat_array), len(lon_array)), np.nan, dtype=np.float32
+            )
+
+            # Vectorized assignment using numpy indexing
+            lat_indices = df["lat"].map(lat_to_idx).values
+            lon_indices = df["lon"].map(lon_to_idx).values
+            data_grid[lat_indices, lon_indices] = df["value"].values
+
+            # Create xarray Dataset
+            var_name = metadata.get("keyVariable", "value")
+            ds = xr.Dataset(
+                {var_name: (["lat", "lon"], data_grid)},
+                coords={"lat": lat_array, "lon": lon_array, "time": target_date},
+            )
+
+            logger.info(f"[PostgresRaster] Reconstructed grid: {data_grid.shape}")
+            return ds
+
+    except Exception as e:
+        logger.error(f"[PostgresRaster] Error: {e}")
+        raise
+    finally:
+        db_engine.dispose()
+
+
 async def open_local_dataset(metadata: pd.Series) -> xr.Dataset:
     """Open local dataset with caching"""
 
@@ -1949,6 +2062,26 @@ async def extract_timeseries(request: TimeSeriesRequest):
                 status_code=404, detail="No datasets found with provided IDs"
             )
 
+        # Check if any PostgreSQL datasets are requested without coordinates
+        if not focus_coords or len(focus_coords) == 0:
+            postgres_datasets = metadata_df[
+                metadata_df["Stored"].str.lower() == "postgres"
+            ]
+            if len(postgres_datasets) > 0:
+                dataset_names = postgres_datasets["datasetName"].tolist()
+                if len(dataset_names) == 1:
+                    msg = (
+                        f"Dataset '{dataset_names[0]}' requires focus coordinates. "
+                        "This dataset is currently unavailable for spatial aggregation."
+                    )
+                else:
+                    names_str = "', '".join(dataset_names)
+                    msg = (
+                        f"Datasets '{names_str}' require focus coordinates. "
+                        "These datasets are currently unavailable for spatial aggregation."
+                    )
+                raise HTTPException(status_code=400, detail=msg)
+
         # Process each dataset
         all_series: dict[str, pd.Series] = {}
         dataset_metadata = {}
@@ -2531,9 +2664,13 @@ async def visualize_raster(request: RasterRequest):
         meta_row = metadata_df.iloc[0]
 
         # Open dataset
-        is_local = meta_row["Stored"] == "local"
-        if is_local:
+        stored = str(meta_row.get("Stored", "")).lower()
+        if stored == "local":
             ds = await open_local_dataset(meta_row)
+        elif stored == "postgres":
+            ds = await asyncio.to_thread(
+                _open_postgres_raster_dataset, meta_row, target_date
+            )
         else:
             ds = await open_cloud_dataset(meta_row, target_date, target_date)
 
