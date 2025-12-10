@@ -491,7 +491,21 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           const metersPerPixel =
             (2 * Math.tan(fovy / 2) * cameraHeight) / canvas.height;
 
-          const targetPixelSize = 28;
+          let targetPixelSize = 28;
+
+          // When in 2D and fully zoomed out, gently shrink the marker so it
+          // doesn't dominate the view while keeping close-up scaling intact.
+          if (viewerRef.current?.scene?.mode === Cesium.SceneMode.SCENE2D) {
+            const minHeight = 15_000_000;
+            const maxHeight = 40_000_000;
+            const t = Math.min(
+              Math.max((cameraHeight - minHeight) / (maxHeight - minHeight), 0),
+              1,
+            );
+            const minScale = 0.55; // ~45% smaller at max zoom-out
+            targetPixelSize = targetPixelSize * (1 - (1 - minScale) * t);
+          }
+
           const targetMeters = targetPixelSize * metersPerPixel;
           const radiusMeters = Math.max(10, targetMeters / 2);
 
