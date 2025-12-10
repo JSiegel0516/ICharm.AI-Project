@@ -76,9 +76,8 @@ export function computePeriodogram(
  */
 function detrendLinear(data: number[]): number[] {
   const N = data.length;
-  
-  // Calculate linear regression
   let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+  
   for (let i = 0; i < N; i++) {
     sumX += i;
     sumY += data[i];
@@ -89,7 +88,6 @@ function detrendLinear(data: number[]): number[] {
   const slope = (N * sumXY - sumX * sumY) / (N * sumX2 - sumX * sumX);
   const intercept = (sumY - slope * sumX) / N;
   
-  // Remove trend
   return data.map((val, i) => val - (slope * i + intercept));
 }
 
@@ -107,6 +105,8 @@ function applyHanningWindow(data: number[]): number[] {
  * Compute spectrogram (time-frequency representation)
  * Based on R code using specgram with overlapping windows
  */
+
+
 export function computeSpectrogram(
   data: number[],
   samplingRate: number = 1.0,
@@ -114,19 +114,20 @@ export function computeSpectrogram(
   overlap: number = 128,
   nfft: number = 1024,
 ): SpectrogramData {
-  // Remove mean
-  const mean = data.reduce((sum, val) => sum + val, 0) / data.length;
-  const anomalyData = data.map((val) => val - mean);
-
+  // 1. Linear Detrending (removes both mean and trend)
+  const detrendedData = detrendLinear(data);
+  
   const hopSize = windowSize - overlap;
-  const numWindows = Math.floor((anomalyData.length - overlap) / hopSize);
-
-  // Hanning window function
+  const numWindows = Math.floor((detrendedData.length - overlap) / hopSize);
+  
+  // 2. Window Function (Hanning) & Normalization Factor
   const hannWindow = new Array(windowSize);
+  let windowSumSq = 0;
   for (let i = 0; i < windowSize; i++) {
     hannWindow[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (windowSize - 1)));
+    windowSumSq += hannWindow[i] * hannWindow[i];
   }
-
+  
   const fft = new FFT(nfft);
   const times: number[] = [];
   const power: number[][] = [];
@@ -137,45 +138,51 @@ export function computeSpectrogram(
   for (let i = 0; i < numFreqs; i++) {
     frequencies.push((i * samplingRate) / nfft);
   }
-
-  // Process each window
+  
   for (let w = 0; w < numWindows; w++) {
     const start = w * hopSize;
     const end = start + windowSize;
+    if (end > detrendedData.length) break;
     
-    if (end > anomalyData.length) break;
-
-    // Extract window and apply Hanning
+    // 3. Apply Window and Zero-pad
     const windowData = new Array(nfft).fill(0);
     for (let i = 0; i < windowSize; i++) {
-      windowData[i] = anomalyData[start + i] * hannWindow[i];
+      windowData[i] = detrendedData[start + i] * hannWindow[i];
     }
-
-    // Perform FFT
+    
+    // 4. Perform FFT
     const out = fft.createComplexArray();
     fft.realTransform(out, windowData);
-
-    // Compute power for this window
+    
     const windowPower: number[] = [];
     for (let i = 0; i < numFreqs; i++) {
       const real = out[2 * i];
       const imag = out[2 * i + 1];
       
-      const magnitude = Math.sqrt(real * real + imag * imag);
-      const powerValue = magnitude * magnitude;
+      const magnitudeSq = real * real + imag * imag;
       
-      // Convert to dB: 10 * log10(power)
-      const powerDB = powerValue > 0 ? 10 * Math.log10(powerValue) : -100;
-      windowPower.push(powerDB);
+      // 5. Compute Power Spectral Density (PSD)
+      // One-sided spectrum (only positive frequencies)
+      // Factor of 2 for all frequencies except DC (i=0) and Nyquist
+      let powerValue: number;
+      if (i === 0 || i === numFreqs - 1) {
+        // DC and Nyquist: no factor of 2
+        powerValue = magnitudeSq / (windowSumSq * samplingRate);
+      } else {
+        // All other frequencies: factor of 2 for one-sided spectrum
+        powerValue = (2 * magnitudeSq) / (windowSumSq * samplingRate);
+      }
+      
+      windowPower.push(powerValue);
     }
-
+    
     power.push(windowPower);
     
-    // Time for this window (center of window)
+    // Time center of window
     const timeCenter = (start + windowSize / 2) / samplingRate;
     times.push(timeCenter);
   }
-
+  
   return { times, frequencies, power };
 }
 

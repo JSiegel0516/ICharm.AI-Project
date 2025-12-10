@@ -1,5 +1,5 @@
 "use client";
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useRef, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -35,6 +35,8 @@ export function SpectrogramPanel({
   visibleDatasets,
   metadata,
 }: SpectrogramPanelProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
   // Select which dataset to show spectrogram for
   const visibleDatasetIds = Array.from(visibleDatasets);
   const [selectedDatasetId, setSelectedDatasetId] = useState<string>(
@@ -74,7 +76,305 @@ export function SpectrogramPanel({
     return spectrogram;
   }, [chartData, selectedDatasetId, windowSize, overlap]);
 
-  if (!spectrogramData) {
+  // Convert power to dB and find range
+  const spectrogramDB = useMemo(() => {
+    if (!spectrogramData) return null;
+
+    // Convert to dB
+    const powerDB = spectrogramData.power.map((timeSlice) =>
+      timeSlice.map((powerValue) =>
+        powerValue > 0 ? 10 * Math.log10(powerValue) : -100,
+      ),
+    );
+
+    // Find min/max for color scaling
+    let minDB = Infinity;
+    let maxDB = -Infinity;
+    powerDB.forEach((timeSlice) => {
+      timeSlice.forEach((db) => {
+        if (db > -100) {
+          // Ignore floor values
+          minDB = Math.min(minDB, db);
+          maxDB = Math.max(maxDB, db);
+        }
+      });
+    });
+
+    return { powerDB, minDB, maxDB };
+  }, [spectrogramData]);
+
+  // Render canvas when data changes
+  useEffect(() => {
+    if (!canvasRef.current || !spectrogramData || !spectrogramDB) return;
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const { powerDB, minDB, maxDB } = spectrogramDB;
+    const numTimes = spectrogramData.times.length;
+    const numFreqs = spectrogramData.frequencies.length;
+
+    // Set canvas size to match container
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+
+    // Margins for axes and colorbar
+    const marginLeft = 60;
+    const marginBottom = 50;
+    const marginTop = 10;
+    const marginRight = 80; // Space for colorbar
+
+    canvas.width = rect.width * dpr;
+    canvas.height = 400 * dpr;
+    canvas.style.width = rect.width + "px";
+    canvas.style.height = "400px";
+
+    ctx.scale(dpr, dpr);
+
+    const plotWidth = rect.width - marginLeft - marginRight;
+    const plotHeight = 400 - marginTop - marginBottom;
+
+    const imageData = ctx.createImageData(numTimes, numFreqs);
+
+    // Fill image data with colors
+    for (let t = 0; t < numTimes; t++) {
+      for (let f = 0; f < numFreqs; f++) {
+        const db = powerDB[t][f];
+        const normalized = (db - minDB) / (maxDB - minDB);
+
+        // Get RGB color (jet colormap)
+        const [r, g, b] = getJetColor(normalized);
+
+        // Image data is stored bottom-to-top for spectrograms
+        // Flip frequency axis so low freq is at bottom
+        const imgIdx = ((numFreqs - 1 - f) * numTimes + t) * 4;
+        imageData.data[imgIdx] = r;
+        imageData.data[imgIdx + 1] = g;
+        imageData.data[imgIdx + 2] = b;
+        imageData.data[imgIdx + 3] = 255; // Alpha
+      }
+    }
+
+    // Create temporary canvas at native resolution
+    const tempCanvas = document.createElement("canvas");
+    tempCanvas.width = numTimes;
+    tempCanvas.height = numFreqs;
+    const tempCtx = tempCanvas.getContext("2d");
+    if (!tempCtx) return;
+
+    tempCtx.putImageData(imageData, 0, 0);
+
+    // Clear canvas
+    ctx.fillStyle = "white";
+    ctx.fillRect(0, 0, rect.width, 400);
+
+    // Scale and draw spectrogram with margins
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(tempCanvas, marginLeft, marginTop, plotWidth, plotHeight);
+
+    // Draw black border around spectrogram
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(marginLeft, marginTop, plotWidth, plotHeight);
+
+    // Draw axis lines (thinner than border)
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 1;
+
+    // X-axis labels (Time - START FROM 0!)
+    ctx.fillStyle = "#000";
+    ctx.font = "11px sans-serif";
+    ctx.textAlign = "center";
+
+    // Calculate time duration (relative time starting from 0)
+    const timeStart = spectrogramData.times[0];
+    const timeEnd = spectrogramData.times[spectrogramData.times.length - 1];
+    const timeDurationDays = timeEnd - timeStart;
+
+    // Automatically choose time units based on duration
+    let timeUnit: string;
+    let timeScale: number;
+    let timeDuration: number;
+
+    if (timeDurationDays < 1) {
+      // Less than 1 day: use seconds
+      timeUnit = "s";
+      timeScale = 86400; // Convert days to seconds
+      timeDuration = timeDurationDays * timeScale;
+    } else if (timeDurationDays < 365) {
+      // Less than 1 year: use days
+      timeUnit = "days";
+      timeScale = 1;
+      timeDuration = timeDurationDays;
+    } else {
+      // 1+ years: use years
+      timeUnit = "years";
+      timeScale = 1 / 365.25; // Convert days to years
+      timeDuration = timeDurationDays * timeScale;
+    }
+
+    const numXTicks = 6;
+    for (let i = 0; i <= numXTicks; i++) {
+      const x = marginLeft + (i / numXTicks) * plotWidth;
+      // Show relative time from 0 in appropriate units
+      const relativeTime = (i / numXTicks) * timeDuration;
+
+      // Draw tick
+      ctx.beginPath();
+      ctx.moveTo(x, marginTop + plotHeight);
+      ctx.lineTo(x, marginTop + plotHeight + 5);
+      ctx.stroke();
+
+      // Draw label - format based on magnitude
+      let label: string;
+      if (timeUnit === "s") {
+        label = relativeTime.toFixed(0);
+      } else if (relativeTime >= 100) {
+        label = relativeTime.toFixed(0);
+      } else if (relativeTime >= 1) {
+        label = relativeTime.toFixed(1);
+      } else {
+        label = relativeTime.toFixed(2);
+      }
+      ctx.fillText(label, x, marginTop + plotHeight + 20);
+    }
+
+    // X-axis title with appropriate units
+    ctx.textAlign = "center";
+    ctx.font = "12px sans-serif";
+    const timeAxisLabel =
+      timeUnit === "s"
+        ? "Time (seconds)"
+        : timeUnit === "days"
+          ? "Time (days)"
+          : "Time (years)";
+    ctx.fillText(timeAxisLabel, marginLeft + plotWidth / 2, 400 - 10);
+
+    // Y-axis labels (Frequency)
+    ctx.textAlign = "right";
+    ctx.font = "11px sans-serif";
+
+    // Automatically choose frequency units based on max frequency
+    const maxFreq =
+      spectrogramData.frequencies[spectrogramData.frequencies.length - 1];
+    let freqUnit: string;
+    let freqScale: number;
+
+    if (maxFreq > 1) {
+      // High frequency (audio data): use Hz
+      freqUnit = "Hz";
+      freqScale = 1;
+    } else if (maxFreq > 0.01) {
+      // Medium frequency (daily climate data): use cycles/day
+      freqUnit = "cycles/day";
+      freqScale = 1;
+    } else {
+      // Low frequency (monthly/annual climate data): use cycles/year
+      freqUnit = "cycles/year";
+      freqScale = 365.25; // Convert cycles/day to cycles/year
+    }
+
+    const numYTicks = 5;
+    for (let i = 0; i <= numYTicks; i++) {
+      const y = marginTop + plotHeight - (i / numYTicks) * plotHeight;
+      const freqValue = (i / numYTicks) * maxFreq * freqScale;
+
+      // Draw tick
+      ctx.beginPath();
+      ctx.moveTo(marginLeft - 5, y);
+      ctx.lineTo(marginLeft, y);
+      ctx.stroke();
+
+      // Draw label - format based on magnitude
+      let label: string;
+      if (freqValue >= 100) {
+        label = freqValue.toFixed(0);
+      } else if (freqValue >= 1) {
+        label = freqValue.toFixed(1);
+      } else if (freqValue >= 0.01) {
+        label = freqValue.toFixed(2);
+      } else {
+        label = freqValue.toFixed(3);
+      }
+      ctx.fillText(label, marginLeft - 10, y + 4);
+    }
+
+    // Y-axis title (rotated) with appropriate units
+    ctx.save();
+    ctx.translate(15, marginTop + plotHeight / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = "center";
+    ctx.font = "12px sans-serif";
+    const freqAxisLabel = `Frequency (${freqUnit})`;
+    ctx.fillText(freqAxisLabel, 0, 0);
+    ctx.restore();
+
+    // Draw colorbar on the right
+    const colorbarX = marginLeft + plotWidth + 20;
+    const colorbarWidth = 20;
+    const colorbarHeight = plotHeight;
+
+    // Draw colorbar gradient
+    for (let i = 0; i < colorbarHeight; i++) {
+      const normalized = 1 - i / colorbarHeight; // Top = max, bottom = min
+      const [r, g, b] = getJetColor(normalized);
+      ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+      ctx.fillRect(colorbarX, marginTop + i, colorbarWidth, 1);
+    }
+
+    // Draw colorbar border
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(colorbarX, marginTop, colorbarWidth, colorbarHeight);
+
+    // Draw colorbar ticks and labels
+    ctx.textAlign = "left";
+    ctx.font = "11px sans-serif";
+    const numColorTicks = 5;
+    for (let i = 0; i <= numColorTicks; i++) {
+      const y = marginTop + (i / numColorTicks) * colorbarHeight;
+      const dbValue = maxDB - (i / numColorTicks) * (maxDB - minDB);
+
+      // Draw tick
+      ctx.beginPath();
+      ctx.moveTo(colorbarX + colorbarWidth, y);
+      ctx.lineTo(colorbarX + colorbarWidth + 5, y);
+      ctx.stroke();
+
+      // Draw label
+      ctx.fillText(dbValue.toFixed(0), colorbarX + colorbarWidth + 8, y + 4);
+    }
+  }, [spectrogramData, spectrogramDB]);
+
+  // Jet colormap function
+  const getJetColor = (normalized: number): [number, number, number] => {
+    const clamp = (val: number) => Math.max(0, Math.min(255, Math.floor(val)));
+
+    let r, g, b;
+    if (normalized < 0.25) {
+      r = 0;
+      g = normalized * 4 * 255;
+      b = 255;
+    } else if (normalized < 0.5) {
+      r = 0;
+      g = 255;
+      b = (0.5 - normalized) * 4 * 255;
+    } else if (normalized < 0.75) {
+      r = (normalized - 0.5) * 4 * 255;
+      g = 255;
+      b = 0;
+    } else {
+      r = 255;
+      g = (1 - normalized) * 4 * 255;
+      b = 0;
+    }
+
+    return [clamp(r), clamp(g), clamp(b)];
+  };
+
+  if (!spectrogramData || !spectrogramDB) {
     return (
       <Card>
         <CardHeader>
@@ -85,50 +385,13 @@ export function SpectrogramPanel({
         </CardHeader>
         <CardContent>
           <div className="text-muted-foreground flex h-[400px] items-center justify-center text-sm">
-            Select a dataset with sufficient data points
+            Select a dataset with sufficient data points (need at least{" "}
+            {windowSize} points)
           </div>
         </CardContent>
       </Card>
     );
   }
-
-  // Find min and max power for color scaling
-  let minPower = Infinity;
-  let maxPower = -Infinity;
-  spectrogramData.power.forEach((timeSlice) => {
-    timeSlice.forEach((powerValue) => {
-      minPower = Math.min(minPower, powerValue);
-      maxPower = Math.max(maxPower, powerValue);
-    });
-  });
-
-  // Color mapping function (blue to red, like jet colormap in R)
-  const getColor = (power: number): string => {
-    // Normalize to 0-1
-    const normalized = (power - minPower) / (maxPower - minPower);
-
-    // Jet colormap approximation
-    let r, g, b;
-    if (normalized < 0.25) {
-      r = 0;
-      g = Math.floor(normalized * 4 * 255);
-      b = 255;
-    } else if (normalized < 0.5) {
-      r = 0;
-      g = 255;
-      b = Math.floor((0.5 - normalized) * 4 * 255);
-    } else if (normalized < 0.75) {
-      r = Math.floor((normalized - 0.5) * 4 * 255);
-      g = 255;
-      b = 0;
-    } else {
-      r = 255;
-      g = Math.floor((1 - normalized) * 4 * 255);
-      b = 0;
-    }
-
-    return `rgb(${r}, ${g}, ${b})`;
-  };
 
   const selectedDataset = selectedDatasets.find(
     (d) => d.id === selectedDatasetId,
@@ -193,72 +456,21 @@ export function SpectrogramPanel({
       </CardHeader>
       <CardContent>
         <div className="relative">
-          {/* Canvas for spectrogram */}
-          <div
-            className="rounded border"
-            style={{
-              width: "100%",
-              height: "400px",
-              position: "relative",
-              overflow: "hidden",
-            }}
-          >
-            <svg
-              width="100%"
-              height="100%"
-              viewBox={`0 0 ${spectrogramData.times.length} ${spectrogramData.frequencies.length}`}
-              preserveAspectRatio="none"
-            >
-              {spectrogramData.power.map((timeSlice, timeIdx) =>
-                timeSlice.map((powerValue, freqIdx) => (
-                  <rect
-                    key={`${timeIdx}-${freqIdx}`}
-                    x={timeIdx}
-                    y={spectrogramData.frequencies.length - freqIdx - 1}
-                    width={1}
-                    height={1}
-                    fill={getColor(powerValue)}
-                  />
-                )),
-              )}
-            </svg>
-          </div>
-
-          {/* Color scale legend */}
-          <div className="mt-4 flex items-center justify-between text-xs">
-            <div>
-              <span className="text-muted-foreground">Power: </span>
-              <span className="font-mono">{minPower.toFixed(1)} dB</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div
-                className="h-4 w-32 rounded"
-                style={{
-                  background:
-                    "linear-gradient(to right, rgb(0,0,255), rgb(0,255,255), rgb(0,255,0), rgb(255,255,0), rgb(255,0,0))",
-                }}
-              />
-            </div>
-            <div>
-              <span className="font-mono">{maxPower.toFixed(1)} dB</span>
-            </div>
-          </div>
-
-          {/* Axis labels */}
-          <div className="text-muted-foreground mt-2 text-center text-xs">
-            Time →
-          </div>
-          <div className="text-muted-foreground absolute top-1/2 left-0 -translate-y-1/2 -rotate-90 text-xs">
-            Frequency →
-          </div>
+          {/* Canvas for spectrogram - MUCH faster than SVG */}
+          <canvas
+            ref={canvasRef}
+            className="w-full rounded border"
+            style={{ height: "400px" }}
+          />
         </div>
 
         <div className="text-muted-foreground mt-4 text-xs">
           <p>
             <strong>Interpretation:</strong> The spectrogram shows how the
-            frequency content of the signal changes over time. Brighter colors
-            indicate stronger power at that frequency and time. Horizontal bands
-            indicate sustained periodic behavior.
+            frequency content of the signal changes over time. Brighter
+            (red/yellow) colors indicate stronger power at that frequency and
+            time. Horizontal bands indicate sustained periodic behavior. Power
+            is displayed in decibels (dB).
           </p>
         </div>
       </CardContent>
