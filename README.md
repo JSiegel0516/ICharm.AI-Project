@@ -76,7 +76,9 @@ Install Docker before attempting to run the database
    docker compose down
    ```
 
-   # IF YOU START TO GET API ERRORS FOR THE RASTERS, RUN:
+   # IF YOU START TO GET API ERRORS FOR THE RASTERS OR DATABASE:
+
+   # If these coommands do not work, try to delete the container manually in the GUI
 
    docker compose down -v
    docker compose build
@@ -89,29 +91,13 @@ Install Docker before attempting to run the database
    npx drizzle-kit generate && npx drizzle-kit migrate
 
    # Populate the database with initial seed data
-   npm run db:seed
-   ```
-
-   # If this gives an error, make sure the docker containers are running then try:
-
    npm run db:push
    npm run db:seed
-
-3. Verify connectivity from Node: (run from root)
-
-   ```bash
-   npx tsx src/components/Scripts/chat-db.ts
    ```
 
-4. Use
-   docker exec -it icharm-db psql -U icharm_user -d icharm
-   to go into a psql terminal.
-   Once in psql terminal, run:
-   \dt
-   SELECT \* FROM metadata;
-   to if database tables are successfully initialized and metadata is seeded
+   # make sure the docker containers are running when typing these commands
 
-5. Update/confirm the `POSTGRES_URL` values in `.env.local` match the credentials you used in step 1. The defaults match the connection string shown above.
+3. Update/confirm the `POSTGRES_URL` values in `.env.local` match the credentials you used in step 1. The defaults match the connection string shown above.
 
 Use `docker compose down` to stop the database or `docker compose down -v` to reset the data directory and re-run the initialization script.
 
