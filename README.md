@@ -52,7 +52,7 @@ pre-commit run --all-files
 4. To generate embeddings, run:
    node src/components/Scripts/embedTutorial.js
    This will train the chatbot to gain information about the icharm website
-
+   
 ## Database (Docker)
 
 The PostgreSQL database boots in a Linux container so every developer gets the same schema, regardless of OS.
@@ -161,6 +161,32 @@ cd backend
 
 > **Note:**
 > Make sure your PostgreSQL instance (e.g., the Docker container) is running and credentials are set in your environment before running these import scripts.
+
+## Setting Up Local Zarr Datasets for Monthly Datasets
+
+Several datasets in `backend/datasets/metadata.csv` are stored locally as Zarr files.  
+These must be downloaded and converted before the globe and time series pages will
+work for monthly datasets.
+
+All resulting Zarr files will be saved automatically under backend/datasets/
+
+### **1. Download and Convert All Local Monthly Datasets**
+
+To download and prepare all datasets marked as `Stored = local` in `metadata.csv`, run:
+
+```bash
+python backend/icharm/dataset_processing/download.py
+```
+This script will save each result as: backend/datasets/<dataset_name>.zarr. If a Zarr directory already exists, the script will skip that dataset.
+
+### 2. GODAS Dataset
+
+The GODAS dataset is large and requires a dedicated script. To download and build its Zarr store, run:
+
+```bash
+python backend/icharm/data_processing/godas.py
+```
+
 
 ## LLM Service (FastAPI)
 
