@@ -63,7 +63,7 @@ export const AIR_TEMPERATURE_BASE = [
   "#1fa188", // Teal/green
   "#5ac864", // Green
   "#a5e26a", // Yellow-green
-  "#f5f9b5", // Pale yellow
+  "#f1f9b5ff", // Pale yellow
   "#f5cf71", // Warm yellow
   "#f7a258", // Orange
   "#ed7953", // Coral
@@ -112,6 +112,21 @@ const HUMIDITY_COLORS = getColorMapColors(
   "Color Brewer 2.0|Sequential|Single-hue|9-class Greens",
 );
 
+// NOAA Global Surface Temp anomaly palette (inspired by provided swatch)
+export const ANOMALY_PALETTE_BASE = [
+  "#0000ff", // Deep cold
+  "#003cff", // Cold blue
+  "#006dff", // Bright blue
+  "#00a2ff", // Cyan blue
+  "#48d8ff", // Light cyan
+  "#a1f6ff", // Very light cyan
+  "#fbd26aff", // Pale warm neutral
+  "#fe9f22ff", // Warm tan
+  "#fd8856ff", // Soft orange
+  "#ef4949", // Warm red
+  "#b6002f", // Deep hot
+];
+
 const AIR_TEMPERATURE_BANDS = reducePalette(
   AIR_TEMPERATURE_COLORS,
   SHARP_BANDS,
@@ -120,6 +135,7 @@ const SEA_SURFACE_TEMPERATURE_BANDS = reducePalette(
   SEA_SURFACE_TEMPERATURE_COLORS,
   SHARP_BANDS,
 );
+const ANOMALY_BANDS = reducePalette(ANOMALY_PALETTE_BASE, SHARP_BANDS);
 const PRECIP_BANDS = reducePalette(PRECIP_COLORS, SHARP_BANDS);
 const WIND_BANDS = reducePalette(WIND_COLORS, SHARP_BANDS);
 const PRESSURE_BANDS = reducePalette(PRESSURE_COLORS, SHARP_BANDS);
@@ -289,6 +305,15 @@ export const colorScales: Record<string, ColorScale> = {
     colors: HUMIDITY_BANDS,
     domain: [0, 100],
     type: "sequential",
+    quantized: true,
+  },
+
+  anomaly: {
+    name: "NOAA Global Temp Anomaly",
+    description: "Symmetric anomaly palette (NOAAGlobalTemp-inspired)",
+    colors: ANOMALY_BANDS,
+    domain: [-2, 2],
+    type: "diverging",
     quantized: true,
   },
 };

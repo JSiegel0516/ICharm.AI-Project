@@ -21,6 +21,7 @@ import {
   AIR_TEMPERATURE_BASE,
   SHARP_BANDS,
   resolveColorMapColors,
+  ANOMALY_PALETTE_BASE,
 } from "@/utils/colorScales";
 
 const reducePalette = (colors: string[], count: number): string[] => {
@@ -242,6 +243,7 @@ function generateColorScale(
   });
 
   const SST_COLORS = getColorMapColors("Matlab|Jet");
+  const ANOMALY_COLORS = reducePalette(ANOMALY_PALETTE_BASE, SHARP_BANDS);
   const AIR_COLORS = AIR_TEMPERATURE_BASE;
   const PRECIP_COLORS = getColorMapColors(
     "Color Brewer 2.0|Sequential|Multi-hue|9-class YlGnBu",
@@ -269,6 +271,16 @@ function generateColorScale(
   }
 
   // Air Temperature scales
+  if (name.includes("noaaglobaltemp")) {
+    // NOAA Global Surface Temperature anomalies: custom anomaly palette
+    return buildScale(
+      ANOMALY_COLORS,
+      ["-2°C", "-1°C", "0°C", "1°C", "2°C"],
+      -2,
+      2,
+    );
+  }
+
   if (
     name.includes("air") ||
     name.includes("airtemp") ||

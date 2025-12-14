@@ -224,6 +224,25 @@ const ColorBar: React.FC<ColorBarProps> = ({
 
   const colorScale = useMemo(() => {
     const customRangeEnabled = Boolean(customRange?.enabled);
+    const datasetText = [
+      dataset?.id,
+      dataset?.slug,
+      dataset?.name,
+      dataset?.description,
+      dataset?.backend?.datasetName,
+      dataset?.backend?.slug,
+      dataset?.backend?.id,
+    ]
+      .filter((v) => typeof v === "string")
+      .map((v) => v.toLowerCase())
+      .join(" ");
+
+    // Prefer the dataset's baseline range for any obvious variant of NOAAGlobalTemp.
+    const preferBaselineRange =
+      datasetText.includes("noaaglobaltemp") ||
+      datasetText.includes("noaa global temp") ||
+      datasetText.includes("noaa global surface temperature");
+
     const overrideMin =
       customRangeEnabled &&
       typeof customRange?.min === "number" &&
@@ -238,12 +257,16 @@ const ColorBar: React.FC<ColorBarProps> = ({
         : null;
 
     const metaMin =
-      typeof rasterMeta?.min === "number" && Number.isFinite(rasterMeta.min)
-        ? rasterMeta.min
+      !preferBaselineRange &&
+      typeof rasterMeta?.min === "number" &&
+      Number.isFinite(rasterMeta.min)
+        ? Number(rasterMeta.min)
         : null;
     const metaMax =
-      typeof rasterMeta?.max === "number" && Number.isFinite(rasterMeta.max)
-        ? rasterMeta.max
+      !preferBaselineRange &&
+      typeof rasterMeta?.max === "number" &&
+      Number.isFinite(rasterMeta.max)
+        ? Number(rasterMeta.max)
         : null;
 
     const min = overrideMin ?? metaMin ?? dataset.colorScale.min;

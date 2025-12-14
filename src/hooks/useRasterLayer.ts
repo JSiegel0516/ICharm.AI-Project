@@ -227,6 +227,46 @@ export const useRasterLayer = ({
     return sanitized.length ? sanitized : undefined;
   }, [dataset]);
 
+  const effectiveColorbarRange = useMemo(() => {
+    // Respect explicit user overrides first.
+    if (colorbarRange?.enabled) {
+      return colorbarRange;
+    }
+
+    const datasetText = [
+      dataset?.id,
+      dataset?.slug,
+      dataset?.name,
+      dataset?.description,
+      dataset?.backend?.datasetName,
+      dataset?.backend?.slug,
+      dataset?.backend?.id,
+    ]
+      .filter((v) => typeof v === "string")
+      .map((v) => v.toLowerCase())
+      .join(" ");
+
+    const isNoaaGlobalTemp =
+      datasetText.includes("noaaglobaltemp") ||
+      datasetText.includes("noaa global temp") ||
+      datasetText.includes("noaa global surface temperature");
+
+    if (isNoaaGlobalTemp) {
+      // Default to dataset baseline if available, otherwise -2 to 2.
+      const defaultMin =
+        typeof dataset?.colorScale?.min === "number"
+          ? dataset.colorScale.min
+          : -2;
+      const defaultMax =
+        typeof dataset?.colorScale?.max === "number"
+          ? dataset.colorScale.max
+          : 2;
+      return { enabled: true, min: defaultMin, max: defaultMax };
+    }
+
+    return colorbarRange;
+  }, [colorbarRange, dataset]);
+
   const requestKey = useMemo(() => {
     const dateKey = formatDateForApi(date);
     if (!backendDatasetId || !dateKey) {
@@ -234,11 +274,18 @@ export const useRasterLayer = ({
     }
     const colorKey = cssColors ? cssColors.join("|") : "default";
     const maskKey = maskZeroValues ? "mask" : "nomask";
-    const customRangeKey = colorbarRange?.enabled
-      ? `range-${Number.isFinite(colorbarRange?.min as number) ? colorbarRange?.min : "auto"}-${Number.isFinite(colorbarRange?.max as number) ? colorbarRange?.max : "auto"}`
+    const customRangeKey = effectiveColorbarRange?.enabled
+      ? `range-${Number.isFinite(effectiveColorbarRange?.min as number) ? effectiveColorbarRange?.min : "auto"}-${Number.isFinite(effectiveColorbarRange?.max as number) ? effectiveColorbarRange?.max : "auto"}`
       : "norange";
     return `${backendDatasetId}::${dateKey}::${level ?? "surface"}::${colorKey}::${maskKey}::${customRangeKey}`;
-  }, [backendDatasetId, date, level, cssColors, maskZeroValues, colorbarRange]);
+  }, [
+    backendDatasetId,
+    date,
+    level,
+    cssColors,
+    maskZeroValues,
+    effectiveColorbarRange,
+  ]);
 
   const requiresExplicitLevel = useMemo(() => {
     if (!dataset?.backend) {
@@ -301,13 +348,13 @@ export const useRasterLayer = ({
       try {
         // Extract custom range values
         const customMin =
-          colorbarRange?.enabled && colorbarRange?.min != null
-            ? Number(colorbarRange.min)
+          effectiveColorbarRange?.enabled && effectiveColorbarRange?.min != null
+            ? Number(effectiveColorbarRange.min)
             : null;
 
         const customMax =
-          colorbarRange?.enabled && colorbarRange?.max != null
-            ? Number(colorbarRange.max)
+          effectiveColorbarRange?.enabled && effectiveColorbarRange?.max != null
+            ? Number(effectiveColorbarRange.max)
             : null;
 
         console.log("[useRasterLayer] Sending request with custom range:", {
@@ -402,7 +449,7 @@ export const useRasterLayer = ({
     cssColors,
     maskZeroValues,
     waitingForLevel,
-    colorbarRange,
+    effectiveColorbarRange,
   ]);
 
   return { data, isLoading, error, requestKey };

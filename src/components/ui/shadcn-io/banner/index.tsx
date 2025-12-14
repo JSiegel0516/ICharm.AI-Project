@@ -1,16 +1,16 @@
-'use client';
+"use client";
 
-import { useControllableState } from '@radix-ui/react-use-controllable-state';
-import { type LucideIcon, XIcon } from 'lucide-react';
+import { useControllableState } from "@radix-ui/react-use-controllable-state";
+import { type LucideIcon, XIcon } from "lucide-react";
 import {
   type ComponentProps,
   createContext,
   type HTMLAttributes,
   type MouseEventHandler,
   useContext,
-} from 'react';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+} from "react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 type BannerContextProps = {
   show: boolean;
@@ -52,9 +52,9 @@ export const Banner = ({
     <BannerContext.Provider value={{ show, setShow }}>
       <div
         className={cn(
-          'flex w-full items-center justify-between gap-2 bg-primary px-4 py-2 text-primary-foreground',
-          inset && 'rounded-lg',
-          className
+          "bg-primary text-primary-foreground flex w-full items-center justify-between gap-2 px-4 py-2",
+          inset && "rounded-lg",
+          className,
         )}
         {...(props as any)}
       >
@@ -75,8 +75,8 @@ export const BannerIcon = ({
 }: BannerIconProps) => (
   <div
     className={cn(
-      'rounded-full border border-background/20 bg-background/10 p-1 shadow-sm',
-      className
+      "border-background/20 bg-background/10 rounded-full border p-1 shadow-sm",
+      className,
     )}
     {...(props as any)}
   >
@@ -87,21 +87,21 @@ export const BannerIcon = ({
 export type BannerTitleProps = HTMLAttributes<HTMLParagraphElement>;
 
 export const BannerTitle = ({ className, ...props }: BannerTitleProps) => (
-  <p className={cn('flex-1 text-sm', className)} {...(props as any)} />
+  <p className={cn("flex-1 text-sm", className)} {...(props as any)} />
 );
 
 export type BannerActionProps = ComponentProps<typeof Button>;
 
 export const BannerAction = ({
-  variant = 'outline',
-  size = 'sm',
+  variant = "outline",
+  size = "sm",
   className,
   ...props
 }: BannerActionProps) => (
   <Button
     className={cn(
-      'shrink-0 bg-transparent hover:bg-background/10 hover:text-background',
-      className
+      "hover:bg-background/10 hover:text-background shrink-0 bg-transparent",
+      className,
     )}
     size={size}
     variant={variant}
@@ -112,8 +112,8 @@ export const BannerAction = ({
 export type BannerCloseProps = ComponentProps<typeof Button>;
 
 export const BannerClose = ({
-  variant = 'ghost',
-  size = 'icon',
+  variant = "ghost",
+  size = "icon",
   onClick,
   className,
   ...props
@@ -128,8 +128,8 @@ export const BannerClose = ({
   return (
     <Button
       className={cn(
-        'shrink-0 bg-transparent hover:bg-background/10 hover:text-background',
-        className
+        "hover:bg-background/10 hover:text-background shrink-0 bg-transparent",
+        className,
       )}
       onClick={handleClick}
       size={size}

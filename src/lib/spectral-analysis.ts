@@ -25,13 +25,13 @@ export function computePeriodogram(
   samplingRate: number = 1.0, // For daily data: 1.0, for monthly: 12.0
 ): PeriodogramData {
   const N = data.length;
-  
+
   // 1. DETREND (not just remove mean) - Important for climate!
   const detrended = detrendLinear(data);
-  
+
   // 2. Apply window (Hanning) to reduce spectral leakage
   const windowed = applyHanningWindow(detrended);
-  
+
   // 3. Pad to next power of 2 for efficient FFT
   const n = Math.pow(2, Math.ceil(Math.log2(N)));
   const paddedData = new Array(n).fill(0);
@@ -53,16 +53,16 @@ export function computePeriodogram(
     const real = out[2 * i];
     const imag = out[2 * i + 1];
     const magnitude = Math.sqrt(real * real + imag * imag);
-    
+
     // Power Spectral Density (variance per frequency bin)
     // Correct normalization: 2 * |FFT|^2 / (N * W)
     // Factor of 2: because we only use positive frequencies
     // W: sum of squared window values (for Hanning: N * 3/8)
     const W = N * 0.375; // Hanning window correction factor
     const psd = (2 * magnitude * magnitude) / (N * W);
-    
+
     power.push(psd); // Keep in linear scale (variance units)
-    
+
     // Frequency in cycles per unit time
     const freq = (i * samplingRate) / n;
     frequencies.push(freq);
@@ -76,18 +76,21 @@ export function computePeriodogram(
  */
 function detrendLinear(data: number[]): number[] {
   const N = data.length;
-  let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
-  
+  let sumX = 0,
+    sumY = 0,
+    sumXY = 0,
+    sumX2 = 0;
+
   for (let i = 0; i < N; i++) {
     sumX += i;
     sumY += data[i];
     sumXY += i * data[i];
     sumX2 += i * i;
   }
-  
+
   const slope = (N * sumXY - sumX * sumY) / (N * sumX2 - sumX * sumX);
   const intercept = (sumY - slope * sumX) / N;
-  
+
   return data.map((val, i) => val - (slope * i + intercept));
 }
 
@@ -96,8 +99,8 @@ function detrendLinear(data: number[]): number[] {
  */
 function applyHanningWindow(data: number[]): number[] {
   const N = data.length;
-  return data.map((val, i) => 
-    val * 0.5 * (1 - Math.cos(2 * Math.PI * i / (N - 1)))
+  return data.map(
+    (val, i) => val * 0.5 * (1 - Math.cos((2 * Math.PI * i) / (N - 1))),
   );
 }
 
@@ -105,7 +108,6 @@ function applyHanningWindow(data: number[]): number[] {
  * Compute spectrogram (time-frequency representation)
  * Based on R code using specgram with overlapping windows
  */
-
 
 export function computeSpectrogram(
   data: number[],
@@ -116,10 +118,10 @@ export function computeSpectrogram(
 ): SpectrogramData {
   // 1. Linear Detrending (removes both mean and trend)
   const detrendedData = detrendLinear(data);
-  
+
   const hopSize = windowSize - overlap;
   const numWindows = Math.floor((detrendedData.length - overlap) / hopSize);
-  
+
   // 2. Window Function (Hanning) & Normalization Factor
   const hannWindow = new Array(windowSize);
   let windowSumSq = 0;
@@ -127,40 +129,40 @@ export function computeSpectrogram(
     hannWindow[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (windowSize - 1)));
     windowSumSq += hannWindow[i] * hannWindow[i];
   }
-  
+
   const fft = new FFT(nfft);
   const times: number[] = [];
   const power: number[][] = [];
-  
+
   // Frequencies (only up to Nyquist)
   const frequencies: number[] = [];
   const numFreqs = Math.floor(nfft / 2);
   for (let i = 0; i < numFreqs; i++) {
     frequencies.push((i * samplingRate) / nfft);
   }
-  
+
   for (let w = 0; w < numWindows; w++) {
     const start = w * hopSize;
     const end = start + windowSize;
     if (end > detrendedData.length) break;
-    
+
     // 3. Apply Window and Zero-pad
     const windowData = new Array(nfft).fill(0);
     for (let i = 0; i < windowSize; i++) {
       windowData[i] = detrendedData[start + i] * hannWindow[i];
     }
-    
+
     // 4. Perform FFT
     const out = fft.createComplexArray();
     fft.realTransform(out, windowData);
-    
+
     const windowPower: number[] = [];
     for (let i = 0; i < numFreqs; i++) {
       const real = out[2 * i];
       const imag = out[2 * i + 1];
-      
+
       const magnitudeSq = real * real + imag * imag;
-      
+
       // 5. Compute Power Spectral Density (PSD)
       // One-sided spectrum (only positive frequencies)
       // Factor of 2 for all frequencies except DC (i=0) and Nyquist
@@ -172,17 +174,17 @@ export function computeSpectrogram(
         // All other frequencies: factor of 2 for one-sided spectrum
         powerValue = (2 * magnitudeSq) / (windowSumSq * samplingRate);
       }
-      
+
       windowPower.push(powerValue);
     }
-    
+
     power.push(windowPower);
-    
+
     // Time center of window
     const timeCenter = (start + windowSize / 2) / samplingRate;
     times.push(timeCenter);
   }
-  
+
   return { times, frequencies, power };
 }
 
@@ -206,14 +208,14 @@ export function estimateSamplingRate(dates: string[]): number {
 
   // Average diff in milliseconds
   const avgDiff = diffs.reduce((sum, d) => sum + d, 0) / diffs.length;
-  
+
   // Convert to sampling rate (samples per day, or per month, etc.)
   // For daily data: ~86400000 ms
   // For monthly data: ~2592000000 ms
-  
+
   // Return samples per unit time (normalized)
   // For visualization purposes, we can just use 1/avgDiff
-  return 1.0 / avgDiff * 86400000; // samples per day
+  return (1.0 / avgDiff) * 86400000; // samples per day
 }
 
 /**
