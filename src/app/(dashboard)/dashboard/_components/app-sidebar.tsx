@@ -141,7 +141,7 @@ const data = {
     },
     {
       name: "Chat History",
-      url: "#",
+      url: "/dashboard/chathistory",
       icon: FileIcon,
     },
   ],

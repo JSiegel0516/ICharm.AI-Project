@@ -19,6 +19,11 @@ import {
 } from "@/components/ui/shadcn-io/banner";
 import { toast } from "sonner";
 import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
+import {
   useTimeSeries,
   AnalysisModel,
   ChartType,
@@ -373,9 +378,9 @@ export default function TimeSeriesPage() {
   }, [error]);
 
   return (
-    <div className="container mx-auto space-y-6 p-6">
+    <div className="flex h-screen flex-col">
       {/* Sticky Banner Container - Processing Info & Errors */}
-      <div className="sticky top-2 z-50">
+      <div className="sticky top-0 z-50 px-4 pt-2">
         {/* Processing Info Banner */}
         {processingInfo && !isLoading && (
           <Banner className="rounded-lg bg-green-200 dark:bg-green-800">
@@ -416,61 +421,77 @@ export default function TimeSeriesPage() {
         )}
       </div>
 
-      {/* Dataset Filter - Server-side Controls Only */}
-      <DatasetFilter
-        selectedDatasets={selectedDatasets}
-        setSelectedDatasets={setSelectedDatasets}
-        availableDatasets={availableDatasets}
-        searchTerm={searchTerm}
-        setSearchTerm={setSearchTerm}
-        selectedCategory={selectedCategory}
-        setSelectedCategory={setSelectedCategory}
-        visibleDatasets={visibleDatasets}
-        setVisibleDatasets={setVisibleDatasets}
-        dataSourceFilter={dataSourceFilter}
-        setDataSourceFilter={setDataSourceFilter}
-        dateRange={dateRange}
-        setDateRange={setDateRange}
-        analysisModel={analysisModel}
-        setAnalysisModel={setAnalysisModel}
-        focusCoordinates={focusCoordinates}
-        setFocusCoordinates={setFocusCoordinates}
-        onExtract={handleExtract}
-        onExport={handleExport}
-        onReset={handleReset}
-        isLoading={isLoading}
-        hasData={data && data.length > 0}
-        progress={progress}
-        processingInfo={processingInfo}
-        coordinateValidation={coordinateValidation}
-      />
-
-      {/* Visualization Panel - Includes ChartOptionsPanel now */}
-      <div data-chart-container>
-        <VisualizationPanel
-          chartType={chartType}
-          setChartType={setChartType}
-          dateRange={dateRange}
-          analysisModel={analysisModel}
-          chartData={data}
-          selectedDatasets={expandedSelectedDatasets}
-          visibleDatasets={visibleDatasets}
-          processingInfo={processingInfo}
-          statistics={statistics}
-          metadata={metadata}
-          normalize={normalize}
-          setNormalize={setNormalize}
-          smoothingWindow={smoothingWindow}
-          setSmoothingWindow={setSmoothingWindow}
-          resampleFreq={resampleFreq}
-          setResampleFreq={setResampleFreq}
-          aggregation={aggregation}
-          setAggregation={setAggregation}
-          showHistogram={showHistogram}
-          setShowHistogram={setShowHistogram}
-          showLinearTrend={showLinearTrend}
-          setShowLinearTrend={setShowLinearTrend}
-        />
+      {/* Full-height Resizable Panel Group */}
+      <div className="flex-1 overflow-hidden px-4 pb-4">
+        <ResizablePanelGroup
+          direction="vertical"
+          className="h-full rounded-lg border"
+        >
+          <ResizablePanel defaultSize={35} minSize={20} maxSize={60}>
+            <div className="h-full overflow-auto">
+              {/* Dataset Filter - Server-side Controls Only */}
+              <DatasetFilter
+                selectedDatasets={selectedDatasets}
+                setSelectedDatasets={setSelectedDatasets}
+                availableDatasets={availableDatasets}
+                searchTerm={searchTerm}
+                setSearchTerm={setSearchTerm}
+                selectedCategory={selectedCategory}
+                setSelectedCategory={setSelectedCategory}
+                visibleDatasets={visibleDatasets}
+                setVisibleDatasets={setVisibleDatasets}
+                dataSourceFilter={dataSourceFilter}
+                setDataSourceFilter={setDataSourceFilter}
+                dateRange={dateRange}
+                setDateRange={setDateRange}
+                analysisModel={analysisModel}
+                setAnalysisModel={setAnalysisModel}
+                focusCoordinates={focusCoordinates}
+                setFocusCoordinates={setFocusCoordinates}
+                onExtract={handleExtract}
+                onExport={handleExport}
+                onReset={handleReset}
+                isLoading={isLoading}
+                hasData={data && data.length > 0}
+                progress={progress}
+                processingInfo={processingInfo}
+                coordinateValidation={coordinateValidation}
+              />
+            </div>
+          </ResizablePanel>
+          <ResizableHandle withHandle />
+          <ResizablePanel defaultSize={65} minSize={40}>
+            <div className="h-full overflow-auto">
+              {/* Visualization Panel - Includes ChartOptionsPanel now */}
+              <div data-chart-container className="h-full">
+                <VisualizationPanel
+                  chartType={chartType}
+                  setChartType={setChartType}
+                  dateRange={dateRange}
+                  analysisModel={analysisModel}
+                  chartData={data}
+                  selectedDatasets={expandedSelectedDatasets}
+                  visibleDatasets={visibleDatasets}
+                  processingInfo={processingInfo}
+                  statistics={statistics}
+                  metadata={metadata}
+                  normalize={normalize}
+                  setNormalize={setNormalize}
+                  smoothingWindow={smoothingWindow}
+                  setSmoothingWindow={setSmoothingWindow}
+                  resampleFreq={resampleFreq}
+                  setResampleFreq={setResampleFreq}
+                  aggregation={aggregation}
+                  setAggregation={setAggregation}
+                  showHistogram={showHistogram}
+                  setShowHistogram={setShowHistogram}
+                  showLinearTrend={showLinearTrend}
+                  setShowLinearTrend={setShowLinearTrend}
+                />
+              </div>
+            </div>
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </div>
     </div>
   );

@@ -215,7 +215,7 @@ export function DatasetFilter({
   };
 
   return (
-    <div className="">
+    <div className="flex h-full flex-col">
       {/* Dataset Filters */}
       <Card>
         <CardContent className="space-y-2">
@@ -234,7 +234,7 @@ export function DatasetFilter({
               value={selectedCategory}
               onValueChange={setSelectedCategory}
             >
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-45">
                 <Filter className="mr-2 h-4 w-4" />
                 <SelectValue />
               </SelectTrigger>
