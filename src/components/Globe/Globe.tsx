@@ -608,6 +608,18 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       isRasterImageryLoading,
     ]);
 
+    // Helper function to enforce infinite scroll disabled state
+    const enforceInfiniteScrollDisabled = useCallback((viewer: any) => {
+      if (!viewer?.scene?.screenSpaceCameraController) return;
+
+      const controller = viewer.scene.screenSpaceCameraController;
+
+      // Force these settings
+      controller.infiniteScroll = false;
+      controller.inertiaSpin = 0;
+      controller.inertiaTranslate = 0;
+    }, []);
+
     useEffect(() => {
       if (
         !containerRef.current ||
@@ -641,8 +653,29 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             infoBox: false,
             selectionIndicator: false,
             imageryProvider: false,
+            // Prevent wraparound and reduce drift in 2D mode.
+            mapMode2D: Cesium.MapMode2D.SINGLE_TILE,
           });
           viewer.scene.globe.depthTestAgainstTerrain = true;
+
+          // Disable infinite horizontal scroll in 2D mode to reduce lag.
+          if (viewer.scene?.screenSpaceCameraController) {
+            const controller = viewer.scene.screenSpaceCameraController;
+
+            // Enable all standard controls
+            controller.enableInputs = true;
+            controller.enableTranslate = true;
+            controller.enableZoom = true;
+            controller.enableRotate = true;
+            controller.enableTilt = true;
+            controller.enableLook = true;
+
+            // Critical: disable infinite scroll and all inertia
+            controller.infiniteScroll = false;
+            controller.inertiaSpin = 0;
+            controller.inertiaTranslate = 0;
+            controller.inertiaZoom = 0;
+          }
 
           const oceanMaterial = new Cesium.Material({
             fabric: {
@@ -1026,6 +1059,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       if (viewMode === "2d") {
         viewer.scene.morphTo2D(0.0);
         viewer.scene.globe.show = true;
+
+        // Enforce infinite scroll disabled in 2D mode
+        enforceInfiniteScrollDisabled(viewer);
+
         viewer.scene.requestRender();
         // Ensure camera frames the whole world in 2D
         viewer.camera.setView({
@@ -1056,7 +1093,19 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       });
 
       viewer.scene.requestRender();
-    }, [viewMode, cesiumInstance]);
+    }, [viewMode, cesiumInstance, enforceInfiniteScrollDisabled]);
+
+    // Add an effect to periodically enforce infinite scroll disabled in 2D mode
+    useEffect(() => {
+      if (viewMode !== "2d" || !viewerRef.current) return;
+
+      // Set up an interval to periodically check and enforce the setting
+      const intervalId = setInterval(() => {
+        enforceInfiniteScrollDisabled(viewerRef.current);
+      }, 1000); // Check every second
+
+      return () => clearInterval(intervalId);
+    }, [viewMode, enforceInfiniteScrollDisabled]);
 
     useEffect(() => {
       if (!satelliteLayerRef.current) return;
