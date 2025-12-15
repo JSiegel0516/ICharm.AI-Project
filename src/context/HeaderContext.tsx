@@ -304,7 +304,7 @@ function generateColorScale(
   if (name.includes("godas") || param.includes("dzdt")) {
     return buildScale(
       DIVERGING_RD_BU_COLORS,
-      ["-1", "-0.5", "0", "0.5", "1"],
+      ["-0.0000005", "-0.00000025", "0", "0.00000025", "0.0000005"],
       -1,
       1,
     );

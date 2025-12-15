@@ -233,6 +233,12 @@ export const useRasterLayer = ({
       return colorbarRange;
     }
 
+    const GODAS_DEFAULT_RANGE = {
+      enabled: true,
+      min: -0.0000005,
+      max: 0.0000005,
+    };
+
     const datasetText = [
       dataset?.id,
       dataset?.slug,
@@ -250,6 +256,7 @@ export const useRasterLayer = ({
       datasetText.includes("noaaglobaltemp") ||
       datasetText.includes("noaa global temp") ||
       datasetText.includes("noaa global surface temperature");
+    const isGodas = datasetText.includes("godas");
 
     if (isNoaaGlobalTemp) {
       // Default to dataset baseline if available, otherwise -2 to 2.
@@ -262,6 +269,11 @@ export const useRasterLayer = ({
           ? dataset.colorScale.max
           : 2;
       return { enabled: true, min: defaultMin, max: defaultMax };
+    }
+
+    if (isGodas) {
+      // Keep GODAS centered around zero with a tight default range.
+      return GODAS_DEFAULT_RANGE;
     }
 
     return colorbarRange;

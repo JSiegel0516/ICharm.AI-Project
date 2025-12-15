@@ -224,6 +224,8 @@ const ColorBar: React.FC<ColorBarProps> = ({
 
   const colorScale = useMemo(() => {
     const customRangeEnabled = Boolean(customRange?.enabled);
+    const GODAS_DEFAULT_MIN = -0.0000005;
+    const GODAS_DEFAULT_MAX = 0.0000005;
     const datasetText = [
       dataset?.id,
       dataset?.slug,
@@ -257,6 +259,9 @@ const ColorBar: React.FC<ColorBarProps> = ({
         ? Number(customRange.max)
         : null;
 
+    const godasDefaultMin = isGodas ? GODAS_DEFAULT_MIN : null;
+    const godasDefaultMax = isGodas ? GODAS_DEFAULT_MAX : null;
+
     const metaMin =
       !preferBaselineRange &&
       typeof rasterMeta?.min === "number" &&
@@ -270,8 +275,10 @@ const ColorBar: React.FC<ColorBarProps> = ({
         ? Number(rasterMeta.max)
         : null;
 
-    const min = overrideMin ?? metaMin ?? dataset.colorScale.min;
-    const max = overrideMax ?? metaMax ?? dataset.colorScale.max;
+    const min =
+      overrideMin ?? godasDefaultMin ?? metaMin ?? dataset.colorScale.min;
+    const max =
+      overrideMax ?? godasDefaultMax ?? metaMax ?? dataset.colorScale.max;
     const safeMin = Number.isFinite(min) ? Number(min) : 0;
     const safeMax = Number.isFinite(max) ? Number(max) : safeMin;
 
@@ -294,7 +301,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
 
       if (isGodas) {
         const epsilon = Math.max(Math.abs(rangeMax - rangeMin) * 1e-6, 1e-12);
-        const raw = [rangeMin, 0, rangeMax];
+        const raw = [-0.000005, 0, 0.000005];
         return raw.filter((value, index) => {
           if (index === 0) return true;
           const prev = raw[index - 1];
