@@ -215,7 +215,16 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
 
   const formattedPrimaryValue =
     convertedPrimaryValue !== null && Number.isFinite(convertedPrimaryValue)
-      ? convertedPrimaryValue.toFixed(2)
+      ? (() => {
+          const abs = Math.abs(convertedPrimaryValue);
+          if (abs === 0) return "0";
+          if (abs < 1e-4) return convertedPrimaryValue.toExponential(2);
+          if (abs < 1)
+            return Number(convertedPrimaryValue.toPrecision(3)).toString();
+          if (abs < 10) return convertedPrimaryValue.toFixed(2);
+          if (abs < 100) return convertedPrimaryValue.toFixed(1);
+          return convertedPrimaryValue.toFixed(0);
+        })()
       : "--";
 
   const chartData = useMemo(() => {

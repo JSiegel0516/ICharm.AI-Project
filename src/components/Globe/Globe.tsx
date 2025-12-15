@@ -657,6 +657,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             mapMode2D: Cesium.MapMode2D.SINGLE_TILE,
           });
           viewer.scene.globe.depthTestAgainstTerrain = true;
+          viewer.screenSpaceEventHandler.removeInputAction(
+            Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK,
+          );
 
           // Disable infinite horizontal scroll in 2D mode to reduce lag.
           if (viewer.scene?.screenSpaceCameraController) {

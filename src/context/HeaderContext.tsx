@@ -252,6 +252,9 @@ function generateColorScale(
     "Color Brewer 2.0|Sequential|Single-hue|9-class Greys",
   );
   const PRESSURE_COLORS = getColorMapColors("Matlab|Bone");
+  const DIVERGING_RD_BU_COLORS = getColorMapColors(
+    "Color Brewer 2.0|Diverging|Zero Centered|11-class RdBu",
+  );
   const DEFAULT_COLORS = getColorMapColors("Other|Gray scale");
 
   // Check for Sea Surface Temperature first (more specific)
@@ -294,6 +297,16 @@ function generateColorScale(
       ["-40°C", "-20°C", "0°C", "20°C", "40°C"],
       -40,
       40,
+    );
+  }
+
+  // GODAS vertical velocity and similar ocean reanalysis fields:
+  if (name.includes("godas") || param.includes("dzdt")) {
+    return buildScale(
+      DIVERGING_RD_BU_COLORS,
+      ["-1", "-0.5", "0", "0.5", "1"],
+      -1,
+      1,
     );
   }
 
