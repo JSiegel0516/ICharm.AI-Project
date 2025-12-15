@@ -201,13 +201,32 @@ export function VisualizationPanel({
     return [minY - padding, maxY + padding];
   }, [chartData, chartDataWithTrends, visibleDatasets, showLinearTrend]);
 
-  // Get display unit for Y-axis
+  // Get display unit for Y-axis - UPDATED TO SHOW ALL UNITS
   const yAxisUnit = useMemo(() => {
     if (normalize) return "normalized";
     if (!metadata || selectedDatasets.length === 0) return "";
-    const firstDataset = selectedDatasets[0];
-    const originalUnit = metadata[firstDataset.id]?.units || "";
-    return getDisplayUnit(originalUnit);
+
+    // Get unique units from all selected datasets
+    const units = new Set(
+      selectedDatasets
+        .map((dataset) => {
+          const originalUnit = metadata[dataset.id]?.units || "";
+          return getDisplayUnit(originalUnit);
+        })
+        .filter(Boolean),
+    );
+
+    // If all datasets have the same unit, show it once
+    if (units.size === 1) {
+      return Array.from(units)[0];
+    }
+
+    // If multiple units, show them all separated by " / "
+    if (units.size > 1) {
+      return Array.from(units).join(" and ");
+    }
+
+    return "";
   }, [metadata, selectedDatasets, normalize]);
 
   // Generate chart title
