@@ -236,6 +236,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
       .filter((v) => typeof v === "string")
       .map((v) => v.toLowerCase())
       .join(" ");
+    const isGodas = datasetText.includes("godas");
 
     // Prefer the dataset's baseline range for any obvious variant of NOAAGlobalTemp.
     const preferBaselineRange =
@@ -286,13 +287,28 @@ const ColorBar: React.FC<ColorBarProps> = ({
     );
 
     // Generate labels across the actual range
-    const labels =
-      labelCount <= 1 || Math.abs(rangeMax - rangeMin) < 1e-9
-        ? Array(labelCount).fill(rangeMin)
-        : Array.from(
-            { length: labelCount },
-            (_, i) => rangeMin + ((rangeMax - rangeMin) * i) / (labelCount - 1),
-          );
+    const generateLabels = () => {
+      if (labelCount <= 1 || Math.abs(rangeMax - rangeMin) < 1e-9) {
+        return Array(labelCount).fill(rangeMin);
+      }
+
+      if (isGodas) {
+        const epsilon = Math.max(Math.abs(rangeMax - rangeMin) * 1e-6, 1e-12);
+        const raw = [rangeMin, 0, rangeMax];
+        return raw.filter((value, index) => {
+          if (index === 0) return true;
+          const prev = raw[index - 1];
+          return Math.abs(value - prev) > epsilon;
+        });
+      }
+
+      return Array.from(
+        { length: labelCount },
+        (_, i) => rangeMin + ((rangeMax - rangeMin) * i) / (labelCount - 1),
+      );
+    };
+
+    const labels = generateLabels();
 
     return { labels, colors: dataset.colorScale.colors };
   }, [customRange, dataset.colorScale, rasterMeta, unitInfo.symbol]);
@@ -303,19 +319,20 @@ const ColorBar: React.FC<ColorBarProps> = ({
         ? colorScale.labels.map((v) => (v * 9) / 5 + 32)
         : colorScale.labels;
 
-    const span =
-      Math.max(...values.map((v) => Math.abs(v))) * 2 ||
-      Math.abs(values[values.length - 1] - values[0]) ||
-      1;
-
     const formatTick = (v: number) => {
       if (!Number.isFinite(v)) return "–";
-      const absSpan = Math.abs(span);
-      let decimals = 0;
-      if (absSpan < 1) decimals = 2;
-      else if (absSpan < 10) decimals = 1;
-      const fixed = Number(v.toFixed(decimals));
-      return (Object.is(fixed, -0) ? 0 : fixed).toString();
+      if (v === 0) return "0";
+
+      const abs = Math.abs(v);
+      if (abs < 1e-4) return v.toExponential(2);
+      if (abs < 1) {
+        const precise = Number(v.toPrecision(3));
+        return (Object.is(precise, -0) ? 0 : precise).toString();
+      }
+      if (abs < 10) return v.toFixed(2);
+      if (abs < 100) return v.toFixed(1);
+      if (abs < 1000) return v.toFixed(0);
+      return `${(v / 1000).toFixed(1)}k`;
     };
 
     return values.map(formatTick);
