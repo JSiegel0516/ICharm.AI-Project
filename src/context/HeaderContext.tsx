@@ -274,7 +274,12 @@ function generateColorScale(
   }
 
   // Air Temperature scales
-  if (name.includes("noaaglobaltemp")) {
+  if (
+    name.includes("noaaglobaltemp") ||
+    name.includes("noaa global surface temperature") ||
+    name.includes("noaa global temp") ||
+    name.includes("noaa global temperature")
+  ) {
     // NOAA Global Surface Temperature anomalies: custom anomaly palette
     return buildScale(
       ANOMALY_COLORS,
@@ -301,12 +306,29 @@ function generateColorScale(
   }
 
   // GODAS vertical velocity and similar ocean reanalysis fields:
-  if (name.includes("godas") || param.includes("dzdt")) {
+  if (
+    name.includes("godas") ||
+    name.includes("global ocean data assimilation system") ||
+    name.includes("ncep global ocean data assimilation") ||
+    param.includes("dzdt")
+  ) {
+    // Purple → teal diverging palette matching requested bar
+    const GODAS_COLORS = [
+      "#6b00b5",
+      "#8a4bcc",
+      "#a777dd",
+      "#c8b6ea",
+      "#e7e7ee",
+      "#b8e2e6",
+      "#7dc9cc",
+      "#3ea3a8",
+      "#137b80",
+    ];
     return buildScale(
-      DIVERGING_RD_BU_COLORS,
-      ["-0.0000005", "-0.00000025", "0", "0.00000025", "0.0000005"],
-      -1,
-      1,
+      GODAS_COLORS,
+      ["-0.000005", "0", "0.000005"],
+      -0.000005,
+      0.000005,
     );
   }
 
