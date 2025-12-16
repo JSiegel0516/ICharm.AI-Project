@@ -247,6 +247,8 @@ export interface GlobeProps {
   rasterOpacity?: number;
   hideZeroPrecipitation?: boolean;
   rasterBlurEnabled?: boolean;
+  // Disable loading overlays during timeline playback
+  isPlaying?: boolean;
   onRasterMetadataChange?: (
     meta: {
       units?: string | null;
