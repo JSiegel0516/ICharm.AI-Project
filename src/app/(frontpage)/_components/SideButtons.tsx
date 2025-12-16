@@ -39,6 +39,7 @@ interface SideButtonsProps {
   onBoundaryToggle: (visible: boolean) => void;
   onGeographicLinesToggle: (visible: boolean) => void;
   onRasterOpacityChange: (opacity: number) => void;
+  onRasterTransitionChange?: (ms: number) => void;
   onHideZeroPrecipToggle: (enabled: boolean) => void;
   onRasterBlurToggle: (enabled: boolean) => void;
   onColorbarRangeChange: (payload: {
@@ -73,6 +74,7 @@ export function SideButtons({
   onBoundaryToggle,
   onGeographicLinesToggle,
   onRasterOpacityChange,
+  onRasterTransitionChange,
   onHideZeroPrecipToggle,
   onRasterBlurToggle,
   onColorbarRangeChange,
@@ -597,6 +599,8 @@ export function SideButtons({
         onGeographicLinesToggle={onGeographicLinesToggle}
         rasterOpacity={globeSettings.rasterOpacity}
         onRasterOpacityChange={onRasterOpacityChange}
+        rasterTransitionMs={globeSettings.rasterTransitionMs ?? 320}
+        onRasterTransitionChange={(value) => onRasterTransitionChange?.(value)}
         hideZeroPrecipitation={globeSettings.hideZeroPrecipitation}
         onHideZeroPrecipitationToggle={onHideZeroPrecipToggle}
         rasterBlurEnabled={globeSettings.rasterBlurEnabled}

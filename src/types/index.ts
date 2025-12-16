@@ -135,6 +135,7 @@ export interface GlobeSettings {
   boundaryLinesVisible: boolean;
   geographicLinesVisible: boolean;
   rasterOpacity: number;
+  rasterTransitionMs?: number;
   hideZeroPrecipitation: boolean;
   rasterBlurEnabled: boolean;
   colorbarCustomMin?: number | null;
@@ -245,6 +246,7 @@ export interface GlobeProps {
   boundaryLinesVisible?: boolean;
   geographicLinesVisible?: boolean;
   rasterOpacity?: number;
+  rasterTransitionMs?: number;
   hideZeroPrecipitation?: boolean;
   rasterBlurEnabled?: boolean;
   // Disable loading overlays during timeline playback

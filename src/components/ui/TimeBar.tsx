@@ -20,6 +20,7 @@ interface TimeBarProps {
   selectedDate?: Date;
   onDateChange?: (date: Date) => void;
   onPlayPause?: (isPlaying: boolean) => void;
+  playIntervalMs?: number;
   isPlaying?: boolean;
   className?: string;
 }
@@ -28,6 +29,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
   selectedDate = new Date(),
   onDateChange,
   onPlayPause,
+  playIntervalMs = 500,
   isPlaying = false,
   className = "",
 }) => {
@@ -256,7 +258,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
         } else {
           onDateChange?.(next);
         }
-      }, 500);
+      }, playIntervalMs);
     } else if (!isPlaying && playIntervalRef.current) {
       clearInterval(playIntervalRef.current);
       playIntervalRef.current = null;
@@ -268,7 +270,14 @@ const TimeBar: React.FC<TimeBarProps> = ({
         playIntervalRef.current = null;
       }
     };
-  }, [isPlaying, selectedDate, maxDate, onDateChange, onPlayPause]);
+  }, [
+    isPlaying,
+    selectedDate,
+    maxDate,
+    onDateChange,
+    onPlayPause,
+    playIntervalMs,
+  ]);
 
   useEffect(() => {
     if (isDragging) {

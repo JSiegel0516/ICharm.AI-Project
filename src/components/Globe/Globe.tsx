@@ -265,6 +265,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       boundaryLinesVisible = true,
       geographicLinesVisible = false,
       rasterOpacity = 1.0,
+      rasterTransitionMs = 320,
       rasterBlurEnabled = true,
       hideZeroPrecipitation = false,
       onRasterMetadataChange,
@@ -291,6 +292,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const geographicLineEntitiesRef = useRef<any[]>([]);
     const rasterLayerRef = useRef<any[]>([]);
     const textureLoadIdRef = useRef(0);
+    const lastRasterApplyRef = useRef<number>(0);
+    const pendingRasterTimeoutRef = useRef<ReturnType<
+      typeof setTimeout
+    > | null>(null);
     const isComponentUnmountedRef = useRef(false);
     const isUpdatingMarkerRef = useRef(false);
 
@@ -565,6 +570,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     useEffect(() => {
       return () => {
         isComponentUnmountedRef.current = true;
+        if (pendingRasterTimeoutRef.current) {
+          clearTimeout(pendingRasterTimeoutRef.current);
+          pendingRasterTimeoutRef.current = null;
+        }
       };
     }, []);
 
@@ -586,6 +595,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
 
+      // While loading (request or imagery), always show the indicator.
       if (rasterState.isLoading || isRasterImageryLoading) {
         setIsRasterTransitioning(true);
         return;
@@ -596,9 +606,20 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
 
+      // When not playing, hide as soon as the raster is ready.
+      if (!isPlaying) {
+        setIsRasterTransitioning(false);
+        return;
+      }
+
+      // During playback, allow a brief fade-out tied to the transition setting.
+      const indicatorDuration = Math.max(
+        150,
+        Math.min(rasterTransitionMs, 3000),
+      );
       const timer = window.setTimeout(() => {
         setIsRasterTransitioning(false);
-      }, 150);
+      }, indicatorDuration);
 
       return () => window.clearTimeout(timer);
     }, [
@@ -607,6 +628,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       rasterState.error,
       rasterState.requestKey,
       isRasterImageryLoading,
+      rasterTransitionMs,
+      isPlaying,
     ]);
 
     // Helper function to enforce infinite scroll disabled state
@@ -654,7 +677,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             infoBox: false,
             selectionIndicator: false,
             imageryProvider: false,
-            // Prevent wraparound and reduce drift in 2D mode.
             mapMode2D: Cesium.MapMode2D.SINGLE_TILE,
           });
           viewer.scene.globe.depthTestAgainstTerrain = true;
@@ -662,7 +684,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK,
           );
 
-          // Disable infinite horizontal scroll in 2D mode to reduce lag.
           if (viewer.scene?.screenSpaceCameraController) {
             const controller = viewer.scene.screenSpaceCameraController;
 
@@ -1072,7 +1093,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         });
 
         rasterLayerRef.current = newLayers;
-        const fadeDuration = 320;
+        const fadeDuration = Math.max(120, Math.min(rasterTransitionMs, 3000));
 
         animateLayerAlpha(newLayers, 0, rasterOpacity, fadeDuration, () => {
           newLayers.forEach((layer) => {
@@ -1100,6 +1121,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         rasterOpacity,
         rasterBlurEnabled,
         viewerReady,
+        rasterTransitionMs,
       ],
     );
 
@@ -1131,6 +1153,39 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       };
     }, [clearMarker, clearSearchMarker]);
 
+    const scheduleRasterApply = useCallback(
+      (layerData?: RasterLayerData, shouldThrottle = false) => {
+        if (pendingRasterTimeoutRef.current) {
+          clearTimeout(pendingRasterTimeoutRef.current);
+          pendingRasterTimeoutRef.current = null;
+        }
+
+        const now = Date.now();
+        const elapsed = now - (lastRasterApplyRef.current || 0);
+        const holdMs = shouldThrottle ? Math.max(0, rasterTransitionMs) : 0;
+        const delay = Math.max(0, holdMs - elapsed);
+
+        // If we're not throttling (play is off), apply immediately and drop any queued work.
+        if (!shouldThrottle) {
+          lastRasterApplyRef.current = now;
+          applyRasterLayers(layerData);
+          return;
+        }
+
+        if (delay > 0) {
+          pendingRasterTimeoutRef.current = setTimeout(() => {
+            lastRasterApplyRef.current = Date.now();
+            applyRasterLayers(layerData);
+            pendingRasterTimeoutRef.current = null;
+          }, delay);
+        } else {
+          lastRasterApplyRef.current = now;
+          applyRasterLayers(layerData);
+        }
+      },
+      [applyRasterLayers, rasterTransitionMs],
+    );
+
     useEffect(() => {
       if (rasterState.error) {
         console.warn("Raster pipeline error", rasterState.error);
@@ -1146,11 +1201,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         viewer.scene.morphTo2D(0.0);
         viewer.scene.globe.show = true;
 
-        // Enforce infinite scroll disabled in 2D mode
         enforceInfiniteScrollDisabled(viewer);
 
         viewer.scene.requestRender();
-        // Ensure camera frames the whole world in 2D
         viewer.camera.setView({
           destination: Cesium.Rectangle.fromDegrees(-180.0, -90.0, 180.0, 90.0),
         });
@@ -1226,12 +1279,13 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
 
-      applyRasterLayers(rasterState.data);
+      scheduleRasterApply(rasterState.data, isPlaying);
     }, [
-      applyRasterLayers,
+      scheduleRasterApply,
       rasterState.data,
       rasterState.requestKey,
       viewerReady,
+      isPlaying,
     ]);
 
     useEffect(() => {
@@ -1257,8 +1311,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     useEffect(() => {
       if (!viewerReady) return;
       if (!rasterDataRef.current) return;
-      applyRasterLayers(rasterDataRef.current);
-    }, [viewerReady, applyRasterLayers]);
+      // Always apply immediately when not playing (manual changes should feel instant)
+      scheduleRasterApply(rasterDataRef.current, isPlaying);
+    }, [viewerReady, scheduleRasterApply, isPlaying]);
 
     const showInitialLoading = isLoading;
     const showRasterTransitionLoading =
