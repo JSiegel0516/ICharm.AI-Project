@@ -255,20 +255,17 @@ export const useRasterLayer = ({
     const isNoaaGlobalTemp =
       datasetText.includes("noaaglobaltemp") ||
       datasetText.includes("noaa global temp") ||
-      datasetText.includes("noaa global surface temperature");
-    const isGodas = datasetText.includes("godas");
+      datasetText.includes("noaa global surface temperature") ||
+      datasetText.includes("noaa global surface temp") ||
+      datasetText.includes("noaa global temperature");
+    const isGodas =
+      datasetText.includes("godas") ||
+      datasetText.includes("global ocean data assimilation system") ||
+      datasetText.includes("ncep global ocean data assimilation");
 
     if (isNoaaGlobalTemp) {
-      // Default to dataset baseline if available, otherwise -2 to 2.
-      const defaultMin =
-        typeof dataset?.colorScale?.min === "number"
-          ? dataset.colorScale.min
-          : -2;
-      const defaultMax =
-        typeof dataset?.colorScale?.max === "number"
-          ? dataset.colorScale.max
-          : 2;
-      return { enabled: true, min: defaultMin, max: defaultMax };
+      // Force NOAA Global Surface Temperature to tight anomaly window.
+      return { enabled: true, min: -2, max: 2 };
     }
 
     if (isGodas) {
@@ -423,12 +420,21 @@ export const useRasterLayer = ({
           payload?.valueRange?.min ?? payload?.actualRange?.min ?? null;
         const fallbackMax =
           payload?.valueRange?.max ?? payload?.actualRange?.max ?? null;
+        const appliedMin =
+          effectiveColorbarRange?.enabled && effectiveColorbarRange?.min != null
+            ? Number(effectiveColorbarRange.min)
+            : (computedRange.min ?? fallbackMin);
+        const appliedMax =
+          effectiveColorbarRange?.enabled && effectiveColorbarRange?.max != null
+            ? Number(effectiveColorbarRange.max)
+            : (computedRange.max ?? fallbackMax);
 
         setData({
           textures,
           units: payload?.units ?? dataset?.units,
-          min: computedRange.min ?? fallbackMin ?? undefined,
-          max: computedRange.max ?? fallbackMax ?? undefined,
+          // Expose the range actually used for rendering so the ColorBar stays in sync.
+          min: appliedMin ?? undefined,
+          max: appliedMax ?? undefined,
           sampleValue: sampler,
         });
       } catch (err) {

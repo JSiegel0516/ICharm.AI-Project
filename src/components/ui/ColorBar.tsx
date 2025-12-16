@@ -226,6 +226,8 @@ const ColorBar: React.FC<ColorBarProps> = ({
     const customRangeEnabled = Boolean(customRange?.enabled);
     const GODAS_DEFAULT_MIN = -0.0000005;
     const GODAS_DEFAULT_MAX = 0.0000005;
+    const NOAAGLOBALTEMP_DEFAULT_MIN = -2;
+    const NOAAGLOBALTEMP_DEFAULT_MAX = 2;
     const datasetText = [
       dataset?.id,
       dataset?.slug,
@@ -238,13 +240,19 @@ const ColorBar: React.FC<ColorBarProps> = ({
       .filter((v) => typeof v === "string")
       .map((v) => v.toLowerCase())
       .join(" ");
-    const isGodas = datasetText.includes("godas");
-
-    // Prefer the dataset's baseline range for any obvious variant of NOAAGlobalTemp.
-    const preferBaselineRange =
+    const isGodas =
+      datasetText.includes("godas") ||
+      datasetText.includes("global ocean data assimilation system") ||
+      datasetText.includes("ncep global ocean data assimilation");
+    const isNoaaGlobalTemp =
       datasetText.includes("noaaglobaltemp") ||
       datasetText.includes("noaa global temp") ||
-      datasetText.includes("noaa global surface temperature");
+      datasetText.includes("noaa global surface temperature") ||
+      datasetText.includes("noaa global surface temp") ||
+      datasetText.includes("noaa global temperature");
+
+    // Prefer the dataset's baseline range for any obvious variant of NOAAGlobalTemp.
+    const preferBaselineRange = false;
 
     const overrideMin =
       customRangeEnabled &&
@@ -261,6 +269,8 @@ const ColorBar: React.FC<ColorBarProps> = ({
 
     const godasDefaultMin = isGodas ? GODAS_DEFAULT_MIN : null;
     const godasDefaultMax = isGodas ? GODAS_DEFAULT_MAX : null;
+    const noaaDefaultMin = isNoaaGlobalTemp ? NOAAGLOBALTEMP_DEFAULT_MIN : null;
+    const noaaDefaultMax = isNoaaGlobalTemp ? NOAAGLOBALTEMP_DEFAULT_MAX : null;
 
     const metaMin =
       !preferBaselineRange &&
@@ -276,9 +286,17 @@ const ColorBar: React.FC<ColorBarProps> = ({
         : null;
 
     const min =
-      overrideMin ?? godasDefaultMin ?? metaMin ?? dataset.colorScale.min;
+      overrideMin ??
+      godasDefaultMin ??
+      noaaDefaultMin ??
+      metaMin ??
+      dataset.colorScale.min;
     const max =
-      overrideMax ?? godasDefaultMax ?? metaMax ?? dataset.colorScale.max;
+      overrideMax ??
+      godasDefaultMax ??
+      noaaDefaultMax ??
+      metaMax ??
+      dataset.colorScale.max;
     const safeMin = Number.isFinite(min) ? Number(min) : 0;
     const safeMax = Number.isFinite(max) ? Number(max) : safeMin;
 
@@ -300,13 +318,8 @@ const ColorBar: React.FC<ColorBarProps> = ({
       }
 
       if (isGodas) {
-        const epsilon = Math.max(Math.abs(rangeMax - rangeMin) * 1e-6, 1e-12);
-        const raw = [-0.000005, 0, 0.000005];
-        return raw.filter((value, index) => {
-          if (index === 0) return true;
-          const prev = raw[index - 1];
-          return Math.abs(value - prev) > epsilon;
-        });
+        // Show only min and max for GODAS by default.
+        return [rangeMin, rangeMax];
       }
 
       return Array.from(
