@@ -26,6 +26,8 @@ interface GlobeSettingsPanelProps {
   // Raster opacity control
   rasterOpacity: number;
   onRasterOpacityChange: (opacity: number) => void;
+  rasterTransitionMs: number;
+  onRasterTransitionChange: (ms: number) => void;
   hideZeroPrecipitation: boolean;
   onHideZeroPrecipitationToggle: (enabled: boolean) => void;
   rasterBlurEnabled: boolean;
@@ -52,6 +54,8 @@ export function GlobeSettingsPanel({
   onGeographicLinesToggle,
   rasterOpacity,
   onRasterOpacityChange,
+  rasterTransitionMs,
+  onRasterTransitionChange,
   hideZeroPrecipitation,
   onHideZeroPrecipitationToggle,
   rasterBlurEnabled,
@@ -219,6 +223,36 @@ export function GlobeSettingsPanel({
                     checked={rasterBlurEnabled}
                     onCheckedChange={onRasterBlurToggle}
                     className="data-[state=checked]:bg-rose-500"
+                  />
+                </div>
+
+                {/* Raster Transition Speed */}
+                <div className="space-y-1 rounded-lg border border-neutral-600 bg-neutral-700/50 p-3">
+                  <div className="flex items-center justify-between">
+                    <Label
+                      htmlFor="raster-transition"
+                      className="text-sm font-semibold text-white"
+                    >
+                      Raster Frame Duration
+                    </Label>
+                    <span className="text-sm font-medium text-slate-400">
+                      {rasterTransitionMs} ms
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Minimum time each raster stays fully visible before the next
+                    one starts fading in.
+                  </p>
+                  <Slider
+                    id="raster-transition"
+                    min={100}
+                    max={2000}
+                    step={50}
+                    value={[rasterTransitionMs]}
+                    onValueChange={([value]) =>
+                      onRasterTransitionChange(Math.round(value))
+                    }
+                    className="w-full"
                   />
                 </div>
               </div>

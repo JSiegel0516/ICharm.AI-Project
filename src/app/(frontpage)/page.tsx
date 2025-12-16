@@ -216,6 +216,7 @@ export default function HomePage() {
     boundaryLinesVisible: true,
     geographicLinesVisible: false,
     rasterOpacity: 1,
+    rasterTransitionMs: 320,
     hideZeroPrecipitation: false,
     rasterBlurEnabled: true,
     colorbarCustomMin: null,
@@ -325,6 +326,11 @@ export default function HomePage() {
 
   const handleRasterOpacityChange = useCallback((opacity: number) => {
     setGlobeSettings((prev) => ({ ...prev, rasterOpacity: opacity }));
+  }, []);
+
+  const handleRasterTransitionChange = useCallback((ms: number) => {
+    const clamped = Math.max(50, Math.min(ms, 5000));
+    setGlobeSettings((prev) => ({ ...prev, rasterTransitionMs: clamped }));
   }, []);
 
   const handleHideZeroPrecipToggle = useCallback((enabled: boolean) => {
@@ -449,6 +455,7 @@ export default function HomePage() {
           min: globeSettings.colorbarCustomMin,
           max: globeSettings.colorbarCustomMax,
         }}
+        rasterTransitionMs={globeSettings.rasterTransitionMs ?? 320}
         hideZeroPrecipitation={globeSettings.hideZeroPrecipitation}
         onRegionClick={handleRegionClick}
         satelliteLayerVisible={globeSettings.satelliteLayerVisible}
@@ -472,6 +479,7 @@ export default function HomePage() {
       globeSettings.geographicLinesVisible,
       globeSettings.rasterOpacity,
       globeSettings.rasterBlurEnabled,
+      globeSettings.rasterTransitionMs,
       globeSettings.hideZeroPrecipitation,
       globeSettings.colorbarCustomMin,
       globeSettings.colorbarCustomMax,
@@ -525,6 +533,7 @@ export default function HomePage() {
             onBoundaryToggle={handleBoundaryToggle}
             onGeographicLinesToggle={handleGeographicLinesToggle}
             onRasterOpacityChange={handleRasterOpacityChange}
+            onRasterTransitionChange={handleRasterTransitionChange}
             onHideZeroPrecipToggle={handleHideZeroPrecipToggle}
             onRasterBlurToggle={handleRasterBlurToggle}
             onColorbarRangeChange={handleColorbarRangeChange}
@@ -575,6 +584,7 @@ export default function HomePage() {
                 onDateChange={handleDateChange}
                 onPlayPause={handlePlayPause}
                 isPlaying={isTimebarPlaying}
+                playIntervalMs={globeSettings.rasterTransitionMs ?? 500}
               />
             </div>
 
