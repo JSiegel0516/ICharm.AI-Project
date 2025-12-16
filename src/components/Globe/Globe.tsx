@@ -268,6 +268,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       rasterBlurEnabled = true,
       hideZeroPrecipitation = false,
       onRasterMetadataChange,
+      isPlaying = false,
     },
     ref,
   ) => {
@@ -925,6 +926,50 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       addClickMarker,
     ]);
 
+    const animateLayerAlpha = useCallback(
+      (
+        layers: any[],
+        from: number,
+        to: number,
+        duration: number,
+        onComplete?: () => void,
+      ) => {
+        if (!layers.length) return;
+        const start = performance.now();
+
+        const step = (now: number) => {
+          if (
+            isComponentUnmountedRef.current ||
+            !viewerRef.current ||
+            viewerRef.current.isDestroyed()
+          ) {
+            return;
+          }
+
+          const t = Math.min(1, (now - start) / duration);
+          const alpha = from + (to - from) * t;
+          layers.forEach((layer) => {
+            try {
+              layer.alpha = alpha;
+            } catch {
+              /* noop */
+            }
+          });
+
+          viewerRef.current.scene?.requestRender();
+
+          if (t < 1) {
+            requestAnimationFrame(step);
+          } else if (onComplete) {
+            onComplete();
+          }
+        };
+
+        requestAnimationFrame(step);
+      },
+      [],
+    );
+
     const applyRasterLayers = useCallback(
       (layerData?: RasterLayerData) => {
         const viewer = viewerRef.current;
@@ -932,24 +977,36 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           return;
         }
 
-        if (rasterLayerRef.current.length) {
-          rasterLayerRef.current.forEach((layer) => {
-            try {
-              viewer.scene.imageryLayers.remove(layer, true);
-            } catch (err) {
-              console.warn("Failed to remove raster layer", err);
-            }
-          });
-          rasterLayerRef.current = [];
-        }
+        const previousLayers = [...rasterLayerRef.current];
+        const startAlpha =
+          previousLayers[0]?.alpha !== undefined
+            ? previousLayers[0].alpha
+            : rasterOpacity;
 
         if (
           !layerData ||
           !layerData.textures ||
           layerData.textures.length === 0
         ) {
+          rasterLayerRef.current = [];
           setIsRasterImageryLoading(false);
-          viewer.scene.requestRender();
+          if (previousLayers.length) {
+            animateLayerAlpha(previousLayers, startAlpha, 0, 200, () => {
+              previousLayers.forEach((layer) => {
+                try {
+                  viewer.scene.imageryLayers.remove(layer, true);
+                } catch (err) {
+                  console.warn(
+                    "Failed to remove raster layer during fade-out",
+                    err,
+                  );
+                }
+              });
+              viewer.scene.requestRender();
+            });
+          } else {
+            viewer.scene.requestRender();
+          }
           return;
         }
 
@@ -993,7 +1050,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
             const layer =
               viewer.scene.imageryLayers.addImageryProvider(provider);
-            layer.alpha = rasterOpacity;
+            layer.alpha = 0;
             layer.brightness = 1.0;
             layer.contrast = 1.0;
             layer.hue = 0.0;
@@ -1015,9 +1072,35 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         });
 
         rasterLayerRef.current = newLayers;
+        const fadeDuration = 320;
+
+        animateLayerAlpha(newLayers, 0, rasterOpacity, fadeDuration, () => {
+          newLayers.forEach((layer) => {
+            layer.alpha = rasterOpacity;
+          });
+        });
+
+        if (previousLayers.length) {
+          animateLayerAlpha(previousLayers, startAlpha, 0, fadeDuration, () => {
+            previousLayers.forEach((layer) => {
+              try {
+                viewer.scene.imageryLayers.remove(layer, true);
+              } catch (err) {
+                console.warn("Failed to remove raster layer", err);
+              }
+            });
+          });
+        }
+
         viewer.scene.requestRender();
       },
-      [cesiumInstance, rasterOpacity, rasterBlurEnabled, viewerReady],
+      [
+        animateLayerAlpha,
+        cesiumInstance,
+        rasterOpacity,
+        rasterBlurEnabled,
+        viewerReady,
+      ],
     );
 
     useEffect(() => {
@@ -1177,6 +1260,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       applyRasterLayers(rasterDataRef.current);
     }, [viewerReady, applyRasterLayers]);
 
+    const showInitialLoading = isLoading;
+    const showRasterTransitionLoading =
+      !isLoading && isRasterTransitioning && !isPlaying;
+
     if (error) {
       return (
         <div className="absolute inset-0 z-0 flex h-full w-full items-center justify-center bg-linear-to-br from-slate-900 via-blue-900 to-indigo-900 text-white">
@@ -1208,14 +1295,14 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           minWidth: "100vw",
         }}
       >
-        {isLoading && (
+        {showInitialLoading && (
           <GlobeLoading
             message="Loading globe…"
             subtitle="Initializing Cesium and geographic boundaries"
           />
         )}
 
-        {!isLoading && isRasterTransitioning && (
+        {showRasterTransitionLoading && (
           <GlobeLoading
             message="Rendering dataset…"
             subtitle={

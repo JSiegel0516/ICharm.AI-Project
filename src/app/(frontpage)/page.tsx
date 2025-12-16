@@ -458,6 +458,7 @@ export default function HomePage() {
         rasterBlurEnabled={globeSettings.rasterBlurEnabled}
         viewMode={globeSettings.viewMode ?? "3d"}
         onRasterMetadataChange={setRasterMeta}
+        isPlaying={isTimebarPlaying}
       />
     ),
     [
@@ -465,6 +466,7 @@ export default function HomePage() {
       handleRegionClick,
       selectedDate,
       selectedLevelValue,
+      isTimebarPlaying,
       globeSettings.satelliteLayerVisible,
       globeSettings.boundaryLinesVisible,
       globeSettings.geographicLinesVisible,
