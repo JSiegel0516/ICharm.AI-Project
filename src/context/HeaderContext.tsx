@@ -419,7 +419,6 @@ const useAppStateInternal = () => {
       boundaryLinesVisible: true,
       geographicLinesVisible: false,
       rasterOpacity: 1,
-      rasterTransitionMs: 320,
       hideZeroPrecipitation: false,
       rasterBlurEnabled: true,
     },

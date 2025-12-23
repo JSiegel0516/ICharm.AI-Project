@@ -1,4 +1,5 @@
 import type { HTMLAttributes } from "react";
+import type { RasterLayerData } from "@/hooks/useRasterLayer";
 
 export interface DatasetBackendDetails {
   id?: string | null;
@@ -135,7 +136,6 @@ export interface GlobeSettings {
   boundaryLinesVisible: boolean;
   geographicLinesVisible: boolean;
   rasterOpacity: number;
-  rasterTransitionMs?: number;
   hideZeroPrecipitation: boolean;
   rasterBlurEnabled: boolean;
   colorbarCustomMin?: number | null;
@@ -246,11 +246,13 @@ export interface GlobeProps {
   boundaryLinesVisible?: boolean;
   geographicLinesVisible?: boolean;
   rasterOpacity?: number;
-  rasterTransitionMs?: number;
   hideZeroPrecipitation?: boolean;
   rasterBlurEnabled?: boolean;
   // Disable loading overlays during timeline playback
   isPlaying?: boolean;
+  prefetchedRasters?:
+    | Map<string, RasterLayerData>
+    | Record<string, RasterLayerData>;
   onRasterMetadataChange?: (
     meta: {
       units?: string | null;

@@ -265,11 +265,11 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       boundaryLinesVisible = true,
       geographicLinesVisible = false,
       rasterOpacity = 1.0,
-      rasterTransitionMs = 320,
       rasterBlurEnabled = true,
       hideZeroPrecipitation = false,
       onRasterMetadataChange,
       isPlaying = false,
+      prefetchedRasters,
     },
     ref,
   ) => {
@@ -284,7 +284,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
     const [cesiumInstance, setCesiumInstance] = useState<any>(null);
     const [viewerReady, setViewerReady] = useState(false);
-    const [isRasterTransitioning, setIsRasterTransitioning] = useState(false);
     const [isRasterImageryLoading, setIsRasterImageryLoading] = useState(false);
 
     const satelliteLayerRef = useRef<any>(null);
@@ -292,10 +291,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const geographicLineEntitiesRef = useRef<any[]>([]);
     const rasterLayerRef = useRef<any[]>([]);
     const textureLoadIdRef = useRef(0);
-    const lastRasterApplyRef = useRef<number>(0);
-    const pendingRasterTimeoutRef = useRef<ReturnType<
-      typeof setTimeout
-    > | null>(null);
     const isComponentUnmountedRef = useRef(false);
     const isUpdatingMarkerRef = useRef(false);
 
@@ -311,6 +306,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       level: selectedLevel ?? null,
       maskZeroValues: shouldHideZero,
       colorbarRange,
+      prefetchedData: prefetchedRasters,
     });
 
     const clearMarker = useCallback(() => {
@@ -570,10 +566,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     useEffect(() => {
       return () => {
         isComponentUnmountedRef.current = true;
-        if (pendingRasterTimeoutRef.current) {
-          clearTimeout(pendingRasterTimeoutRef.current);
-          pendingRasterTimeoutRef.current = null;
-        }
       };
     }, []);
 
@@ -588,49 +580,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       window.addEventListener("resize", handleResize);
       return () => window.removeEventListener("resize", handleResize);
     }, []);
-
-    useEffect(() => {
-      if (isLoading) {
-        setIsRasterTransitioning(false);
-        return;
-      }
-
-      // While loading (request or imagery), always show the indicator.
-      if (rasterState.isLoading || isRasterImageryLoading) {
-        setIsRasterTransitioning(true);
-        return;
-      }
-
-      if (rasterState.error) {
-        setIsRasterTransitioning(false);
-        return;
-      }
-
-      // When not playing, hide as soon as the raster is ready.
-      if (!isPlaying) {
-        setIsRasterTransitioning(false);
-        return;
-      }
-
-      // During playback, allow a brief fade-out tied to the transition setting.
-      const indicatorDuration = Math.max(
-        150,
-        Math.min(rasterTransitionMs, 3000),
-      );
-      const timer = window.setTimeout(() => {
-        setIsRasterTransitioning(false);
-      }, indicatorDuration);
-
-      return () => window.clearTimeout(timer);
-    }, [
-      isLoading,
-      rasterState.isLoading,
-      rasterState.error,
-      rasterState.requestKey,
-      isRasterImageryLoading,
-      rasterTransitionMs,
-      isPlaying,
-    ]);
 
     // Helper function to enforce infinite scroll disabled state
     const enforceInfiniteScrollDisabled = useCallback((viewer: any) => {
@@ -1093,7 +1042,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         });
 
         rasterLayerRef.current = newLayers;
-        const fadeDuration = Math.max(120, Math.min(rasterTransitionMs, 3000));
+        const fadeDuration = 220;
 
         animateLayerAlpha(newLayers, 0, rasterOpacity, fadeDuration, () => {
           newLayers.forEach((layer) => {
@@ -1121,7 +1070,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         rasterOpacity,
         rasterBlurEnabled,
         viewerReady,
-        rasterTransitionMs,
       ],
     );
 
@@ -1152,39 +1100,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         }
       };
     }, [clearMarker, clearSearchMarker]);
-
-    const scheduleRasterApply = useCallback(
-      (layerData?: RasterLayerData, shouldThrottle = false) => {
-        if (pendingRasterTimeoutRef.current) {
-          clearTimeout(pendingRasterTimeoutRef.current);
-          pendingRasterTimeoutRef.current = null;
-        }
-
-        const now = Date.now();
-        const elapsed = now - (lastRasterApplyRef.current || 0);
-        const holdMs = shouldThrottle ? Math.max(0, rasterTransitionMs) : 0;
-        const delay = Math.max(0, holdMs - elapsed);
-
-        // If we're not throttling (play is off), apply immediately and drop any queued work.
-        if (!shouldThrottle) {
-          lastRasterApplyRef.current = now;
-          applyRasterLayers(layerData);
-          return;
-        }
-
-        if (delay > 0) {
-          pendingRasterTimeoutRef.current = setTimeout(() => {
-            lastRasterApplyRef.current = Date.now();
-            applyRasterLayers(layerData);
-            pendingRasterTimeoutRef.current = null;
-          }, delay);
-        } else {
-          lastRasterApplyRef.current = now;
-          applyRasterLayers(layerData);
-        }
-      },
-      [applyRasterLayers, rasterTransitionMs],
-    );
 
     useEffect(() => {
       if (rasterState.error) {
@@ -1279,13 +1194,12 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
 
-      scheduleRasterApply(rasterState.data, isPlaying);
+      applyRasterLayers(rasterState.data);
     }, [
-      scheduleRasterApply,
+      applyRasterLayers,
       rasterState.data,
       rasterState.requestKey,
       viewerReady,
-      isPlaying,
     ]);
 
     useEffect(() => {
@@ -1308,16 +1222,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       }
     }, [rasterState.data, onRasterMetadataChange]);
 
-    useEffect(() => {
-      if (!viewerReady) return;
-      if (!rasterDataRef.current) return;
-      // Always apply immediately when not playing (manual changes should feel instant)
-      scheduleRasterApply(rasterDataRef.current, isPlaying);
-    }, [viewerReady, scheduleRasterApply, isPlaying]);
-
     const showInitialLoading = isLoading;
-    const showRasterTransitionLoading =
-      !isLoading && isRasterTransitioning && !isPlaying;
+    const showRasterLoading =
+      !isLoading && (rasterState.isLoading || isRasterImageryLoading);
 
     if (error) {
       return (
@@ -1357,7 +1264,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           />
         )}
 
-        {showRasterTransitionLoading && (
+        {showRasterLoading && (
           <GlobeLoading
             message="Rendering dataset…"
             subtitle={

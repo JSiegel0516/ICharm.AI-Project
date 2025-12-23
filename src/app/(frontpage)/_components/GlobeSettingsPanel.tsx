@@ -1,12 +1,6 @@
 import React, { useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -26,8 +20,6 @@ interface GlobeSettingsPanelProps {
   // Raster opacity control
   rasterOpacity: number;
   onRasterOpacityChange: (opacity: number) => void;
-  rasterTransitionMs: number;
-  onRasterTransitionChange: (ms: number) => void;
   hideZeroPrecipitation: boolean;
   onHideZeroPrecipitationToggle: (enabled: boolean) => void;
   rasterBlurEnabled: boolean;
@@ -41,6 +33,7 @@ interface GlobeSettingsPanelProps {
   onColorbarRangeReset: () => void;
   viewMode?: GlobeSettings["viewMode"];
   onViewModeChange?: (mode: GlobeSettings["viewMode"]) => void;
+  onShowVisualizationModal: () => void;
 }
 
 export function GlobeSettingsPanel({
@@ -54,8 +47,6 @@ export function GlobeSettingsPanel({
   onGeographicLinesToggle,
   rasterOpacity,
   onRasterOpacityChange,
-  rasterTransitionMs,
-  onRasterTransitionChange,
   hideZeroPrecipitation,
   onHideZeroPrecipitationToggle,
   rasterBlurEnabled,
@@ -66,6 +57,7 @@ export function GlobeSettingsPanel({
   onColorbarRangeReset,
   viewMode = "3d",
   onViewModeChange,
+  onShowVisualizationModal,
 }: GlobeSettingsPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -225,36 +217,6 @@ export function GlobeSettingsPanel({
                     className="data-[state=checked]:bg-rose-500"
                   />
                 </div>
-
-                {/* Raster Transition Speed */}
-                <div className="space-y-1 rounded-lg border border-neutral-600 bg-neutral-700/50 p-3">
-                  <div className="flex items-center justify-between">
-                    <Label
-                      htmlFor="raster-transition"
-                      className="text-sm font-semibold text-white"
-                    >
-                      Raster Frame Duration
-                    </Label>
-                    <span className="text-sm font-medium text-slate-400">
-                      {rasterTransitionMs} ms
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-400">
-                    Minimum time each raster stays fully visible before the next
-                    one starts fading in.
-                  </p>
-                  <Slider
-                    id="raster-transition"
-                    min={100}
-                    max={2000}
-                    step={50}
-                    value={[rasterTransitionMs]}
-                    onValueChange={([value]) =>
-                      onRasterTransitionChange(Math.round(value))
-                    }
-                    className="w-full"
-                  />
-                </div>
               </div>
 
               {/* Precipitation Display */}
@@ -397,6 +359,23 @@ export function GlobeSettingsPanel({
                     <option value="2d">2D</option>
                   </select>
                 </div>
+              </div>
+
+              {/* Visualization */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-white">
+                  Visualization
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Build a multi-date visualization from the current dataset.
+                </p>
+                <Button
+                  type="button"
+                  className="w-full bg-rose-500 text-white hover:bg-rose-600"
+                  onClick={onShowVisualizationModal}
+                >
+                  Open Visualization Builder
+                </Button>
               </div>
 
               {/* Info Section */}
