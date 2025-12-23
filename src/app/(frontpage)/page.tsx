@@ -204,6 +204,7 @@ export default function HomePage() {
     showColorbar,
     currentDataset,
     toggleColorbar,
+    datasets,
     colorBarOrientation,
     locationFocusRequest,
     clearLocationFocusRequest,
@@ -213,6 +214,7 @@ export default function HomePage() {
     setRegionInfoData,
     selectedDate,
     setSelectedDate,
+    setCurrentDataset,
     setCurrentLocationMarker,
     temperatureUnit,
     setTemperatureUnit,
@@ -243,6 +245,11 @@ export default function HomePage() {
     Map<string, RasterLayerData>
   >(new Map());
   const [showVisualizationBar, setShowVisualizationBar] = useState(true);
+  const [visualizationTarget, setVisualizationTarget] = useState<{
+    datasetId: string;
+    datasetSnapshot: Dataset;
+    level: number | null;
+  } | null>(null);
   const visualizationAbortRef = useRef<AbortController | null>(null);
 
   // UI State
@@ -451,23 +458,9 @@ export default function HomePage() {
   ]);
 
   useEffect(() => {
-    if (visualizationAbortRef.current) {
-      visualizationAbortRef.current.abort();
-      visualizationAbortRef.current = null;
-    }
-    setVisualizationStatus("idle");
-    setVisualizationProgress(0);
-    setVisualizationDates([]);
-    setActiveVisualizationIndex(0);
-    setPrefetchedRasters(new Map());
-  }, [
-    currentDataset?.id,
-    selectedLevelValue,
-    globeSettings.hideZeroPrecipitation,
-    colorbarRange.enabled,
-    colorbarRange.max,
-    colorbarRange.min,
-  ]);
+    // If the user changes visualization inputs while a previous run is active,
+    // we intentionally keep the existing progress so they can browse other datasets.
+  }, []);
 
   const playbackIntervalMs = useMemo(() => {
     if (visualizationStep === "year") return 1200;
@@ -476,8 +469,18 @@ export default function HomePage() {
   }, [visualizationStep]);
 
   const startPlayback = useCallback(() => {
-    if (!visualizationDates.length || prefetchedRasters.size === 0) {
+    if (
+      !visualizationDates.length ||
+      prefetchedRasters.size === 0 ||
+      !visualizationTarget
+    ) {
       return;
+    }
+    if (visualizationTarget.datasetId) {
+      const targetDataset =
+        datasets.find((ds) => ds.id === visualizationTarget.datasetId) ??
+        visualizationTarget.datasetSnapshot;
+      setCurrentDataset(targetDataset);
     }
     const safeIndex = Math.min(
       activeVisualizationIndex,
@@ -511,6 +514,11 @@ export default function HomePage() {
       return;
     }
 
+    setVisualizationTarget({
+      datasetId: currentDataset.id,
+      datasetSnapshot: currentDataset,
+      level: selectedLevelValue ?? null,
+    });
     setShowVisualizationModal(false);
     setShowVisualizationBar(true);
 
@@ -956,10 +964,40 @@ export default function HomePage() {
     setCurrentLocationMarker,
   ]);
 
+  // Ensure the stored visualization level is applied when returning to its dataset
+  useEffect(() => {
+    if (
+      !visualizationTarget ||
+      !currentDataset ||
+      currentDataset.id !== visualizationTarget.datasetId
+    ) {
+      return;
+    }
+    if (
+      visualizationTarget.level != null &&
+      hasPressureLevels &&
+      datasetPressureLevels
+    ) {
+      const match = datasetPressureLevels.find(
+        (lvl) => lvl.value === visualizationTarget.level,
+      );
+      if (match) {
+        setSelectedPressureLevel(match);
+      }
+    }
+  }, [
+    currentDataset,
+    datasetPressureLevels,
+    hasPressureLevels,
+    visualizationTarget,
+    setSelectedPressureLevel,
+  ]);
+
   const isPlaybackReady =
     prefetchedRasters.size > 0 &&
     visualizationDates.length > 0 &&
-    visualizationStatus !== "preparing";
+    visualizationStatus !== "preparing" &&
+    Boolean(visualizationTarget);
   const progressPercent = Math.round(
     Math.min(Math.max(visualizationProgress, 0), 1) * 100,
   );
