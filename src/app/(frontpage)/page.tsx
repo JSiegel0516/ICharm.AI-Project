@@ -1000,12 +1000,14 @@ export default function HomePage() {
           (visualizationStatus === "preparing" ||
             isPlaybackReady ||
             visualizationStatus === "playing") && (
-            <div className="pointer-events-auto fixed top-20 left-6 z-30 flex items-center gap-2">
+            <div className="pointer-events-auto fixed top-20 left-6 z-60 flex items-center gap-2">
               <Button
+                type="button"
                 size="icon"
                 variant="ghost"
                 className="h-8 w-8 rounded-full bg-black/60 text-white hover:bg-white/10"
                 onClick={() => setShowVisualizationBar(false)}
+                aria-label="Close visualization bar"
               >
                 ×
               </Button>

@@ -1224,7 +1224,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
     const showInitialLoading = isLoading;
     const showRasterLoading =
-      !isLoading && (rasterState.isLoading || isRasterImageryLoading);
+      !isLoading &&
+      !isPlaying &&
+      (rasterState.isLoading || isRasterImageryLoading);
 
     if (error) {
       return (
