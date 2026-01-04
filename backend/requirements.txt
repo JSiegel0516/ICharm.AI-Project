@@ -138,7 +138,9 @@ numpy==2.3.4
     #   netcdf4
     #   numcodecs
     #   pandas
+    #   patsy
     #   scipy
+    #   statsmodels
     #   xarray
     #   zarr
 openpyxl==3.1.5
@@ -148,14 +150,18 @@ packaging==25.0
     #   dask
     #   h5netcdf
     #   matplotlib
+    #   statsmodels
     #   xarray
     #   zarr
 pandas==2.3.3
     # via
     #   -r requirements.in
+    #   statsmodels
     #   xarray
 partd==1.4.2
     # via dask
+patsy==1.0.2
+    # via statsmodels
 pillow==12.0.0
     # via
     #   -r requirements.in
@@ -200,7 +206,9 @@ requests==2.32.5
 s3fs==2025.10.0
     # via -r requirements.in
 scipy==1.16.3
-    # via -r requirements.in
+    # via
+    #   -r requirements.in
+    #   statsmodels
 six==1.17.0
     # via python-dateutil
 sniffio==1.3.1
@@ -209,6 +217,8 @@ sqlalchemy==2.0.44
     # via -r requirements.in
 starlette==0.49.3
     # via fastapi
+statsmodels==0.14.6
+    # via -r requirements.in
 toolz==1.1.0
     # via
     #   dask
