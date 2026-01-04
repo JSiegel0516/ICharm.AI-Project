@@ -29,6 +29,7 @@ s3fs
 matplotlib
 pillow
 scipy
+statsmodels
 
 # Kerchunk for cloud-optimized data access
 kerchunk
