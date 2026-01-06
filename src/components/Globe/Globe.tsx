@@ -12,6 +12,7 @@ import type { Dataset, RegionData, GlobeProps, GlobeRef } from "@/types";
 import { useRasterLayer } from "@/hooks/useRasterLayer";
 import type { RasterLayerData } from "@/hooks/useRasterLayer";
 import GlobeLoading from "./GlobeLoading";
+import WinkelMap from "./WinkelMap";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -597,7 +598,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       if (
         !containerRef.current ||
         viewerRef.current ||
-        initializingViewerRef.current
+        initializingViewerRef.current ||
+        viewMode === "winkel"
       )
         return;
 
@@ -894,6 +896,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       geographicLinesVisible,
       updateMarkerVisibility,
       addClickMarker,
+      viewMode,
     ]);
 
     const animateLayerAlpha = useCallback(
@@ -1074,6 +1077,19 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     );
 
     useEffect(() => {
+      if (viewMode === "winkel" && viewerRef.current) {
+        try {
+          viewerRef.current.destroy();
+        } catch (err) {
+          console.warn("Failed to destroy Cesium viewer", err);
+        }
+        viewerRef.current = null;
+        setViewerReady(false);
+        initializingViewerRef.current = false;
+      }
+    }, [viewMode]);
+
+    useEffect(() => {
       return () => {
         if (viewerRef.current && !viewerRef.current.isDestroyed()) {
           if (rasterLayerRef.current.length) {
@@ -1112,7 +1128,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       const viewer = viewerRef.current;
       const Cesium = cesiumInstance;
 
-      if (viewMode === "2d") {
+      const is2D = viewMode === "2d" || viewMode === "winkel";
+
+      if (is2D) {
         viewer.scene.morphTo2D(0.0);
         viewer.scene.globe.show = true;
 
@@ -1151,7 +1169,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
     // Add an effect to periodically enforce infinite scroll disabled in 2D mode
     useEffect(() => {
-      if (viewMode !== "2d" || !viewerRef.current) return;
+      const is2D = viewMode === "2d" || viewMode === "winkel";
+      if (!is2D || !viewerRef.current) return;
 
       // Set up an interval to periodically check and enforce the setting
       const intervalId = setInterval(() => {
@@ -1222,11 +1241,97 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       }
     }, [rasterState.data, onRasterMetadataChange]);
 
-    const showInitialLoading = isLoading;
+    const isWinkel = viewMode === "winkel";
+    const showInitialLoading = isWinkel ? false : isLoading;
     const showRasterLoading =
-      !isLoading &&
       !isPlaying &&
-      (rasterState.isLoading || isRasterImageryLoading);
+      (rasterState.isLoading ||
+        (isWinkel ? false : isRasterImageryLoading) ||
+        false);
+
+    if (isWinkel) {
+      return (
+        <div
+          className="absolute inset-0 z-0 h-full w-full"
+          style={{
+            background:
+              "radial-gradient(ellipse at center, #1e3a8a 0%, #0f172a 50%, #000000 100%)",
+            minHeight: "100vh",
+            minWidth: "100vw",
+          }}
+        >
+          {(rasterState.isLoading || !rasterState.data) && (
+            <GlobeLoading
+              message="Rendering Winkel Tripel…"
+              subtitle="Projecting climate data to 2D"
+            />
+          )}
+          <WinkelMap
+            rasterData={rasterState.data}
+            rasterOpacity={rasterOpacity}
+            satelliteLayerVisible={satelliteLayerVisible}
+            boundaryLinesVisible={boundaryLinesVisible}
+            geographicLinesVisible={geographicLinesVisible}
+          />
+          {currentDataset && (
+            <Dialog>
+              <DialogTrigger asChild>
+                <div className="absolute inset-x-0 top-6 z-30 mx-auto max-w-max">
+                  <Button
+                    variant="ghost"
+                    title="Click for dataset details"
+                    id="dataset-title"
+                    className="text-3xl font-semibold"
+                    onClick={() => setIsModalOpen(true)}
+                  >
+                    {currentDataset.name}
+                  </Button>
+                </div>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[625px]">
+                <DialogHeader>
+                  <DialogTitle className="mb-2 text-2xl font-semibold">
+                    {currentDataset.name}
+                  </DialogTitle>
+                  <DialogDescription className="text-lg">
+                    <span className="text-xl">
+                      {currentDataset.description}
+                    </span>
+                    <br />
+                    <br />
+                    <span>
+                      Date Range:{" "}
+                      {currentDataset?.startDate && currentDataset?.endDate
+                        ? `${new Date(
+                            currentDataset.startDate,
+                          ).toLocaleDateString("en-US", {
+                            year: "numeric",
+                            month: "numeric",
+                            day: "numeric",
+                          })} - ${new Date(
+                            currentDataset.endDate,
+                          ).toLocaleDateString("en-US", {
+                            year: "numeric",
+                            month: "numeric",
+                            day: "numeric",
+                          })}`
+                        : "Date information not available"}
+                    </span>
+                    <br />
+                    <span>Units: {currentDataset.units} </span>
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button variant="outline">Close</Button>
+                  </DialogClose>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
+        </div>
+      );
+    }
 
     if (error) {
       return (

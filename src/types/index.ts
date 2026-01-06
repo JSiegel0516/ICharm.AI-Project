@@ -262,7 +262,7 @@ export interface GlobeProps {
   ) => void;
 }
 
-export type GlobeViewMode = "3d" | "2d";
+export type GlobeViewMode = "3d" | "2d" | "winkel";
 
 export interface RegionData {
   name: string;

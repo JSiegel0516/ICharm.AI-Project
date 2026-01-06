@@ -8,6 +8,7 @@
     "prebuild": "npm run copy-cesium-assets",
     "build": "next build",
     "start": "next start",
+    "test:winkel": "tsx src/lib/projection/winkelTripel.test.ts",
     "lint": "biome check",
     "format": "biome format --write",
     "format:fix": "prettier --write .",

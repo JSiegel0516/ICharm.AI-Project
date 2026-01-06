@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
+import type { GlobeSettings } from "@/types";
 
 interface GlobeSettingsPanelProps {
   isOpen: boolean;
@@ -352,11 +353,14 @@ export function GlobeSettingsPanel({
                     className="w-full rounded-md border border-slate-600 bg-neutral-800 px-3 py-2 text-sm text-white shadow-sm focus:border-white focus:outline-none"
                     value={viewMode ?? "3d"}
                     onChange={(e) =>
-                      onViewModeChange?.(e.target.value === "2d" ? "2d" : "3d")
+                      onViewModeChange?.(
+                        (e.target.value as GlobeSettings["viewMode"]) ?? "3d",
+                      )
                     }
                   >
                     <option value="3d">3D</option>
-                    <option value="2d">2D</option>
+                    <option value="2d">2D (Equirectangular)</option>
+                    <option value="winkel">Winkel Tripel (2D)</option>
                   </select>
                 </div>
               </div>
