@@ -29,7 +29,11 @@ type SampleableImage = {
   data: Uint8ClampedArray;
 };
 
-const BLUE_MARBLE_SRC = "/images/world_texture_2.png";
+// Prefer cached ArcGIS World Imagery first (avoid CORS/taint), then live endpoint.
+const BLUE_MARBLE_SOURCES = [
+  "/images/world_imagery_arcgis.png",
+  "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export?bbox=-180,-90,180,90&bboxSR=4326&imageSR=4326&size=4096,2048&format=png&f=image",
+];
 
 const fetchBoundaries = async () => {
   const files: Array<{ name: string; kind: "boundary" | "geographicLines" }> = [
@@ -113,7 +117,10 @@ const fetchBoundaries = async () => {
   return results;
 };
 
-const loadImageData = (src: string): Promise<SampleableImage> =>
+const loadImageData = (
+  src: string,
+  options?: { forceOpaqueAlpha?: boolean },
+): Promise<SampleableImage> =>
   new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
@@ -128,6 +135,13 @@ const loadImageData = (src: string): Promise<SampleableImage> =>
       }
       ctx.drawImage(img, 0, 0);
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      if (options?.forceOpaqueAlpha) {
+        // Some Blue Marble assets ship with partially transparent coastlines; force opacity.
+        const data = imageData.data;
+        for (let i = 3; i < data.length; i += 4) {
+          data[i] = 255;
+        }
+      }
       resolve({
         width: canvas.width,
         height: canvas.height,
@@ -207,11 +221,22 @@ export const WinkelMap: React.FC<Props> = ({
       return;
     }
     let cancelled = false;
-    loadImageData(BLUE_MARBLE_SRC)
-      .then((img) => {
-        if (!cancelled) setBlueMarble(img);
-      })
-      .catch((err) => console.warn("Blue Marble load failed", err));
+    const tryLoad = async () => {
+      for (const src of BLUE_MARBLE_SOURCES) {
+        try {
+          const img = await loadImageData(src, { forceOpaqueAlpha: true });
+          if (!cancelled) {
+            setBlueMarble(img);
+          }
+          return;
+        } catch (err) {
+          console.warn("Blue Marble load failed", src, err);
+        }
+      }
+      console.warn("Blue Marble unavailable from all sources");
+    };
+
+    tryLoad();
     return () => {
       cancelled = true;
     };
@@ -304,7 +329,8 @@ export const WinkelMap: React.FC<Props> = ({
       rasters: rasterTextures.map((entry) => ({
         texture: entry.texture,
         rectangle: entry.rectangle,
-        opacity: rasterOpacity,
+        // If satellite is visible, gently reduce raster opacity to let basemap peek through.
+        opacity: satelliteLayerVisible ? rasterOpacity * 0.9 : rasterOpacity,
       })),
       bounds,
     });
@@ -317,30 +343,17 @@ export const WinkelMap: React.FC<Props> = ({
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = "#e5e7eb";
     projectedVectors.forEach((vec) => {
-      if (
-        vec.kind === "boundary" &&
-        boundaryLinesVisible &&
-        vec.points.length >= 2
-      ) {
+      if (vec.kind === "boundary" && !boundaryLinesVisible) return;
+      if (vec.kind === "geographicLines" && !geographicLinesVisible) return;
+      vec.segments?.forEach((segment) => {
+        if (!segment || segment.length < 2) return;
         ctx.beginPath();
-        ctx.moveTo(vec.points[0].px, vec.points[0].py);
-        for (let i = 1; i < vec.points.length; i += 1) {
-          ctx.lineTo(vec.points[i].px, vec.points[i].py);
+        ctx.moveTo(segment[0].px, segment[0].py);
+        for (let i = 1; i < segment.length; i += 1) {
+          ctx.lineTo(segment[i].px, segment[i].py);
         }
         ctx.stroke();
-      }
-      if (
-        vec.kind === "geographicLines" &&
-        geographicLinesVisible &&
-        vec.points.length >= 2
-      ) {
-        ctx.beginPath();
-        ctx.moveTo(vec.points[0].px, vec.points[0].py);
-        for (let i = 1; i < vec.points.length; i += 1) {
-          ctx.lineTo(vec.points[i].px, vec.points[i].py);
-        }
-        ctx.stroke();
-      }
+      });
     });
     ctx.restore();
   }, [

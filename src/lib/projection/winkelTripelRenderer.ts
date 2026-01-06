@@ -179,10 +179,22 @@ export const renderComposite = (options: CompositeOptions): RenderedFrame => {
       }
       const geo = inv.point;
 
-      let color: [number, number, number, number] = [0, 0, 0, 0];
-      if (options.blueMarble) {
-        color = sampleEquirectangular(options.blueMarble, geo);
-      }
+      // Start with Blue Marble as a full-world raster so it uses identical sampling to other rasters.
+      const marbleRect = {
+        west: -180,
+        east: 180,
+        south: -90,
+        north: 90,
+      } as const;
+      const marbleSample =
+        options.blueMarble &&
+        sampleRaster(
+          { texture: options.blueMarble, rectangle: marbleRect },
+          geo,
+        );
+      let color: [number, number, number, number] = marbleSample
+        ? marbleSample
+        : [0, 0, 0, 0];
 
       if (options.rasters?.length) {
         for (const raster of options.rasters) {
@@ -279,16 +291,101 @@ export const projectVectors = (
     offsetY?: number;
     scale?: number;
   },
-) =>
-  vectors.map((vector) => ({
-    id: vector.id,
-    points: vector.coordinates.map((coord) =>
-      geographicToPixel(
-        coord.lon,
-        coord.lat,
-        canvasWidth,
-        canvasHeight,
-        options,
-      ),
-    ),
-  }));
+): Array<{
+  id: string;
+  segments: Array<Array<{ px: number; py: number }>>;
+}> => {
+  const bounds = options?.bounds ?? WINKEL_TRIPEL_BOUNDS;
+  const scale = options?.scale ?? 1;
+  const offsetX = options?.offsetX ?? 0;
+  const offsetY = options?.offsetY ?? 0;
+
+  const inFootprint = (px: number, py: number) => {
+    const proj = pixelToProjection(px, py, canvasWidth, canvasHeight, {
+      bounds,
+      offsetX,
+      offsetY,
+      scale,
+    });
+    const cx = (bounds.xMin + bounds.xMax) / 2;
+    const cy = (bounds.yMin + bounds.yMax) / 2;
+    const rx = bounds.width / 2;
+    const ry = bounds.height / 2;
+    const dx = (proj.x - cx) / rx;
+    const dy = (proj.y - cy) / ry;
+    return dx * dx + dy * dy <= 1.05;
+  };
+
+  const maxJump = Math.max(canvasWidth, canvasHeight) * 0.04;
+  const maxGeoJumpLon = 30; // degrees
+  const maxGeoJumpLat = 20; // degrees
+
+  return vectors.map((vector) => {
+    // Pre-split by geographic jumps to avoid drawing across dateline/poles.
+    const geoSegments: GeoPoint[][] = [];
+    let gCurrent: GeoPoint[] = [];
+    vector.coordinates.forEach((pt, idx) => {
+      if (idx > 0) {
+        const prev = vector.coordinates[idx - 1];
+        const lonDiff = Math.abs(pt.lon - prev.lon);
+        const latDiff = Math.abs(pt.lat - prev.lat);
+        const crossesDateline =
+          lonDiff > 180 ||
+          (prev.lon > 170 && pt.lon < -170) ||
+          (prev.lon < -170 && pt.lon > 170);
+        if (
+          crossesDateline ||
+          lonDiff > maxGeoJumpLon ||
+          latDiff > maxGeoJumpLat
+        ) {
+          if (gCurrent.length >= 2) geoSegments.push(gCurrent);
+          gCurrent = [];
+        }
+      }
+      gCurrent.push(pt);
+    });
+    if (gCurrent.length >= 2) geoSegments.push(gCurrent);
+
+    const projectedSegments: Array<Array<{ px: number; py: number }>> = [];
+
+    geoSegments.forEach((segment) => {
+      const raw = segment.map((coord) =>
+        geographicToPixel(
+          coord.lon,
+          coord.lat,
+          canvasWidth,
+          canvasHeight,
+          options,
+        ),
+      );
+
+      let current: Array<{ px: number; py: number }> = [];
+
+      raw.forEach((pt, idx) => {
+        const inside = inFootprint(pt.px, pt.py);
+        if (!inside) {
+          if (current.length >= 2) projectedSegments.push(current);
+          current = [];
+          return;
+        }
+
+        if (idx > 0) {
+          const prev = raw[idx - 1];
+          const dx = pt.px - prev.px;
+          const dy = pt.py - prev.py;
+          const dist = Math.hypot(dx, dy);
+          if (dist > maxJump && current.length >= 2) {
+            projectedSegments.push(current);
+            current = [];
+          }
+        }
+
+        current.push(pt);
+      });
+
+      if (current.length >= 2) projectedSegments.push(current);
+    });
+
+    return { id: vector.id, segments: projectedSegments };
+  });
+};
