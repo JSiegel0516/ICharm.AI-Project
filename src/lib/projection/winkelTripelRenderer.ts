@@ -169,7 +169,7 @@ export const renderComposite = (options: CompositeOptions): RenderedFrame => {
       const ry = bounds.height / 2;
       const dx = (proj.x - cx) / rx;
       const dy = (proj.y - cy) / ry;
-      if (dx * dx + dy * dy > 1.02) {
+      if (dx * dx + dy * dy > 1.08) {
         continue;
       }
 

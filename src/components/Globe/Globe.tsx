@@ -1272,6 +1272,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             satelliteLayerVisible={satelliteLayerVisible}
             boundaryLinesVisible={boundaryLinesVisible}
             geographicLinesVisible={geographicLinesVisible}
+            currentDataset={currentDataset}
+            onRegionClick={onRegionClick}
           />
           {currentDataset && (
             <Dialog>

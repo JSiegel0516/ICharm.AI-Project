@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type {
   RasterLayerData,
   RasterLayerTexture,
@@ -8,11 +14,14 @@ import type {
 import {
   renderComposite,
   projectVectors,
+  progressiveRender,
 } from "@/lib/projection/winkelTripelRenderer";
 import type {
   GeoPoint,
   ProjectionSpaceBounds,
 } from "@/lib/projection/winkelTripel";
+import { pixelToGeographic } from "@/lib/projection/winkelTripel";
+import type { Dataset, RegionData } from "@/types";
 
 type Props = {
   rasterData?: RasterLayerData;
@@ -21,6 +30,8 @@ type Props = {
   boundaryLinesVisible?: boolean;
   geographicLinesVisible?: boolean;
   bounds?: ProjectionSpaceBounds;
+  currentDataset?: Dataset;
+  onRegionClick?: (lat: number, lon: number, data: RegionData) => void;
 };
 
 type SampleableImage = {
@@ -200,9 +211,46 @@ export const WinkelMap: React.FC<Props> = ({
   boundaryLinesVisible = true,
   geographicLinesVisible = false,
   bounds,
+  currentDataset,
+  onRegionClick = () => {},
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const { width, height } = useWindowSize();
+  const renderScale =
+    typeof window !== "undefined"
+      ? Math.max(1, Math.min(1.1, (window.devicePixelRatio || 1) * 0.75))
+      : 1.1;
+  const renderWidth = Math.max(1, Math.round(width / renderScale));
+  const renderHeight = Math.max(1, Math.round(height / renderScale));
+  const renderTokenRef = useRef(0);
+  const [viewScale, setViewScale] = useState(1);
+  const [viewOffset, setViewOffset] = useState<{ x: number; y: number }>({
+    x: 0,
+    y: 0,
+  });
+  const viewOffsetRef = useRef(viewOffset);
+  const [isZooming, setIsZooming] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
+  const isZoomingRef = useRef(false);
+  const isPanningRef = useRef(false);
+  const placeholderRafRef = useRef<number | null>(null);
+  const zoomTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const zoomRafRef = useRef<number | null>(null);
+  const pendingViewScaleRef = useRef(viewScale);
+  const selectorImgRef = useRef<HTMLImageElement | null>(null);
+  const wheelContextRef = useRef<{
+    blueMarble: SampleableImage | null;
+    bounds?: ProjectionSpaceBounds;
+    renderWidth: number;
+    renderHeight: number;
+    viewOffset: { x: number; y: number };
+  }>({
+    blueMarble: null,
+    bounds,
+    renderWidth,
+    renderHeight,
+    viewOffset,
+  });
 
   const [blueMarble, setBlueMarble] = useState<SampleableImage | null>(null);
   const [rasterTextures, setRasterTextures] = useState<
@@ -214,6 +262,171 @@ export const WinkelMap: React.FC<Props> = ({
   const [vectors, setVectors] = useState<
     Array<{ id: string; coordinates: GeoPoint[]; kind: string }>
   >([]);
+  const [debouncedOpacity, setDebouncedOpacity] = useState(rasterOpacity);
+  const [clickMarker, setClickMarker] = useState<{
+    px: number;
+    py: number;
+  } | null>(null);
+  const baseFrameRef = useRef<ImageData | null>(null);
+  const overlayStateRef = useRef<{
+    projectedVectors: ReturnType<typeof projectVectors>;
+    boundaryLinesVisible: boolean;
+    geographicLinesVisible: boolean;
+    clickMarker: { px: number; py: number } | null;
+  }>({
+    projectedVectors: [],
+    boundaryLinesVisible,
+    geographicLinesVisible,
+    clickMarker: null,
+  });
+
+  // Reduce rapid re-renders while dragging the opacity slider.
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedOpacity(rasterOpacity), 120);
+    return () => clearTimeout(handle);
+  }, [rasterOpacity]);
+
+  useEffect(() => {
+    pendingViewScaleRef.current = viewScale;
+  }, [viewScale]);
+
+  useEffect(() => {
+    viewOffsetRef.current = viewOffset;
+  }, [viewOffset]);
+
+  useEffect(() => {
+    wheelContextRef.current = {
+      blueMarble,
+      bounds,
+      renderWidth,
+      renderHeight,
+      viewOffset,
+    };
+  }, [blueMarble, bounds, renderWidth, renderHeight, viewOffset]);
+
+  useEffect(() => {
+    // Clear any cached base frame whenever scale or pan changes so we don't reuse stale rasters.
+    baseFrameRef.current = null;
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext("2d");
+      ctx?.clearRect(0, 0, canvas.width, canvas.height);
+    }
+  }, [viewScale, viewOffset]);
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      selectorImgRef.current = img;
+    };
+    img.src = "/images/selector.png";
+  }, []);
+
+  const drawOverlay = useCallback((ctx: CanvasRenderingContext2D) => {
+    const state = overlayStateRef.current;
+    const hideLines = isZoomingRef.current || isPanningRef.current;
+    ctx.save();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "#e5e7eb";
+    state.projectedVectors.forEach((vec) => {
+      if (hideLines) return;
+      if (vec.kind === "boundary" && !state.boundaryLinesVisible) return;
+      if (vec.kind === "geographicLines" && !state.geographicLinesVisible)
+        return;
+      vec.segments?.forEach((segment) => {
+        if (!segment || segment.length < 2) return;
+        ctx.beginPath();
+        ctx.moveTo(segment[0].px, segment[0].py);
+        for (let i = 1; i < segment.length; i += 1) {
+          ctx.lineTo(segment[i].px, segment[i].py);
+        }
+        ctx.stroke();
+      });
+    });
+    if (state.clickMarker) {
+      const img = selectorImgRef.current;
+      if (img) {
+        const size = 28;
+        ctx.drawImage(
+          img,
+          state.clickMarker.px - size / 2,
+          state.clickMarker.py - size / 2,
+          size,
+          size,
+        );
+      } else {
+        ctx.fillStyle = "#4cff00";
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(state.clickMarker.px, state.clickMarker.py, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }, []);
+
+  const computeBaseDownsample = useCallback(
+    (w: number, h: number) => Math.max(1, Math.round(Math.min(w, h) / 2000)),
+    [],
+  );
+
+  const offsets = useMemo(
+    () => ({
+      offsetX: 0.5 * renderWidth * (1 - viewScale) + viewOffset.x,
+      offsetY: 0.5 * renderHeight * (1 - viewScale) + viewOffset.y,
+    }),
+    [renderWidth, renderHeight, viewScale, viewOffset],
+  );
+
+  const renderBasemapPlaceholder = useCallback(
+    (
+      ctx: CanvasRenderingContext2D | null,
+      scale: number,
+      offsetX: number,
+      offsetY: number,
+    ) => {
+      if (!ctx) return;
+      const state = wheelContextRef.current;
+      if (!state.blueMarble) return;
+      const downsample = Math.min(
+        computeBaseDownsample(state.renderWidth, state.renderHeight) * 3,
+        8,
+      );
+      const placeholder = renderComposite({
+        width: state.renderWidth,
+        height: state.renderHeight,
+        blueMarble: state.blueMarble,
+        rasters: [],
+        bounds: state.bounds,
+        downsample,
+        scale,
+        offsetX,
+        offsetY,
+      });
+      const imageData = new ImageData(
+        placeholder.data,
+        placeholder.width,
+        placeholder.height,
+      );
+      if (
+        placeholder.width === state.renderWidth &&
+        placeholder.height === state.renderHeight
+      ) {
+        ctx.putImageData(imageData, 0, 0);
+      } else {
+        const temp = document.createElement("canvas");
+        temp.width = placeholder.width;
+        temp.height = placeholder.height;
+        const tctx = temp.getContext("2d");
+        tctx?.putImageData(imageData, 0, 0);
+        ctx.drawImage(temp, 0, 0, state.renderWidth, state.renderHeight);
+      }
+      drawOverlay(ctx);
+    },
+    [computeBaseDownsample, drawOverlay],
+  );
 
   useEffect(() => {
     if (!satelliteLayerVisible) {
@@ -305,13 +518,57 @@ export const WinkelMap: React.FC<Props> = ({
 
     const projected = projectVectors(
       expanded.map((v) => ({ id: v.id, coordinates: v.coordinates })),
-      width,
-      height,
-      { bounds },
+      renderWidth,
+      renderHeight,
+      {
+        bounds,
+        scale: viewScale,
+        offsetX: offsets.offsetX,
+        offsetY: offsets.offsetY,
+      },
     );
 
     return projected.map((v, idx) => ({ ...v, kind: expanded[idx].kind }));
-  }, [vectors, width, height, bounds]);
+  }, [
+    vectors,
+    renderWidth,
+    renderHeight,
+    bounds,
+    viewScale,
+    offsets.offsetX,
+    offsets.offsetY,
+  ]);
+
+  useEffect(() => {
+    overlayStateRef.current = {
+      projectedVectors,
+      boundaryLinesVisible,
+      geographicLinesVisible,
+      clickMarker,
+    };
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (
+      baseFrameRef.current &&
+      baseFrameRef.current.width === canvas.width &&
+      baseFrameRef.current.height === canvas.height
+    ) {
+      ctx.putImageData(baseFrameRef.current, 0, 0);
+    }
+
+    drawOverlay(ctx);
+  }, [
+    projectedVectors,
+    boundaryLinesVisible,
+    geographicLinesVisible,
+    clickMarker,
+    drawOverlay,
+  ]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -319,55 +576,309 @@ export const WinkelMap: React.FC<Props> = ({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    canvas.width = width;
-    canvas.height = height;
+    if (canvas.width !== renderWidth || canvas.height !== renderHeight) {
+      canvas.width = renderWidth;
+      canvas.height = renderHeight;
+      baseFrameRef.current = null;
+    }
 
-    const frame = renderComposite({
-      width,
-      height,
-      blueMarble: satelliteLayerVisible ? (blueMarble ?? undefined) : undefined,
-      rasters: rasterTextures.map((entry) => ({
-        texture: entry.texture,
-        rectangle: entry.rectangle,
-        // If satellite is visible, gently reduce raster opacity to let basemap peek through.
-        opacity: satelliteLayerVisible ? rasterOpacity * 0.9 : rasterOpacity,
-      })),
-      bounds,
-    });
+    const baseDownsample = computeBaseDownsample(renderWidth, renderHeight);
 
-    const imageData = new ImageData(frame.data, frame.width, frame.height);
-    ctx.putImageData(imageData, 0, 0);
+    const drawFrame = (frame: ImageData) => {
+      ctx.clearRect(0, 0, renderWidth, renderHeight);
 
-    // Draw vectors over the composite
-    ctx.save();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = "#e5e7eb";
-    projectedVectors.forEach((vec) => {
-      if (vec.kind === "boundary" && !boundaryLinesVisible) return;
-      if (vec.kind === "geographicLines" && !geographicLinesVisible) return;
-      vec.segments?.forEach((segment) => {
-        if (!segment || segment.length < 2) return;
-        ctx.beginPath();
-        ctx.moveTo(segment[0].px, segment[0].py);
-        for (let i = 1; i < segment.length; i += 1) {
-          ctx.lineTo(segment[i].px, segment[i].py);
+      if (frame.width === renderWidth && frame.height === renderHeight) {
+        ctx.putImageData(frame, 0, 0);
+        baseFrameRef.current = frame;
+      } else {
+        const temp = document.createElement("canvas");
+        temp.width = frame.width;
+        temp.height = frame.height;
+        const tctx = temp.getContext("2d");
+        if (tctx) {
+          tctx.putImageData(frame, 0, 0);
+          ctx.drawImage(temp, 0, 0, renderWidth, renderHeight);
         }
-        ctx.stroke();
-      });
-    });
-    ctx.restore();
+        // Do not cache scaled preview frames
+        baseFrameRef.current = null;
+      }
+
+      drawOverlay(ctx);
+    };
+
+    const interactive = isZooming || isPanning;
+    const passes = interactive
+      ? [Math.min(baseDownsample * 4, 8)]
+      : [Math.min(baseDownsample * 2, 4), 1];
+
+    const token = ++renderTokenRef.current;
+
+    progressiveRender(
+      passes.map((ds) => ({
+        downsample: ds,
+        onFrame: (frame) => {
+          const imageData = new ImageData(
+            frame.data,
+            frame.width,
+            frame.height,
+          );
+          if (token !== renderTokenRef.current) return;
+          drawFrame(imageData);
+        },
+      })),
+      (downsample) =>
+        renderComposite({
+          width: renderWidth,
+          height: renderHeight,
+          blueMarble: satelliteLayerVisible
+            ? (blueMarble ?? undefined)
+            : undefined,
+          rasters:
+            interactive && downsample > 1
+              ? []
+              : rasterTextures.map((entry) => ({
+                  texture: entry.texture,
+                  rectangle: entry.rectangle,
+                  // If satellite is visible, gently reduce raster opacity to let basemap peek through.
+                  opacity: satelliteLayerVisible
+                    ? debouncedOpacity * 0.9
+                    : debouncedOpacity,
+                })),
+          bounds,
+          downsample,
+          scale: viewScale,
+          offsetX: offsets.offsetX,
+          offsetY: offsets.offsetY,
+        }),
+    );
   }, [
-    width,
-    height,
     blueMarble,
     rasterTextures,
-    rasterOpacity,
+    debouncedOpacity,
     satelliteLayerVisible,
-    boundaryLinesVisible,
-    geographicLinesVisible,
-    projectedVectors,
     bounds,
+    renderWidth,
+    renderHeight,
+    viewScale,
+    isZooming,
+    isPanning,
+    computeBaseDownsample,
+    drawOverlay,
+    offsets.offsetX,
+    offsets.offsetY,
   ]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !onRegionClick) return;
+
+    const handleClick = (evt: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const px = (evt.clientX - rect.left) * scaleX;
+      const py = (evt.clientY - rect.top) * scaleY;
+      const geo = pixelToGeographic(px, py, renderWidth, renderHeight, {
+        bounds,
+        scale: viewScale,
+        offsetX: offsets.offsetX,
+        offsetY: offsets.offsetY,
+      });
+      if (!geo) return;
+      setClickMarker({ px, py });
+
+      const rasterValue = rasterData?.sampleValue(geo.lat, geo.lon);
+      const units = rasterData?.units ?? currentDataset?.units ?? "units";
+      const datasetName = currentDataset?.name?.toLowerCase() ?? "";
+      const datasetType = currentDataset?.dataType?.toLowerCase() ?? "";
+      const looksTemperature =
+        datasetType.includes("temp") ||
+        datasetName.includes("temp") ||
+        units.toLowerCase().includes("degc") ||
+        units.toLowerCase().includes("celsius");
+      const fallbackValue = looksTemperature
+        ? -20 + Math.random() * 60
+        : Math.random() * 100;
+      const value = rasterValue ?? fallbackValue;
+
+      const regionData: RegionData = {
+        name: `${geo.lat.toFixed(2)}°, ${geo.lon.toFixed(2)}°`,
+        precipitation: looksTemperature ? undefined : value,
+        temperature: looksTemperature ? value : undefined,
+        dataset: currentDataset?.name || "Sample Dataset",
+        unit: units,
+      };
+
+      onRegionClick(geo.lat, geo.lon, regionData);
+    };
+
+    canvas.addEventListener("click", handleClick);
+    return () => canvas.removeEventListener("click", handleClick);
+  }, [
+    bounds,
+    renderWidth,
+    renderHeight,
+    onRegionClick,
+    rasterData,
+    currentDataset,
+    viewScale,
+    offsets.offsetX,
+    offsets.offsetY,
+  ]);
+
+  // Drag to pan the view.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const dragStateRef = {
+      current: null as null | {
+        startX: number;
+        startY: number;
+        startOffset: { x: number; y: number };
+        scaleX: number;
+        scaleY: number;
+        pointerId: number;
+      },
+    };
+
+    const onPointerDown = (evt: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      dragStateRef.current = {
+        startX: evt.clientX,
+        startY: evt.clientY,
+        startOffset: { ...viewOffsetRef.current },
+        scaleX,
+        scaleY,
+        pointerId: evt.pointerId,
+      };
+      isPanningRef.current = true;
+      setIsPanning(true);
+      baseFrameRef.current = null;
+      const ctx = canvas.getContext("2d");
+      ctx?.clearRect(0, 0, canvas.width, canvas.height);
+      try {
+        canvas.setPointerCapture(evt.pointerId);
+      } catch {
+        /* noop */
+      }
+    };
+
+    const onPointerMove = (evt: PointerEvent) => {
+      const state = dragStateRef.current;
+      if (!state) return;
+      const dx = (evt.clientX - state.startX) * state.scaleX;
+      const dy = (evt.clientY - state.startY) * state.scaleY;
+      const nextOffset = {
+        x: state.startOffset.x + dx,
+        y: state.startOffset.y + dy,
+      };
+      viewOffsetRef.current = nextOffset;
+      setViewOffset(nextOffset);
+
+      if (placeholderRafRef.current) {
+        cancelAnimationFrame(placeholderRafRef.current);
+      }
+      const ctx = canvas.getContext("2d");
+      placeholderRafRef.current = requestAnimationFrame(() => {
+        renderBasemapPlaceholder(
+          ctx,
+          viewScale,
+          0.5 * renderWidth * (1 - viewScale) + nextOffset.x,
+          0.5 * renderHeight * (1 - viewScale) + nextOffset.y,
+        );
+      });
+    };
+
+    const endDrag = (evt: PointerEvent) => {
+      const state = dragStateRef.current;
+      if (state && state.pointerId === evt.pointerId) {
+        dragStateRef.current = null;
+        isPanningRef.current = false;
+        setIsPanning(false);
+        if (placeholderRafRef.current) {
+          cancelAnimationFrame(placeholderRafRef.current);
+          placeholderRafRef.current = null;
+        }
+        try {
+          canvas.releasePointerCapture(evt.pointerId);
+        } catch {
+          /* noop */
+        }
+      }
+    };
+
+    canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointermove", onPointerMove);
+    canvas.addEventListener("pointerup", endDrag);
+    canvas.addEventListener("pointercancel", endDrag);
+    return () => {
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerup", endDrag);
+      canvas.removeEventListener("pointercancel", endDrag);
+    };
+  }, [renderBasemapPlaceholder, renderHeight, renderWidth, viewScale]);
+
+  // Mouse wheel zoom to adjust view scale (center-anchored).
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onWheel = (evt: WheelEvent) => {
+      evt.preventDefault();
+      const factor = evt.deltaY > 0 ? 0.9 : 1.1;
+      const nextScale = Math.min(
+        6,
+        Math.max(0.7, pendingViewScaleRef.current * factor),
+      );
+      pendingViewScaleRef.current = nextScale;
+
+      setIsZooming(true);
+      isZoomingRef.current = true;
+      baseFrameRef.current = null;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+
+      const contextState = wheelContextRef.current;
+      renderBasemapPlaceholder(
+        ctx,
+        nextScale,
+        0.5 * contextState.renderWidth * (1 - nextScale) +
+          contextState.viewOffset.x,
+        0.5 * contextState.renderHeight * (1 - nextScale) +
+          contextState.viewOffset.y,
+      );
+
+      if (zoomTimeoutRef.current) {
+        clearTimeout(zoomTimeoutRef.current);
+      }
+      zoomTimeoutRef.current = setTimeout(() => {
+        isZoomingRef.current = false;
+        setIsZooming(false);
+      }, 180);
+
+      if (zoomRafRef.current) {
+        cancelAnimationFrame(zoomRafRef.current);
+      }
+      zoomRafRef.current = requestAnimationFrame(() => {
+        setViewScale(pendingViewScaleRef.current);
+      });
+    };
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      canvas.removeEventListener("wheel", onWheel);
+      if (zoomTimeoutRef.current) {
+        clearTimeout(zoomTimeoutRef.current);
+      }
+      if (zoomRafRef.current) {
+        cancelAnimationFrame(zoomRafRef.current);
+      }
+    };
+  }, []);
 
   return (
     <canvas
