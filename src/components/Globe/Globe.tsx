@@ -296,6 +296,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const isUpdatingMarkerRef = useRef(false);
 
     const rasterDataRef = useRef<RasterLayerData | undefined>(undefined);
+    const [winkelClearMarkerTick, setWinkelClearMarkerTick] = useState(0);
     const datasetName = (currentDataset?.name ?? "").toLowerCase();
     const datasetSupportsZeroMask =
       currentDataset?.dataType === "precipitation" ||
@@ -346,6 +347,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         }
         currentMarkerRef.current = null;
       }
+
+      // Also clear Winkel Tripel marker via signal.
+      setWinkelClearMarkerTick((tick) => tick + 1);
     }, []);
 
     const clearSearchMarker = useCallback(() => {
@@ -1274,6 +1278,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             geographicLinesVisible={geographicLinesVisible}
             currentDataset={currentDataset}
             onRegionClick={onRegionClick}
+            clearMarkerSignal={winkelClearMarkerTick}
           />
           {currentDataset && (
             <Dialog>

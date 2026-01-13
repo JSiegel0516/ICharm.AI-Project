@@ -20,7 +20,10 @@ import type {
   GeoPoint,
   ProjectionSpaceBounds,
 } from "@/lib/projection/winkelTripel";
-import { pixelToGeographic } from "@/lib/projection/winkelTripel";
+import {
+  geographicToPixel,
+  pixelToGeographic,
+} from "@/lib/projection/winkelTripel";
 import type { Dataset, RegionData } from "@/types";
 
 type Props = {
@@ -32,6 +35,7 @@ type Props = {
   bounds?: ProjectionSpaceBounds;
   currentDataset?: Dataset;
   onRegionClick?: (lat: number, lon: number, data: RegionData) => void;
+  clearMarkerSignal?: number;
 };
 
 type SampleableImage = {
@@ -213,6 +217,7 @@ export const WinkelMap: React.FC<Props> = ({
   bounds,
   currentDataset,
   onRegionClick = () => {},
+  clearMarkerSignal = 0,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const { width, height } = useWindowSize();
@@ -264,15 +269,37 @@ export const WinkelMap: React.FC<Props> = ({
   >([]);
   const [debouncedOpacity, setDebouncedOpacity] = useState(rasterOpacity);
   const [clickMarker, setClickMarker] = useState<{
-    px: number;
-    py: number;
+    lat: number;
+    lon: number;
   } | null>(null);
+  const offsets = useMemo(
+    () => ({
+      offsetX: 0.5 * renderWidth * (1 - viewScale) + viewOffset.x,
+      offsetY: 0.5 * renderHeight * (1 - viewScale) + viewOffset.y,
+    }),
+    [renderWidth, renderHeight, viewScale, viewOffset],
+  );
   const baseFrameRef = useRef<ImageData | null>(null);
+  const renderParamsRef = useRef<{
+    renderWidth: number;
+    renderHeight: number;
+    scale: number;
+    offsetX: number;
+    offsetY: number;
+    bounds?: ProjectionSpaceBounds;
+  }>({
+    renderWidth,
+    renderHeight,
+    scale: viewScale,
+    offsetX: 0,
+    offsetY: 0,
+    bounds,
+  });
   const overlayStateRef = useRef<{
     projectedVectors: ReturnType<typeof projectVectors>;
     boundaryLinesVisible: boolean;
     geographicLinesVisible: boolean;
-    clickMarker: { px: number; py: number } | null;
+    clickMarker: { lat: number; lon: number } | null;
   }>({
     projectedVectors: [],
     boundaryLinesVisible,
@@ -305,6 +332,24 @@ export const WinkelMap: React.FC<Props> = ({
   }, [blueMarble, bounds, renderWidth, renderHeight, viewOffset]);
 
   useEffect(() => {
+    renderParamsRef.current = {
+      renderWidth,
+      renderHeight,
+      scale: viewScale,
+      offsetX: offsets.offsetX,
+      offsetY: offsets.offsetY,
+      bounds,
+    };
+  }, [
+    renderWidth,
+    renderHeight,
+    viewScale,
+    offsets.offsetX,
+    offsets.offsetY,
+    bounds,
+  ]);
+
+  useEffect(() => {
     // Clear any cached base frame whenever scale or pan changes so we don't reuse stale rasters.
     baseFrameRef.current = null;
     const canvas = canvasRef.current;
@@ -315,6 +360,11 @@ export const WinkelMap: React.FC<Props> = ({
   }, [viewScale, viewOffset]);
 
   useEffect(() => {
+    // External signal to clear click marker (e.g., region panel close).
+    setClickMarker(null);
+  }, [clearMarkerSignal]);
+
+  useEffect(() => {
     const img = new Image();
     img.onload = () => {
       selectorImgRef.current = img;
@@ -322,62 +372,74 @@ export const WinkelMap: React.FC<Props> = ({
     img.src = "/images/selector.png";
   }, []);
 
-  const drawOverlay = useCallback((ctx: CanvasRenderingContext2D) => {
-    const state = overlayStateRef.current;
-    const hideLines = isZoomingRef.current || isPanningRef.current;
-    ctx.save();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = "#e5e7eb";
-    state.projectedVectors.forEach((vec) => {
-      if (hideLines) return;
-      if (vec.kind === "boundary" && !state.boundaryLinesVisible) return;
-      if (vec.kind === "geographicLines" && !state.geographicLinesVisible)
-        return;
-      vec.segments?.forEach((segment) => {
-        if (!segment || segment.length < 2) return;
-        ctx.beginPath();
-        ctx.moveTo(segment[0].px, segment[0].py);
-        for (let i = 1; i < segment.length; i += 1) {
-          ctx.lineTo(segment[i].px, segment[i].py);
-        }
-        ctx.stroke();
+  const drawOverlay = useCallback(
+    (
+      ctx: CanvasRenderingContext2D,
+      paramsOverride?: {
+        renderWidth: number;
+        renderHeight: number;
+        scale: number;
+        offsetX: number;
+        offsetY: number;
+        bounds?: ProjectionSpaceBounds;
+      },
+    ) => {
+      const state = overlayStateRef.current;
+      const hideLines = isZoomingRef.current || isPanningRef.current;
+      const params = paramsOverride ?? renderParamsRef.current;
+      ctx.save();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "#e5e7eb";
+      state.projectedVectors.forEach((vec) => {
+        if (hideLines) return;
+        if (vec.kind === "boundary" && !state.boundaryLinesVisible) return;
+        if (vec.kind === "geographicLines" && !state.geographicLinesVisible)
+          return;
+        vec.segments?.forEach((segment) => {
+          if (!segment || segment.length < 2) return;
+          ctx.beginPath();
+          ctx.moveTo(segment[0].px, segment[0].py);
+          for (let i = 1; i < segment.length; i += 1) {
+            ctx.lineTo(segment[i].px, segment[i].py);
+          }
+          ctx.stroke();
+        });
       });
-    });
-    if (state.clickMarker) {
-      const img = selectorImgRef.current;
-      if (img) {
-        const size = 28;
-        ctx.drawImage(
-          img,
-          state.clickMarker.px - size / 2,
-          state.clickMarker.py - size / 2,
-          size,
-          size,
+      if (state.clickMarker) {
+        const { px, py } = geographicToPixel(
+          state.clickMarker.lon,
+          state.clickMarker.lat,
+          params.renderWidth,
+          params.renderHeight,
+          {
+            bounds: params.bounds,
+            scale: params.scale,
+            offsetX: params.offsetX,
+            offsetY: params.offsetY,
+          },
         );
-      } else {
-        ctx.fillStyle = "#4cff00";
-        ctx.strokeStyle = "#ffffff";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(state.clickMarker.px, state.clickMarker.py, 7, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
+        const img = selectorImgRef.current;
+        if (img) {
+          const size = 28;
+          ctx.drawImage(img, px - size / 2, py - size / 2, size, size);
+        } else {
+          ctx.fillStyle = "#4cff00";
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(px, py, 7, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
       }
-    }
-    ctx.restore();
-  }, []);
+      ctx.restore();
+    },
+    [],
+  );
 
   const computeBaseDownsample = useCallback(
     (w: number, h: number) => Math.max(1, Math.round(Math.min(w, h) / 2000)),
     [],
-  );
-
-  const offsets = useMemo(
-    () => ({
-      offsetX: 0.5 * renderWidth * (1 - viewScale) + viewOffset.x,
-      offsetY: 0.5 * renderHeight * (1 - viewScale) + viewOffset.y,
-    }),
-    [renderWidth, renderHeight, viewScale, viewOffset],
   );
 
   const renderBasemapPlaceholder = useCallback(
@@ -423,7 +485,14 @@ export const WinkelMap: React.FC<Props> = ({
         tctx?.putImageData(imageData, 0, 0);
         ctx.drawImage(temp, 0, 0, state.renderWidth, state.renderHeight);
       }
-      drawOverlay(ctx);
+      drawOverlay(ctx, {
+        renderWidth: state.renderWidth,
+        renderHeight: state.renderHeight,
+        scale,
+        offsetX,
+        offsetY,
+        bounds: state.bounds,
+      });
     },
     [computeBaseDownsample, drawOverlay],
   );
@@ -685,7 +754,7 @@ export const WinkelMap: React.FC<Props> = ({
         offsetY: offsets.offsetY,
       });
       if (!geo) return;
-      setClickMarker({ px, py });
+      setClickMarker({ lat: geo.lat, lon: geo.lon });
 
       const rasterValue = rasterData?.sampleValue(geo.lat, geo.lon);
       const units = rasterData?.units ?? currentDataset?.units ?? "units";
@@ -830,7 +899,7 @@ export const WinkelMap: React.FC<Props> = ({
       evt.preventDefault();
       const factor = evt.deltaY > 0 ? 0.9 : 1.1;
       const nextScale = Math.min(
-        6,
+        12,
         Math.max(0.7, pendingViewScaleRef.current * factor),
       );
       pendingViewScaleRef.current = nextScale;
