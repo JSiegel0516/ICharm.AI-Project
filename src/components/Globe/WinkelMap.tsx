@@ -11,9 +11,9 @@ import type {
   RasterLayerData,
   RasterLayerTexture,
 } from "@/hooks/useRasterLayer";
+import { geoPath, geoTransform } from "d3-geo";
 import {
   renderComposite,
-  projectVectors,
   progressiveRender,
 } from "@/lib/projection/winkelTripelRenderer";
 import type {
@@ -23,6 +23,8 @@ import type {
 import {
   geographicToPixel,
   pixelToGeographic,
+  pixelToProjection,
+  WINKEL_TRIPEL_BOUNDS,
 } from "@/lib/projection/winkelTripel";
 import type { Dataset, RegionData } from "@/types";
 
@@ -44,18 +46,39 @@ type SampleableImage = {
   data: Uint8ClampedArray;
 };
 
-// Prefer cached ArcGIS World Imagery first (avoid CORS/taint), then live endpoint.
-const BLUE_MARBLE_SOURCES = [
-  "/images/world_imagery_arcgis.png",
-  "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export?bbox=-180,-90,180,90&bboxSR=4326&imageSR=4326&size=4096,2048&format=png&f=image",
-];
+const MIN_SCALE = 1; // same as initial view; prevents over-zooming out
+const MAX_SCALE = 400; // allow very deep zoom for satellite inspection
+const clamp = (v: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, v));
 
-const fetchBoundaries = async () => {
-  const files: Array<{ name: string; kind: "boundary" | "geographicLines" }> = [
+type BoundaryResolution = "110m" | "50m" | "10m";
+
+const boundaryFilesByResolution: Record<
+  BoundaryResolution,
+  Array<{ name: string; kind: "boundary" | "geographicLines" }>
+> = {
+  "110m": [
     { name: "ne_110m_coastline.json", kind: "boundary" },
     { name: "ne_110m_lakes.json", kind: "boundary" },
     { name: "ne_110m_rivers_lake_centerlines.json", kind: "boundary" },
-  ];
+    { name: "ne_110m_geographic_lines.json", kind: "geographicLines" },
+  ],
+  "50m": [
+    { name: "ne_50m_coastline.json", kind: "boundary" },
+    { name: "ne_50m_lakes.json", kind: "boundary" },
+    { name: "ne_50m_rivers_lake_centerlines.json", kind: "boundary" },
+    { name: "ne_50m_geographic_lines.json", kind: "geographicLines" },
+  ],
+  "10m": [
+    { name: "ne_10m_coastline.json", kind: "boundary" },
+    { name: "ne_10m_lakes.json", kind: "boundary" },
+    { name: "ne_10m_rivers_lake_centerlines.json", kind: "boundary" },
+    { name: "ne_10m_geographic_lines.json", kind: "geographicLines" },
+  ],
+};
+
+const fetchBoundaries = async (resolution: BoundaryResolution) => {
+  const files = boundaryFilesByResolution[resolution];
 
   const results: Array<{ id: string; coordinates: GeoPoint[]; kind: string }> =
     [];
@@ -192,6 +215,98 @@ const loadRasterTextures = async (
   return results;
 };
 
+const splitAtDateline = (coords: GeoPoint[]) => {
+  const parts: GeoPoint[][] = [];
+  let current: GeoPoint[] = [];
+  const maxGeoJumpLon = 30; // degrees
+  const maxGeoJumpLat = 20; // degrees
+  for (let i = 0; i < coords.length; i += 1) {
+    const pt = coords[i];
+    const prev = coords[i - 1];
+    if (prev) {
+      const lonJump = Math.abs(pt.lon - prev.lon);
+      const latJump = Math.abs(pt.lat - prev.lat);
+      const crossesDateline =
+        lonJump > 180 ||
+        (prev.lon > 170 && pt.lon < -170) ||
+        (prev.lon < -170 && pt.lon > 170);
+      if (
+        (crossesDateline ||
+          lonJump > maxGeoJumpLon ||
+          latJump > maxGeoJumpLat) &&
+        current.length >= 2
+      ) {
+        parts.push([...current]);
+        current = [];
+      }
+    }
+    current.push(pt);
+  }
+  if (current.length >= 2) {
+    parts.push(current);
+  }
+  return parts.length ? parts : [coords];
+};
+
+const splitAtFootprint = (
+  coords: GeoPoint[],
+  renderWidth: number,
+  renderHeight: number,
+  options: {
+    bounds?: ProjectionSpaceBounds;
+    offsetX: number;
+    offsetY: number;
+    scale: number;
+  },
+) => {
+  const parts: GeoPoint[][] = [];
+  let current: GeoPoint[] = [];
+  const maxJumpPx = Math.max(renderWidth, renderHeight) * 0.04;
+  let prevPx: { x: number; y: number } | null = null;
+  const bounds = options.bounds ?? WINKEL_TRIPEL_BOUNDS;
+  const cx = (bounds.xMin + bounds.xMax) / 2;
+  const cy = (bounds.yMin + bounds.yMax) / 2;
+  const rx = bounds.width / 2 || 1;
+  const ry = bounds.height / 2 || 1;
+
+  for (let i = 0; i < coords.length; i += 1) {
+    const pt = coords[i];
+    const { px, py } = geographicToPixel(
+      pt.lon,
+      pt.lat,
+      renderWidth,
+      renderHeight,
+      options,
+    );
+
+    const proj = pixelToProjection(px, py, renderWidth, renderHeight, options);
+    const dx = (proj.x - cx) / rx;
+    const dy = (proj.y - cy) / ry;
+    const inFootprint = dx * dx + dy * dy <= 1.05;
+
+    if (!inFootprint) {
+      if (current.length >= 2) parts.push(current);
+      current = [];
+      prevPx = null;
+      continue;
+    }
+
+    if (prevPx) {
+      const jump = Math.hypot(px - prevPx.x, py - prevPx.y);
+      if (jump > maxJumpPx) {
+        if (current.length >= 2) parts.push(current);
+        current = [];
+      }
+    }
+
+    current.push(pt);
+    prevPx = { x: px, y: py };
+  }
+
+  if (current.length >= 2) parts.push(current);
+  return parts.length ? parts : [];
+};
+
 const useWindowSize = () => {
   const [size, setSize] = useState<{ width: number; height: number }>({
     width: typeof window !== "undefined" ? window.innerWidth : 1920,
@@ -223,8 +338,8 @@ export const WinkelMap: React.FC<Props> = ({
   const { width, height } = useWindowSize();
   const renderScale =
     typeof window !== "undefined"
-      ? Math.max(1, Math.min(1.1, (window.devicePixelRatio || 1) * 0.75))
-      : 1.1;
+      ? Math.max(1.3, Math.min(2.2, (window.devicePixelRatio || 1) * 1.1))
+      : 1.6;
   const renderWidth = Math.max(1, Math.round(width / renderScale));
   const renderHeight = Math.max(1, Math.round(height / renderScale));
   const renderTokenRef = useRef(0);
@@ -241,8 +356,11 @@ export const WinkelMap: React.FC<Props> = ({
   const placeholderRafRef = useRef<number | null>(null);
   const zoomTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const zoomRafRef = useRef<number | null>(null);
+  const targetOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const targetScaleRef = useRef(viewScale);
   const pendingViewScaleRef = useRef(viewScale);
   const selectorImgRef = useRef<HTMLImageElement | null>(null);
+  const viewScaleRef = useRef(viewScale);
   const wheelContextRef = useRef<{
     blueMarble: SampleableImage | null;
     bounds?: ProjectionSpaceBounds;
@@ -267,11 +385,48 @@ export const WinkelMap: React.FC<Props> = ({
   const [vectors, setVectors] = useState<
     Array<{ id: string; coordinates: GeoPoint[]; kind: string }>
   >([]);
+  const [vectorPaths, setVectorPaths] = useState<{
+    boundary: string[];
+    geographic: string[];
+  }>({ boundary: [], geographic: [] });
   const [debouncedOpacity, setDebouncedOpacity] = useState(rasterOpacity);
   const [clickMarker, setClickMarker] = useState<{
     lat: number;
     lon: number;
   } | null>(null);
+  const pendingRenderRef = useRef(false);
+  const boundaryCacheRef = useRef(
+    new Map<
+      BoundaryResolution,
+      Array<{ id: string; coordinates: GeoPoint[]; kind: string }>
+    >(),
+  );
+  const renderSizeRef = useRef({ width: renderWidth, height: renderHeight });
+  const boundsRef = useRef(bounds);
+  const clampViewOffset = useCallback(
+    (scale: number, candidate: { x: number; y: number }) => {
+      const pad = 0.08; // keep a thin margin of the ellipse in view to avoid blanks
+      const baseX = 0.5 * renderWidth * (1 - scale);
+      const baseY = 0.5 * renderHeight * (1 - scale);
+      const minTotalX = -(1 - pad) * renderWidth * scale;
+      const maxTotalX = renderWidth * (1 - pad * scale);
+      const minTotalY = -(1 - pad) * renderHeight * scale;
+      const maxTotalY = renderHeight * (1 - pad * scale);
+      const totalX = baseX + candidate.x;
+      const totalY = baseY + candidate.y;
+      const clampedTotalX = clamp(totalX, minTotalX, maxTotalX);
+      const clampedTotalY = clamp(totalY, minTotalY, maxTotalY);
+      return {
+        x: clampedTotalX - baseX,
+        y: clampedTotalY - baseY,
+      };
+    },
+    [renderHeight, renderWidth],
+  );
+  const clampViewOffsetRef = useRef(clampViewOffset);
+  const renderBasemapPlaceholderRef = useRef<
+    typeof renderBasemapPlaceholder | null
+  >(null);
   const offsets = useMemo(
     () => ({
       offsetX: 0.5 * renderWidth * (1 - viewScale) + viewOffset.x,
@@ -279,6 +434,13 @@ export const WinkelMap: React.FC<Props> = ({
     }),
     [renderWidth, renderHeight, viewScale, viewOffset],
   );
+  const boundaryResolution = useMemo<BoundaryResolution>(() => {
+    if (isZooming || isPanning) return "110m";
+    if (renderWidth < 720) return "110m";
+    if (viewScale >= 5) return "10m";
+    if (viewScale >= 2) return "50m";
+    return "110m";
+  }, [isZooming, isPanning, renderWidth, viewScale]);
   const baseFrameRef = useRef<ImageData | null>(null);
   const renderParamsRef = useRef<{
     renderWidth: number;
@@ -295,15 +457,10 @@ export const WinkelMap: React.FC<Props> = ({
     offsetY: 0,
     bounds,
   });
+  const committedParamsRef = useRef(renderParamsRef.current);
   const overlayStateRef = useRef<{
-    projectedVectors: ReturnType<typeof projectVectors>;
-    boundaryLinesVisible: boolean;
-    geographicLinesVisible: boolean;
     clickMarker: { lat: number; lon: number } | null;
   }>({
-    projectedVectors: [],
-    boundaryLinesVisible,
-    geographicLinesVisible,
     clickMarker: null,
   });
 
@@ -315,11 +472,24 @@ export const WinkelMap: React.FC<Props> = ({
 
   useEffect(() => {
     pendingViewScaleRef.current = viewScale;
+    viewScaleRef.current = viewScale;
   }, [viewScale]);
 
   useEffect(() => {
     viewOffsetRef.current = viewOffset;
   }, [viewOffset]);
+
+  useEffect(() => {
+    renderSizeRef.current = { width: renderWidth, height: renderHeight };
+  }, [renderWidth, renderHeight]);
+
+  useEffect(() => {
+    boundsRef.current = bounds;
+  }, [bounds]);
+
+  useEffect(() => {
+    clampViewOffsetRef.current = clampViewOffset;
+  }, [clampViewOffset]);
 
   useEffect(() => {
     wheelContextRef.current = {
@@ -385,26 +555,8 @@ export const WinkelMap: React.FC<Props> = ({
       },
     ) => {
       const state = overlayStateRef.current;
-      const hideLines = isZoomingRef.current || isPanningRef.current;
       const params = paramsOverride ?? renderParamsRef.current;
       ctx.save();
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = "#e5e7eb";
-      state.projectedVectors.forEach((vec) => {
-        if (hideLines) return;
-        if (vec.kind === "boundary" && !state.boundaryLinesVisible) return;
-        if (vec.kind === "geographicLines" && !state.geographicLinesVisible)
-          return;
-        vec.segments?.forEach((segment) => {
-          if (!segment || segment.length < 2) return;
-          ctx.beginPath();
-          ctx.moveTo(segment[0].px, segment[0].py);
-          for (let i = 1; i < segment.length; i += 1) {
-            ctx.lineTo(segment[i].px, segment[i].py);
-          }
-          ctx.stroke();
-        });
-      });
       if (state.clickMarker) {
         const { px, py } = geographicToPixel(
           state.clickMarker.lon,
@@ -438,7 +590,11 @@ export const WinkelMap: React.FC<Props> = ({
   );
 
   const computeBaseDownsample = useCallback(
-    (w: number, h: number) => Math.max(1, Math.round(Math.min(w, h) / 2000)),
+    (w: number, h: number, scale: number) => {
+      const base = Math.max(1, Math.round(Math.min(w, h) / 2000));
+      const zoomPenalty = scale > 4 ? Math.min(6, Math.sqrt(scale) / 3) : 1;
+      return Math.max(1, Math.min(8, Math.round(base * zoomPenalty)));
+    },
     [],
   );
 
@@ -451,78 +607,47 @@ export const WinkelMap: React.FC<Props> = ({
     ) => {
       if (!ctx) return;
       const state = wheelContextRef.current;
-      if (!state.blueMarble) return;
-      const downsample = Math.min(
-        computeBaseDownsample(state.renderWidth, state.renderHeight) * 3,
-        8,
-      );
-      const placeholder = renderComposite({
-        width: state.renderWidth,
-        height: state.renderHeight,
-        blueMarble: state.blueMarble,
-        rasters: [],
-        bounds: state.bounds,
-        downsample,
-        scale,
-        offsetX,
-        offsetY,
-      });
-      const imageData = new ImageData(
-        placeholder.data,
-        placeholder.width,
-        placeholder.height,
-      );
-      if (
-        placeholder.width === state.renderWidth &&
-        placeholder.height === state.renderHeight
-      ) {
-        ctx.putImageData(imageData, 0, 0);
-      } else {
-        const temp = document.createElement("canvas");
-        temp.width = placeholder.width;
-        temp.height = placeholder.height;
-        const tctx = temp.getContext("2d");
-        tctx?.putImageData(imageData, 0, 0);
-        ctx.drawImage(temp, 0, 0, state.renderWidth, state.renderHeight);
-      }
-      drawOverlay(ctx, {
-        renderWidth: state.renderWidth,
-        renderHeight: state.renderHeight,
-        scale,
-        offsetX,
-        offsetY,
-        bounds: state.bounds,
-      });
+      // Paint a solid backdrop and keep boundary lines visible; no basemap imagery.
+      ctx.save();
+      ctx.fillStyle = "#0b172a";
+      ctx.fillRect(0, 0, state.renderWidth, state.renderHeight);
+      ctx.restore();
+      const overlayParams =
+        isZoomingRef.current || isPanningRef.current
+          ? committedParamsRef.current
+          : {
+              renderWidth: state.renderWidth,
+              renderHeight: state.renderHeight,
+              scale,
+              offsetX,
+              offsetY,
+              bounds: state.bounds,
+            };
+      drawOverlay(ctx, overlayParams);
     },
-    [computeBaseDownsample, drawOverlay],
+    [drawOverlay],
   );
 
   useEffect(() => {
-    if (!satelliteLayerVisible) {
-      setBlueMarble(null);
-      return;
-    }
-    let cancelled = false;
-    const tryLoad = async () => {
-      for (const src of BLUE_MARBLE_SOURCES) {
-        try {
-          const img = await loadImageData(src, { forceOpaqueAlpha: true });
-          if (!cancelled) {
-            setBlueMarble(img);
-          }
-          return;
-        } catch (err) {
-          console.warn("Blue Marble load failed", src, err);
-        }
-      }
-      console.warn("Blue Marble unavailable from all sources");
-    };
+    renderBasemapPlaceholderRef.current = renderBasemapPlaceholder;
+  }, [renderBasemapPlaceholder]);
 
-    tryLoad();
+  useEffect(() => {
+    let cancelled = false;
+    loadImageData("/images/world_imagery_arcgis.png", {
+      forceOpaqueAlpha: true,
+    })
+      .then((img) => {
+        if (!cancelled) setBlueMarble(img);
+      })
+      .catch((err) => {
+        console.warn("Failed to load world imagery basemap", err);
+        if (!cancelled) setBlueMarble(null);
+      });
     return () => {
       cancelled = true;
     };
-  }, [satelliteLayerVisible]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -540,79 +665,95 @@ export const WinkelMap: React.FC<Props> = ({
 
   useEffect(() => {
     let mounted = true;
-    fetchBoundaries().then((res) => {
-      if (mounted) setVectors(res);
+    const cached = boundaryCacheRef.current.get(boundaryResolution);
+    if (cached) {
+      setVectors(cached);
+      return () => {
+        mounted = false;
+      };
+    }
+    fetchBoundaries(boundaryResolution).then((res) => {
+      if (!mounted) return;
+      boundaryCacheRef.current.set(boundaryResolution, res);
+      setVectors(res);
     });
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [boundaryResolution]);
 
-  const projectedVectors = useMemo(() => {
-    if (!vectors.length) return [];
-
-    // Split at the dateline to avoid long jumps across the map
-    const splitAtDateline = (coords: GeoPoint[]) => {
-      const parts: GeoPoint[][] = [];
-      let current: GeoPoint[] = [];
-      for (let i = 0; i < coords.length; i += 1) {
-        const pt = coords[i];
-        const prev = coords[i - 1];
-        if (prev) {
-          const lonJump = Math.abs(pt.lon - prev.lon);
-          const crossesDateline =
-            lonJump > 180 ||
-            (prev.lon > 170 && pt.lon < -170) ||
-            (prev.lon < -170 && pt.lon > 170);
-          if (crossesDateline && current.length >= 2) {
-            parts.push([...current]);
-            current = [];
-          }
-        }
-        current.push(pt);
-      }
-      if (current.length >= 2) {
-        parts.push(current);
-      }
-      return parts.length ? parts : [coords];
-    };
-
-    const expanded = vectors.flatMap((vec) =>
-      splitAtDateline(vec.coordinates).map((segment, idx) => ({
-        id: `${vec.id}-seg-${idx}`,
-        coordinates: segment,
-        kind: vec.kind,
-      })),
-    );
-
-    const projected = projectVectors(
-      expanded.map((v) => ({ id: v.id, coordinates: v.coordinates })),
-      renderWidth,
-      renderHeight,
-      {
-        bounds,
-        scale: viewScale,
-        offsetX: offsets.offsetX,
-        offsetY: offsets.offsetY,
+  useEffect(() => {
+    if (isZooming || isPanning) return;
+    if (!vectors.length) {
+      setVectorPaths({ boundary: [], geographic: [] });
+      return;
+    }
+    const transform = geoTransform({
+      point(lon, lat) {
+        const { px, py } = geographicToPixel(
+          lon,
+          lat,
+          renderWidth,
+          renderHeight,
+          {
+            bounds,
+            scale: viewScale,
+            offsetX: offsets.offsetX,
+            offsetY: offsets.offsetY,
+          },
+        );
+        this.stream.point(px, py);
       },
-    );
-
-    return projected.map((v, idx) => ({ ...v, kind: expanded[idx].kind }));
+    });
+    const path = geoPath(transform);
+    const nextBoundary: string[] = [];
+    const nextGeographic: string[] = [];
+    const footprintOptions = {
+      bounds,
+      scale: viewScale,
+      offsetX: offsets.offsetX,
+      offsetY: offsets.offsetY,
+    };
+    vectors.forEach((vec) => {
+      splitAtDateline(vec.coordinates).forEach((segment) => {
+        const trimmed = splitAtFootprint(
+          segment,
+          renderWidth,
+          renderHeight,
+          footprintOptions,
+        );
+        trimmed.forEach((footprintSegment) => {
+          const d = path({
+            type: "LineString",
+            coordinates: footprintSegment.map((point) => [
+              point.lon,
+              point.lat,
+            ]),
+          });
+          if (!d) return;
+          if (vec.kind === "boundary") {
+            nextBoundary.push(d);
+          } else {
+            nextGeographic.push(d);
+          }
+        });
+      });
+    });
+    setVectorPaths({ boundary: nextBoundary, geographic: nextGeographic });
   }, [
     vectors,
+    bounds,
     renderWidth,
     renderHeight,
-    bounds,
     viewScale,
     offsets.offsetX,
     offsets.offsetY,
+    isZooming,
+    isPanning,
   ]);
 
   useEffect(() => {
     overlayStateRef.current = {
-      projectedVectors,
-      boundaryLinesVisible,
-      geographicLinesVisible,
       clickMarker,
     };
     const canvas = canvasRef.current;
@@ -631,15 +772,24 @@ export const WinkelMap: React.FC<Props> = ({
     }
 
     drawOverlay(ctx);
-  }, [
-    projectedVectors,
-    boundaryLinesVisible,
-    geographicLinesVisible,
-    clickMarker,
-    drawOverlay,
-  ]);
+  }, [clickMarker, drawOverlay]);
 
   useEffect(() => {
+    // Keep offsets valid after resizes or programmatic scale changes.
+    const clamped = clampViewOffset(
+      viewScaleRef.current,
+      viewOffsetRef.current,
+    );
+    if (
+      clamped.x !== viewOffsetRef.current.x ||
+      clamped.y !== viewOffsetRef.current.y
+    ) {
+      viewOffsetRef.current = clamped;
+      setViewOffset(clamped);
+    }
+  }, [clampViewOffset]);
+
+  const renderFrame = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -651,14 +801,29 @@ export const WinkelMap: React.FC<Props> = ({
       baseFrameRef.current = null;
     }
 
-    const baseDownsample = computeBaseDownsample(renderWidth, renderHeight);
+    const baseDownsample = computeBaseDownsample(
+      renderWidth,
+      renderHeight,
+      viewScale,
+    );
 
     const drawFrame = (frame: ImageData) => {
-      ctx.clearRect(0, 0, renderWidth, renderHeight);
+      ctx.save();
+      ctx.fillStyle = "#0b172a";
+      ctx.fillRect(0, 0, renderWidth, renderHeight);
+      ctx.restore();
 
       if (frame.width === renderWidth && frame.height === renderHeight) {
         ctx.putImageData(frame, 0, 0);
         baseFrameRef.current = frame;
+        committedParamsRef.current = {
+          renderWidth,
+          renderHeight,
+          scale: viewScale,
+          offsetX: offsets.offsetX,
+          offsetY: offsets.offsetY,
+          bounds,
+        };
       } else {
         const temp = document.createElement("canvas");
         temp.width = frame.width;
@@ -673,12 +838,18 @@ export const WinkelMap: React.FC<Props> = ({
       }
 
       drawOverlay(ctx);
+      committedParamsRef.current = {
+        renderWidth,
+        renderHeight,
+        scale: viewScale,
+        offsetX: offsets.offsetX,
+        offsetY: offsets.offsetY,
+        bounds,
+      };
     };
 
-    const interactive = isZooming || isPanning;
-    const passes = interactive
-      ? [Math.min(baseDownsample * 4, 8)]
-      : [Math.min(baseDownsample * 2, 4), 1];
+    const isZooming = isZoomingRef.current;
+    const passes = isZooming ? [Math.min(baseDownsample * 4, 8)] : [1];
 
     const token = ++renderTokenRef.current;
 
@@ -699,19 +870,14 @@ export const WinkelMap: React.FC<Props> = ({
         renderComposite({
           width: renderWidth,
           height: renderHeight,
-          blueMarble: satelliteLayerVisible
-            ? (blueMarble ?? undefined)
-            : undefined,
+          blueMarble: !isZooming ? (blueMarble ?? undefined) : undefined,
           rasters:
-            interactive && downsample > 1
+            isZooming && downsample > 1
               ? []
               : rasterTextures.map((entry) => ({
                   texture: entry.texture,
                   rectangle: entry.rectangle,
-                  // If satellite is visible, gently reduce raster opacity to let basemap peek through.
-                  opacity: satelliteLayerVisible
-                    ? debouncedOpacity * 0.9
-                    : debouncedOpacity,
+                  opacity: debouncedOpacity,
                 })),
           bounds,
           downsample,
@@ -721,21 +887,34 @@ export const WinkelMap: React.FC<Props> = ({
         }),
     );
   }, [
-    blueMarble,
     rasterTextures,
     debouncedOpacity,
-    satelliteLayerVisible,
     bounds,
+    blueMarble,
     renderWidth,
     renderHeight,
     viewScale,
-    isZooming,
-    isPanning,
     computeBaseDownsample,
     drawOverlay,
     offsets.offsetX,
     offsets.offsetY,
   ]);
+
+  useEffect(() => {
+    if (isZooming || isPanning) {
+      pendingRenderRef.current = true;
+      return;
+    }
+    pendingRenderRef.current = false;
+    renderFrame();
+  }, [renderFrame, isZooming, isPanning]);
+
+  useEffect(() => {
+    if (!isZooming && !isPanning && pendingRenderRef.current) {
+      pendingRenderRef.current = false;
+      renderFrame();
+    }
+  }, [isZooming, isPanning, renderFrame]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -825,9 +1004,6 @@ export const WinkelMap: React.FC<Props> = ({
       };
       isPanningRef.current = true;
       setIsPanning(true);
-      baseFrameRef.current = null;
-      const ctx = canvas.getContext("2d");
-      ctx?.clearRect(0, 0, canvas.width, canvas.height);
       try {
         canvas.setPointerCapture(evt.pointerId);
       } catch {
@@ -844,21 +1020,11 @@ export const WinkelMap: React.FC<Props> = ({
         x: state.startOffset.x + dx,
         y: state.startOffset.y + dy,
       };
-      viewOffsetRef.current = nextOffset;
-      setViewOffset(nextOffset);
-
-      if (placeholderRafRef.current) {
-        cancelAnimationFrame(placeholderRafRef.current);
-      }
-      const ctx = canvas.getContext("2d");
-      placeholderRafRef.current = requestAnimationFrame(() => {
-        renderBasemapPlaceholder(
-          ctx,
-          viewScale,
-          0.5 * renderWidth * (1 - viewScale) + nextOffset.x,
-          0.5 * renderHeight * (1 - viewScale) + nextOffset.y,
-        );
-      });
+      const clamped = clampViewOffsetRef.current(
+        viewScaleRef.current,
+        nextOffset,
+      );
+      viewOffsetRef.current = clamped;
     };
 
     const endDrag = (evt: PointerEvent) => {
@@ -876,6 +1042,7 @@ export const WinkelMap: React.FC<Props> = ({
         } catch {
           /* noop */
         }
+        setViewOffset(viewOffsetRef.current);
       }
     };
 
@@ -889,7 +1056,7 @@ export const WinkelMap: React.FC<Props> = ({
       canvas.removeEventListener("pointerup", endDrag);
       canvas.removeEventListener("pointercancel", endDrag);
     };
-  }, [renderBasemapPlaceholder, renderHeight, renderWidth, viewScale]);
+  }, []);
 
   // Mouse wheel zoom to adjust view scale (center-anchored).
   useEffect(() => {
@@ -897,30 +1064,84 @@ export const WinkelMap: React.FC<Props> = ({
     if (!canvas) return;
     const onWheel = (evt: WheelEvent) => {
       evt.preventDefault();
-      const factor = evt.deltaY > 0 ? 0.9 : 1.1;
-      const nextScale = Math.min(
-        12,
-        Math.max(0.7, pendingViewScaleRef.current * factor),
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const cursorPx = (evt.clientX - rect.left) * scaleX;
+      const cursorPy = (evt.clientY - rect.top) * scaleY;
+      const isZoomOut = evt.deltaY > 0;
+      // Keep steps smooth but slightly stronger so users can reach very deep zoom with fewer scrolls.
+      const factor = isZoomOut ? 0.9 : 1.2;
+
+      const currentScale = viewScaleRef.current;
+      const { width, height } = renderSizeRef.current;
+      const currentOffsets = {
+        offsetX: 0.5 * width * (1 - currentScale) + viewOffsetRef.current.x,
+        offsetY: 0.5 * height * (1 - currentScale) + viewOffsetRef.current.y,
+      };
+      const geo = pixelToGeographic(cursorPx, cursorPy, width, height, {
+        bounds: boundsRef.current,
+        scale: currentScale,
+        offsetX: currentOffsets.offsetX,
+        offsetY: currentOffsets.offsetY,
+      });
+
+      const candidateScale = clamp(currentScale * factor, MIN_SCALE, MAX_SCALE);
+      targetScaleRef.current = candidateScale;
+
+      let nextOffset: { x: number; y: number };
+      if (isZoomOut) {
+        // Recentre on zoom out.
+        nextOffset = { x: 0, y: 0 };
+      } else if (geo) {
+        // Keep cursor-focused point pinned under the pointer.
+        const baseOffsetX =
+          0.5 * width * (1 - candidateScale) + viewOffsetRef.current.x;
+        const baseOffsetY =
+          0.5 * height * (1 - candidateScale) + viewOffsetRef.current.y;
+        const projected = geographicToPixel(geo.lon, geo.lat, width, height, {
+          bounds: boundsRef.current,
+          scale: candidateScale,
+          offsetX: baseOffsetX,
+          offsetY: baseOffsetY,
+        });
+        const deltaX = cursorPx - projected.px;
+        const deltaY = cursorPy - projected.py;
+        nextOffset = {
+          x: viewOffsetRef.current.x + deltaX,
+          y: viewOffsetRef.current.y + deltaY,
+        };
+      } else {
+        nextOffset = { ...viewOffsetRef.current };
+      }
+
+      const clampedOffset = clampViewOffsetRef.current(
+        candidateScale,
+        nextOffset,
       );
-      pendingViewScaleRef.current = nextScale;
+
+      targetOffsetRef.current = clampedOffset;
+      pendingViewScaleRef.current = candidateScale;
+      viewScaleRef.current = candidateScale;
+      viewOffsetRef.current = clampedOffset;
 
       setIsZooming(true);
       isZoomingRef.current = true;
-      baseFrameRef.current = null;
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (zoomRafRef.current) {
+        cancelAnimationFrame(zoomRafRef.current);
       }
-
-      const contextState = wheelContextRef.current;
-      renderBasemapPlaceholder(
-        ctx,
-        nextScale,
-        0.5 * contextState.renderWidth * (1 - nextScale) +
-          contextState.viewOffset.x,
-        0.5 * contextState.renderHeight * (1 - nextScale) +
-          contextState.viewOffset.y,
-      );
+      zoomRafRef.current = requestAnimationFrame(() => {
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        const offsetX = 0.5 * width * (1 - candidateScale) + clampedOffset.x;
+        const offsetY = 0.5 * height * (1 - candidateScale) + clampedOffset.y;
+        renderBasemapPlaceholderRef.current?.(
+          ctx,
+          candidateScale,
+          offsetX,
+          offsetY,
+        );
+      });
 
       if (zoomTimeoutRef.current) {
         clearTimeout(zoomTimeoutRef.current);
@@ -928,14 +1149,9 @@ export const WinkelMap: React.FC<Props> = ({
       zoomTimeoutRef.current = setTimeout(() => {
         isZoomingRef.current = false;
         setIsZooming(false);
-      }, 180);
-
-      if (zoomRafRef.current) {
-        cancelAnimationFrame(zoomRafRef.current);
-      }
-      zoomRafRef.current = requestAnimationFrame(() => {
         setViewScale(pendingViewScaleRef.current);
-      });
+        setViewOffset(targetOffsetRef.current);
+      }, 220);
     };
     canvas.addEventListener("wheel", onWheel, { passive: false });
     return () => {
@@ -949,12 +1165,50 @@ export const WinkelMap: React.FC<Props> = ({
     };
   }, []);
 
+  const boundaryStrokeWidth = 1.4;
+  const geographicStrokeWidth = 1.1;
+
   return (
-    <canvas
-      ref={canvasRef}
-      className="absolute inset-0 h-full w-full"
-      style={{ width: "100%", height: "100%" }}
-    />
+    <div className="absolute inset-0 h-full w-full">
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 h-full w-full"
+        style={{ width: "100%", height: "100%" }}
+      />
+      <svg
+        className="absolute inset-0 h-full w-full"
+        width={renderWidth}
+        height={renderHeight}
+        viewBox={`0 0 ${renderWidth} ${renderHeight}`}
+        style={{ pointerEvents: "none" }}
+      >
+        {boundaryLinesVisible &&
+          vectorPaths.boundary.map((d, idx) => (
+            <path
+              key={`boundary-${idx}`}
+              d={d}
+              fill="none"
+              stroke="#e5e7eb"
+              strokeWidth={boundaryStrokeWidth}
+              vectorEffect="non-scaling-stroke"
+              shapeRendering="geometricPrecision"
+            />
+          ))}
+        {geographicLinesVisible &&
+          vectorPaths.geographic.map((d, idx) => (
+            <path
+              key={`geographic-${idx}`}
+              d={d}
+              fill="none"
+              stroke="#9ca3af"
+              strokeWidth={geographicStrokeWidth}
+              vectorEffect="non-scaling-stroke"
+              shapeRendering="geometricPrecision"
+              opacity={0.85}
+            />
+          ))}
+      </svg>
+    </div>
   );
 };
 
