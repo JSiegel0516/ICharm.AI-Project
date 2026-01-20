@@ -498,8 +498,8 @@ def _generate_textures(
 
     # Adjust opacity
     if rgba.size:
-        alpha_scale = 0.85
-        alpha = rgba[..., 3].astype(np.float32) * alpha_scale
+        # Keep full alpha to avoid washing out the palette.
+        alpha = rgba[..., 3].astype(np.float32)
         rgba[..., 3] = np.clip(alpha, 0, 255).astype(np.uint8)
 
     # CRITICAL: Use EXACT data bounds - no adjustments or extensions
