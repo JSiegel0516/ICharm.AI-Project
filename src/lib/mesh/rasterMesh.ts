@@ -18,6 +18,7 @@ type RasterMeshOptions = {
   colors: string[];
   wrapSeam?: boolean;
   opacity?: number;
+  smoothValues?: boolean;
 };
 
 const shouldWrapSeam = (lon: Float64Array) => {
@@ -118,6 +119,46 @@ const expandForSeam = (
   };
 };
 
+const smoothRasterValues = (
+  values: Float32Array,
+  rows: number,
+  cols: number,
+  mask?: Uint8Array,
+) => {
+  if (!rows || !cols) {
+    return values;
+  }
+
+  const output = new Float32Array(values.length);
+  for (let r = 0; r < rows; r += 1) {
+    for (let c = 0; c < cols; c += 1) {
+      const idx = r * cols + c;
+      if (mask && mask[idx] === 0) {
+        output[idx] = values[idx];
+        continue;
+      }
+      let sum = 0;
+      let count = 0;
+      for (let dr = -1; dr <= 1; dr += 1) {
+        const rr = r + dr;
+        if (rr < 0 || rr >= rows) continue;
+        for (let dc = -1; dc <= 1; dc += 1) {
+          const cc = c + dc;
+          if (cc < 0 || cc >= cols) continue;
+          const nIdx = rr * cols + cc;
+          if (mask && mask[nIdx] === 0) continue;
+          const value = values[nIdx];
+          if (!Number.isFinite(value)) continue;
+          sum += value;
+          count += 1;
+        }
+      }
+      output[idx] = count ? sum / count : values[idx];
+    }
+  }
+  return output;
+};
+
 export const buildRasterMesh = (options: RasterMeshOptions): RasterMesh => {
   const {
     lat,
@@ -129,6 +170,7 @@ export const buildRasterMesh = (options: RasterMeshOptions): RasterMesh => {
     colors,
     wrapSeam = true,
     opacity = 1,
+    smoothValues = false,
   } = options;
 
   if (!lat.length || !lon.length || !values.length) {
@@ -142,18 +184,26 @@ export const buildRasterMesh = (options: RasterMeshOptions): RasterMesh => {
   }
 
   const normalized = ensureAscendingGrid(lat, lon, values, mask);
+  const smoothedValues = smoothValues
+    ? smoothRasterValues(
+        normalized.values,
+        normalized.lat.length,
+        normalized.lon.length,
+        normalized.mask,
+      )
+    : normalized.values;
   const prepared =
     wrapSeam && shouldWrapSeam(normalized.lon)
       ? expandForSeam(
           normalized.lat,
           normalized.lon,
-          normalized.values,
+          smoothedValues,
           normalized.mask,
         )
       : {
           lat: normalized.lat,
           lon: normalized.lon,
-          values: normalized.values,
+          values: smoothedValues,
           mask: normalized.mask,
           rows: normalized.lat.length,
           cols: normalized.lon.length,

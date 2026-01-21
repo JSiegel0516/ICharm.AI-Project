@@ -1117,6 +1117,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         });
 
         const newLayers: any[] = [];
+        const visible = !useMeshRasterActiveRef.current;
 
         layerData.textures.forEach((texture, index) => {
           try {
@@ -1139,12 +1140,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             layer.saturation = 1.0;
             layer.gamma = 1.0;
 
-            layer.minificationFilter = rasterBlurEnabled
-              ? cesiumInstance.TextureMinificationFilter.LINEAR
-              : cesiumInstance.TextureMinificationFilter.NEAREST;
-            layer.magnificationFilter = rasterBlurEnabled
-              ? cesiumInstance.TextureMagnificationFilter.LINEAR
-              : cesiumInstance.TextureMagnificationFilter.NEAREST;
+            layer.minificationFilter =
+              cesiumInstance.TextureMinificationFilter.LINEAR;
+            layer.magnificationFilter =
+              cesiumInstance.TextureMagnificationFilter.LINEAR;
 
             viewer.scene.imageryLayers.raiseToTop(layer);
             newLayers.push(layer);
@@ -1156,10 +1155,11 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         rasterLayerRef.current = newLayers;
         const fadeDuration = 220;
 
-        const targetOpacity = rasterOpacity;
+        const targetOpacity = visible ? rasterOpacity : 0;
         animateLayerAlpha(newLayers, 0, targetOpacity, fadeDuration, () => {
           newLayers.forEach((layer) => {
             layer.alpha = targetOpacity;
+            layer.show = visible;
           });
         });
 
@@ -1177,13 +1177,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
         viewer.scene.requestRender();
       },
-      [
-        animateLayerAlpha,
-        cesiumInstance,
-        rasterOpacity,
-        rasterBlurEnabled,
-        viewerReady,
-      ],
+      [animateLayerAlpha, cesiumInstance, rasterOpacity, viewerReady],
     );
 
     const clearRasterMesh = useCallback(() => {
@@ -1555,6 +1549,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         max,
         colors: currentDataset.colorScale.colors,
         opacity: effectiveOpacity,
+        smoothValues: rasterBlurEnabled,
       });
       applyRasterMesh(mesh);
     }, [
@@ -1562,6 +1557,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       clearRasterMesh,
       currentDataset?.colorScale?.colors,
       rasterGridState.data,
+      rasterBlurEnabled,
       rasterOpacity,
       satelliteLayerVisible,
       useMeshRaster,

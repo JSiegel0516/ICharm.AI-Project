@@ -418,7 +418,7 @@ const useAppStateInternal = () => {
       geographicLinesVisible: false,
       rasterOpacity: 0.9,
       hideZeroPrecipitation: false,
-      rasterBlurEnabled: true,
+      rasterBlurEnabled: false,
     },
     selectedColorMap: "dataset-default",
     selectedColorMapInverse: DEFAULT_COLOR_MAP_INVERSE,

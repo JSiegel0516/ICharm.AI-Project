@@ -339,7 +339,7 @@ export default function HomePage() {
     geographicLinesVisible: false,
     rasterOpacity: 0.9,
     hideZeroPrecipitation: false,
-    rasterBlurEnabled: true,
+    rasterBlurEnabled: false,
     colorbarCustomMin: null,
     colorbarCustomMax: null,
     viewMode: "3d",
