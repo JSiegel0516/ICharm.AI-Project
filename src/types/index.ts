@@ -248,6 +248,7 @@ export interface GlobeProps {
   rasterOpacity?: number;
   hideZeroPrecipitation?: boolean;
   rasterBlurEnabled?: boolean;
+  useMeshRaster?: boolean;
   // Disable loading overlays during timeline playback
   isPlaying?: boolean;
   prefetchedRasters?:

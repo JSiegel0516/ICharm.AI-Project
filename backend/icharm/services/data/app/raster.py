@@ -546,6 +546,154 @@ def _generate_textures(
     return textures, texture_upscale
 
 
+def serialize_raster_grid_array(
+    da: xr.DataArray,
+    row: pd.Series,
+    dataset_name: str,
+    value_min_override: Optional[float] = None,
+    value_max_override: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Serialize raster array as raw grid (lat/lon/value/mask)."""
+    print("[RasterGrid DEBUG] serialize_raster_grid_array called:")
+    print(f"  dataset_name: {dataset_name}")
+    print(f"  value_min_override: {value_min_override}")
+    print(f"  value_max_override: {value_max_override}")
+
+    array = da.squeeze()
+    if array.ndim > 2:
+        raise ValueError(
+            "Raster slice is not 2-dimensional after selecting time and level."
+        )
+
+    array, lat_dim, lon_dim = _transpose_to_lat_lon(array)
+
+    lat_coord_name = _find_coord_name(array, ["lat", "latitude", "y"]) or lat_dim
+    lon_coord_name = _find_coord_name(array, ["lon", "longitude", "x"]) or lon_dim
+
+    lat_values = np.asarray(array.coords[lat_coord_name].values, dtype=np.float64)
+    lon_values = np.asarray(array.coords[lon_coord_name].values, dtype=np.float64)
+    data = np.asarray(array.values, dtype=np.float32)
+
+    print(
+        f"[RasterGrid DEBUG] Data array shape after conversion to numpy: {data.shape}"
+    )
+    print(f"[RasterGrid DEBUG] Data min in serialize: {np.nanmin(data)}")
+    print(f"[RasterGrid DEBUG] Data max in serialize: {np.nanmax(data)}")
+    print(f"[RasterGrid DEBUG] Zero count in serialize: {np.sum(data == 0.0)}")
+    print(f"[RasterGrid DEBUG] NaN count in serialize: {np.sum(np.isnan(data))}")
+
+    if data.ndim != 2:
+        raise ValueError("Raster slice is not 2-dimensional after selection.")
+
+    finite_mask = np.isfinite(data)
+
+    # Normalize 0–360 longitude grids to -180–180 and re-sort data accordingly
+    try:
+        lon_min = float(np.nanmin(lon_values))
+        lon_max = float(np.nanmax(lon_values))
+        lon_range = lon_max - lon_min
+        if lon_range > 300 and lon_min >= 0.0 and lon_max <= 360.0001:
+            shifted = ((lon_values + 180.0) % 360.0) - 180.0
+            order = np.argsort(shifted)
+            lon_values = shifted[order]
+            data = data[:, order]
+            finite_mask = finite_mask[:, order]
+            print(
+                f"[RasterViz] Normalized longitudes from 0–360 to -180–180 for global wrap (range {lon_range:.2f})"
+            )
+    except Exception as e:
+        print(f"[RasterViz] Longitude normalization skipped due to error: {e}")
+
+    # Remove known fill values
+    fill_values: List[float] = []
+    for key in _FILL_ATTR_KEYS:
+        fill_values.extend(_decode_fill_values(array.attrs.get(key)))
+    fill_values.extend(_decode_fill_values(row.get("fillValue")))
+
+    if fill_values:
+        data = data.copy()
+        fill_values_arr = np.array(fill_values, dtype=np.float64)
+        fill_values_arr = fill_values_arr[np.isfinite(fill_values_arr)]
+        if fill_values_arr.size:
+            fill_mask = np.zeros_like(data, dtype=bool)
+            for value in fill_values_arr:
+                atol = max(1e-6, abs(value) * 1e-12)
+                fill_mask |= np.isclose(data, value, rtol=0.0, atol=atol)
+            if fill_mask.any():
+                print(
+                    f"[RasterViz] Applied fill mask using values: "
+                    f"{np.unique(fill_values_arr)[:5]}...",
+                )
+                data[fill_mask] = np.nan
+                finite_mask &= ~fill_mask
+
+    finite_mask = np.isfinite(data) & finite_mask
+
+    # Apply land/ocean mask for special datasets
+    data, finite_mask = _apply_land_ocean_mask(dataset_name, data, finite_mask)
+
+    print(
+        "[RasterGrid DEBUG] After land/ocean mask - valid pixels: "
+        f"{finite_mask.sum()} / {finite_mask.size}"
+    )
+
+    # Mask large fill-value sentinels that aren't captured by metadata.
+    sentinel_mask = np.abs(data) >= 1.0e19
+    if np.any(sentinel_mask):
+        data = data.copy()
+        data[sentinel_mask] = np.nan
+        finite_mask &= ~sentinel_mask
+        print(
+            "[RasterGrid DEBUG] Masked sentinel fill values: "
+            f"{np.count_nonzero(sentinel_mask)}"
+        )
+
+    data_min = float(data[finite_mask].min()) if finite_mask.any() else None
+    data_max = float(data[finite_mask].max()) if finite_mask.any() else None
+
+    meta_min = _maybe_float(row.get("valueMin"))
+    meta_max = _maybe_float(row.get("valueMax"))
+
+    if value_min_override is not None and np.isfinite(value_min_override):
+        meta_min = float(value_min_override)
+        print(f"[RasterGrid DEBUG] Overriding min: {meta_min}")
+
+    if value_max_override is not None and np.isfinite(value_max_override):
+        meta_max = float(value_max_override)
+        print(f"[RasterGrid DEBUG] Overriding max: {meta_max}")
+
+    print(f"[RasterGrid DEBUG] Final range for color mapping: [{meta_min}, {meta_max}]")
+
+    units = array.attrs.get("units") or row.get("units") or row.get("unit") or "units"
+
+    encoded_values = base64.b64encode(data.astype(np.float32).tobytes()).decode("ascii")
+    mask = finite_mask.astype(np.uint8)
+    encoded_mask = base64.b64encode(mask.tobytes()).decode("ascii")
+
+    return {
+        "dataset": dataset_name,
+        "shape": [int(data.shape[0]), int(data.shape[1])],
+        "lat": lat_values.astype(float).tolist(),
+        "lon": lon_values.astype(float).tolist(),
+        "values": encoded_values,
+        "mask": encoded_mask,
+        "dataEncoding": {"format": "base64", "dtype": "float32"},
+        "maskEncoding": {"format": "base64", "dtype": "uint8"},
+        "valueRange": {
+            "min": meta_min if meta_min is not None else data_min,
+            "max": meta_max if meta_max is not None else data_max,
+        },
+        "actualRange": {"min": data_min, "max": data_max},
+        "units": units,
+        "rectangle": {
+            "west": float(np.min(lon_values)),
+            "south": float(np.min(lat_values)),
+            "east": float(np.max(lon_values)),
+            "north": float(np.max(lat_values)),
+        },
+    }
+
+
 def serialize_raster_array(
     da: xr.DataArray,
     row: pd.Series,
@@ -601,7 +749,8 @@ def serialize_raster_array(
             data = data[:, order]
             finite_mask = finite_mask[:, order]
             print(
-                f"[RasterViz] Normalized longitudes from 0–360 to -180–180 for global wrap (range {lon_range:.2f})"
+                "[RasterViz] Normalized longitudes from 0–360 to -180–180 "
+                f"for global wrap (range {lon_range:.2f})"
             )
     except Exception as e:
         print(f"[RasterViz] Longitude normalization skipped due to error: {e}")
@@ -623,7 +772,7 @@ def serialize_raster_array(
                 fill_mask |= np.isclose(data, value, rtol=0.0, atol=atol)
             if fill_mask.any():
                 print(
-                    f"[RasterViz] Applied fill mask using values: "
+                    "[RasterViz] Applied fill mask using values: "
                     f"{np.unique(fill_values_arr)[:5]}...",
                 )
                 data[fill_mask] = np.nan
@@ -635,7 +784,8 @@ def serialize_raster_array(
     data, finite_mask = _apply_land_ocean_mask(dataset_name, data, finite_mask)
 
     print(
-        f"[RasterViz DEBUG] After land/ocean mask - valid pixels: {finite_mask.sum()} / {finite_mask.size}"
+        "[RasterViz DEBUG] After land/ocean mask - valid pixels: "
+        f"{finite_mask.sum()} / {finite_mask.size}"
     )
 
     data_min = float(data[finite_mask].min()) if finite_mask.any() else None
@@ -696,4 +846,4 @@ def serialize_raster_array(
     }
 
 
-__all__ = ["serialize_raster_array"]
+__all__ = ["serialize_raster_array", "serialize_raster_grid_array"]

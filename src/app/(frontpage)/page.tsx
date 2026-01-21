@@ -337,7 +337,7 @@ export default function HomePage() {
     satelliteLayerVisible: true,
     boundaryLinesVisible: true,
     geographicLinesVisible: false,
-    rasterOpacity: 1,
+    rasterOpacity: 0.9,
     hideZeroPrecipitation: false,
     rasterBlurEnabled: true,
     colorbarCustomMin: null,
@@ -895,6 +895,8 @@ export default function HomePage() {
     setRasterMeta(null);
   }, [selectedPressureLevel, hasPressureLevels]);
 
+  const useMeshRaster = true;
+
   // Memoized Globe
   const memoizedGlobe = useMemo(
     () => (
@@ -911,6 +913,7 @@ export default function HomePage() {
         geographicLinesVisible={globeSettings.geographicLinesVisible}
         rasterOpacity={globeSettings.rasterOpacity}
         rasterBlurEnabled={globeSettings.rasterBlurEnabled}
+        useMeshRaster={useMeshRaster}
         viewMode={globeSettings.viewMode ?? "3d"}
         onRasterMetadataChange={setRasterMeta}
         isPlaying={visualizationStatus === "playing"}
@@ -929,6 +932,7 @@ export default function HomePage() {
       globeSettings.rasterOpacity,
       globeSettings.rasterBlurEnabled,
       globeSettings.hideZeroPrecipitation,
+      useMeshRaster,
       colorbarRange,
       globeSettings.viewMode,
       prefetchedRasters,
