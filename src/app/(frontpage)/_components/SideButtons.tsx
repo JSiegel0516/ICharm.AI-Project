@@ -28,6 +28,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { GlobeSettingsPanel } from "@/app/(frontpage)/_components/GlobeSettingsPanel";
 import { useAppState } from "@/context/HeaderContext";
 import type { Dataset, GlobeSettings } from "@/types";
+import { Database, Cloud, Globe } from "lucide-react";
 
 interface SideButtonsProps {
   selectedDate: Date;
@@ -94,10 +95,52 @@ export function SideButtons({
     currentDataset ? new Set([currentDataset.id]) : new Set(),
   );
   const [calendarMonth, setCalendarMonth] = useState(selectedDate);
+  const [dataSourceFilter, setDataSourceFilter] = useState<
+    "all" | "local" | "cloud"
+  >("all");
 
   // Refs for click-outside detection
   const calendarRef = useRef<HTMLDivElement>(null);
   const datasetCardRef = useRef<HTMLDivElement>(null);
+
+  // Filter datasets based on source
+  const filteredDatasets = useMemo(() => {
+    console.log("=== FILTER DEBUG ===");
+    console.log("Filter selected:", dataSourceFilter);
+    console.log("Total datasets:", datasets.length);
+
+    // Check what stored values actually exist
+    const storedValues = datasets.map((d) => ({
+      name: d.name,
+      stored: d.backend?.stored,
+      backendExists: !!d.backend,
+    }));
+    console.log("Dataset stored values:", storedValues);
+
+    const filtered = datasets.filter((dataset) => {
+      if (dataSourceFilter === "all") return true;
+
+      const storedValue = dataset.backend?.stored?.toLowerCase();
+      console.log(
+        `Checking ${dataset.name}: stored="${storedValue}", filter="${dataSourceFilter}"`,
+      );
+
+      if (dataSourceFilter === "local") {
+        return storedValue === "local" || storedValue === "postgres";
+      }
+
+      if (dataSourceFilter === "cloud") {
+        return storedValue === "cloud";
+      }
+
+      return true;
+    });
+
+    console.log("Filtered count:", filtered.length);
+    console.log("===================");
+
+    return filtered;
+  }, [datasets, dataSourceFilter]);
 
   // Get date range from current dataset
   const dateRange = useMemo(() => {
@@ -477,6 +520,41 @@ export function SideButtons({
                 <CardDescription>
                   Choose a dataset to visualize on the globe
                 </CardDescription>
+
+                {/* Source Filter Buttons */}
+                <div className="flex gap-2 pt-3">
+                  <Button
+                    variant={dataSourceFilter === "all" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setDataSourceFilter("all")}
+                    className="flex-1"
+                  >
+                    <Globe className="mr-1.5 h-3.5 w-3.5" />
+                    All
+                  </Button>
+                  <Button
+                    variant={
+                      dataSourceFilter === "local" ? "default" : "outline"
+                    }
+                    size="sm"
+                    onClick={() => setDataSourceFilter("local")}
+                    className="flex-1"
+                  >
+                    <Database className="mr-1.5 h-3.5 w-3.5" />
+                    Local
+                  </Button>
+                  <Button
+                    variant={
+                      dataSourceFilter === "cloud" ? "default" : "outline"
+                    }
+                    size="sm"
+                    onClick={() => setDataSourceFilter("cloud")}
+                    className="flex-1"
+                  >
+                    <Cloud className="mr-1.5 h-3.5 w-3.5" />
+                    Cloud
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="max-h-96 space-y-3 overflow-y-auto">
                 {isLoading && (
@@ -491,13 +569,13 @@ export function SideButtons({
                   </div>
                 )}
 
-                {!isLoading && !error && datasets.length === 0 && (
+                {!isLoading && !error && filteredDatasets.length === 0 && (
                   <div className="rounded border border-slate-600 bg-slate-800/50 p-3 text-sm text-slate-300">
                     No datasets available. Please try again later.
                   </div>
                 )}
 
-                {datasets.map((dataset: Dataset) => {
+                {filteredDatasets.map((dataset: Dataset) => {
                   const isSelected = selectedDatasets.has(dataset.id);
                   const category =
                     dataset.backend?.datasetType ?? dataset.dataType;
@@ -518,7 +596,7 @@ export function SideButtons({
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1">
-                          <h3 className="text-sm font-medium text-white">
+                          <h3 className="text-primary text-sm font-medium">
                             {dataset.name}
                           </h3>
                           <p className="mt-1 text-xs text-slate-400">
@@ -533,9 +611,22 @@ export function SideButtons({
                                 Resolution: {resolution}
                               </span>
                             )}
-                            <span className="text-xs text-slate-500">
-                              Updated: {lastUpdated}
-                            </span>
+                            <div className="flex items-center gap-3">
+                              <Badge
+                                variant="outline"
+                                className="flex items-center gap-1 text-xs"
+                              >
+                                {dataset.backend?.stored === "local" ? (
+                                  <Database className="text-chart-2 h-3 w-3" />
+                                ) : (
+                                  <Cloud className="text-chart-1 h-3 w-3" />
+                                )}
+                                {dataset.backend?.stored}
+                              </Badge>
+                              <span className="text-xs text-slate-500">
+                                Updated: {lastUpdated}
+                              </span>
+                            </div>
                           </div>
                         </div>
                         <div

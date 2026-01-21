@@ -9,9 +9,9 @@ export interface DatasetBackendDetails {
   statistic: string | null;
   datasetType: string | null;
   levels: string | null;
-  levelValues: number[];
+  levelValues: string | null;
   levelUnits: string | null;
-  stored: "local" | "cloud" | null;
+  stored: string | null;
   inputFile: string | null;
   keyVariable: string | null;
   units: string | null;
