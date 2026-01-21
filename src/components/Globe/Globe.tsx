@@ -297,7 +297,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const textureLoadIdRef = useRef(0);
     const isComponentUnmountedRef = useRef(false);
     const isUpdatingMarkerRef = useRef(false);
-    const rasterMeshRef = useRef<any>(null);
+    const rasterMeshRef = useRef<any | any[] | null>(null);
 
     const rasterDataRef = useRef<RasterLayerData | undefined>(undefined);
     const [winkelClearMarkerTick, setWinkelClearMarkerTick] = useState(0);
@@ -306,6 +306,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       currentDataset?.dataType === "precipitation" ||
       datasetName.includes("cmorph");
     const shouldHideZero = datasetSupportsZeroMask && hideZeroPrecipitation;
+    const shouldTileLargeMesh =
+      datasetName.includes("noaa/cires/doe") ||
+      (currentDataset?.id ?? "").toLowerCase().includes("noaa-cires-doe");
     const rasterLayerDataset = currentDataset;
     const rasterState = useRasterLayer({
       dataset: rasterLayerDataset,
@@ -1186,7 +1189,17 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
       try {
-        viewer.scene.primitives.remove(rasterMeshRef.current);
+        if (Array.isArray(rasterMeshRef.current)) {
+          rasterMeshRef.current.forEach((primitive) => {
+            try {
+              viewer.scene.primitives.remove(primitive);
+            } catch (err) {
+              console.warn("Failed to remove tile primitive", err);
+            }
+          });
+        } else {
+          viewer.scene.primitives.remove(rasterMeshRef.current);
+        }
       } catch (err) {
         console.warn("Failed to remove raster mesh", err);
       }
@@ -1203,7 +1216,113 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
         clearRasterMesh();
 
-        if (!meshData || meshData.positionsDegrees.length === 0) {
+        if (!meshData || meshData.rows === 0 || meshData.cols === 0) {
+          return;
+        }
+
+        if (meshData.tiles && meshData.tiles.length > 0) {
+          const primitives: any[] = [];
+          const surfaceOffset = 20000;
+
+          for (const tile of meshData.tiles) {
+            const tileVerts = tile.rows * tile.cols;
+            const positions = new Float64Array(tileVerts * 3);
+            for (let i = 0; i < tileVerts; i += 1) {
+              const lon = tile.positionsDegrees[i * 2];
+              const lat = tile.positionsDegrees[i * 2 + 1];
+              const cart = cesiumInstance.Cartesian3.fromDegrees(
+                lon,
+                lat,
+                surfaceOffset,
+              );
+              const outIdx = i * 3;
+              positions[outIdx] = cart.x;
+              positions[outIdx + 1] = cart.y;
+              positions[outIdx + 2] = cart.z;
+            }
+
+            const geometry = new cesiumInstance.Geometry({
+              attributes: {
+                position: new cesiumInstance.GeometryAttribute({
+                  componentDatatype: cesiumInstance.ComponentDatatype.DOUBLE,
+                  componentsPerAttribute: 3,
+                  values: positions,
+                }),
+                color: new cesiumInstance.GeometryAttribute({
+                  componentDatatype:
+                    cesiumInstance.ComponentDatatype.UNSIGNED_BYTE,
+                  componentsPerAttribute: 4,
+                  values: tile.colors,
+                  normalize: true,
+                }),
+                batchId: new cesiumInstance.GeometryAttribute({
+                  componentDatatype: cesiumInstance.ComponentDatatype.FLOAT,
+                  componentsPerAttribute: 1,
+                  values: new Float32Array(tileVerts),
+                }),
+              },
+              indices: tile.indices,
+              primitiveType: cesiumInstance.PrimitiveType.TRIANGLES,
+              boundingSphere:
+                cesiumInstance.BoundingSphere.fromVertices(positions),
+              indexDatatype: cesiumInstance.IndexDatatype.UNSIGNED_INT,
+            });
+
+            const instance = new cesiumInstance.GeometryInstance({ geometry });
+
+            const isOpaque = rasterOpacity >= 0.999;
+            const appearance = new cesiumInstance.Appearance({
+              vertexFormat: cesiumInstance.VertexFormat.POSITION_AND_COLOR,
+              renderState: {
+                depthTest: { enabled: true },
+                depthMask: true,
+                blending: isOpaque
+                  ? undefined
+                  : cesiumInstance.BlendingState.ALPHA_BLEND,
+                cull: { enabled: false },
+                polygonOffset: { enabled: true, factor: -1, units: -1 },
+              },
+              translucent: !isOpaque,
+              closed: false,
+              vertexShaderSource: `
+                attribute vec3 position3DHigh;
+                attribute vec3 position3DLow;
+                attribute vec4 color;
+                attribute float batchId;
+                varying vec4 v_color;
+                void main() {
+                  vec4 position = czm_computePosition();
+                  v_color = color;
+                  gl_Position = czm_modelViewProjectionRelativeToEye * position;
+                }
+              `,
+              fragmentShaderSource: `
+                varying vec4 v_color;
+                void main() {
+                  gl_FragColor = v_color;
+                }
+              `,
+            });
+
+            const primitive = new cesiumInstance.Primitive({
+              geometryInstances: instance,
+              appearance,
+              asynchronous: true,
+            });
+
+            primitives.push(primitive);
+            viewer.scene.primitives.add(primitive);
+          }
+
+          rasterMeshRef.current = primitives;
+          primitives.forEach((primitive) => {
+            try {
+              viewer.scene.primitives.lowerToBottom(primitive);
+            } catch (err) {
+              console.warn("Failed to lower tile primitive", err);
+            }
+          });
+          viewer.scene.requestRender();
           return;
         }
 
@@ -1331,10 +1450,28 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             rasterLayerRef.current = [];
           }
           if (rasterMeshRef.current) {
-            try {
-              viewerRef.current.scene.primitives.remove(rasterMeshRef.current);
-            } catch (err) {
-              console.warn("Failed to remove raster mesh during cleanup", err);
+            if (Array.isArray(rasterMeshRef.current)) {
+              rasterMeshRef.current.forEach((primitive) => {
+                try {
+                  viewerRef.current.scene.primitives.remove(primitive);
+                } catch (err) {
+                  console.warn(
+                    "Failed to remove tile primitive during cleanup",
+                    err,
+                  );
+                }
+              });
+            } else {
+              try {
+                viewerRef.current.scene.primitives.remove(
+                  rasterMeshRef.current,
+                );
+              } catch (err) {
+                console.warn(
+                  "Failed to remove raster mesh during cleanup",
+                  err,
+                );
+              }
             }
             rasterMeshRef.current = null;
           }
@@ -1550,6 +1687,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         colors: currentDataset.colorScale.colors,
         opacity: effectiveOpacity,
         smoothValues: rasterBlurEnabled,
+        useTiling: shouldTileLargeMesh,
       });
       applyRasterMesh(mesh);
     }, [
@@ -1560,6 +1698,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       rasterBlurEnabled,
       rasterOpacity,
       satelliteLayerVisible,
+      shouldTileLargeMesh,
       useMeshRaster,
       useMeshRasterActive,
       viewerReady,

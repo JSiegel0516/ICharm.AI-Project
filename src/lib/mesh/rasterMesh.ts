@@ -6,6 +6,19 @@ export type RasterMesh = {
   indices: Uint32Array;
   rows: number;
   cols: number;
+  tiles?: RasterMeshTile[];
+};
+
+export type RasterMeshTile = {
+  positionsDegrees: Float64Array;
+  colors: Uint8Array;
+  indices: Uint32Array;
+  rows: number;
+  cols: number;
+  rowStart: number;
+  rowEnd: number;
+  colStart: number;
+  colEnd: number;
 };
 
 type RasterMeshOptions = {
@@ -19,6 +32,13 @@ type RasterMeshOptions = {
   wrapSeam?: boolean;
   opacity?: number;
   smoothValues?: boolean;
+  useTiling?: boolean;
+};
+
+const MAX_VERTS_PER_TILE = 32000;
+
+export const shouldTileMesh = (rows: number, cols: number): boolean => {
+  return rows * cols > MAX_VERTS_PER_TILE;
 };
 
 const shouldWrapSeam = (lon: Float64Array) => {
@@ -159,29 +179,15 @@ const smoothRasterValues = (
   return output;
 };
 
-export const buildRasterMesh = (options: RasterMeshOptions): RasterMesh => {
+const prepareRasterMesh = (options: RasterMeshOptions) => {
   const {
     lat,
     lon,
     values,
     mask,
-    min,
-    max,
-    colors,
     wrapSeam = true,
-    opacity = 1,
     smoothValues = false,
   } = options;
-
-  if (!lat.length || !lon.length || !values.length) {
-    return {
-      positionsDegrees: new Float64Array(),
-      colors: new Uint8Array(),
-      indices: new Uint32Array(),
-      rows: 0,
-      cols: 0,
-    };
-  }
 
   const normalized = ensureAscendingGrid(lat, lon, values, mask);
   const smoothedValues = smoothValues
@@ -192,23 +198,38 @@ export const buildRasterMesh = (options: RasterMeshOptions): RasterMesh => {
         normalized.mask,
       )
     : normalized.values;
-  const prepared =
-    wrapSeam && shouldWrapSeam(normalized.lon)
-      ? expandForSeam(
-          normalized.lat,
-          normalized.lon,
-          smoothedValues,
-          normalized.mask,
-        )
-      : {
-          lat: normalized.lat,
-          lon: normalized.lon,
-          values: smoothedValues,
-          mask: normalized.mask,
-          rows: normalized.lat.length,
-          cols: normalized.lon.length,
-        };
 
+  return wrapSeam && shouldWrapSeam(normalized.lon)
+    ? expandForSeam(
+        normalized.lat,
+        normalized.lon,
+        smoothedValues,
+        normalized.mask,
+      )
+    : {
+        lat: normalized.lat,
+        lon: normalized.lon,
+        values: smoothedValues,
+        mask: normalized.mask,
+        rows: normalized.lat.length,
+        cols: normalized.lon.length,
+      };
+};
+
+const buildSingleMesh = (
+  prepared: {
+    lat: Float64Array;
+    lon: Float64Array;
+    values: Float32Array;
+    mask?: Uint8Array;
+    rows: number;
+    cols: number;
+  },
+  min: number,
+  max: number,
+  colors: string[],
+  opacity: number,
+): RasterMesh => {
   const rows = prepared.rows;
   const cols = prepared.cols;
   const totalVerts = rows * cols;
@@ -262,4 +283,156 @@ export const buildRasterMesh = (options: RasterMeshOptions): RasterMesh => {
     rows,
     cols,
   };
+};
+
+export const buildRasterMeshTiles = (
+  options: RasterMeshOptions,
+): RasterMesh => {
+  const { min, max, colors, opacity = 1 } = options;
+  const prepared = prepareRasterMesh(options);
+  const rows = prepared.rows;
+  const cols = prepared.cols;
+  const totalVerts = rows * cols;
+
+  if (!shouldTileMesh(rows, cols)) {
+    return buildSingleMesh(prepared, min, max, colors, opacity);
+  }
+
+  const vertsPerRow = cols;
+  let maxRowsPerTile = Math.max(
+    2,
+    Math.floor(MAX_VERTS_PER_TILE / vertsPerRow),
+  );
+  let maxColsPerTile = Math.min(cols, MAX_VERTS_PER_TILE);
+
+  if (rows > maxRowsPerTile && maxRowsPerTile > 2) {
+    maxRowsPerTile -= 1;
+  }
+  if (cols > maxColsPerTile && maxColsPerTile > 2) {
+    maxColsPerTile -= 1;
+  }
+
+  const numRowTiles = Math.ceil(rows / maxRowsPerTile);
+  const numColTiles = Math.ceil(cols / maxColsPerTile);
+  const rowOverlap = numRowTiles > 1 ? 1 : 0;
+  const colOverlap = numColTiles > 1 ? 1 : 0;
+
+  const tiles: RasterMeshTile[] = [];
+  const stops = buildColorStops(colors);
+
+  for (let tileRow = 0; tileRow < numRowTiles; tileRow += 1) {
+    for (let tileCol = 0; tileCol < numColTiles; tileCol += 1) {
+      const rowStart = tileRow * maxRowsPerTile;
+      const baseRowEnd = rowStart + maxRowsPerTile;
+      const rowEnd =
+        tileRow < numRowTiles - 1
+          ? Math.min(baseRowEnd + rowOverlap, rows)
+          : Math.min(baseRowEnd, rows);
+      const colStart = tileCol * maxColsPerTile;
+      const baseColEnd = colStart + maxColsPerTile;
+      const colEnd =
+        tileCol < numColTiles - 1
+          ? Math.min(baseColEnd + colOverlap, cols)
+          : Math.min(baseColEnd, cols);
+
+      const tileRows = rowEnd - rowStart;
+      const tileCols = colEnd - colStart;
+      const tileVerts = tileRows * tileCols;
+
+      const tilePositions = new Float64Array(tileVerts * 2);
+      const tileColors = new Uint8Array(tileVerts * 4);
+
+      let tileIdx = 0;
+      for (let r = rowStart; r < rowEnd; r += 1) {
+        const latValue = prepared.lat[r];
+        for (let c = colStart; c < colEnd; c += 1) {
+          const lonValue = prepared.lon[c];
+          const origIdx = r * cols + c;
+
+          tilePositions[tileIdx * 2] = lonValue;
+          tilePositions[tileIdx * 2 + 1] = latValue;
+
+          if (prepared.mask && prepared.mask[origIdx] === 0) {
+            tileColors.set([0, 0, 0, 0], tileIdx * 4);
+          } else {
+            const value = prepared.values[origIdx];
+            const rgba = mapValueToRgba(value, min, max, stops);
+            rgba[3] = Math.round(rgba[3] * opacity);
+            tileColors.set(rgba, tileIdx * 4);
+          }
+
+          tileIdx += 1;
+        }
+      }
+
+      const tileQuadCount = (tileRows - 1) * (tileCols - 1);
+      const tileIndices = new Uint32Array(tileQuadCount * 6);
+      let offset = 0;
+      for (let r = 0; r < tileRows - 1; r += 1) {
+        for (let c = 0; c < tileCols - 1; c += 1) {
+          const i0 = r * tileCols + c;
+          const i1 = i0 + 1;
+          const i2 = i0 + tileCols;
+          const i3 = i2 + 1;
+          tileIndices[offset++] = i0;
+          tileIndices[offset++] = i2;
+          tileIndices[offset++] = i1;
+          tileIndices[offset++] = i1;
+          tileIndices[offset++] = i2;
+          tileIndices[offset++] = i3;
+        }
+      }
+
+      tiles.push({
+        positionsDegrees: tilePositions,
+        colors: tileColors,
+        indices: tileIndices,
+        rows: tileRows,
+        cols: tileCols,
+        rowStart,
+        rowEnd,
+        colStart,
+        colEnd,
+      });
+    }
+  }
+
+  return {
+    positionsDegrees: new Float64Array(0),
+    colors: new Uint8Array(0),
+    indices: new Uint32Array(0),
+    rows,
+    cols,
+    tiles,
+  };
+};
+
+export const buildRasterMesh = (options: RasterMeshOptions): RasterMesh => {
+  const {
+    lat,
+    lon,
+    values,
+    min,
+    max,
+    colors,
+    opacity = 1,
+    useTiling,
+  } = options;
+
+  if (!lat.length || !lon.length || !values.length) {
+    return {
+      positionsDegrees: new Float64Array(),
+      colors: new Uint8Array(),
+      indices: new Uint32Array(),
+      rows: 0,
+      cols: 0,
+    };
+  }
+
+  if (useTiling) {
+    return buildRasterMeshTiles(options);
+  }
+
+  const prepared = prepareRasterMesh(options);
+  return buildSingleMesh(prepared, min, max, colors, opacity);
 };
