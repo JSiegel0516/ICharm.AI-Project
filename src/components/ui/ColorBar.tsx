@@ -131,6 +131,9 @@ const ColorBar: React.FC<ColorBarProps> = ({
   const isVertical = orientation === "vertical";
   const [rangeValue, setRangeValue] = useState<[number, number]>([0, 0]);
   const [isRangeEditing, setIsRangeEditing] = useState(false);
+  const [isSliderHovering, setIsSliderHovering] = useState(false);
+  const sliderHoverTimeoutRef = useRef<number | null>(null);
+  const [colorBarSize, setColorBarSize] = useState({ width: 0, height: 0 });
 
   const [uiState, dispatch] = useReducer(uiReducer, {
     position: { x: 24, y: 24 },
@@ -486,6 +489,23 @@ const ColorBar: React.FC<ColorBarProps> = ({
     .join(", ");
 
   const gradientBackground = `linear-gradient(${isVertical ? "to top" : "to right"}, ${gradientStops})`;
+  const sliderOrientation = isVertical ? "horizontal" : "vertical";
+  const sliderContainerClass = isVertical
+    ? "top-full left-1/2 mt-4 w-72 -translate-x-1/2"
+    : "left-full top-1/2 ml-4 w-20 -translate-y-1/2";
+  const sliderClassName = isVertical ? "w-full" : "w-4 flex-col";
+  const sliderLength = useMemo(() => {
+    const clamp = (value: number, min: number, max: number) =>
+      Math.min(max, Math.max(min, value));
+
+    if (isVertical) {
+      const width = colorBarSize.width || 280;
+      return clamp(width - 48, 200, 360);
+    }
+
+    const height = colorBarSize.height || 280;
+    return clamp(height - 48, 180, 360);
+  }, [colorBarSize.height, colorBarSize.width, isVertical]);
 
   // ============================================================================
   // POSITIONING LOGIC
@@ -612,9 +632,53 @@ const ColorBar: React.FC<ColorBarProps> = ({
     }
   }, [onRangeChange, onRangeReset]);
 
+  const handleSliderHoverStart = useCallback(() => {
+    if (sliderHoverTimeoutRef.current !== null) {
+      window.clearTimeout(sliderHoverTimeoutRef.current);
+      sliderHoverTimeoutRef.current = null;
+    }
+    setIsSliderHovering(true);
+  }, []);
+
+  const handleSliderHoverEnd = useCallback(() => {
+    if (sliderHoverTimeoutRef.current !== null) {
+      window.clearTimeout(sliderHoverTimeoutRef.current);
+    }
+    sliderHoverTimeoutRef.current = window.setTimeout(() => {
+      setIsSliderHovering(false);
+      sliderHoverTimeoutRef.current = null;
+    }, 120);
+  }, []);
+
   // ============================================================================
   // EFFECTS
   // ============================================================================
+
+  useEffect(() => {
+    const element = colorBarRef.current;
+    if (!element || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const { width, height } = entry.contentRect;
+      setColorBarSize({ width, height });
+    });
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (sliderHoverTimeoutRef.current !== null) {
+        window.clearTimeout(sliderHoverTimeoutRef.current);
+        sliderHoverTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   // Initialize position on mount
   useEffect(() => {
@@ -741,7 +805,13 @@ const ColorBar: React.FC<ColorBarProps> = ({
           </span>
         </Button>
       ) : (
-        <div className="border-border bg-card/80 text-primary group pointer-events-auto relative rounded-xl border px-6 py-6 backdrop-blur-sm">
+        <div
+          className="border-border bg-card/80 text-primary group pointer-events-auto relative rounded-xl border px-6 py-6 backdrop-blur-sm"
+          onMouseEnter={handleSliderHoverStart}
+          onMouseLeave={handleSliderHoverEnd}
+          onFocusCapture={handleSliderHoverStart}
+          onBlurCapture={handleSliderHoverEnd}
+        >
           {/* Header Controls */}
           <div className="-mt-2 mb-2 flex w-full items-center justify-between gap-2">
             <button
@@ -853,27 +923,49 @@ const ColorBar: React.FC<ColorBarProps> = ({
             )}
           </div>
 
-          <div className="border-border bg-card/90 pointer-events-none absolute top-full left-1/2 z-20 mt-3 w-72 -translate-x-1/2 rounded-xl border px-4 py-3 opacity-0 shadow-lg backdrop-blur-md transition-all duration-200 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
+          <div
+            onMouseEnter={handleSliderHoverStart}
+            onMouseLeave={handleSliderHoverEnd}
+            onFocusCapture={handleSliderHoverStart}
+            onBlurCapture={handleSliderHoverEnd}
+            className={`border-border bg-card/90 absolute z-20 rounded-xl border px-4 py-3 shadow-lg backdrop-blur-md transition-all duration-200 ${sliderContainerClass} ${
+              isRangeEditing || isSliderHovering
+                ? "pointer-events-auto visible opacity-100"
+                : "pointer-events-none invisible opacity-0"
+            }`}
+          >
             <div className="text-muted-foreground mb-3 flex items-center justify-between text-xs font-medium">
               <span>Color Range</span>
+            </div>
+            <div className="flex items-center justify-center gap-3">
+              <Slider
+                min={displayLimits.min}
+                max={displayLimits.max}
+                step={sliderStep}
+                value={rangeValue}
+                onValueChange={handleRangeValueChange}
+                onValueCommit={handleRangeValueCommit}
+                onPointerDown={() => setIsRangeEditing(true)}
+                onPointerCancel={() => setIsRangeEditing(false)}
+                orientation={sliderOrientation}
+                className={sliderClassName}
+                style={
+                  sliderOrientation === "vertical"
+                    ? { height: `${sliderLength}px` }
+                    : { width: `${sliderLength}px` }
+                }
+              />
               {(onRangeReset || onRangeChange) && (
                 <button
                   type="button"
                   onClick={handleRangeReset}
-                  className="text-muted-foreground hover:text-card-foreground text-xs transition-colors"
+                  className="text-muted-foreground hover:text-card-foreground flex h-6 w-6 items-center justify-center rounded-full transition-colors"
+                  aria-label="Reset color range"
                 >
-                  Reset
+                  <RotateCcw className="h-3.5 w-3.5" />
                 </button>
               )}
             </div>
-            <Slider
-              min={displayLimits.min}
-              max={displayLimits.max}
-              step={sliderStep}
-              value={rangeValue}
-              onValueChange={handleRangeValueChange}
-              onValueCommit={handleRangeValueCommit}
-            />
             <div className="text-muted-foreground mt-2 flex items-center justify-between text-[11px]">
               <span>
                 Min {formatRangeValue(rangeValue[0])}
