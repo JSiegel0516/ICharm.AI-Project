@@ -587,6 +587,32 @@ export default function HomePage() {
     try {
       const nextMap = new Map<string, RasterLayerData>();
       const nextGridMap = new Map<string, RasterGridData>();
+      const loadedImageUrls = new Set<string>();
+      const preloadTextureImages = async (
+        textures: RasterLayerData["textures"],
+      ) => {
+        if (!Array.isArray(textures) || textures.length === 0) {
+          return;
+        }
+        await Promise.all(
+          textures.map((texture) => {
+            const url =
+              typeof texture?.imageUrl === "string"
+                ? texture.imageUrl.trim()
+                : "";
+            if (!url || loadedImageUrls.has(url)) {
+              return Promise.resolve();
+            }
+            loadedImageUrls.add(url);
+            return new Promise<void>((resolve) => {
+              const image = new Image();
+              image.onload = () => resolve();
+              image.onerror = () => resolve();
+              image.src = url;
+            });
+          }),
+        );
+      };
       for (let i = 0; i < frames.length; i += 1) {
         if (controller.signal.aborted) {
           return;
@@ -602,6 +628,7 @@ export default function HomePage() {
           colorbarRange: colorRangeForRequests,
           signal: controller.signal,
         });
+        await preloadTextureImages(raster.textures);
         const rasterGrid = await fetchRasterGrid({
           dataset: currentDataset,
           backendDatasetId: keyDatasetId,

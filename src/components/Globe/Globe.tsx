@@ -302,6 +302,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const rasterMeshRef = useRef<any | any[] | null>(null);
     const rasterMeshFadeOutRef = useRef<any | any[] | null>(null);
     const rasterMeshFadeFrameRef = useRef<number | null>(null);
+    const meshPrimitiveCacheRef = useRef<Map<string, any | any[]>>(new Map());
+    const meshPreloadAbortRef = useRef<{ aborted: boolean }>({
+      aborted: false,
+    });
 
     const rasterDataRef = useRef<RasterLayerData | undefined>(undefined);
     const [winkelClearMarkerTick, setWinkelClearMarkerTick] = useState(0);
@@ -347,6 +351,11 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
     const updateRasterLod = useCallback(() => {
       if (!viewerRef.current || !viewerReady) return;
+
+      if (isPlaying) {
+        setMeshRasterActive(false);
+        return;
+      }
 
       if (!useMeshRaster || viewMode !== "3d") {
         setMeshRasterActive(false);
@@ -646,6 +655,12 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         setMeshRasterActive(false);
       }
     }, [setMeshRasterActive, useMeshRaster]);
+
+    useEffect(() => {
+      if (isPlaying) {
+        setMeshRasterActive(false);
+      }
+    }, [isPlaying, setMeshRasterActive]);
 
     useEffect(() => {
       if (!viewerReady || !viewerRef.current) return;
@@ -1259,6 +1274,20 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       [],
     );
 
+    const setMeshVisibility = useCallback(
+      (target: any | any[] | null, visible: boolean) => {
+        if (!target) return;
+        if (Array.isArray(target)) {
+          target.forEach((primitive) => {
+            primitive.show = visible;
+          });
+        } else {
+          target.show = visible;
+        }
+      },
+      [],
+    );
+
     const setMeshAlpha = useCallback(
       (target: any | any[] | null, alpha: number) => {
         if (!target) {
@@ -1279,53 +1308,16 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       [],
     );
 
-    const cancelMeshFade = useCallback(() => {
-      if (rasterMeshFadeFrameRef.current != null) {
-        cancelAnimationFrame(rasterMeshFadeFrameRef.current);
-        rasterMeshFadeFrameRef.current = null;
-      }
-      const viewer = viewerRef.current;
-      if (viewer && rasterMeshFadeOutRef.current) {
-        removeMeshPrimitives(viewer, rasterMeshFadeOutRef.current);
-        rasterMeshFadeOutRef.current = null;
-      }
-    }, [removeMeshPrimitives]);
-
-    const clearRasterMesh = useCallback(() => {
-      const viewer = viewerRef.current;
-      if (!viewer || !rasterMeshRef.current) {
-        return;
-      }
-      cancelMeshFade();
-      removeMeshPrimitives(viewer, rasterMeshRef.current);
-      rasterMeshRef.current = null;
-      viewer.scene.requestRender();
-    }, [cancelMeshFade, removeMeshPrimitives]);
-
-    const applyRasterMesh = useCallback(
-      (meshData?: ReturnType<typeof buildRasterMesh>) => {
+    const createMeshPrimitives = useCallback(
+      (meshData: ReturnType<typeof buildRasterMesh>) => {
         const viewer = viewerRef.current;
         if (!viewer || !cesiumInstance) {
-          return;
+          return null;
         }
 
-        if (!meshData || meshData.rows === 0 || meshData.cols === 0) {
-          clearRasterMesh();
-          return;
-        }
-
-        // Disable mesh fade shader to avoid Cesium uniform map errors during playback.
-        const allowFade = false;
-        const shouldFade = false;
-        if (!shouldFade) {
-          clearRasterMesh();
-        } else {
-          cancelMeshFade();
-        }
-
-        const buildAppearance = (alphaState?: { value: number }) => {
-          const isOpaque = rasterOpacity >= 0.999 && !allowFade;
-          const appearance = new cesiumInstance.Appearance({
+        const buildAppearance = () => {
+          const isOpaque = rasterOpacity >= 0.999;
+          return new cesiumInstance.Appearance({
             vertexFormat: cesiumInstance.VertexFormat.POSITION_AND_COLOR,
             renderState: {
               depthTest: { enabled: true },
@@ -1350,30 +1342,18 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
                 gl_Position = czm_modelViewProjectionRelativeToEye * position;
               }
             `,
-            fragmentShaderSource: allowFade
-              ? `
-                  varying vec4 v_color;
-                  uniform float u_alpha;
-                  void main() {
-                    gl_FragColor = vec4(v_color.rgb, v_color.a * u_alpha);
-                  }
-                `
-              : `
-                  varying vec4 v_color;
-                  void main() {
-                    gl_FragColor = v_color;
-                  }
-                `,
+            fragmentShaderSource: `
+              varying vec4 v_color;
+              void main() {
+                gl_FragColor = v_color;
+              }
+            `,
           });
-          return appearance;
         };
 
-        const initialAlpha = shouldFade ? 0 : 1;
-
+        const surfaceOffset = 20000;
         if (meshData.tiles && meshData.tiles.length > 0) {
           const primitives: any[] = [];
-          const surfaceOffset = 20000;
-
           for (const tile of meshData.tiles) {
             const tileVerts = tile.rows * tile.cols;
             const positions = new Float64Array(tileVerts * 3);
@@ -1419,30 +1399,19 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             });
 
             const instance = new cesiumInstance.GeometryInstance({ geometry });
-            const alphaState = allowFade ? { value: initialAlpha } : undefined;
-            const appearance = buildAppearance(alphaState);
+            const appearance = buildAppearance();
 
             const primitive = new cesiumInstance.Primitive({
               geometryInstances: instance,
               appearance,
               asynchronous: true,
-              uniformMap:
-                allowFade && alphaState
-                  ? {
-                      u_alpha: () => alphaState.value,
-                    }
-                  : undefined,
             });
-            if (alphaState) {
-              primitive.__meshAlphaUniform = alphaState;
-            }
 
+            primitive.show = false;
             primitives.push(primitive);
             viewer.scene.primitives.add(primitive);
           }
 
-          const outgoing = shouldFade ? rasterMeshRef.current : null;
-          rasterMeshRef.current = primitives;
           primitives.forEach((primitive) => {
             try {
               viewer.scene.primitives.lowerToBottom(primitive);
@@ -1451,35 +1420,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             }
           });
 
-          if (shouldFade) {
-            rasterMeshFadeOutRef.current = outgoing;
-            const start = performance.now();
-            const duration = meshFadeDurationMs;
-            const step = (now: number) => {
-              const t =
-                duration > 0 ? Math.min(1, (now - start) / duration) : 1;
-              setMeshAlpha(primitives, t);
-              setMeshAlpha(outgoing, 1 - t);
-              viewer.scene.requestRender();
-              if (t < 1) {
-                rasterMeshFadeFrameRef.current = requestAnimationFrame(step);
-              } else {
-                if (outgoing) {
-                  removeMeshPrimitives(viewer, outgoing);
-                }
-                rasterMeshFadeOutRef.current = null;
-                rasterMeshFadeFrameRef.current = null;
-              }
-            };
-            rasterMeshFadeFrameRef.current = requestAnimationFrame(step);
-          }
-
-          viewer.scene.requestRender();
-          return;
+          return primitives;
         }
 
         const totalVerts = meshData.rows * meshData.cols;
-        const surfaceOffset = 20000;
         const positions = new Float64Array(totalVerts * 3);
         for (let i = 0; i < totalVerts; i += 1) {
           const lon = meshData.positionsDegrees[i * 2];
@@ -1519,66 +1463,96 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           boundingSphere: cesiumInstance.BoundingSphere.fromVertices(positions),
         });
 
-        const alphaState = allowFade ? { value: initialAlpha } : undefined;
-        const appearance = buildAppearance(alphaState);
-
+        const appearance = buildAppearance();
         const instance = new cesiumInstance.GeometryInstance({ geometry });
         const primitive = new cesiumInstance.Primitive({
           geometryInstances: instance,
           appearance,
           asynchronous: true,
-          uniformMap:
-            allowFade && alphaState
-              ? {
-                  u_alpha: () => alphaState.value,
-                }
-              : undefined,
         });
-        if (alphaState) {
-          primitive.__meshAlphaUniform = alphaState;
-        }
-
-        const outgoing = shouldFade ? rasterMeshRef.current : null;
-        rasterMeshRef.current = primitive;
+        primitive.show = false;
         viewer.scene.primitives.add(primitive);
         try {
           viewer.scene.primitives.lowerToBottom(primitive);
         } catch (err) {
           console.warn("Failed to lower raster mesh", err);
         }
-        if (shouldFade) {
-          rasterMeshFadeOutRef.current = outgoing;
-          const start = performance.now();
-          const duration = meshFadeDurationMs;
-          const step = (now: number) => {
-            const t = duration > 0 ? Math.min(1, (now - start) / duration) : 1;
-            setMeshAlpha(primitive, t);
-            setMeshAlpha(outgoing, 1 - t);
-            viewer.scene.requestRender();
-            if (t < 1) {
-              rasterMeshFadeFrameRef.current = requestAnimationFrame(step);
-            } else {
-              if (outgoing) {
-                removeMeshPrimitives(viewer, outgoing);
-              }
-              rasterMeshFadeOutRef.current = null;
-              rasterMeshFadeFrameRef.current = null;
-            }
-          };
-          rasterMeshFadeFrameRef.current = requestAnimationFrame(step);
-        }
-        viewer.scene.requestRender();
+        return primitive;
       },
-      [
-        cancelMeshFade,
-        cesiumInstance,
-        clearRasterMesh,
-        isPlaying,
-        meshFadeDurationMs,
-        rasterOpacity,
-        removeMeshPrimitives,
-        setMeshAlpha,
-      ],
+      [cesiumInstance, rasterOpacity],
+    );
+
+    const activateMeshPrimitives = useCallback(
+      (target: any | any[] | null) => {
+        if (!viewerRef.current) return;
+        if (rasterMeshRef.current && rasterMeshRef.current !== target) {
+          setMeshVisibility(rasterMeshRef.current, false);
+        }
+        rasterMeshRef.current = target;
+        setMeshVisibility(target, true);
+        viewerRef.current.scene.requestRender();
+      },
+      [setMeshVisibility],
+    );
+
+    const clearMeshCache = useCallback(() => {
+      const viewer = viewerRef.current;
+      if (!viewer) return;
+      meshPrimitiveCacheRef.current.forEach((primitive) => {
+        removeMeshPrimitives(viewer, primitive);
+      });
+      meshPrimitiveCacheRef.current.clear();
+      rasterMeshRef.current = null;
+    }, [removeMeshPrimitives]);
+
+    const cancelMeshFade = useCallback(() => {
+      if (rasterMeshFadeFrameRef.current != null) {
+        cancelAnimationFrame(rasterMeshFadeFrameRef.current);
+        rasterMeshFadeFrameRef.current = null;
+      }
+      const viewer = viewerRef.current;
+      if (viewer && rasterMeshFadeOutRef.current) {
+        removeMeshPrimitives(viewer, rasterMeshFadeOutRef.current);
+        rasterMeshFadeOutRef.current = null;
+      }
+    }, [removeMeshPrimitives]);
+
+    const clearRasterMesh = useCallback(() => {
+      const viewer = viewerRef.current;
+      if (!viewer || !rasterMeshRef.current) {
+        return;
+      }
+      cancelMeshFade();
+      setMeshVisibility(rasterMeshRef.current, false);
+      rasterMeshRef.current = null;
+      viewer.scene.requestRender();
+    }, [cancelMeshFade, removeMeshPrimitives]);
+
+    const applyRasterMesh = useCallback(
+      (meshData?: ReturnType<typeof buildRasterMesh>, cacheKey?: string) => {
+        if (!meshData || meshData.rows === 0 || meshData.cols === 0) {
+          clearRasterMesh();
+          return;
+        }
+
+        const key = cacheKey ?? "";
+        const cached = key ? meshPrimitiveCacheRef.current.get(key) : undefined;
+        if (cached) {
+          activateMeshPrimitives(cached);
+          return;
+        }
+
+        const created = createMeshPrimitives(meshData);
+        if (!created) {
+          clearRasterMesh();
+          return;
+        }
+        if (key) {
+          meshPrimitiveCacheRef.current.set(key, created);
+        }
+        activateMeshPrimitives(created);
+      },
+      [activateMeshPrimitives, clearRasterMesh, createMeshPrimitives],
     );
 
     useEffect(() => {
@@ -1612,9 +1586,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           }
           if (rasterMeshRef.current) {
             cancelMeshFade();
-            removeMeshPrimitives(viewerRef.current, rasterMeshRef.current);
-            rasterMeshRef.current = null;
+            setMeshVisibility(rasterMeshRef.current, false);
           }
+          clearMeshCache();
           clearMarker();
           clearSearchMarker();
           boundaryEntitiesRef.current = [];
@@ -1625,7 +1599,14 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           initializingViewerRef.current = false;
         }
       };
-    }, [cancelMeshFade, clearMarker, clearSearchMarker, removeMeshPrimitives]);
+    }, [
+      cancelMeshFade,
+      clearMarker,
+      clearMeshCache,
+      clearSearchMarker,
+      removeMeshPrimitives,
+      setMeshVisibility,
+    ]);
 
     useEffect(() => {
       if (rasterState.error) {
@@ -1829,12 +1810,13 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         smoothValues: rasterBlurEnabled,
         useTiling: shouldTileLargeMesh,
       });
-      applyRasterMesh(mesh);
+      applyRasterMesh(mesh, rasterGridState.requestKey);
     }, [
       applyRasterMesh,
       clearRasterMesh,
       currentDataset?.colorScale?.colors,
       rasterGridState.data,
+      rasterGridState.requestKey,
       rasterBlurEnabled,
       rasterOpacity,
       satelliteLayerVisible,
@@ -1843,6 +1825,75 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       useMeshRasterActive,
       viewerReady,
     ]);
+
+    useEffect(() => {
+      if (!viewerReady || !useMeshRaster || !prefetchedRasterGrids) {
+        return;
+      }
+      const abortSignal = { aborted: false };
+      meshPreloadAbortRef.current = abortSignal;
+      const entries =
+        prefetchedRasterGrids instanceof Map
+          ? Array.from(prefetchedRasterGrids.entries())
+          : Object.entries(prefetchedRasterGrids);
+
+      let index = 0;
+      const preloadNext = () => {
+        if (abortSignal.aborted || index >= entries.length) {
+          return;
+        }
+        const [key, grid] = entries[index];
+        index += 1;
+
+        if (
+          !grid ||
+          !currentDataset?.colorScale?.colors?.length ||
+          meshPrimitiveCacheRef.current.has(key)
+        ) {
+          setTimeout(preloadNext, 0);
+          return;
+        }
+
+        const min = grid.min ?? 0;
+        const max = grid.max ?? 1;
+        const mesh = buildRasterMesh({
+          lat: grid.lat,
+          lon: grid.lon,
+          values: grid.values,
+          mask: grid.mask,
+          min,
+          max,
+          colors: currentDataset.colorScale.colors,
+          opacity: rasterOpacity,
+          smoothValues: rasterBlurEnabled,
+          useTiling: shouldTileLargeMesh,
+        });
+        const created = createMeshPrimitives(mesh);
+        if (created) {
+          meshPrimitiveCacheRef.current.set(key, created);
+        }
+        setTimeout(preloadNext, 0);
+      };
+
+      preloadNext();
+
+      return () => {
+        abortSignal.aborted = true;
+      };
+    }, [
+      createMeshPrimitives,
+      currentDataset?.colorScale?.colors,
+      prefetchedRasterGrids,
+      rasterBlurEnabled,
+      rasterOpacity,
+      shouldTileLargeMesh,
+      useMeshRaster,
+      viewerReady,
+    ]);
+
+    useEffect(() => {
+      clearMeshCache();
+    }, [clearMeshCache, currentDataset?.id, selectedLevel]);
 
     const isWinkel = viewMode === "winkel";
     const showInitialLoading = isWinkel ? false : isLoading;
