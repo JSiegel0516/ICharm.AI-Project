@@ -204,6 +204,23 @@ const parseDateInput = (
   return clampDateToRange(parsed, minDate, maxDate);
 };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const clampDayIndex = (value: number, maxDays: number) => {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(Math.max(Math.round(value), 0), maxDays);
+};
+
+const dateToDayIndex = (date: Date, minDate: Date, maxDays: number) => {
+  const diffDays = Math.round((date.getTime() - minDate.getTime()) / DAY_MS);
+  return clampDayIndex(diffDays, maxDays);
+};
+
+const dayIndexToDate = (index: number, minDate: Date, maxDate: Date) => {
+  const next = new Date(minDate.getTime() + index * DAY_MS);
+  return clampDateToRange(next, minDate, maxDate);
+};
+
 export default function HomePage() {
   const {
     showColorbar,
@@ -377,6 +394,16 @@ export default function HomePage() {
     () =>
       currentDataset?.endDate ? new Date(currentDataset.endDate) : new Date(),
     [currentDataset?.endDate],
+  );
+  const totalDatasetDays = useMemo(
+    () =>
+      Math.max(
+        0,
+        Math.round(
+          (datasetEndDate.getTime() - datasetStartDate.getTime()) / DAY_MS,
+        ),
+      ),
+    [datasetEndDate, datasetStartDate],
   );
 
   const stepOptions = useMemo(
@@ -1256,7 +1283,7 @@ export default function HomePage() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-[720px]">
+        <DialogContent className="max-w-[95vw] sm:max-w-[900px] lg:max-w-[1000px]">
           <DialogHeader>
             <DialogTitle className="text-xl font-semibold text-white">
               Visualization
@@ -1269,8 +1296,8 @@ export default function HomePage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+          <div className="grid grid-cols-1 gap-6 py-4 md:grid-cols-2">
+            <div className="space-y-2 rounded-lg border border-white/10 bg-white/5 p-3">
               <p className="mb-2 text-sm font-semibold text-white">Start</p>
               <Input
                 type="text"
@@ -1291,43 +1318,83 @@ export default function HomePage() {
                   }
                 }}
               />
-              <Calendar
-                mode="single"
-                selected={
-                  parseDateInput(
-                    startInputValue,
-                    datasetStartDate,
-                    datasetEndDate,
-                  ) ??
-                  visualizationStart ??
-                  datasetStartDate
-                }
-                onSelect={(value) => {
-                  if (value) {
-                    const clamped = clampDateToRange(
-                      value,
+              <div className="flex items-center justify-center gap-6">
+                <Calendar
+                  mode="single"
+                  selected={
+                    parseDateInput(
+                      startInputValue,
                       datasetStartDate,
                       datasetEndDate,
-                    );
-                    setVisualizationStart(clamped);
-                    setStartInputValue(clamped.toISOString().slice(0, 10));
+                    ) ??
+                    visualizationStart ??
+                    datasetStartDate
                   }
-                }}
-                defaultMonth={
-                  parseDateInput(
-                    startInputValue,
-                    datasetStartDate,
-                    datasetEndDate,
-                  ) ??
-                  visualizationStart ??
-                  datasetStartDate
-                }
-                disabled={(date) =>
-                  date < datasetStartDate || date > datasetEndDate
-                }
-              />
+                  onSelect={(value) => {
+                    if (value) {
+                      const clamped = clampDateToRange(
+                        value,
+                        datasetStartDate,
+                        datasetEndDate,
+                      );
+                      setVisualizationStart(clamped);
+                      setStartInputValue(clamped.toISOString().slice(0, 10));
+                    }
+                  }}
+                  defaultMonth={
+                    parseDateInput(
+                      startInputValue,
+                      datasetStartDate,
+                      datasetEndDate,
+                    ) ??
+                    visualizationStart ??
+                    datasetStartDate
+                  }
+                  disabled={(date) =>
+                    date < datasetStartDate || date > datasetEndDate
+                  }
+                />
+                <div className="flex flex-col items-center gap-2">
+                  <span className="text-[10px] tracking-wide text-slate-300 uppercase">
+                    {datasetEndDate.toLocaleDateString("en-US")}
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={totalDatasetDays}
+                    value={dateToDayIndex(
+                      visualizationStart ?? datasetStartDate,
+                      datasetStartDate,
+                      totalDatasetDays,
+                    )}
+                    onChange={(e) => {
+                      const dayIndex = clampDayIndex(
+                        Number(e.target.value),
+                        totalDatasetDays,
+                      );
+                      const next = dayIndexToDate(
+                        dayIndex,
+                        datasetStartDate,
+                        datasetEndDate,
+                      );
+                      setVisualizationStart(next);
+                      setStartInputValue(next.toISOString().slice(0, 10));
+                    }}
+                    className="h-56 w-5 cursor-pointer appearance-none rounded-full bg-white/10"
+                    style={{
+                      WebkitAppearance: "slider-vertical",
+                      writingMode: "vertical-rl",
+                      direction: "rtl",
+                    }}
+                    aria-label="Start date slider"
+                  />
+                  <span className="text-[10px] tracking-wide text-slate-400 uppercase">
+                    {datasetStartDate.toLocaleDateString("en-US")}
+                  </span>
+                </div>
+              </div>
             </div>
-            <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+            <div className="space-y-2 rounded-lg border border-white/10 bg-white/5 p-3">
               <p className="mb-2 text-sm font-semibold text-white">End</p>
               <Input
                 type="text"
@@ -1348,90 +1415,134 @@ export default function HomePage() {
                   }
                 }}
               />
-              <Calendar
-                mode="single"
-                selected={
-                  parseDateInput(
-                    endInputValue,
-                    datasetStartDate,
-                    datasetEndDate,
-                  ) ??
-                  visualizationEnd ??
-                  datasetEndDate
-                }
-                onSelect={(value) => {
-                  if (value) {
-                    const clamped = clampDateToRange(
-                      value,
+              <div className="flex items-center justify-center gap-6">
+                <Calendar
+                  mode="single"
+                  selected={
+                    parseDateInput(
+                      endInputValue,
                       datasetStartDate,
                       datasetEndDate,
-                    );
-                    setVisualizationEnd(clamped);
-                    setEndInputValue(clamped.toISOString().slice(0, 10));
+                    ) ??
+                    visualizationEnd ??
+                    datasetEndDate
+                  }
+                  onSelect={(value) => {
+                    if (value) {
+                      const clamped = clampDateToRange(
+                        value,
+                        datasetStartDate,
+                        datasetEndDate,
+                      );
+                      setVisualizationEnd(clamped);
+                      setEndInputValue(clamped.toISOString().slice(0, 10));
+                    }
+                  }}
+                  defaultMonth={
+                    parseDateInput(
+                      endInputValue,
+                      datasetStartDate,
+                      datasetEndDate,
+                    ) ??
+                    visualizationEnd ??
+                    datasetEndDate
+                  }
+                  disabled={(date) =>
+                    date < datasetStartDate || date > datasetEndDate
+                  }
+                />
+                <div className="flex flex-col items-center gap-2">
+                  <span className="text-[10px] tracking-wide text-slate-300 uppercase">
+                    {datasetEndDate.toLocaleDateString("en-US")}
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={totalDatasetDays}
+                    value={dateToDayIndex(
+                      visualizationEnd ?? datasetEndDate,
+                      datasetStartDate,
+                      totalDatasetDays,
+                    )}
+                    onChange={(e) => {
+                      const dayIndex = clampDayIndex(
+                        Number(e.target.value),
+                        totalDatasetDays,
+                      );
+                      const next = dayIndexToDate(
+                        dayIndex,
+                        datasetStartDate,
+                        datasetEndDate,
+                      );
+                      setVisualizationEnd(next);
+                      setEndInputValue(next.toISOString().slice(0, 10));
+                    }}
+                    className="h-56 w-5 cursor-pointer appearance-none rounded-full bg-white/10"
+                    style={{
+                      WebkitAppearance: "slider-vertical",
+                      writingMode: "vertical-rl",
+                      direction: "rtl",
+                    }}
+                    aria-label="End date slider"
+                  />
+                  <span className="text-[10px] tracking-wide text-slate-400 uppercase">
+                    {datasetStartDate.toLocaleDateString("en-US")}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-6 lg:grid-cols-2">
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-white">Advance by</p>
+              <select
+                className="w-full rounded-md border border-white/15 bg-black/40 px-3 py-2 text-sm text-white shadow-sm focus:border-white focus:outline-none"
+                value={visualizationStep}
+                onChange={(e) => {
+                  const next = e.target.value as VisualizationStep;
+                  if (stepOptions.includes(next)) {
+                    setVisualizationStep(next);
                   }
                 }}
-                defaultMonth={
-                  parseDateInput(
-                    endInputValue,
-                    datasetStartDate,
-                    datasetEndDate,
-                  ) ??
-                  visualizationEnd ??
-                  datasetEndDate
-                }
-                disabled={(date) =>
-                  date < datasetStartDate || date > datasetEndDate
-                }
-              />
+              >
+                {stepOptions.map((step) => (
+                  <option key={step} value={step}>
+                    {step === "year"
+                      ? "Year"
+                      : step === "month"
+                        ? "Month"
+                        : "Day"}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-300">
+                Only increments supported by this dataset are available.
+              </p>
             </div>
-          </div>
 
-          <div className="mt-4 space-y-2">
-            <p className="text-sm font-semibold text-white">Advance by</p>
-            <select
-              className="w-full rounded-md border border-white/15 bg-black/40 px-3 py-2 text-sm text-white shadow-sm focus:border-white focus:outline-none"
-              value={visualizationStep}
-              onChange={(e) => {
-                const next = e.target.value as VisualizationStep;
-                if (stepOptions.includes(next)) {
-                  setVisualizationStep(next);
-                }
-              }}
-            >
-              {stepOptions.map((step) => (
-                <option key={step} value={step}>
-                  {step === "year"
-                    ? "Year"
-                    : step === "month"
-                      ? "Month"
-                      : "Day"}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-slate-300">
-              Only increments supported by this dataset are available.
-            </p>
-          </div>
-
-          <div className="mt-4 space-y-2">
-            <p className="text-sm font-semibold text-white">Fade time</p>
-            <div className="flex items-center gap-3">
-              <input
-                type="range"
-                min={0}
-                max={1500}
-                step={50}
-                value={visualizationFadeMs}
-                onChange={(e) => setVisualizationFadeMs(Number(e.target.value))}
-                className="h-2 w-full cursor-pointer appearance-none rounded-full bg-white/20"
-              />
-              <span className="text-xs text-slate-200">
-                {visualizationFadeMs} ms
-              </span>
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-white">Fade time</p>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min={0}
+                  max={1500}
+                  step={50}
+                  value={visualizationFadeMs}
+                  onChange={(e) =>
+                    setVisualizationFadeMs(Number(e.target.value))
+                  }
+                  className="h-2 w-full cursor-pointer appearance-none rounded-full bg-white/20"
+                />
+                <span className="text-xs text-slate-200">
+                  {visualizationFadeMs} ms
+                </span>
+              </div>
+              <p className="text-xs text-slate-300">
+                Only affects mesh transitions during visualization playback.
+              </p>
             </div>
-            <p className="text-xs text-slate-300">
-              Only affects mesh transitions during visualization playback.
-            </p>
           </div>
 
           {visualizationError && (
