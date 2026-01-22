@@ -131,30 +131,6 @@ type DatabaseDataset = {
   updatedAt: string;
 };
 
-type DatabaseDataset = {
-  id: string;
-  sourceName: string;
-  datasetName: string;
-  layerParameter: string;
-  statistic: string;
-  datasetType: string;
-  levels: string;
-  levelValues: string | null;
-  levelUnits: string | null;
-  stored: string;
-  inputFile: string;
-  keyVariable: string;
-  units: string;
-  spatialResolution: string;
-  engine: string;
-  kerchunkPath: string | null;
-  origLocation: string;
-  startDate: string;
-  endDate: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
 type AppStateContextType = ReturnType<typeof useAppStateInternal>;
 
 const AppStateContext = createContext<AppStateContextType | undefined>(
@@ -196,6 +172,8 @@ function parseDate(dateStr: string): Date {
 
 // Transform database dataset to app Dataset type
 function transformDataset(db: DatabaseDataset): Dataset {
+  console.log("Transforming dataset:", db.datasetName, "stored:", db.stored);
+
   return {
     id: db.id,
     name: db.datasetName,
@@ -207,11 +185,27 @@ function transformDataset(db: DatabaseDataset): Dataset {
     // Store full backend data for reference
     backend: {
       ...db,
+      id: db.id,
+      sourceName: db.sourceName,
+      datasetName: db.datasetName,
+      layerParameter: db.layerParameter,
+      statistic: db.statistic,
+      datasetType: db.datasetType,
+      levels: db.levels,
+      levelValues: db.levelValues,
+      levelUnits: db.levelUnits,
+      stored: db.stored, // <-- Make sure this is explicitly here
+      inputFile: db.inputFile,
+      keyVariable: db.keyVariable,
+      units: db.units,
+      spatialResolution: db.spatialResolution,
+      engine: db.engine,
+      kerchunkPath: db.kerchunkPath,
+      origLocation: db.origLocation,
       startDate: db.startDate,
       endDate: DATASET_END_OVERRIDES[db.datasetName] ?? db.endDate,
-      spatialResolution: db.spatialResolution,
-      datasetName: db.datasetName,
-      datasetType: db.datasetType,
+      createdAt: db.createdAt,
+      updatedAt: db.updatedAt,
     },
     // Parse dates for easy use
     startDate: parseDate(db.startDate),
@@ -631,6 +625,8 @@ const useAppStateInternal = () => {
         }
 
         const payload = await response.json();
+
+        console.log("Raw API response:", payload.datasets?.[0]);
 
         // Transform database datasets to app format
         const datasets: Dataset[] = Array.isArray(payload.datasets)
