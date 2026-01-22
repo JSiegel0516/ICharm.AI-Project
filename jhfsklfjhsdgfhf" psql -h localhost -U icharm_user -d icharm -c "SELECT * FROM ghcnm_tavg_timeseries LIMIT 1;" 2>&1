@@ -1,0 +1,18 @@
+                  Table "public.ghcnm_tavg_timeseries"
+ Column  |            Type             | Collation | Nullable | Default 
+---------+-----------------------------+-----------+----------+---------
+ id      | text                        |           | not null | 
+ year    | integer                     |           | not null | 
+ element | text                        |           | not null | 
+ month   | integer                     |           | not null | 
+ value   | double precision            |           |          | 
+ mflag   | text                        |           |          | 
+ qflag   | text                        |           |          | 
+ sflag   | text                        |           |          | 
+ date    | timestamp without time zone |           | not null | 
+Indexes:
+    "ghcnm_tavg_timeseries_pkey" PRIMARY KEY, btree (id, date)
+    "idx_ghcnm_date" btree (date)
+    "idx_ghcnm_id" btree (id)
+    "idx_ghcnm_id_date" btree (id, date)
+

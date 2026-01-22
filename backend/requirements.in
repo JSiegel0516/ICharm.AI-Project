@@ -17,6 +17,7 @@ h5netcdf
 netCDF4
 numpy
 pandas
+pyarrow
 xarray
 zarr
 

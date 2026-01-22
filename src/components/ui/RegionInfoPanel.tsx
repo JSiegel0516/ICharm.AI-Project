@@ -659,6 +659,24 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       return;
     }
 
+    // Check if this is a station dataset
+    const isStationDataset =
+      (currentDataset?.backend?.datasetType ??
+        currentDataset?.dataType ??
+        "")
+        .toString()
+        .toLowerCase() === "station";
+
+    if (isStationDataset) {
+      setTimeseriesError(
+        "Station timeseries is not available in this panel. Please click on a station marker to view its timeseries.",
+      );
+      setTimeseriesSeries([]);
+      setTimeseriesUnits(null);
+      setTimeseriesLoading(false);
+      return;
+    }
+
     const { start: startDate, end: endDate } = calculateDateRange();
 
     setTimeseriesLoading(true);

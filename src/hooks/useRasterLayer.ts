@@ -331,6 +331,19 @@ export const useRasterLayer = ({
       }
     };
 
+    // Skip raster visualization for station datasets
+    if (
+      (dataset?.backend?.datasetType ?? dataset?.dataType ?? "")
+        .toString()
+        .toLowerCase() === "station"
+    ) {
+      setData(undefined);
+      setError(null);
+      setIsLoading(false);
+      abortOngoingRequest();
+      return () => abortOngoingRequest();
+    }
+
     if (!backendDatasetId || !date) {
       setData(undefined);
       setError(null);

@@ -11,7 +11,11 @@ import React, {
 import type { Dataset, RegionData, GlobeProps, GlobeRef } from "@/types";
 import { useRasterLayer } from "@/hooks/useRasterLayer";
 import type { RasterLayerData } from "@/hooks/useRasterLayer";
+import { useStationLayer } from "@/hooks/useStationLayer";
+import type { StationLayerData, StationMarker } from "@/hooks/useStationLayer";
 import GlobeLoading from "./GlobeLoading";
+import { StationSearch } from "./StationSearch";
+import { StationModal } from "./StationModal";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -300,6 +304,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const isUpdatingMarkerRef = useRef(false);
 
     const rasterDataRef = useRef<RasterLayerData | undefined>(undefined);
+    const stationEntitiesRef = useRef<any[]>([]);
+    const [selectedStation, setSelectedStation] = useState<any>(null);
+    const [stationModalOpen, setStationModalOpen] = useState(false);
+    
     const datasetName = (currentDataset?.name ?? "").toLowerCase();
     const datasetSupportsZeroMask =
       currentDataset?.dataType === "precipitation" ||
@@ -312,6 +320,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       maskZeroValues: shouldHideZero,
       colorbarRange,
     });
+
+    const stationState = useStationLayer(currentDataset, selectedDate);
 
     const clearMarker = useCallback(() => {
       if (
@@ -799,58 +809,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             entity.show = geographicLinesVisible;
           });
 
-          viewer.cesiumWidget.screenSpaceEventHandler.setInputAction(
-            (event: any) => {
-              const pickedPosition = viewer.camera.pickEllipsoid(
-                event.position,
-                viewer.scene.globe.ellipsoid,
-              );
-              if (pickedPosition) {
-                const cartographic =
-                  Cesium.Cartographic.fromCartesian(pickedPosition);
-                const latitude = Cesium.Math.toDegrees(cartographic.latitude);
-                const longitude = Cesium.Math.toDegrees(cartographic.longitude);
-
-                addClickMarker(Cesium, latitude, longitude);
-
-                if (onRegionClick) {
-                  const rasterValue = rasterDataRef.current?.sampleValue(
-                    latitude,
-                    longitude,
-                  );
-                  const units =
-                    rasterDataRef.current?.units ??
-                    currentDataset?.units ??
-                    "units";
-
-                  const datasetName = currentDataset?.name?.toLowerCase() ?? "";
-                  const datasetType =
-                    currentDataset?.dataType?.toLowerCase() ?? "";
-                  const looksTemperature =
-                    datasetType.includes("temp") ||
-                    datasetName.includes("temp") ||
-                    units.toLowerCase().includes("degc") ||
-                    units.toLowerCase().includes("celsius");
-
-                  const fallbackValue = looksTemperature
-                    ? -20 + Math.random() * 60
-                    : Math.random() * 100;
-                  const value = rasterValue ?? fallbackValue;
-
-                  const regionData: RegionData = {
-                    name: `${latitude.toFixed(2)}°, ${longitude.toFixed(2)}°`,
-                    precipitation: looksTemperature ? undefined : value,
-                    temperature: looksTemperature ? value : undefined,
-                    dataset: currentDataset?.name || "Sample Dataset",
-                    unit: units,
-                  };
-
-                  onRegionClick(latitude, longitude, regionData);
-                }
-              }
-            },
-            Cesium.ScreenSpaceEventType.LEFT_CLICK,
-          );
+          // Left-click handler is attached in a separate effect to keep dataset/station state fresh
 
           viewer.cesiumWidget.screenSpaceEventHandler.setInputAction(
             (event: any) => {
@@ -1145,6 +1104,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           clearSearchMarker();
           boundaryEntitiesRef.current = [];
           geographicLineEntitiesRef.current = [];
+          stationEntitiesRef.current = [];
           viewerRef.current.destroy();
           viewerRef.current = null;
           setViewerReady(false);
@@ -1152,6 +1112,123 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         }
       };
     }, [clearMarker, clearSearchMarker]);
+
+    const applyStationMarkers = useCallback(
+      (stationData?: StationLayerData) => {
+        const viewer = viewerRef.current;
+        if (!viewer || !cesiumInstance) {
+          return;
+        }
+
+        // Remove existing station markers
+        stationEntitiesRef.current.forEach((entity) => {
+          try {
+            viewer.entities.remove(entity);
+          } catch (err) {
+            console.warn("Failed to remove station marker", err);
+          }
+        });
+        stationEntitiesRef.current = [];
+
+        if (!stationData || !stationData.stations || stationData.stations.length === 0) {
+          viewer.scene.requestRender();
+          return;
+        }
+
+        // Add new station markers
+        stationData.stations.forEach((station) => {
+          try {
+            const entity = viewer.entities.add({
+              position: cesiumInstance.Cartesian3.fromDegrees(
+                station.longitude,
+                station.latitude,
+                0
+              ),
+              point: {
+                pixelSize: 8,
+                color: cesiumInstance.Color.fromCssColorString("#ffff00").withAlpha(1.0),
+                outlineColor: cesiumInstance.Color.fromCssColorString("#333333"),
+                outlineWidth: 1.5,
+              },
+              properties: {
+                stationId: station.id,
+                stationName: station.name,
+                elevation: station.elevation,
+              },
+            });
+            stationEntitiesRef.current.push(entity);
+          } catch (err) {
+            console.error(`Failed to add station marker for ${station.id}:`, err);
+          }
+        });
+
+        viewer.scene.requestRender();
+      },
+      [cesiumInstance]
+    );
+
+    const flyToStation = useCallback(
+      (station: StationMarker) => {
+        const viewer = viewerRef.current;
+        if (!viewer || !cesiumInstance) {
+          return;
+        }
+
+        viewer.camera.flyTo({
+          destination: cesiumInstance.Cartesian3.fromDegrees(
+            station.longitude,
+            station.latitude,
+            1000000 // Altitude in meters (1000km for good view)
+          ),
+          duration: 2, // Animation duration in seconds
+          orientation: {
+            heading: cesiumInstance.Math.toRadians(0),
+            pitch: cesiumInstance.Math.toRadians(-45),
+            roll: 0.0,
+          },
+        });
+      },
+      [cesiumInstance]
+    );
+
+    const findNearestStation = useCallback(
+      (latitude: number, longitude: number): StationMarker | null => {
+        if (!stationState.data || stationState.data.stations.length === 0) {
+          console.log("[findNearestStation] No station data available");
+          return null;
+        }
+
+        let nearestStation: StationMarker | null = null;
+        let minDistance = Infinity;
+
+        stationState.data.stations.forEach((station) => {
+          const latDiff = station.latitude - latitude;
+          const lonDiff = station.longitude - longitude;
+          const distance = Math.sqrt(latDiff * latDiff + lonDiff * lonDiff);
+
+          if (distance < minDistance) {
+            minDistance = distance;
+            nearestStation = station;
+          }
+        });
+
+        console.log("[findNearestStation] Clicked at:", { latitude, longitude });
+        console.log("[findNearestStation] Nearest station:", {
+          station: nearestStation?.name,
+          distance: minDistance,
+          coords: { lat: nearestStation?.latitude, lon: nearestStation?.longitude }
+        });
+
+        // Return station if within reasonable distance (~5 degrees, approximately 550km at equator)
+        if (minDistance < 5) {
+          return nearestStation;
+        }
+
+        console.log("[findNearestStation] No station within 5 degrees");
+        return null;
+      },
+      [stationState.data]
+    );
 
     const scheduleRasterApply = useCallback(
       (layerData?: RasterLayerData, shouldThrottle = false) => {
@@ -1293,6 +1370,109 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       applyViewMode();
     }, [viewerReady, applyViewMode]);
 
+    // Re-attach left-click handler with fresh dataset/station state
+    useEffect(() => {
+      if (!viewerReady || !viewerRef.current || !cesiumInstance) return;
+
+      const Cesium = cesiumInstance;
+      const handler = viewerRef.current.cesiumWidget?.screenSpaceEventHandler;
+      if (!handler) return;
+
+      const clickHandler = (event: any) => {
+        const pickedPosition = viewerRef.current!.camera.pickEllipsoid(
+          event.position,
+          viewerRef.current!.scene.globe.ellipsoid,
+        );
+        if (!pickedPosition) return;
+
+        const cartographic = Cesium.Cartographic.fromCartesian(pickedPosition);
+        const latitude = Cesium.Math.toDegrees(cartographic.latitude);
+        const longitude = Cesium.Math.toDegrees(cartographic.longitude);
+
+        addClickMarker(Cesium, latitude, longitude);
+
+        const isStationDataset =
+          (currentDataset?.backend?.datasetType ??
+            currentDataset?.dataType ??
+            "")
+            .toString()
+            .toLowerCase() === "station";
+
+        console.log("[Globe Click] Is station dataset:", isStationDataset);
+        console.log("[Globe Click] Current dataset:", currentDataset?.name);
+
+        if (isStationDataset) {
+          const nearestStation = findNearestStation(latitude, longitude);
+          if (nearestStation) {
+            console.log(
+              "[Globe Click] Opening station modal for:",
+              nearestStation.name,
+            );
+            setSelectedStation({
+              station_id: nearestStation.id,
+              name: nearestStation.name,
+              latitude: nearestStation.latitude,
+              longitude: nearestStation.longitude,
+              elevation: nearestStation.elevation || 0,
+            });
+            setStationModalOpen(true);
+            return;
+          }
+
+          console.log(
+            "[Globe Click] No nearby station found, not opening RegionInfoPanel",
+          );
+          return;
+        }
+
+        if (onRegionClick) {
+          const rasterValue = rasterDataRef.current?.sampleValue(
+            latitude,
+            longitude,
+          );
+          const units =
+            rasterDataRef.current?.units ?? currentDataset?.units ?? "units";
+
+          const datasetName = currentDataset?.name?.toLowerCase() ?? "";
+          const datasetType = currentDataset?.dataType?.toLowerCase() ?? "";
+          const looksTemperature =
+            datasetType.includes("temp") ||
+            datasetName.includes("temp") ||
+            units.toLowerCase().includes("degc") ||
+            units.toLowerCase().includes("celsius");
+
+          const fallbackValue = looksTemperature
+            ? -20 + Math.random() * 60
+            : Math.random() * 100;
+          const value = rasterValue ?? fallbackValue;
+
+          const regionData: RegionData = {
+            name: `${latitude.toFixed(2)}°, ${longitude.toFixed(2)}°`,
+            precipitation: looksTemperature ? undefined : value,
+            temperature: looksTemperature ? value : undefined,
+            dataset: currentDataset?.name || "Sample Dataset",
+            unit: units,
+          };
+
+          onRegionClick(latitude, longitude, regionData);
+        }
+      };
+
+      handler.removeInputAction(Cesium.ScreenSpaceEventType.LEFT_CLICK);
+      handler.setInputAction(clickHandler, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+      return () => {
+        handler.removeInputAction(Cesium.ScreenSpaceEventType.LEFT_CLICK);
+      };
+    }, [
+      viewerReady,
+      cesiumInstance,
+      currentDataset,
+      onRegionClick,
+      findNearestStation,
+      addClickMarker,
+    ]);
+
     useEffect(() => {
       rasterDataRef.current = rasterState.data;
       if (onRasterMetadataChange) {
@@ -1314,6 +1494,29 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       // Always apply immediately when not playing (manual changes should feel instant)
       scheduleRasterApply(rasterDataRef.current, isPlaying);
     }, [viewerReady, scheduleRasterApply, isPlaying]);
+
+    useEffect(() => {
+      if (!viewerReady) return;
+      // Apply station markers if this is a station dataset
+      if (stationState.data) {
+        // Clear raster layers when showing station data
+        if (viewerRef.current && rasterLayerRef.current.length) {
+          rasterLayerRef.current.forEach((layer) => {
+            try {
+              viewerRef.current.scene.imageryLayers.remove(layer, true);
+            } catch (err) {
+              console.warn("Failed to remove raster layer", err);
+            }
+          });
+          rasterLayerRef.current = [];
+          viewerRef.current.scene.requestRender();
+        }
+        applyStationMarkers(stationState.data);
+      } else {
+        // Clear station markers if not a station dataset
+        applyStationMarkers(undefined);
+      }
+    }, [viewerReady, stationState.data, applyStationMarkers]);
 
     const showInitialLoading = isLoading;
     const showRasterTransitionLoading =
@@ -1376,6 +1579,20 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             minWidth: "100vw",
             overflow: "hidden",
           }}
+        />
+
+        {stationState.data && stationState.data.stations.length > 0 && (
+          <StationSearch
+            stations={stationState.data.stations}
+            onStationSelect={flyToStation}
+          />
+        )}
+
+        <StationModal
+          station={selectedStation}
+          selectedDate={selectedDate}
+          open={stationModalOpen}
+          onClose={() => setStationModalOpen(false)}
         />
 
         {currentDataset && (
