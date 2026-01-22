@@ -23,6 +23,8 @@ interface TimeBarProps {
   playIntervalMs?: number;
   isPlaying?: boolean;
   className?: string;
+  disableAutoplay?: boolean;
+  disablePlayButton?: boolean;
 }
 
 const TimeBar: React.FC<TimeBarProps> = ({
@@ -32,6 +34,8 @@ const TimeBar: React.FC<TimeBarProps> = ({
   playIntervalMs = 500,
   isPlaying = false,
   className = "",
+  disableAutoplay = false,
+  disablePlayButton = false,
 }) => {
   const { currentDataset } = useAppState();
 
@@ -234,9 +238,12 @@ const TimeBar: React.FC<TimeBarProps> = ({
   );
 
   const handlePlayPause = useCallback(() => {
+    if (disablePlayButton) {
+      return;
+    }
     const newIsPlaying = !isPlaying;
     onPlayPause?.(newIsPlaying);
-  }, [isPlaying, onPlayPause]);
+  }, [disablePlayButton, isPlaying, onPlayPause]);
 
   const handleCalendarSelect = useCallback(
     (date: Date | undefined) => {
@@ -249,7 +256,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
   );
 
   useEffect(() => {
-    if (isPlaying && !playIntervalRef.current) {
+    if (!disableAutoplay && isPlaying && !playIntervalRef.current) {
       playIntervalRef.current = setInterval(() => {
         const next = new Date(selectedDate);
         next.setMonth(selectedDate.getMonth() + 1);
@@ -259,7 +266,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
           onDateChange?.(next);
         }
       }, playIntervalMs);
-    } else if (!isPlaying && playIntervalRef.current) {
+    } else if ((!isPlaying || disableAutoplay) && playIntervalRef.current) {
       clearInterval(playIntervalRef.current);
       playIntervalRef.current = null;
     }
@@ -277,6 +284,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
     onDateChange,
     onPlayPause,
     playIntervalMs,
+    disableAutoplay,
   ]);
 
   useEffect(() => {
@@ -323,6 +331,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
           <div className="relative mb-2 flex items-center justify-center gap-2">
             <button
               onClick={handlePlayPause}
+              disabled={disablePlayButton}
               className={`flex h-5 w-5 items-center justify-center rounded-full transition-all duration-200 hover:scale-110 focus:outline-none ${
                 isPlaying || isActive
                   ? "border border-white/30 bg-white/20 text-white"

@@ -10,8 +10,11 @@ import React, {
 } from "react";
 import type { Dataset, RegionData, GlobeProps, GlobeRef } from "@/types";
 import { useRasterLayer } from "@/hooks/useRasterLayer";
+import { useRasterGrid } from "@/hooks/useRasterGrid";
+import { buildRasterMesh } from "@/lib/mesh/rasterMesh";
 import type { RasterLayerData } from "@/hooks/useRasterLayer";
 import GlobeLoading from "./GlobeLoading";
+import WinkelMap from "./WinkelMap";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -265,11 +268,14 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       boundaryLinesVisible = true,
       geographicLinesVisible = false,
       rasterOpacity = 1.0,
-      rasterTransitionMs = 320,
       rasterBlurEnabled = true,
       hideZeroPrecipitation = false,
+      useMeshRaster = false,
       onRasterMetadataChange,
       isPlaying = false,
+      prefetchedRasters,
+      prefetchedRasterGrids,
+      meshFadeDurationMs = 0,
     },
     ref,
   ) => {
@@ -284,7 +290,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
     const [cesiumInstance, setCesiumInstance] = useState<any>(null);
     const [viewerReady, setViewerReady] = useState(false);
-    const [isRasterTransitioning, setIsRasterTransitioning] = useState(false);
     const [isRasterImageryLoading, setIsRasterImageryLoading] = useState(false);
 
     const satelliteLayerRef = useRef<any>(null);
@@ -292,26 +297,80 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const geographicLineEntitiesRef = useRef<any[]>([]);
     const rasterLayerRef = useRef<any[]>([]);
     const textureLoadIdRef = useRef(0);
-    const lastRasterApplyRef = useRef<number>(0);
-    const pendingRasterTimeoutRef = useRef<ReturnType<
-      typeof setTimeout
-    > | null>(null);
     const isComponentUnmountedRef = useRef(false);
     const isUpdatingMarkerRef = useRef(false);
+    const rasterMeshRef = useRef<any | any[] | null>(null);
+    const rasterMeshFadeOutRef = useRef<any | any[] | null>(null);
+    const rasterMeshFadeFrameRef = useRef<number | null>(null);
+    const meshPrimitiveCacheRef = useRef<Map<string, any | any[]>>(new Map());
+    const meshPreloadAbortRef = useRef<{ aborted: boolean }>({
+      aborted: false,
+    });
 
     const rasterDataRef = useRef<RasterLayerData | undefined>(undefined);
+    const [winkelClearMarkerTick, setWinkelClearMarkerTick] = useState(0);
     const datasetName = (currentDataset?.name ?? "").toLowerCase();
     const datasetSupportsZeroMask =
       currentDataset?.dataType === "precipitation" ||
       datasetName.includes("cmorph");
     const shouldHideZero = datasetSupportsZeroMask && hideZeroPrecipitation;
+    const shouldTileLargeMesh =
+      datasetName.includes("noaa/cires/doe") ||
+      (currentDataset?.id ?? "").toLowerCase().includes("noaa-cires-doe");
+    const rasterLayerDataset = currentDataset;
     const rasterState = useRasterLayer({
+      dataset: rasterLayerDataset,
+      date: selectedDate,
+      level: selectedLevel ?? null,
+      maskZeroValues: shouldHideZero,
+      colorbarRange,
+      prefetchedData: prefetchedRasters,
+    });
+    const rasterGridState = useRasterGrid({
       dataset: currentDataset,
       date: selectedDate,
       level: selectedLevel ?? null,
       maskZeroValues: shouldHideZero,
       colorbarRange,
+      enabled: useMeshRaster,
+      prefetchedData: prefetchedRasterGrids,
     });
+    const [useMeshRasterActive, setUseMeshRasterActive] =
+      useState(useMeshRaster);
+    const useMeshRasterActiveRef = useRef(useMeshRaster);
+
+    const MESH_TO_IMAGERY_HEIGHT = 2_200_000;
+    const IMAGERY_TO_MESH_HEIGHT = 3_000_000;
+
+    const setMeshRasterActive = useCallback((next: boolean) => {
+      if (useMeshRasterActiveRef.current === next) return;
+      useMeshRasterActiveRef.current = next;
+      setUseMeshRasterActive(next);
+      viewerRef.current?.scene?.requestRender();
+    }, []);
+
+    const updateRasterLod = useCallback(() => {
+      if (!viewerRef.current || !viewerReady) return;
+
+      if (isPlaying) {
+        setMeshRasterActive(false);
+        return;
+      }
+
+      if (!useMeshRaster || viewMode !== "3d") {
+        setMeshRasterActive(false);
+        return;
+      }
+
+      const height = viewerRef.current.camera.positionCartographic.height;
+      const usingMesh = useMeshRasterActiveRef.current;
+
+      if (usingMesh && height < MESH_TO_IMAGERY_HEIGHT) {
+        setMeshRasterActive(false);
+      } else if (!usingMesh && height > IMAGERY_TO_MESH_HEIGHT) {
+        setMeshRasterActive(true);
+      }
+    }, [setMeshRasterActive, useMeshRaster, viewerReady, viewMode]);
 
     const clearMarker = useCallback(() => {
       if (
@@ -349,6 +408,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         }
         currentMarkerRef.current = null;
       }
+
+      // Also clear Winkel Tripel marker via signal.
+      setWinkelClearMarkerTick((tick) => tick + 1);
     }, []);
 
     const clearSearchMarker = useCallback(() => {
@@ -486,63 +548,84 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             clearMarker();
           }
 
-          const is2D =
-            viewerRef.current?.scene?.mode === Cesium.SceneMode.SCENE2D;
-
-          if (is2D) {
-            const entity = viewerRef.current.entities.add({
-              position: Cesium.Cartesian3.fromDegrees(longitude, latitude, 0),
-              billboard: {
-                image: "/images/selector.png",
-                width: 28,
-                height: 28,
-                heightReference: Cesium.HeightReference.NONE,
-                disableDepthTestDistance: Number.POSITIVE_INFINITY,
-              },
-            });
-
-            currentMarkerRef.current = entity;
-          } else {
-            const camera = viewerRef.current.camera;
-            const canvas = viewerRef.current.scene.canvas;
+          const markerPosition = Cesium.Cartesian3.fromDegrees(
+            longitude,
+            latitude,
+            0,
+          );
+          const computeRadius = () => {
+            const camera = viewerRef.current?.camera;
+            const canvas = viewerRef.current?.scene?.canvas;
+            if (!camera || !canvas || !canvas.height) {
+              return 140000;
+            }
             const fovy =
               camera.frustum && camera.frustum.fovy
                 ? camera.frustum.fovy
                 : Cesium.Math.toRadians(60);
-            const cameraHeight =
-              viewerRef.current.camera.positionCartographic.height;
-
+            const cameraHeight = camera.positionCartographic.height;
             const metersPerPixel =
               (2 * Math.tan(fovy / 2) * cameraHeight) / canvas.height;
-
-            const targetPixelSize = 28;
+            const targetPixelSize = 36;
             const targetMeters = targetPixelSize * metersPerPixel;
-            const radiusMeters = Math.max(10, targetMeters / 2);
+            return Math.max(10, targetMeters / 2);
+          };
+          const buildMarkerRectangle = (radiusMeters: number) => {
+            const metersPerDegreeLat = 111320;
+            const latRadians = Cesium.Math.toRadians(latitude);
+            const cosLat = Math.cos(latRadians);
+            const safeCos = Math.abs(cosLat) < 0.1 ? 0.1 : cosLat;
+            const deltaLat = radiusMeters / metersPerDegreeLat;
+            const deltaLon = radiusMeters / (metersPerDegreeLat * safeCos);
+            const west = Math.max(-180, longitude - deltaLon);
+            const east = Math.min(180, longitude + deltaLon);
+            const south = Math.max(-90, latitude - deltaLat);
+            const north = Math.min(90, latitude + deltaLat);
+            return Cesium.Rectangle.fromDegrees(west, south, east, north);
+          };
 
-            const geometry = new Cesium.EllipseGeometry({
-              center: Cesium.Cartesian3.fromDegrees(longitude, latitude, 0),
-              semiMajorAxis: radiusMeters,
-              semiMinorAxis: radiusMeters,
-              height: 0,
-              vertexFormat: Cesium.EllipsoidSurfaceAppearance.VERTEX_FORMAT,
-            });
+          const useMeshMarker =
+            useMeshRasterActiveRef.current && viewMode === "3d";
 
-            const primitive = new Cesium.GroundPrimitive({
-              geometryInstances: new Cesium.GeometryInstance({
-                geometry,
-              }),
-              appearance: new Cesium.EllipsoidSurfaceAppearance({
-                material: Cesium.Material.fromType("Image", {
+          if (useMeshMarker) {
+            const entity = viewerRef.current.entities.add({
+              position: markerPosition,
+              ellipse: {
+                semiMajorAxis: new Cesium.CallbackProperty(
+                  () => computeRadius(),
+                  false,
+                ),
+                semiMinorAxis: new Cesium.CallbackProperty(
+                  () => computeRadius(),
+                  false,
+                ),
+                height: 10000,
+                heightReference: Cesium.HeightReference.NONE,
+                material: new Cesium.ImageMaterialProperty({
                   image: "/images/selector.png",
+                  transparent: true,
                 }),
-              }),
-              classificationType: Cesium.ClassificationType.TERRAIN,
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              },
             });
 
-            viewerRef.current.scene.primitives.add(primitive);
-
+            entity.latitude = latitude;
+            entity.longitude = longitude;
+            currentMarkerRef.current = entity;
+          } else {
+            const rectangle = buildMarkerRectangle(computeRadius());
+            const provider = new Cesium.SingleTileImageryProvider({
+              url: "/images/selector.png",
+              rectangle,
+            });
+            const layer =
+              viewerRef.current.scene.imageryLayers.addImageryProvider(
+                provider,
+              );
+            layer.alpha = 1.0;
+            viewerRef.current.scene.imageryLayers.raiseToTop(layer);
             currentMarkerRef.current = {
-              primitive,
+              layer,
               latitude,
               longitude,
             };
@@ -554,7 +637,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           isUpdatingMarkerRef.current = false;
         }
       },
-      [clearMarker],
+      [clearMarker, viewMode],
     );
 
     useImperativeHandle(
@@ -568,12 +651,54 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     );
 
     useEffect(() => {
+      if (!useMeshRaster) {
+        setMeshRasterActive(false);
+      }
+    }, [setMeshRasterActive, useMeshRaster]);
+
+    useEffect(() => {
+      if (isPlaying) {
+        setMeshRasterActive(false);
+      }
+    }, [isPlaying, setMeshRasterActive]);
+
+    useEffect(() => {
+      if (!viewerReady || !viewerRef.current) return;
+
+      const handleCameraChange = () => {
+        updateRasterLod();
+      };
+
+      viewerRef.current.camera.changed.addEventListener(handleCameraChange);
+      viewerRef.current.scene.preRender.addEventListener(handleCameraChange);
+      updateRasterLod();
+
+      return () => {
+        if (!viewerRef.current || viewerRef.current.isDestroyed()) return;
+        viewerRef.current.camera.changed.removeEventListener(
+          handleCameraChange,
+        );
+        viewerRef.current.scene.preRender.removeEventListener(
+          handleCameraChange,
+        );
+      };
+    }, [updateRasterLod, viewerReady]);
+
+    useEffect(() => {
+      if (!viewerReady || !viewerRef.current) return;
+      if (!cesiumInstance) return;
+      if (!currentMarkerRef.current?.latitude) return;
+
+      addClickMarker(
+        cesiumInstance,
+        currentMarkerRef.current.latitude,
+        currentMarkerRef.current.longitude,
+      );
+    }, [addClickMarker, cesiumInstance, useMeshRasterActive, viewerReady]);
+
+    useEffect(() => {
       return () => {
         isComponentUnmountedRef.current = true;
-        if (pendingRasterTimeoutRef.current) {
-          clearTimeout(pendingRasterTimeoutRef.current);
-          pendingRasterTimeoutRef.current = null;
-        }
       };
     }, []);
 
@@ -588,49 +713,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       window.addEventListener("resize", handleResize);
       return () => window.removeEventListener("resize", handleResize);
     }, []);
-
-    useEffect(() => {
-      if (isLoading) {
-        setIsRasterTransitioning(false);
-        return;
-      }
-
-      // While loading (request or imagery), always show the indicator.
-      if (rasterState.isLoading || isRasterImageryLoading) {
-        setIsRasterTransitioning(true);
-        return;
-      }
-
-      if (rasterState.error) {
-        setIsRasterTransitioning(false);
-        return;
-      }
-
-      // When not playing, hide as soon as the raster is ready.
-      if (!isPlaying) {
-        setIsRasterTransitioning(false);
-        return;
-      }
-
-      // During playback, allow a brief fade-out tied to the transition setting.
-      const indicatorDuration = Math.max(
-        150,
-        Math.min(rasterTransitionMs, 3000),
-      );
-      const timer = window.setTimeout(() => {
-        setIsRasterTransitioning(false);
-      }, indicatorDuration);
-
-      return () => window.clearTimeout(timer);
-    }, [
-      isLoading,
-      rasterState.isLoading,
-      rasterState.error,
-      rasterState.requestKey,
-      isRasterImageryLoading,
-      rasterTransitionMs,
-      isPlaying,
-    ]);
 
     // Helper function to enforce infinite scroll disabled state
     const enforceInfiniteScrollDisabled = useCallback((viewer: any) => {
@@ -648,7 +730,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       if (
         !containerRef.current ||
         viewerRef.current ||
-        initializingViewerRef.current
+        initializingViewerRef.current ||
+        viewMode === "winkel"
       )
         return;
 
@@ -945,6 +1028,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       geographicLinesVisible,
       updateMarkerVisibility,
       addClickMarker,
+      viewMode,
     ]);
 
     const animateLayerAlpha = useCallback(
@@ -1031,12 +1115,59 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           return;
         }
 
+        const validTextures = layerData.textures.filter((texture) => {
+          if (!texture || typeof texture.imageUrl !== "string") {
+            return false;
+          }
+          const trimmed = texture.imageUrl.trim();
+          if (!trimmed) {
+            return false;
+          }
+          const rect = texture.rectangle;
+          if (!rect) {
+            return false;
+          }
+          return (
+            Number.isFinite(rect.west) &&
+            Number.isFinite(rect.south) &&
+            Number.isFinite(rect.east) &&
+            Number.isFinite(rect.north)
+          );
+        });
+
+        if (validTextures.length === 0) {
+          console.warn(
+            "Raster layer textures missing imageUrl/rectangle; skipping imagery layer.",
+            layerData.textures,
+          );
+          rasterLayerRef.current = [];
+          setIsRasterImageryLoading(false);
+          if (previousLayers.length) {
+            animateLayerAlpha(previousLayers, startAlpha, 0, 200, () => {
+              previousLayers.forEach((layer) => {
+                try {
+                  viewer.scene.imageryLayers.remove(layer, true);
+                } catch (err) {
+                  console.warn(
+                    "Failed to remove raster layer during fade-out",
+                    err,
+                  );
+                }
+              });
+              viewer.scene.requestRender();
+            });
+          } else {
+            viewer.scene.requestRender();
+          }
+          return;
+        }
+
         const loadId = textureLoadIdRef.current + 1;
         textureLoadIdRef.current = loadId;
         setIsRasterImageryLoading(true);
 
         Promise.all(
-          layerData.textures.map(
+          validTextures.map(
             (texture) =>
               new Promise<void>((resolve) => {
                 const image = new Image();
@@ -1056,8 +1187,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         });
 
         const newLayers: any[] = [];
+        const visible = !useMeshRasterActiveRef.current;
 
-        layerData.textures.forEach((texture, index) => {
+        validTextures.forEach((texture, index) => {
           try {
             const provider = new cesiumInstance.SingleTileImageryProvider({
               url: texture.imageUrl,
@@ -1078,12 +1210,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             layer.saturation = 1.0;
             layer.gamma = 1.0;
 
-            layer.minificationFilter = rasterBlurEnabled
-              ? cesiumInstance.TextureMinificationFilter.LINEAR
-              : cesiumInstance.TextureMinificationFilter.NEAREST;
-            layer.magnificationFilter = rasterBlurEnabled
-              ? cesiumInstance.TextureMagnificationFilter.LINEAR
-              : cesiumInstance.TextureMagnificationFilter.NEAREST;
+            layer.minificationFilter =
+              cesiumInstance.TextureMinificationFilter.LINEAR;
+            layer.magnificationFilter =
+              cesiumInstance.TextureMagnificationFilter.LINEAR;
 
             viewer.scene.imageryLayers.raiseToTop(layer);
             newLayers.push(layer);
@@ -1093,11 +1223,13 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         });
 
         rasterLayerRef.current = newLayers;
-        const fadeDuration = Math.max(120, Math.min(rasterTransitionMs, 3000));
+        const fadeDuration = 220;
 
-        animateLayerAlpha(newLayers, 0, rasterOpacity, fadeDuration, () => {
+        const targetOpacity = visible ? rasterOpacity : 0;
+        animateLayerAlpha(newLayers, 0, targetOpacity, fadeDuration, () => {
           newLayers.forEach((layer) => {
-            layer.alpha = rasterOpacity;
+            layer.alpha = targetOpacity;
+            layer.show = visible;
           });
         });
 
@@ -1115,15 +1247,326 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
         viewer.scene.requestRender();
       },
-      [
-        animateLayerAlpha,
-        cesiumInstance,
-        rasterOpacity,
-        rasterBlurEnabled,
-        viewerReady,
-        rasterTransitionMs,
-      ],
+      [animateLayerAlpha, cesiumInstance, rasterOpacity, viewerReady],
     );
+
+    const removeMeshPrimitives = useCallback(
+      (viewer: any, target: any | any[] | null) => {
+        if (!viewer || !target) {
+          return;
+        }
+        if (Array.isArray(target)) {
+          target.forEach((primitive) => {
+            try {
+              viewer.scene.primitives.remove(primitive);
+            } catch (err) {
+              console.warn("Failed to remove tile primitive", err);
+            }
+          });
+        } else {
+          try {
+            viewer.scene.primitives.remove(target);
+          } catch (err) {
+            console.warn("Failed to remove raster mesh", err);
+          }
+        }
+      },
+      [],
+    );
+
+    const setMeshVisibility = useCallback(
+      (target: any | any[] | null, visible: boolean) => {
+        if (!target) return;
+        if (Array.isArray(target)) {
+          target.forEach((primitive) => {
+            primitive.show = visible;
+          });
+        } else {
+          target.show = visible;
+        }
+      },
+      [],
+    );
+
+    const setMeshAlpha = useCallback(
+      (target: any | any[] | null, alpha: number) => {
+        if (!target) {
+          return;
+        }
+        const applyAlpha = (primitive: any) => {
+          const alphaState = primitive?.__meshAlphaUniform;
+          if (alphaState) {
+            alphaState.value = alpha;
+          }
+        };
+        if (Array.isArray(target)) {
+          target.forEach(applyAlpha);
+        } else {
+          applyAlpha(target);
+        }
+      },
+      [],
+    );
+
+    const createMeshPrimitives = useCallback(
+      (meshData: ReturnType<typeof buildRasterMesh>) => {
+        const viewer = viewerRef.current;
+        if (!viewer || !cesiumInstance) {
+          return null;
+        }
+
+        const buildAppearance = () => {
+          const isOpaque = rasterOpacity >= 0.999;
+          return new cesiumInstance.Appearance({
+            vertexFormat: cesiumInstance.VertexFormat.POSITION_AND_COLOR,
+            renderState: {
+              depthTest: { enabled: true },
+              depthMask: true,
+              blending: isOpaque
+                ? undefined
+                : cesiumInstance.BlendingState.ALPHA_BLEND,
+              cull: { enabled: false },
+              polygonOffset: { enabled: true, factor: -1, units: -1 },
+            },
+            translucent: !isOpaque,
+            closed: false,
+            vertexShaderSource: `
+              attribute vec3 position3DHigh;
+              attribute vec3 position3DLow;
+              attribute vec4 color;
+              attribute float batchId;
+              varying vec4 v_color;
+              void main() {
+                vec4 position = czm_computePosition();
+                v_color = color;
+                gl_Position = czm_modelViewProjectionRelativeToEye * position;
+              }
+            `,
+            fragmentShaderSource: `
+              varying vec4 v_color;
+              void main() {
+                gl_FragColor = v_color;
+              }
+            `,
+          });
+        };
+
+        const surfaceOffset = 20000;
+        if (meshData.tiles && meshData.tiles.length > 0) {
+          const primitives: any[] = [];
+          for (const tile of meshData.tiles) {
+            const tileVerts = tile.rows * tile.cols;
+            const positions = new Float64Array(tileVerts * 3);
+            for (let i = 0; i < tileVerts; i += 1) {
+              const lon = tile.positionsDegrees[i * 2];
+              const lat = tile.positionsDegrees[i * 2 + 1];
+              const cart = cesiumInstance.Cartesian3.fromDegrees(
+                lon,
+                lat,
+                surfaceOffset,
+              );
+              const outIdx = i * 3;
+              positions[outIdx] = cart.x;
+              positions[outIdx + 1] = cart.y;
+              positions[outIdx + 2] = cart.z;
+            }
+
+            const geometry = new cesiumInstance.Geometry({
+              attributes: {
+                position: new cesiumInstance.GeometryAttribute({
+                  componentDatatype: cesiumInstance.ComponentDatatype.DOUBLE,
+                  componentsPerAttribute: 3,
+                  values: positions,
+                }),
+                color: new cesiumInstance.GeometryAttribute({
+                  componentDatatype:
+                    cesiumInstance.ComponentDatatype.UNSIGNED_BYTE,
+                  componentsPerAttribute: 4,
+                  values: tile.colors,
+                  normalize: true,
+                }),
+                batchId: new cesiumInstance.GeometryAttribute({
+                  componentDatatype: cesiumInstance.ComponentDatatype.FLOAT,
+                  componentsPerAttribute: 1,
+                  values: new Float32Array(tileVerts),
+                }),
+              },
+              indices: tile.indices,
+              primitiveType: cesiumInstance.PrimitiveType.TRIANGLES,
+              boundingSphere:
+                cesiumInstance.BoundingSphere.fromVertices(positions),
+              indexDatatype: cesiumInstance.IndexDatatype.UNSIGNED_INT,
+            });
+
+            const instance = new cesiumInstance.GeometryInstance({ geometry });
+            const appearance = buildAppearance();
+
+            const primitive = new cesiumInstance.Primitive({
+              geometryInstances: instance,
+              appearance,
+              asynchronous: true,
+            });
+
+            primitive.show = false;
+            primitives.push(primitive);
+            viewer.scene.primitives.add(primitive);
+          }
+
+          primitives.forEach((primitive) => {
+            try {
+              viewer.scene.primitives.lowerToBottom(primitive);
+            } catch (err) {
+              console.warn("Failed to lower tile primitive", err);
+            }
+          });
+
+          return primitives;
+        }
+
+        const totalVerts = meshData.rows * meshData.cols;
+        const positions = new Float64Array(totalVerts * 3);
+        for (let i = 0; i < totalVerts; i += 1) {
+          const lon = meshData.positionsDegrees[i * 2];
+          const lat = meshData.positionsDegrees[i * 2 + 1];
+          const cart = cesiumInstance.Cartesian3.fromDegrees(
+            lon,
+            lat,
+            surfaceOffset,
+          );
+          const outIdx = i * 3;
+          positions[outIdx] = cart.x;
+          positions[outIdx + 1] = cart.y;
+          positions[outIdx + 2] = cart.z;
+        }
+
+        const geometry = new cesiumInstance.Geometry({
+          attributes: {
+            position: new cesiumInstance.GeometryAttribute({
+              componentDatatype: cesiumInstance.ComponentDatatype.DOUBLE,
+              componentsPerAttribute: 3,
+              values: positions,
+            }),
+            color: new cesiumInstance.GeometryAttribute({
+              componentDatatype: cesiumInstance.ComponentDatatype.UNSIGNED_BYTE,
+              componentsPerAttribute: 4,
+              values: meshData.colors,
+              normalize: true,
+            }),
+            batchId: new cesiumInstance.GeometryAttribute({
+              componentDatatype: cesiumInstance.ComponentDatatype.FLOAT,
+              componentsPerAttribute: 1,
+              values: new Float32Array(totalVerts),
+            }),
+          },
+          indices: meshData.indices,
+          primitiveType: cesiumInstance.PrimitiveType.TRIANGLES,
+          boundingSphere: cesiumInstance.BoundingSphere.fromVertices(positions),
+        });
+
+        const appearance = buildAppearance();
+        const instance = new cesiumInstance.GeometryInstance({ geometry });
+        const primitive = new cesiumInstance.Primitive({
+          geometryInstances: instance,
+          appearance,
+          asynchronous: true,
+        });
+        primitive.show = false;
+        viewer.scene.primitives.add(primitive);
+        try {
+          viewer.scene.primitives.lowerToBottom(primitive);
+        } catch (err) {
+          console.warn("Failed to lower raster mesh", err);
+        }
+        return primitive;
+      },
+      [cesiumInstance, rasterOpacity],
+    );
+
+    const activateMeshPrimitives = useCallback(
+      (target: any | any[] | null) => {
+        if (!viewerRef.current) return;
+        if (rasterMeshRef.current && rasterMeshRef.current !== target) {
+          setMeshVisibility(rasterMeshRef.current, false);
+        }
+        rasterMeshRef.current = target;
+        setMeshVisibility(target, true);
+        viewerRef.current.scene.requestRender();
+      },
+      [setMeshVisibility],
+    );
+
+    const clearMeshCache = useCallback(() => {
+      const viewer = viewerRef.current;
+      if (!viewer) return;
+      meshPrimitiveCacheRef.current.forEach((primitive) => {
+        removeMeshPrimitives(viewer, primitive);
+      });
+      meshPrimitiveCacheRef.current.clear();
+      rasterMeshRef.current = null;
+    }, [removeMeshPrimitives]);
+
+    const cancelMeshFade = useCallback(() => {
+      if (rasterMeshFadeFrameRef.current != null) {
+        cancelAnimationFrame(rasterMeshFadeFrameRef.current);
+        rasterMeshFadeFrameRef.current = null;
+      }
+      const viewer = viewerRef.current;
+      if (viewer && rasterMeshFadeOutRef.current) {
+        removeMeshPrimitives(viewer, rasterMeshFadeOutRef.current);
+        rasterMeshFadeOutRef.current = null;
+      }
+    }, [removeMeshPrimitives]);
+
+    const clearRasterMesh = useCallback(() => {
+      const viewer = viewerRef.current;
+      if (!viewer || !rasterMeshRef.current) {
+        return;
+      }
+      cancelMeshFade();
+      setMeshVisibility(rasterMeshRef.current, false);
+      rasterMeshRef.current = null;
+      viewer.scene.requestRender();
+    }, [cancelMeshFade, removeMeshPrimitives]);
+
+    const applyRasterMesh = useCallback(
+      (meshData?: ReturnType<typeof buildRasterMesh>, cacheKey?: string) => {
+        if (!meshData || meshData.rows === 0 || meshData.cols === 0) {
+          clearRasterMesh();
+          return;
+        }
+
+        const key = cacheKey ?? "";
+        const cached = key ? meshPrimitiveCacheRef.current.get(key) : undefined;
+        if (cached) {
+          activateMeshPrimitives(cached);
+          return;
+        }
+
+        const created = createMeshPrimitives(meshData);
+        if (!created) {
+          clearRasterMesh();
+          return;
+        }
+        if (key) {
+          meshPrimitiveCacheRef.current.set(key, created);
+        }
+        activateMeshPrimitives(created);
+      },
+      [activateMeshPrimitives, clearRasterMesh, createMeshPrimitives],
+    );
+
+    useEffect(() => {
+      if (viewMode === "winkel" && viewerRef.current) {
+        try {
+          viewerRef.current.destroy();
+        } catch (err) {
+          console.warn("Failed to destroy Cesium viewer", err);
+        }
+        viewerRef.current = null;
+        setViewerReady(false);
+        initializingViewerRef.current = false;
+      }
+    }, [viewMode]);
 
     useEffect(() => {
       return () => {
@@ -1141,6 +1584,11 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             });
             rasterLayerRef.current = [];
           }
+          if (rasterMeshRef.current) {
+            cancelMeshFade();
+            setMeshVisibility(rasterMeshRef.current, false);
+          }
+          clearMeshCache();
           clearMarker();
           clearSearchMarker();
           boundaryEntitiesRef.current = [];
@@ -1151,40 +1599,14 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           initializingViewerRef.current = false;
         }
       };
-    }, [clearMarker, clearSearchMarker]);
-
-    const scheduleRasterApply = useCallback(
-      (layerData?: RasterLayerData, shouldThrottle = false) => {
-        if (pendingRasterTimeoutRef.current) {
-          clearTimeout(pendingRasterTimeoutRef.current);
-          pendingRasterTimeoutRef.current = null;
-        }
-
-        const now = Date.now();
-        const elapsed = now - (lastRasterApplyRef.current || 0);
-        const holdMs = shouldThrottle ? Math.max(0, rasterTransitionMs) : 0;
-        const delay = Math.max(0, holdMs - elapsed);
-
-        // If we're not throttling (play is off), apply immediately and drop any queued work.
-        if (!shouldThrottle) {
-          lastRasterApplyRef.current = now;
-          applyRasterLayers(layerData);
-          return;
-        }
-
-        if (delay > 0) {
-          pendingRasterTimeoutRef.current = setTimeout(() => {
-            lastRasterApplyRef.current = Date.now();
-            applyRasterLayers(layerData);
-            pendingRasterTimeoutRef.current = null;
-          }, delay);
-        } else {
-          lastRasterApplyRef.current = now;
-          applyRasterLayers(layerData);
-        }
-      },
-      [applyRasterLayers, rasterTransitionMs],
-    );
+    }, [
+      cancelMeshFade,
+      clearMarker,
+      clearMeshCache,
+      clearSearchMarker,
+      removeMeshPrimitives,
+      setMeshVisibility,
+    ]);
 
     useEffect(() => {
       if (rasterState.error) {
@@ -1192,12 +1614,20 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       }
     }, [rasterState.error]);
 
+    useEffect(() => {
+      if (rasterGridState.error) {
+        console.warn("Raster grid pipeline error", rasterGridState.error);
+      }
+    }, [rasterGridState.error]);
+
     const applyViewMode = useCallback(() => {
       if (!viewerRef.current || !cesiumInstance) return;
       const viewer = viewerRef.current;
       const Cesium = cesiumInstance;
 
-      if (viewMode === "2d") {
+      const is2D = viewMode === "2d" || viewMode === "winkel";
+
+      if (is2D) {
         viewer.scene.morphTo2D(0.0);
         viewer.scene.globe.show = true;
 
@@ -1236,7 +1666,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
     // Add an effect to periodically enforce infinite scroll disabled in 2D mode
     useEffect(() => {
-      if (viewMode !== "2d" || !viewerRef.current) return;
+      const is2D = viewMode === "2d" || viewMode === "winkel";
+      if (!is2D || !viewerRef.current) return;
 
       // Set up an interval to periodically check and enforce the setting
       const intervalId = setInterval(() => {
@@ -1279,14 +1710,35 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
 
-      scheduleRasterApply(rasterState.data, isPlaying);
+      applyRasterLayers(rasterState.data);
     }, [
-      scheduleRasterApply,
+      applyRasterLayers,
       rasterState.data,
       rasterState.requestKey,
       viewerReady,
-      isPlaying,
     ]);
+
+    useEffect(() => {
+      if (!viewerReady || !viewerRef.current) return;
+
+      const layers = rasterLayerRef.current;
+      if (!layers.length) return;
+
+      const visible = !useMeshRasterActive;
+      const targetOpacity = visible ? rasterOpacity : 0;
+      const startOpacity =
+        layers[0]?.alpha !== undefined ? layers[0].alpha : targetOpacity;
+
+      layers.forEach((layer) => {
+        layer.show = true;
+      });
+      animateLayerAlpha(layers, startOpacity, targetOpacity, 160, () => {
+        layers.forEach((layer) => {
+          layer.alpha = targetOpacity;
+          layer.show = visible;
+        });
+      });
+    }, [animateLayerAlpha, rasterOpacity, useMeshRasterActive, viewerReady]);
 
     useEffect(() => {
       if (!viewerReady) return;
@@ -1294,6 +1746,32 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     }, [viewerReady, applyViewMode]);
 
     useEffect(() => {
+      if (useMeshRaster && useMeshRasterActive) {
+        if (
+          rasterGridState.data &&
+          rasterGridState.dataKey === rasterGridState.requestKey
+        ) {
+          rasterDataRef.current = rasterGridState.data;
+        } else {
+          rasterDataRef.current = undefined;
+        }
+        if (onRasterMetadataChange) {
+          if (
+            rasterGridState.data &&
+            rasterGridState.dataKey === rasterGridState.requestKey
+          ) {
+            onRasterMetadataChange({
+              units: rasterGridState.data.units ?? null,
+              min: rasterGridState.data.min ?? null,
+              max: rasterGridState.data.max ?? null,
+            });
+          } else {
+            onRasterMetadataChange(null);
+          }
+        }
+        return;
+      }
+
       rasterDataRef.current = rasterState.data;
       if (onRasterMetadataChange) {
         if (rasterState.data) {
@@ -1306,18 +1784,228 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           onRasterMetadataChange(null);
         }
       }
-    }, [rasterState.data, onRasterMetadataChange]);
+    }, [
+      onRasterMetadataChange,
+      rasterGridState.data,
+      rasterGridState.dataKey,
+      rasterGridState.requestKey,
+      rasterState.data,
+      useMeshRaster,
+      useMeshRasterActive,
+    ]);
 
     useEffect(() => {
       if (!viewerReady) return;
-      if (!rasterDataRef.current) return;
-      // Always apply immediately when not playing (manual changes should feel instant)
-      scheduleRasterApply(rasterDataRef.current, isPlaying);
-    }, [viewerReady, scheduleRasterApply, isPlaying]);
+      if (!useMeshRaster || !useMeshRasterActive) {
+        clearRasterMesh();
+        return;
+      }
 
-    const showInitialLoading = isLoading;
-    const showRasterTransitionLoading =
-      !isLoading && isRasterTransitioning && !isPlaying;
+      const grid = rasterGridState.data;
+      const hasMatchingGrid =
+        grid && rasterGridState.dataKey === rasterGridState.requestKey;
+      if (!hasMatchingGrid || !currentDataset?.colorScale?.colors?.length) {
+        clearRasterMesh();
+        return;
+      }
+
+      const min = grid.min ?? 0;
+      const max = grid.max ?? 1;
+      const effectiveOpacity = rasterOpacity;
+      const mesh = buildRasterMesh({
+        lat: grid.lat,
+        lon: grid.lon,
+        values: grid.values,
+        mask: grid.mask,
+        min,
+        max,
+        colors: currentDataset.colorScale.colors,
+        opacity: effectiveOpacity,
+        smoothValues: rasterBlurEnabled,
+        useTiling: shouldTileLargeMesh,
+      });
+      applyRasterMesh(mesh, rasterGridState.requestKey);
+    }, [
+      applyRasterMesh,
+      clearRasterMesh,
+      currentDataset?.colorScale?.colors,
+      rasterGridState.data,
+      rasterGridState.dataKey,
+      rasterGridState.requestKey,
+      rasterBlurEnabled,
+      rasterOpacity,
+      satelliteLayerVisible,
+      shouldTileLargeMesh,
+      useMeshRaster,
+      useMeshRasterActive,
+      viewerReady,
+    ]);
+
+    useEffect(() => {
+      if (!viewerReady || !useMeshRaster || !prefetchedRasterGrids) {
+        return;
+      }
+      const abortSignal = { aborted: false };
+      meshPreloadAbortRef.current = abortSignal;
+      const entries =
+        prefetchedRasterGrids instanceof Map
+          ? Array.from(prefetchedRasterGrids.entries())
+          : Object.entries(prefetchedRasterGrids);
+
+      let index = 0;
+      const preloadNext = () => {
+        if (abortSignal.aborted || index >= entries.length) {
+          return;
+        }
+        const [key, grid] = entries[index];
+        index += 1;
+
+        if (
+          !grid ||
+          !currentDataset?.colorScale?.colors?.length ||
+          meshPrimitiveCacheRef.current.has(key)
+        ) {
+          setTimeout(preloadNext, 0);
+          return;
+        }
+
+        const min = grid.min ?? 0;
+        const max = grid.max ?? 1;
+        const mesh = buildRasterMesh({
+          lat: grid.lat,
+          lon: grid.lon,
+          values: grid.values,
+          mask: grid.mask,
+          min,
+          max,
+          colors: currentDataset.colorScale.colors,
+          opacity: rasterOpacity,
+          smoothValues: rasterBlurEnabled,
+          useTiling: shouldTileLargeMesh,
+        });
+        const created = createMeshPrimitives(mesh);
+        if (created) {
+          meshPrimitiveCacheRef.current.set(key, created);
+        }
+        setTimeout(preloadNext, 0);
+      };
+
+      preloadNext();
+
+      return () => {
+        abortSignal.aborted = true;
+      };
+    }, [
+      createMeshPrimitives,
+      currentDataset?.colorScale?.colors,
+      prefetchedRasterGrids,
+      rasterBlurEnabled,
+      rasterOpacity,
+      shouldTileLargeMesh,
+      useMeshRaster,
+      viewerReady,
+    ]);
+
+    useEffect(() => {
+      clearMeshCache();
+    }, [clearMeshCache, currentDataset?.id, selectedLevel]);
+
+    const isWinkel = viewMode === "winkel";
+    const showInitialLoading = isWinkel ? false : isLoading;
+    const showRasterLoading =
+      !isPlaying &&
+      ((useMeshRasterActive
+        ? rasterGridState.isLoading
+        : rasterState.isLoading) ||
+        (isWinkel ? false : isRasterImageryLoading) ||
+        false);
+
+    if (isWinkel) {
+      return (
+        <div
+          className="absolute inset-0 z-0 h-full w-full"
+          style={{
+            background:
+              "radial-gradient(ellipse at center, #1e3a8a 0%, #0f172a 50%, #000000 100%)",
+            minHeight: "100vh",
+            minWidth: "100vw",
+          }}
+        >
+          {(rasterState.isLoading || !rasterState.data) && (
+            <GlobeLoading
+              message="Rendering Winkel Tripel…"
+              subtitle="Projecting climate data to 2D"
+            />
+          )}
+          <WinkelMap
+            rasterData={rasterState.data}
+            rasterOpacity={rasterOpacity}
+            satelliteLayerVisible={satelliteLayerVisible}
+            boundaryLinesVisible={boundaryLinesVisible}
+            geographicLinesVisible={geographicLinesVisible}
+            currentDataset={currentDataset}
+            onRegionClick={onRegionClick}
+            clearMarkerSignal={winkelClearMarkerTick}
+          />
+          {currentDataset && (
+            <Dialog>
+              <DialogTrigger asChild>
+                <div className="absolute inset-x-0 top-6 z-30 mx-auto max-w-max">
+                  <Button
+                    variant="ghost"
+                    title="Click for dataset details"
+                    id="dataset-title"
+                    className="text-3xl font-semibold"
+                    onClick={() => setIsModalOpen(true)}
+                  >
+                    {currentDataset.name}
+                  </Button>
+                </div>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[625px]">
+                <DialogHeader>
+                  <DialogTitle className="mb-2 text-2xl font-semibold">
+                    {currentDataset.name}
+                  </DialogTitle>
+                  <DialogDescription className="text-lg">
+                    <span className="text-xl">
+                      {currentDataset.description}
+                    </span>
+                    <br />
+                    <br />
+                    <span>
+                      Date Range:{" "}
+                      {currentDataset?.startDate && currentDataset?.endDate
+                        ? `${new Date(
+                            currentDataset.startDate,
+                          ).toLocaleDateString("en-US", {
+                            year: "numeric",
+                            month: "numeric",
+                            day: "numeric",
+                          })} - ${new Date(
+                            currentDataset.endDate,
+                          ).toLocaleDateString("en-US", {
+                            year: "numeric",
+                            month: "numeric",
+                            day: "numeric",
+                          })}`
+                        : "Date information not available"}
+                    </span>
+                    <br />
+                    <span>Units: {currentDataset.units} </span>
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button variant="outline">Close</Button>
+                  </DialogClose>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
+        </div>
+      );
+    }
 
     if (error) {
       return (
@@ -1357,7 +2045,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           />
         )}
 
-        {showRasterTransitionLoading && (
+        {showRasterLoading && (
           <GlobeLoading
             message="Rendering dataset…"
             subtitle={

@@ -1,4 +1,6 @@
 import type { HTMLAttributes } from "react";
+import type { RasterLayerData } from "@/hooks/useRasterLayer";
+import type { RasterGridData } from "@/hooks/useRasterGrid";
 
 export interface DatasetBackendDetails {
   id?: string | null;
@@ -135,7 +137,6 @@ export interface GlobeSettings {
   boundaryLinesVisible: boolean;
   geographicLinesVisible: boolean;
   rasterOpacity: number;
-  rasterTransitionMs?: number;
   hideZeroPrecipitation: boolean;
   rasterBlurEnabled: boolean;
   colorbarCustomMin?: number | null;
@@ -246,11 +247,18 @@ export interface GlobeProps {
   boundaryLinesVisible?: boolean;
   geographicLinesVisible?: boolean;
   rasterOpacity?: number;
-  rasterTransitionMs?: number;
   hideZeroPrecipitation?: boolean;
   rasterBlurEnabled?: boolean;
+  useMeshRaster?: boolean;
   // Disable loading overlays during timeline playback
   isPlaying?: boolean;
+  prefetchedRasters?:
+    | Map<string, RasterLayerData>
+    | Record<string, RasterLayerData>;
+  prefetchedRasterGrids?:
+    | Map<string, RasterGridData>
+    | Record<string, RasterGridData>;
+  meshFadeDurationMs?: number;
   onRasterMetadataChange?: (
     meta: {
       units?: string | null;
@@ -260,7 +268,7 @@ export interface GlobeProps {
   ) => void;
 }
 
-export type GlobeViewMode = "3d" | "2d";
+export type GlobeViewMode = "3d" | "2d" | "winkel";
 
 export interface RegionData {
   name: string;
@@ -288,9 +296,12 @@ export type SidebarPanel = "datasets" | "history" | "about" | null;
 export interface ColorBarProps {
   show: boolean;
   onToggle: () => void;
+  onToggleCollapse?: (collapsed: boolean) => void;
   dataset: Dataset;
   unit?: TemperatureUnit;
   onUnitChange?: (unit: TemperatureUnit) => void;
+  onRangeChange?: (range: { min: number | null; max: number | null }) => void;
+  onRangeReset?: () => void;
   onPositionChange?: (position: { x: number; y: number }) => void;
   collapsed?: boolean;
   rasterMeta?: {
@@ -299,6 +310,11 @@ export interface ColorBarProps {
     max?: number | null;
   } | null;
   orientation?: ColorBarOrientation;
+  customRange?: {
+    enabled?: boolean;
+    min?: number | null;
+    max?: number | null;
+  };
 }
 
 export interface TimeBarProps {

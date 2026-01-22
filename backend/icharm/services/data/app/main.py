@@ -163,6 +163,12 @@ async def visualize_raster(request: RasterRequest):
     return await VisualizeRaster.visualize_raster(request)
 
 
+@router.post("/raster/grid", response_class=CustomJSONResponse)
+async def raster_grid(request: RasterRequest):
+    """Generate raw raster grid for client-side mesh rendering."""
+    return await VisualizeRaster.visualize_raster_grid(request)
+
+
 @router.get("/timeseries/datasets", response_class=CustomJSONResponse)
 async def list_available_datasets(
     stored: Optional[Literal["local", "cloud", "all"]] = "all",

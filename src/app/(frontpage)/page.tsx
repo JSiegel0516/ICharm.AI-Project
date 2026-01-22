@@ -12,10 +12,38 @@ import ColorBar from "@/components/ui/ColorBar";
 import TimeBar from "@/components/ui/TimeBar";
 import PressureLevelsSelector from "@/components/ui/Popups/PressureLevelsSelector";
 import RegionInfoPanel from "@/components/ui/RegionInfoPanel";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Calendar } from "@/components/ui/calendar";
+import { Input } from "@/components/ui/input";
 import { useAppState } from "@/context/HeaderContext";
-import { RegionData, PressureLevel, GlobeSettings } from "@/types";
+import {
+  RegionData,
+  PressureLevel,
+  GlobeSettings,
+  type Dataset,
+} from "@/types";
 import { pressureLevels } from "@/utils/constants";
 import { isSeaSurfaceTemperatureDataset } from "@/utils/datasetGuards";
+import {
+  buildRasterRequestKey,
+  fetchRasterVisualization,
+  resolveEffectiveColorbarRange,
+  type RasterLayerData,
+} from "@/hooks/useRasterLayer";
+import {
+  buildRasterGridRequestKey,
+  fetchRasterGrid,
+  type RasterGridData,
+} from "@/hooks/useRasterGrid";
+import { Play, Square, Loader2 } from "lucide-react";
 import { SideButtons } from "./_components/SideButtons";
 import { Tutorial } from "./_components/Tutorial";
 
@@ -109,11 +137,96 @@ const parseNumericList = (input: unknown): number[] => {
   return [];
 };
 
+type VisualizationStep = "year" | "month" | "day";
+
+const clampDateToRange = (date: Date, minDate: Date, maxDate: Date) => {
+  if (date < minDate) return minDate;
+  if (date > maxDate) return maxDate;
+  return date;
+};
+
+const stepDate = (date: Date, step: VisualizationStep) => {
+  const next = new Date(date);
+  if (step === "year") {
+    next.setFullYear(next.getFullYear() + 1);
+  } else if (step === "month") {
+    next.setMonth(next.getMonth() + 1);
+  } else {
+    next.setDate(next.getDate() + 1);
+  }
+  return next;
+};
+
+const buildFrameDates = (
+  start: Date,
+  end: Date,
+  step: VisualizationStep,
+): Date[] => {
+  const frames: Date[] = [];
+  let cursor = new Date(start);
+  const limit = 10_000;
+  let guard = 0;
+
+  while (cursor <= end && guard < limit) {
+    frames.push(new Date(cursor));
+    const next = stepDate(cursor, step);
+    if (next <= cursor) {
+      break;
+    }
+    cursor = next;
+    guard += 1;
+  }
+
+  return frames;
+};
+
+const getStepOptionsForDataset = (
+  dataset?: Dataset | null,
+): VisualizationStep[] => {
+  const resolution = dataset?.temporalResolution ?? "monthly";
+  if (resolution === "yearly") return ["year"];
+  if (resolution === "monthly") return ["month", "year"];
+  return ["day", "month", "year"];
+};
+
+const parseDateInput = (
+  value: string,
+  minDate: Date,
+  maxDate: Date,
+): Date | null => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return null;
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return clampDateToRange(parsed, minDate, maxDate);
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const clampDayIndex = (value: number, maxDays: number) => {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(Math.max(Math.round(value), 0), maxDays);
+};
+
+const dateToDayIndex = (date: Date, minDate: Date, maxDays: number) => {
+  const diffDays = Math.round((date.getTime() - minDate.getTime()) / DAY_MS);
+  return clampDayIndex(diffDays, maxDays);
+};
+
+const dayIndexToDate = (index: number, minDate: Date, maxDate: Date) => {
+  const next = new Date(minDate.getTime() + index * DAY_MS);
+  return clampDateToRange(next, minDate, maxDate);
+};
+
 export default function HomePage() {
   const {
     showColorbar,
     currentDataset,
     toggleColorbar,
+    datasets,
     colorBarOrientation,
     locationFocusRequest,
     clearLocationFocusRequest,
@@ -123,6 +236,7 @@ export default function HomePage() {
     setRegionInfoData,
     selectedDate,
     setSelectedDate,
+    setCurrentDataset,
     setCurrentLocationMarker,
     temperatureUnit,
     setTemperatureUnit,
@@ -130,8 +244,39 @@ export default function HomePage() {
   const globeRef = useRef<GlobeRef>(null);
   const lastDatasetIdRef = useRef<string | null>(null);
 
-  // Date & Time State
-  const [isTimebarPlaying, setIsTimebarPlaying] = useState(false);
+  // Visualization State
+  const [showVisualizationModal, setShowVisualizationModal] = useState(false);
+  const [visualizationStart, setVisualizationStart] = useState<Date | null>(
+    null,
+  );
+  const [visualizationEnd, setVisualizationEnd] = useState<Date | null>(null);
+  const [visualizationStep, setVisualizationStep] =
+    useState<VisualizationStep>("month");
+  const [visualizationStatus, setVisualizationStatus] = useState<
+    "idle" | "preparing" | "ready" | "playing"
+  >("idle");
+  const [visualizationProgress, setVisualizationProgress] = useState(0);
+  const [visualizationDates, setVisualizationDates] = useState<Date[]>([]);
+  const [activeVisualizationIndex, setActiveVisualizationIndex] = useState(0);
+  const [visualizationError, setVisualizationError] = useState<string | null>(
+    null,
+  );
+  const [startInputValue, setStartInputValue] = useState("");
+  const [endInputValue, setEndInputValue] = useState("");
+  const [prefetchedRasters, setPrefetchedRasters] = useState<
+    Map<string, RasterLayerData>
+  >(new Map());
+  const [prefetchedRasterGrids, setPrefetchedRasterGrids] = useState<
+    Map<string, RasterGridData>
+  >(new Map());
+  const [visualizationFadeMs, setVisualizationFadeMs] = useState(300);
+  const [showVisualizationBar, setShowVisualizationBar] = useState(true);
+  const [visualizationTarget, setVisualizationTarget] = useState<{
+    datasetId: string;
+    datasetSnapshot: Dataset;
+    level: number | null;
+  } | null>(null);
+  const visualizationAbortRef = useRef<AbortController | null>(null);
 
   // UI State
   const [activeSidebarPanel, setActiveSidebarPanel] =
@@ -203,26 +348,418 @@ export default function HomePage() {
   // Pressure Level State
   const [selectedPressureLevel, setSelectedPressureLevel] =
     useState<PressureLevel | null>(null);
-  useState<PressureLevel | null>(null);
   const [rasterMeta, setRasterMeta] = useState<{
     units?: string | null;
     min?: number | null;
     max?: number | null;
   } | null>(null);
+  const selectedLevelValue =
+    hasPressureLevels && selectedPressureLevel
+      ? selectedPressureLevel.value
+      : null;
 
   // Globe Settings State
   const [globeSettings, setGlobeSettings] = useState<GlobeSettings>({
     satelliteLayerVisible: true,
     boundaryLinesVisible: true,
     geographicLinesVisible: false,
-    rasterOpacity: 1,
-    rasterTransitionMs: 320,
+    rasterOpacity: 0.9,
     hideZeroPrecipitation: false,
-    rasterBlurEnabled: true,
+    rasterBlurEnabled: false,
     colorbarCustomMin: null,
     colorbarCustomMax: null,
     viewMode: "3d",
   });
+
+  const colorbarRange = useMemo(
+    () => ({
+      enabled:
+        globeSettings.colorbarCustomMin !== null ||
+        globeSettings.colorbarCustomMax !== null,
+      min: globeSettings.colorbarCustomMin ?? null,
+      max: globeSettings.colorbarCustomMax ?? null,
+    }),
+    [globeSettings.colorbarCustomMin, globeSettings.colorbarCustomMax],
+  );
+
+  const datasetStartDate = useMemo(
+    () =>
+      currentDataset?.startDate
+        ? new Date(currentDataset.startDate)
+        : new Date(1979, 0, 1),
+    [currentDataset?.startDate],
+  );
+
+  const datasetEndDate = useMemo(
+    () =>
+      currentDataset?.endDate ? new Date(currentDataset.endDate) : new Date(),
+    [currentDataset?.endDate],
+  );
+  const totalDatasetDays = useMemo(
+    () =>
+      Math.max(
+        0,
+        Math.round(
+          (datasetEndDate.getTime() - datasetStartDate.getTime()) / DAY_MS,
+        ),
+      ),
+    [datasetEndDate, datasetStartDate],
+  );
+
+  const stepOptions = useMemo(
+    () => getStepOptionsForDataset(currentDataset),
+    [currentDataset],
+  );
+
+  useEffect(() => {
+    const nextStep =
+      stepOptions.includes(visualizationStep) && visualizationStep
+        ? visualizationStep
+        : stepOptions[0];
+    if (nextStep && nextStep !== visualizationStep) {
+      setVisualizationStep(nextStep);
+    }
+
+    const defaultStart =
+      visualizationStart ??
+      selectedDate ??
+      clampDateToRange(new Date(), datasetStartDate, datasetEndDate);
+    const clampedStart = clampDateToRange(
+      defaultStart,
+      datasetStartDate,
+      datasetEndDate,
+    );
+    const desiredEnd =
+      visualizationEnd ??
+      selectedDate ??
+      clampDateToRange(new Date(), datasetStartDate, datasetEndDate);
+    const normalizedEnd = desiredEnd < clampedStart ? clampedStart : desiredEnd;
+    const clampedEnd = clampDateToRange(
+      normalizedEnd,
+      datasetStartDate,
+      datasetEndDate,
+    );
+
+    if (
+      !visualizationStart ||
+      visualizationStart.getTime() !== clampedStart.getTime()
+    ) {
+      setVisualizationStart(clampedStart);
+    }
+    if (
+      !visualizationEnd ||
+      visualizationEnd.getTime() !== clampedEnd.getTime()
+    ) {
+      setVisualizationEnd(clampedEnd);
+    }
+  }, [
+    datasetEndDate,
+    datasetStartDate,
+    selectedDate,
+    stepOptions,
+    visualizationEnd,
+    visualizationStart,
+    visualizationStep,
+  ]);
+
+  useEffect(() => {
+    if (!showVisualizationModal) {
+      return;
+    }
+    const fallbackStart = clampDateToRange(
+      visualizationStart ??
+        selectedDate ??
+        clampDateToRange(new Date(), datasetStartDate, datasetEndDate),
+      datasetStartDate,
+      datasetEndDate,
+    );
+    const fallbackEnd = clampDateToRange(
+      visualizationEnd ??
+        selectedDate ??
+        clampDateToRange(new Date(), datasetStartDate, datasetEndDate),
+      datasetStartDate,
+      datasetEndDate,
+    );
+    setStartInputValue(fallbackStart.toISOString().slice(0, 10));
+    setVisualizationStart(fallbackStart);
+    setEndInputValue(fallbackEnd.toISOString().slice(0, 10));
+    setVisualizationEnd(fallbackEnd);
+  }, [
+    datasetEndDate,
+    datasetStartDate,
+    selectedDate,
+    showVisualizationModal,
+    visualizationEnd,
+    visualizationStart,
+  ]);
+
+  useEffect(() => {
+    // If the user changes visualization inputs while a previous run is active,
+    // we intentionally keep the existing progress so they can browse other datasets.
+  }, []);
+
+  const playbackIntervalMs = useMemo(() => {
+    if (visualizationStep === "year") return 1200;
+    if (visualizationStep === "month") return 800;
+    return 500;
+  }, [visualizationStep]);
+
+  const startPlayback = useCallback(() => {
+    if (
+      !visualizationDates.length ||
+      prefetchedRasters.size === 0 ||
+      prefetchedRasterGrids.size === 0 ||
+      !visualizationTarget
+    ) {
+      return;
+    }
+    if (visualizationTarget.datasetId) {
+      const targetDataset =
+        datasets.find((ds) => ds.id === visualizationTarget.datasetId) ??
+        visualizationTarget.datasetSnapshot;
+      setCurrentDataset(targetDataset);
+    }
+    const safeIndex = Math.min(
+      activeVisualizationIndex,
+      visualizationDates.length - 1,
+    );
+    setActiveVisualizationIndex(safeIndex);
+    setSelectedDate(visualizationDates[safeIndex]);
+    setVisualizationStatus("playing");
+  }, [
+    activeVisualizationIndex,
+    prefetchedRasters,
+    prefetchedRasterGrids,
+    setSelectedDate,
+    visualizationDates,
+  ]);
+
+  const handleStopVisualization = useCallback(() => {
+    if (visualizationAbortRef.current) {
+      visualizationAbortRef.current.abort();
+      visualizationAbortRef.current = null;
+    }
+    setVisualizationStatus("idle");
+    setVisualizationProgress(0);
+    setPrefetchedRasters(new Map());
+    setPrefetchedRasterGrids(new Map());
+    setVisualizationDates([]);
+    setActiveVisualizationIndex(0);
+  }, []);
+
+  const handleBeginVisualization = useCallback(async () => {
+    if (!currentDataset || !visualizationStart || !visualizationEnd) {
+      setVisualizationError("Select a start and end date.");
+      return;
+    }
+
+    setVisualizationTarget({
+      datasetId: currentDataset.id,
+      datasetSnapshot: currentDataset,
+      level: selectedLevelValue ?? null,
+    });
+    setShowVisualizationModal(false);
+    setShowVisualizationBar(true);
+
+    const normalizedStart = clampDateToRange(
+      visualizationStart,
+      datasetStartDate,
+      datasetEndDate,
+    );
+    const normalizedEnd = clampDateToRange(
+      visualizationEnd,
+      datasetStartDate,
+      datasetEndDate,
+    );
+    const start =
+      normalizedStart <= normalizedEnd ? normalizedStart : normalizedEnd;
+    const end =
+      normalizedEnd >= normalizedStart ? normalizedEnd : normalizedStart;
+    const frames = buildFrameDates(start, end, visualizationStep);
+
+    if (!frames.length) {
+      setVisualizationError("Unable to build frames for the selected range.");
+      return;
+    }
+
+    if (visualizationAbortRef.current) {
+      visualizationAbortRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    visualizationAbortRef.current = controller;
+
+    setVisualizationError(null);
+    setVisualizationStatus("preparing");
+    setVisualizationProgress(0);
+    setVisualizationDates(frames);
+    setActiveVisualizationIndex(0);
+    setPrefetchedRasters(new Map());
+    setPrefetchedRasterGrids(new Map());
+
+    const cssColors = currentDataset?.colorScale?.colors
+      ?.map((color) => (typeof color === "string" ? color.trim() : ""))
+      .filter(Boolean);
+    const colorRangeForRequests = resolveEffectiveColorbarRange(
+      currentDataset,
+      colorbarRange,
+    );
+    const keyDatasetId =
+      currentDataset.backend?.id ??
+      currentDataset.backendId ??
+      currentDataset.backend?.slug ??
+      currentDataset.backendSlug ??
+      currentDataset.id;
+
+    try {
+      const nextMap = new Map<string, RasterLayerData>();
+      const nextGridMap = new Map<string, RasterGridData>();
+      const loadedImageUrls = new Set<string>();
+      const preloadTextureImages = async (
+        textures: RasterLayerData["textures"],
+      ) => {
+        if (!Array.isArray(textures) || textures.length === 0) {
+          return;
+        }
+        await Promise.all(
+          textures.map((texture) => {
+            const url =
+              typeof texture?.imageUrl === "string"
+                ? texture.imageUrl.trim()
+                : "";
+            if (!url || loadedImageUrls.has(url)) {
+              return Promise.resolve();
+            }
+            loadedImageUrls.add(url);
+            return new Promise<void>((resolve) => {
+              const image = new Image();
+              image.onload = () => resolve();
+              image.onerror = () => resolve();
+              image.src = url;
+            });
+          }),
+        );
+      };
+      for (let i = 0; i < frames.length; i += 1) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        const frameDate = frames[i];
+        const raster = await fetchRasterVisualization({
+          dataset: currentDataset,
+          backendDatasetId: keyDatasetId,
+          date: frameDate,
+          level: selectedLevelValue ?? undefined,
+          cssColors,
+          maskZeroValues: globeSettings.hideZeroPrecipitation,
+          colorbarRange: colorRangeForRequests,
+          signal: controller.signal,
+        });
+        await preloadTextureImages(raster.textures);
+        const rasterGrid = await fetchRasterGrid({
+          dataset: currentDataset,
+          backendDatasetId: keyDatasetId,
+          date: frameDate,
+          level: selectedLevelValue ?? undefined,
+          maskZeroValues: globeSettings.hideZeroPrecipitation,
+          colorbarRange: colorRangeForRequests,
+          signal: controller.signal,
+        });
+
+        const key = buildRasterRequestKey({
+          dataset: currentDataset,
+          backendDatasetId: keyDatasetId,
+          date: frameDate,
+          level: selectedLevelValue ?? undefined,
+          cssColors,
+          maskZeroValues: globeSettings.hideZeroPrecipitation,
+          colorbarRange: colorRangeForRequests,
+        });
+
+        if (key) {
+          nextMap.set(key, raster);
+        }
+
+        const gridKey = buildRasterGridRequestKey({
+          dataset: currentDataset,
+          backendDatasetId: keyDatasetId,
+          date: frameDate,
+          level: selectedLevelValue ?? undefined,
+          maskZeroValues: globeSettings.hideZeroPrecipitation,
+          colorbarRange: colorRangeForRequests,
+        });
+        if (gridKey) {
+          nextGridMap.set(gridKey, rasterGrid);
+        }
+        setVisualizationProgress((i + 1) / frames.length);
+      }
+      setPrefetchedRasters(nextMap);
+      setPrefetchedRasterGrids(nextGridMap);
+      setVisualizationStatus("ready");
+      setVisualizationProgress(1);
+      setShowVisualizationModal(false);
+    } catch (error) {
+      if (
+        !(
+          error instanceof DOMException &&
+          (error as DOMException).name === "AbortError"
+        )
+      ) {
+        setVisualizationError(
+          error instanceof Error
+            ? error.message
+            : "Failed to prepare visualization.",
+        );
+      }
+      setVisualizationStatus("idle");
+    } finally {
+      visualizationAbortRef.current = null;
+    }
+  }, [
+    colorbarRange,
+    currentDataset,
+    datasetEndDate,
+    datasetStartDate,
+    globeSettings.hideZeroPrecipitation,
+    selectedLevelValue,
+    visualizationEnd,
+    visualizationStart,
+    visualizationStep,
+  ]);
+
+  useEffect(() => {
+    if (visualizationStatus !== "playing") {
+      return;
+    }
+
+    const frames = visualizationDates;
+    if (!frames.length) {
+      setVisualizationStatus("ready");
+      return;
+    }
+
+    let index = activeVisualizationIndex;
+    setSelectedDate(frames[index]);
+
+    const timer = window.setInterval(() => {
+      index += 1;
+      if (index >= frames.length) {
+        setVisualizationStatus("ready");
+        setActiveVisualizationIndex(0);
+        return;
+      }
+      setActiveVisualizationIndex(index);
+      setSelectedDate(frames[index]);
+    }, playbackIntervalMs);
+
+    return () => window.clearInterval(timer);
+  }, [
+    activeVisualizationIndex,
+    playbackIntervalMs,
+    setSelectedDate,
+    visualizationDates,
+    visualizationStatus,
+  ]);
 
   useEffect(() => {
     const datasetId = currentDataset?.id;
@@ -263,13 +800,37 @@ export default function HomePage() {
   const handleDateChange = useCallback(
     (date: Date) => {
       setSelectedDate(date);
+      if (visualizationStatus === "playing") {
+        setVisualizationStatus("ready");
+      }
     },
-    [setSelectedDate],
+    [setSelectedDate, visualizationStatus],
   );
 
-  const handlePlayPause = useCallback((isPlaying: boolean) => {
-    setIsTimebarPlaying(isPlaying);
-  }, []);
+  const handlePlayPause = useCallback(
+    (shouldPlay: boolean) => {
+      if (shouldPlay) {
+        if (visualizationStatus === "ready") {
+          startPlayback();
+        } else if (
+          visualizationStatus === "idle" &&
+          prefetchedRasters.size > 0 &&
+          prefetchedRasterGrids.size > 0
+        ) {
+          setVisualizationStatus("ready");
+          startPlayback();
+        }
+      } else if (visualizationStatus === "playing") {
+        setVisualizationStatus("ready");
+      }
+    },
+    [
+      prefetchedRasters,
+      prefetchedRasterGrids,
+      startPlayback,
+      visualizationStatus,
+    ],
+  );
 
   const handlePressureLevelChange = useCallback(
     (level: PressureLevel) => {
@@ -326,11 +887,6 @@ export default function HomePage() {
 
   const handleRasterOpacityChange = useCallback((opacity: number) => {
     setGlobeSettings((prev) => ({ ...prev, rasterOpacity: opacity }));
-  }, []);
-
-  const handleRasterTransitionChange = useCallback((ms: number) => {
-    const clamped = Math.max(50, Math.min(ms, 5000));
-    setGlobeSettings((prev) => ({ ...prev, rasterTransitionMs: clamped }));
   }, []);
 
   const handleHideZeroPrecipToggle = useCallback((enabled: boolean) => {
@@ -435,12 +991,9 @@ export default function HomePage() {
     setRasterMeta(null);
   }, [selectedPressureLevel, hasPressureLevels]);
 
-  // Memoized Globe
-  const selectedLevelValue =
-    hasPressureLevels && selectedPressureLevel
-      ? selectedPressureLevel.value
-      : null;
+  const useMeshRaster = true;
 
+  // Memoized Globe
   const memoizedGlobe = useMemo(
     () => (
       <Globe
@@ -448,14 +1001,7 @@ export default function HomePage() {
         currentDataset={currentDataset}
         selectedDate={selectedDate}
         selectedLevel={selectedLevelValue}
-        colorbarRange={{
-          enabled:
-            globeSettings.colorbarCustomMin !== null ||
-            globeSettings.colorbarCustomMax !== null,
-          min: globeSettings.colorbarCustomMin,
-          max: globeSettings.colorbarCustomMax,
-        }}
-        rasterTransitionMs={globeSettings.rasterTransitionMs ?? 320}
+        colorbarRange={colorbarRange}
         hideZeroPrecipitation={globeSettings.hideZeroPrecipitation}
         onRegionClick={handleRegionClick}
         satelliteLayerVisible={globeSettings.satelliteLayerVisible}
@@ -463,9 +1009,13 @@ export default function HomePage() {
         geographicLinesVisible={globeSettings.geographicLinesVisible}
         rasterOpacity={globeSettings.rasterOpacity}
         rasterBlurEnabled={globeSettings.rasterBlurEnabled}
+        useMeshRaster={useMeshRaster}
         viewMode={globeSettings.viewMode ?? "3d"}
         onRasterMetadataChange={setRasterMeta}
-        isPlaying={isTimebarPlaying}
+        isPlaying={visualizationStatus === "playing"}
+        prefetchedRasters={prefetchedRasters}
+        prefetchedRasterGrids={prefetchedRasterGrids}
+        meshFadeDurationMs={visualizationFadeMs}
       />
     ),
     [
@@ -473,17 +1023,19 @@ export default function HomePage() {
       handleRegionClick,
       selectedDate,
       selectedLevelValue,
-      isTimebarPlaying,
+      visualizationStatus,
       globeSettings.satelliteLayerVisible,
       globeSettings.boundaryLinesVisible,
       globeSettings.geographicLinesVisible,
       globeSettings.rasterOpacity,
       globeSettings.rasterBlurEnabled,
-      globeSettings.rasterTransitionMs,
       globeSettings.hideZeroPrecipitation,
-      globeSettings.colorbarCustomMin,
-      globeSettings.colorbarCustomMax,
+      useMeshRaster,
+      colorbarRange,
       globeSettings.viewMode,
+      prefetchedRasters,
+      prefetchedRasterGrids,
+      visualizationFadeMs,
     ],
   );
 
@@ -516,6 +1068,45 @@ export default function HomePage() {
     setCurrentLocationMarker,
   ]);
 
+  // Ensure the stored visualization level is applied when returning to its dataset
+  useEffect(() => {
+    if (
+      !visualizationTarget ||
+      !currentDataset ||
+      currentDataset.id !== visualizationTarget.datasetId
+    ) {
+      return;
+    }
+    if (
+      visualizationTarget.level != null &&
+      hasPressureLevels &&
+      datasetPressureLevels
+    ) {
+      const match = datasetPressureLevels.find(
+        (lvl) => lvl.value === visualizationTarget.level,
+      );
+      if (match) {
+        setSelectedPressureLevel(match);
+      }
+    }
+  }, [
+    currentDataset,
+    datasetPressureLevels,
+    hasPressureLevels,
+    visualizationTarget,
+    setSelectedPressureLevel,
+  ]);
+
+  const isPlaybackReady =
+    prefetchedRasters.size > 0 &&
+    prefetchedRasterGrids.size > 0 &&
+    visualizationDates.length > 0 &&
+    visualizationStatus !== "preparing" &&
+    Boolean(visualizationTarget);
+  const progressPercent = Math.round(
+    Math.min(Math.max(visualizationProgress, 0), 1) * 100,
+  );
+
   return (
     <section className="bg-background fixed inset-0 h-screen w-screen overflow-hidden">
       {memoizedGlobe}
@@ -533,15 +1124,88 @@ export default function HomePage() {
             onBoundaryToggle={handleBoundaryToggle}
             onGeographicLinesToggle={handleGeographicLinesToggle}
             onRasterOpacityChange={handleRasterOpacityChange}
-            onRasterTransitionChange={handleRasterTransitionChange}
             onHideZeroPrecipToggle={handleHideZeroPrecipToggle}
             onRasterBlurToggle={handleRasterBlurToggle}
             onColorbarRangeChange={handleColorbarRangeChange}
             onColorbarRangeReset={handleColorbarRangeReset}
             viewMode={globeSettings.viewMode ?? "3d"}
             onViewModeChange={handleViewModeChange}
+            onShowVisualizationModal={() => {
+              setVisualizationError(null);
+              setShowVisualizationModal(true);
+              setShowVisualizationBar(true);
+            }}
           />
         </div>
+
+        {/* Visualization Progress */}
+        {showVisualizationBar &&
+          (visualizationStatus === "preparing" ||
+            isPlaybackReady ||
+            visualizationStatus === "playing") && (
+            <div className="pointer-events-auto fixed top-20 left-6 z-60 flex items-center gap-2">
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 rounded-full bg-black/60 text-white hover:bg-white/10"
+                onClick={() => setShowVisualizationBar(false)}
+                aria-label="Close visualization bar"
+              >
+                ×
+              </Button>
+              <div className="flex items-center gap-3 rounded-full border border-white/10 bg-black/70 px-4 py-2 shadow-lg backdrop-blur">
+                <div className="w-48">
+                  <div className="text-xs font-medium text-slate-100">
+                    {visualizationStatus === "preparing"
+                      ? "Preparing visualization…"
+                      : visualizationStatus === "playing"
+                        ? "Playing visualization"
+                        : "Visualization ready"}
+                  </div>
+                  <div className="mt-1 h-1.5 w-full rounded-full bg-white/15">
+                    <div
+                      className="h-full rounded-full bg-emerald-400 transition-all"
+                      style={{ width: `${progressPercent}%` }}
+                    />
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-white/20 bg-white/10 text-white hover:bg-white/20"
+                  onClick={() => {
+                    if (visualizationStatus === "preparing") {
+                      handleStopVisualization();
+                      return;
+                    }
+                    if (visualizationStatus === "playing") {
+                      setVisualizationStatus("ready");
+                      return;
+                    }
+                    if (isPlaybackReady) {
+                      startPlayback();
+                    }
+                  }}
+                >
+                  {visualizationStatus === "preparing" ? (
+                    <Square className="h-4 w-4" />
+                  ) : visualizationStatus === "playing" ? (
+                    <Square className="h-4 w-4" />
+                  ) : (
+                    <Play className="h-4 w-4" />
+                  )}
+                  <span className="ml-2">
+                    {visualizationStatus === "preparing"
+                      ? "Stop"
+                      : visualizationStatus === "playing"
+                        ? "Pause"
+                        : "Play"}
+                  </span>
+                </Button>
+              </div>
+            </div>
+          )}
 
         {/* Tutorial Modal */}
         <div className="pointer-events-auto">
@@ -559,6 +1223,8 @@ export default function HomePage() {
             dataset={currentDataset}
             unit={temperatureUnit}
             onUnitChange={setTemperatureUnit}
+            onRangeChange={handleColorbarRangeChange}
+            onRangeReset={handleColorbarRangeReset}
             onPositionChange={setColorBarPosition}
             collapsed={colorBarCollapsed}
             onToggleCollapse={setColorBarCollapsed}
@@ -583,8 +1249,13 @@ export default function HomePage() {
                 selectedDate={selectedDate}
                 onDateChange={handleDateChange}
                 onPlayPause={handlePlayPause}
-                isPlaying={isTimebarPlaying}
-                playIntervalMs={globeSettings.rasterTransitionMs ?? 500}
+                isPlaying={visualizationStatus === "playing"}
+                playIntervalMs={playbackIntervalMs}
+                disableAutoplay
+                disablePlayButton={
+                  visualizationStatus !== "ready" &&
+                  visualizationStatus !== "playing"
+                }
               />
             </div>
 
@@ -604,6 +1275,305 @@ export default function HomePage() {
           </div>
         </div>
       </div>
+
+      <Dialog
+        open={showVisualizationModal}
+        onOpenChange={(open) => {
+          setShowVisualizationModal(open);
+          if (!open) {
+            setVisualizationError(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-[95vw] sm:max-w-[900px] lg:max-w-[1000px]">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-semibold text-white">
+              Visualization
+            </DialogTitle>
+            <DialogDescription className="text-slate-200">
+              Choose two dates from{" "}
+              {datasetStartDate.toLocaleDateString("en-US")} to{" "}
+              {datasetEndDate.toLocaleDateString("en-US")} to build a playback
+              for {currentDataset?.name ?? "this dataset"}.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 gap-6 py-4 md:grid-cols-2">
+            <div className="space-y-2 rounded-lg border border-white/10 bg-white/5 p-3">
+              <p className="mb-2 text-sm font-semibold text-white">Start</p>
+              <Input
+                type="text"
+                className="mb-3 bg-black/40 text-white"
+                placeholder="YYYY-MM-DD"
+                value={startInputValue}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setStartInputValue(value);
+                  const next = parseDateInput(
+                    value,
+                    datasetStartDate,
+                    datasetEndDate,
+                  );
+                  if (next) {
+                    setVisualizationStart(next);
+                    setStartInputValue(next.toISOString().slice(0, 10));
+                  }
+                }}
+              />
+              <div className="flex items-center justify-center gap-6">
+                <Calendar
+                  mode="single"
+                  selected={
+                    parseDateInput(
+                      startInputValue,
+                      datasetStartDate,
+                      datasetEndDate,
+                    ) ??
+                    visualizationStart ??
+                    datasetStartDate
+                  }
+                  onSelect={(value) => {
+                    if (value) {
+                      const clamped = clampDateToRange(
+                        value,
+                        datasetStartDate,
+                        datasetEndDate,
+                      );
+                      setVisualizationStart(clamped);
+                      setStartInputValue(clamped.toISOString().slice(0, 10));
+                    }
+                  }}
+                  defaultMonth={
+                    parseDateInput(
+                      startInputValue,
+                      datasetStartDate,
+                      datasetEndDate,
+                    ) ??
+                    visualizationStart ??
+                    datasetStartDate
+                  }
+                  disabled={(date) =>
+                    date < datasetStartDate || date > datasetEndDate
+                  }
+                />
+                <div className="flex flex-col items-center gap-2">
+                  <span className="text-[10px] tracking-wide text-slate-300 uppercase">
+                    {datasetEndDate.toLocaleDateString("en-US")}
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={totalDatasetDays}
+                    value={dateToDayIndex(
+                      visualizationStart ?? datasetStartDate,
+                      datasetStartDate,
+                      totalDatasetDays,
+                    )}
+                    onChange={(e) => {
+                      const dayIndex = clampDayIndex(
+                        Number(e.target.value),
+                        totalDatasetDays,
+                      );
+                      const next = dayIndexToDate(
+                        dayIndex,
+                        datasetStartDate,
+                        datasetEndDate,
+                      );
+                      setVisualizationStart(next);
+                      setStartInputValue(next.toISOString().slice(0, 10));
+                    }}
+                    className="h-56 w-5 cursor-pointer appearance-none rounded-full bg-white/10"
+                    style={{
+                      WebkitAppearance: "slider-vertical",
+                      writingMode: "vertical-rl",
+                      direction: "rtl",
+                    }}
+                    aria-label="Start date slider"
+                  />
+                  <span className="text-[10px] tracking-wide text-slate-400 uppercase">
+                    {datasetStartDate.toLocaleDateString("en-US")}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2 rounded-lg border border-white/10 bg-white/5 p-3">
+              <p className="mb-2 text-sm font-semibold text-white">End</p>
+              <Input
+                type="text"
+                className="mb-3 bg-black/40 text-white"
+                placeholder="YYYY-MM-DD"
+                value={endInputValue}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setEndInputValue(value);
+                  const next = parseDateInput(
+                    value,
+                    datasetStartDate,
+                    datasetEndDate,
+                  );
+                  if (next) {
+                    setVisualizationEnd(next);
+                    setEndInputValue(next.toISOString().slice(0, 10));
+                  }
+                }}
+              />
+              <div className="flex items-center justify-center gap-6">
+                <Calendar
+                  mode="single"
+                  selected={
+                    parseDateInput(
+                      endInputValue,
+                      datasetStartDate,
+                      datasetEndDate,
+                    ) ??
+                    visualizationEnd ??
+                    datasetEndDate
+                  }
+                  onSelect={(value) => {
+                    if (value) {
+                      const clamped = clampDateToRange(
+                        value,
+                        datasetStartDate,
+                        datasetEndDate,
+                      );
+                      setVisualizationEnd(clamped);
+                      setEndInputValue(clamped.toISOString().slice(0, 10));
+                    }
+                  }}
+                  defaultMonth={
+                    parseDateInput(
+                      endInputValue,
+                      datasetStartDate,
+                      datasetEndDate,
+                    ) ??
+                    visualizationEnd ??
+                    datasetEndDate
+                  }
+                  disabled={(date) =>
+                    date < datasetStartDate || date > datasetEndDate
+                  }
+                />
+                <div className="flex flex-col items-center gap-2">
+                  <span className="text-[10px] tracking-wide text-slate-300 uppercase">
+                    {datasetEndDate.toLocaleDateString("en-US")}
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={totalDatasetDays}
+                    value={dateToDayIndex(
+                      visualizationEnd ?? datasetEndDate,
+                      datasetStartDate,
+                      totalDatasetDays,
+                    )}
+                    onChange={(e) => {
+                      const dayIndex = clampDayIndex(
+                        Number(e.target.value),
+                        totalDatasetDays,
+                      );
+                      const next = dayIndexToDate(
+                        dayIndex,
+                        datasetStartDate,
+                        datasetEndDate,
+                      );
+                      setVisualizationEnd(next);
+                      setEndInputValue(next.toISOString().slice(0, 10));
+                    }}
+                    className="h-56 w-5 cursor-pointer appearance-none rounded-full bg-white/10"
+                    style={{
+                      WebkitAppearance: "slider-vertical",
+                      writingMode: "vertical-rl",
+                      direction: "rtl",
+                    }}
+                    aria-label="End date slider"
+                  />
+                  <span className="text-[10px] tracking-wide text-slate-400 uppercase">
+                    {datasetStartDate.toLocaleDateString("en-US")}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-6 lg:grid-cols-2">
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-white">Advance by</p>
+              <select
+                className="w-full rounded-md border border-white/15 bg-black/40 px-3 py-2 text-sm text-white shadow-sm focus:border-white focus:outline-none"
+                value={visualizationStep}
+                onChange={(e) => {
+                  const next = e.target.value as VisualizationStep;
+                  if (stepOptions.includes(next)) {
+                    setVisualizationStep(next);
+                  }
+                }}
+              >
+                {stepOptions.map((step) => (
+                  <option key={step} value={step}>
+                    {step === "year"
+                      ? "Year"
+                      : step === "month"
+                        ? "Month"
+                        : "Day"}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-300">
+                Only increments supported by this dataset are available.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-white">Fade time</p>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min={0}
+                  max={1500}
+                  step={50}
+                  value={visualizationFadeMs}
+                  onChange={(e) =>
+                    setVisualizationFadeMs(Number(e.target.value))
+                  }
+                  className="h-2 w-full cursor-pointer appearance-none rounded-full bg-white/20"
+                />
+                <span className="text-xs text-slate-200">
+                  {visualizationFadeMs} ms
+                </span>
+              </div>
+              <p className="text-xs text-slate-300">
+                Only affects mesh transitions during visualization playback.
+              </p>
+            </div>
+          </div>
+
+          {visualizationError && (
+            <div className="rounded-md border border-red-500/60 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+              {visualizationError}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowVisualizationModal(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleBeginVisualization}
+              disabled={visualizationStatus === "preparing"}
+            >
+              {visualizationStatus === "preparing" && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Begin
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Region Info Panel */}
       <RegionInfoPanel

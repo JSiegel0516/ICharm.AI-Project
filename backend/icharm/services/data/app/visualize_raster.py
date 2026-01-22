@@ -15,7 +15,10 @@ from icharm.services.data.app.models import (
 )
 
 # Import raster visualization module
-from icharm.services.data.app.raster import serialize_raster_array
+from icharm.services.data.app.raster import (
+    serialize_raster_array,
+    serialize_raster_grid_array,
+)
 
 import logging
 
@@ -192,6 +195,146 @@ class VisualizeRaster:
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to generate raster visualization: {str(e)}",
+            )
+
+    @staticmethod
+    async def visualize_raster_grid(request: RasterRequest):
+        start_time = datetime.now()
+
+        try:
+            target_date = datetime.strptime(request.date, "%Y-%m-%d")
+
+            chosen_min = (
+                request.minValue if request.minValue is not None else request.min
+            )
+            chosen_max = (
+                request.maxValue if request.maxValue is not None else request.max
+            )
+
+            logger.info("[RasterGrid] Request received:")
+            logger.info(f"  datasetId: {request.datasetId}")
+            logger.info(f"  date: {request.date}")
+            logger.info(f"  level: {request.level}")
+            logger.info(f"  Custom range: min={chosen_min}, max={chosen_max}")
+
+            metadata_df = DatabaseQueries.get_metadata_by_ids([request.datasetId])
+            if len(metadata_df) == 0:
+                raise HTTPException(
+                    status_code=404, detail=f"Dataset not found: {request.datasetId}"
+                )
+
+            metadata_df = metadata_df.reset_index(drop=True)
+            meta_row = metadata_df.iloc[0]
+
+            stored = str(meta_row.get("Stored", "")).lower()
+            if stored == "local":
+                ds = await DatasetLocal.open_local_dataset(meta_row)
+            elif stored == "postgres":
+                ds = await asyncio.to_thread(
+                    DatabaseQueries.open_postgres_raster_dataset, meta_row, target_date
+                )
+            else:
+                ds = await DatasetCloud.open_cloud_dataset(
+                    meta_row, target_date, target_date
+                )
+
+            var_name = meta_row["keyVariable"]
+            var = ds[var_name]
+
+            lat_name, lon_name, time_name = DataProcessing.normalize_coordinates(ds)
+
+            if time_name in var.dims:
+                selector_value = DataProcessing.coerce_time_value(
+                    target_date, ds[time_name]
+                )
+                var = var.sel({time_name: selector_value}, method="nearest")
+
+            if request.level is not None:
+                level_dims = [
+                    d for d in var.dims if d not in (time_name, lat_name, lon_name)
+                ]
+                if level_dims:
+                    var = var.sel({level_dims[0]: request.level}, method="nearest")
+
+            zero_mask_applied = False
+            zero_mask_pixels = 0
+
+            if request.maskZeroValues:
+                if VisualizeRaster.dataset_supports_zero_mask(meta_row):
+                    zero_mask = var.notnull() & (
+                        np.abs(var) <= ZERO_PRECIP_MASK_TOLERANCE
+                    )
+                    total_pixels = int(zero_mask.size) if zero_mask.size else 0
+                    if total_pixels:
+                        zero_mask_pixels = int(zero_mask.sum().values.item())
+                    else:
+                        zero_mask_pixels = 0
+
+                    if zero_mask_pixels > 0:
+                        zero_fraction = (
+                            zero_mask_pixels / total_pixels if total_pixels else 0.0
+                        )
+                        logger.info(
+                            "[RasterGrid] maskZeroValues enabled - masking %s "
+                            "zero-value pixels (%.1f%% of slice)",
+                            zero_mask_pixels,
+                            zero_fraction * 100.0,
+                        )
+                        var = var.where(~zero_mask)
+                        zero_mask_applied = True
+                    else:
+                        logger.info(
+                            "[RasterGrid] maskZeroValues requested but no zero-value "
+                            "pixels detected for %s",
+                            meta_row["datasetName"],
+                        )
+                else:
+                    logger.info(
+                        "[RasterGrid] maskZeroValues requested but dataset %s is not "
+                        "precipitation-focused; skipping zero mask",
+                        meta_row["datasetName"],
+                    )
+
+            logger.info(
+                f"[RasterGrid] Generating grid with custom range: [{chosen_min}, {chosen_max}]"
+            )
+
+            grid_data = serialize_raster_grid_array(
+                var,
+                meta_row,
+                meta_row["datasetName"],
+                value_min_override=chosen_min,
+                value_max_override=chosen_max,
+            )
+
+            processing_time = (datetime.now() - start_time).total_seconds()
+            grid_data["processingInfo"] = {
+                "processingTime": f"{processing_time:.2f}s",
+                "date": request.date,
+                "level": request.level,
+                "datasetId": request.datasetId,
+                "maskZeroValuesApplied": zero_mask_applied,
+                "maskedZeroPixels": zero_mask_pixels if zero_mask_applied else 0,
+                "customRangeApplied": chosen_min is not None or chosen_max is not None,
+                "effectiveRange": {"min": chosen_min, "max": chosen_max},
+            }
+
+            logger.info(
+                f"[RasterGrid] Raster grid generated successfully in {processing_time:.2f}s"
+            )
+
+            return grid_data
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"[RasterGrid] Error generating raster grid: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to generate raster grid: {str(e)}",
             )
 
     @staticmethod

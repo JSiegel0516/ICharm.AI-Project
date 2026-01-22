@@ -51,7 +51,7 @@ export async function GET(request: Request) {
 
     if (focusCoordinates && focusCoordinates.trim()) {
       console.log("Processing focus coordinates:", focusCoordinates);
-      
+
       const coordinatePairs = focusCoordinates
         .split(";")
         .map((pair) => pair.trim())
@@ -79,13 +79,17 @@ export async function GET(request: Request) {
       stored: dataset.Stored, // Add lowercase version
     }));
 
-    const cloudCount = normalizedDatasets.filter((d) => d.stored === "cloud").length;
-    const localCount = normalizedDatasets.filter((d) => d.stored === "local").length;
-    
+    const cloudCount = normalizedDatasets.filter(
+      (d) => d.stored === "cloud",
+    ).length;
+    const localCount = normalizedDatasets.filter(
+      (d) => d.stored === "local",
+    ).length;
+
     console.log(`Returning ${normalizedDatasets.length} datasets:`);
     console.log(`   - Cloud: ${cloudCount}`);
     console.log(`   - Local: ${localCount}`);
-    
+
     if (focusCoordinates) {
       console.log(`   - Focus coordinates applied`);
     }

@@ -40,7 +40,6 @@ interface SideButtonsProps {
   onBoundaryToggle: (visible: boolean) => void;
   onGeographicLinesToggle: (visible: boolean) => void;
   onRasterOpacityChange: (opacity: number) => void;
-  onRasterTransitionChange?: (ms: number) => void;
   onHideZeroPrecipToggle: (enabled: boolean) => void;
   onRasterBlurToggle: (enabled: boolean) => void;
   onColorbarRangeChange: (payload: {
@@ -50,6 +49,7 @@ interface SideButtonsProps {
   onColorbarRangeReset: () => void;
   viewMode?: GlobeSettings["viewMode"];
   onViewModeChange?: (mode: GlobeSettings["viewMode"]) => void;
+  onShowVisualizationModal: () => void;
 }
 
 const formatDisplayDate = (value?: string | null | Date) => {
@@ -75,13 +75,13 @@ export function SideButtons({
   onBoundaryToggle,
   onGeographicLinesToggle,
   onRasterOpacityChange,
-  onRasterTransitionChange,
   onHideZeroPrecipToggle,
   onRasterBlurToggle,
   onColorbarRangeChange,
   onColorbarRangeReset,
   viewMode,
   onViewModeChange,
+  onShowVisualizationModal,
 }: SideButtonsProps) {
   const { datasets, currentDataset, setCurrentDataset, isLoading, error } =
     useAppState();
@@ -690,8 +690,6 @@ export function SideButtons({
         onGeographicLinesToggle={onGeographicLinesToggle}
         rasterOpacity={globeSettings.rasterOpacity}
         onRasterOpacityChange={onRasterOpacityChange}
-        rasterTransitionMs={globeSettings.rasterTransitionMs ?? 320}
-        onRasterTransitionChange={(value) => onRasterTransitionChange?.(value)}
         hideZeroPrecipitation={globeSettings.hideZeroPrecipitation}
         onHideZeroPrecipitationToggle={onHideZeroPrecipToggle}
         rasterBlurEnabled={globeSettings.rasterBlurEnabled}
@@ -702,6 +700,7 @@ export function SideButtons({
         onColorbarRangeReset={onColorbarRangeReset}
         viewMode={viewMode ?? "3d"}
         onViewModeChange={onViewModeChange ?? (() => {})}
+        onShowVisualizationModal={onShowVisualizationModal}
       />
     </>
   );
