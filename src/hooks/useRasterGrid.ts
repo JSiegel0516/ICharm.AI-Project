@@ -32,6 +32,7 @@ export type UseRasterGridResult = {
   isLoading: boolean;
   error: string | null;
   requestKey?: string;
+  dataKey?: string;
 };
 
 const formatDateForApi = (date?: Date) => {
@@ -109,23 +110,20 @@ const deriveCustomRange = (range?: {
   const enabled = Boolean(range?.enabled);
   if (!enabled) return null;
 
-  const rawMin =
-    typeof range?.min === "number" && Number.isFinite(range.min)
-      ? Number(range.min)
-      : 0;
-  const rawMax =
-    typeof range?.max === "number" && Number.isFinite(range.max)
-      ? Number(range.max)
-      : 0;
+  const hasMin = typeof range?.min === "number" && Number.isFinite(range.min);
+  const hasMax = typeof range?.max === "number" && Number.isFinite(range.max);
+  if (!hasMin && !hasMax) return null;
 
-  const hasUserValue =
-    (typeof range?.min === "number" && Number.isFinite(range.min)) ||
-    (typeof range?.max === "number" && Number.isFinite(range.max));
-  if (!hasUserValue) return null;
+  let min = hasMin ? Number(range.min) : Number(range.max);
+  let max = hasMax ? Number(range.max) : Number(range.min);
 
-  const magnitude = Math.max(Math.abs(rawMin), Math.abs(rawMax));
-  const safeMagnitude = magnitude > 0 ? magnitude : 1;
-  return { min: -safeMagnitude, max: safeMagnitude };
+  if (!Number.isFinite(min)) min = 0;
+  if (!Number.isFinite(max)) max = min;
+  if (min > max) {
+    [min, max] = [max, min];
+  }
+
+  return { min, max };
 };
 
 const normalizeLon = (lon: number) => {
@@ -367,19 +365,19 @@ export async function fetchRasterGrid(options: {
 
   const sampler = buildSampler(latArray, lonArray, values, mask, rows, cols);
   const computedRange = computeValueRange(values, mask);
-  const fallbackMin =
-    payload?.valueRange?.min ?? payload?.actualRange?.min ?? null;
-  const fallbackMax =
-    payload?.valueRange?.max ?? payload?.actualRange?.max ?? null;
+  const serverRangeMin = payload?.valueRange?.min ?? null;
+  const serverRangeMax = payload?.valueRange?.max ?? null;
+  const fallbackMin = payload?.actualRange?.min ?? null;
+  const fallbackMax = payload?.actualRange?.max ?? null;
 
   const appliedMin =
     effectiveRange?.enabled && effectiveRange?.min != null
       ? Number(effectiveRange.min)
-      : (computedRange.min ?? fallbackMin);
+      : (serverRangeMin ?? computedRange.min ?? fallbackMin);
   const appliedMax =
     effectiveRange?.enabled && effectiveRange?.max != null
       ? Number(effectiveRange.max)
-      : (computedRange.max ?? fallbackMax);
+      : (serverRangeMax ?? computedRange.max ?? fallbackMax);
 
   return {
     lat: latArray,
@@ -403,9 +401,11 @@ export const useRasterGrid = ({
   prefetchedData,
 }: UseRasterGridOptions): UseRasterGridResult => {
   const [data, setData] = useState<RasterGridData | undefined>();
+  const [dataKey, setDataKey] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
+  const lastRequestKeyRef = useRef<string | undefined>(undefined);
 
   const backendDatasetId = useMemo(() => {
     if (!dataset) {
@@ -461,9 +461,17 @@ export const useRasterGrid = ({
   useEffect(() => {
     if (!enabled || !backendDatasetId || !date) {
       setData(undefined);
+      setDataKey(undefined);
       setIsLoading(false);
       setError(null);
+      lastRequestKeyRef.current = requestKey;
       return;
+    }
+
+    if (requestKey && requestKey !== lastRequestKeyRef.current) {
+      setData(undefined);
+      setDataKey(undefined);
+      lastRequestKeyRef.current = requestKey;
     }
 
     controllerRef.current?.abort();
@@ -477,6 +485,7 @@ export const useRasterGrid = ({
 
     if (prefetched) {
       setData(prefetched);
+      setDataKey(requestKey);
       setIsLoading(false);
       setError(null);
       return;
@@ -497,6 +506,7 @@ export const useRasterGrid = ({
     })
       .then((result) => {
         setData(result);
+        setDataKey(requestKey);
         setIsLoading(false);
       })
       .catch((err) => {
@@ -526,6 +536,7 @@ export const useRasterGrid = ({
 
   return {
     data,
+    dataKey,
     isLoading,
     error,
     requestKey,

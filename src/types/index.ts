@@ -296,9 +296,12 @@ export type SidebarPanel = "datasets" | "history" | "about" | null;
 export interface ColorBarProps {
   show: boolean;
   onToggle: () => void;
+  onToggleCollapse?: (collapsed: boolean) => void;
   dataset: Dataset;
   unit?: TemperatureUnit;
   onUnitChange?: (unit: TemperatureUnit) => void;
+  onRangeChange?: (range: { min: number | null; max: number | null }) => void;
+  onRangeReset?: () => void;
   onPositionChange?: (position: { x: number; y: number }) => void;
   collapsed?: boolean;
   rasterMeta?: {
@@ -307,6 +310,11 @@ export interface ColorBarProps {
     max?: number | null;
   } | null;
   orientation?: ColorBarOrientation;
+  customRange?: {
+    enabled?: boolean;
+    min?: number | null;
+    max?: number | null;
+  };
 }
 
 export interface TimeBarProps {

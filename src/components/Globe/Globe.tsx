@@ -1747,9 +1747,19 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
     useEffect(() => {
       if (useMeshRaster && useMeshRasterActive) {
-        rasterDataRef.current = rasterGridState.data;
+        if (
+          rasterGridState.data &&
+          rasterGridState.dataKey === rasterGridState.requestKey
+        ) {
+          rasterDataRef.current = rasterGridState.data;
+        } else {
+          rasterDataRef.current = undefined;
+        }
         if (onRasterMetadataChange) {
-          if (rasterGridState.data) {
+          if (
+            rasterGridState.data &&
+            rasterGridState.dataKey === rasterGridState.requestKey
+          ) {
             onRasterMetadataChange({
               units: rasterGridState.data.units ?? null,
               min: rasterGridState.data.min ?? null,
@@ -1777,6 +1787,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     }, [
       onRasterMetadataChange,
       rasterGridState.data,
+      rasterGridState.dataKey,
+      rasterGridState.requestKey,
       rasterState.data,
       useMeshRaster,
       useMeshRasterActive,
@@ -1790,7 +1802,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       }
 
       const grid = rasterGridState.data;
-      if (!grid || !currentDataset?.colorScale?.colors?.length) {
+      const hasMatchingGrid =
+        grid && rasterGridState.dataKey === rasterGridState.requestKey;
+      if (!hasMatchingGrid || !currentDataset?.colorScale?.colors?.length) {
         clearRasterMesh();
         return;
       }
@@ -1816,6 +1830,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       clearRasterMesh,
       currentDataset?.colorScale?.colors,
       rasterGridState.data,
+      rasterGridState.dataKey,
       rasterGridState.requestKey,
       rasterBlurEnabled,
       rasterOpacity,

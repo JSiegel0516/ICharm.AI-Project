@@ -1223,6 +1223,8 @@ export default function HomePage() {
             dataset={currentDataset}
             unit={temperatureUnit}
             onUnitChange={setTemperatureUnit}
+            onRangeChange={handleColorbarRangeChange}
+            onRangeReset={handleColorbarRangeReset}
             onPositionChange={setColorBarPosition}
             collapsed={colorBarCollapsed}
             onToggleCollapse={setColorBarCollapsed}

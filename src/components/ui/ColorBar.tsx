@@ -5,10 +5,12 @@ import React, {
   useEffect,
   useMemo,
   useCallback,
+  useState,
   useReducer,
 } from "react";
 import { ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 import { Button } from "./button";
+import { Slider } from "./slider";
 
 // Types
 type TemperatureUnit = "celsius" | "fahrenheit";
@@ -16,9 +18,12 @@ type TemperatureUnit = "celsius" | "fahrenheit";
 interface ColorBarProps {
   show: boolean;
   onToggle?: () => void;
+  onToggleCollapse?: (collapsed: boolean) => void;
   dataset: any;
   unit?: TemperatureUnit;
   onUnitChange?: (unit: TemperatureUnit) => void;
+  onRangeChange?: (range: { min: number | null; max: number | null }) => void;
+  onRangeReset?: () => void;
   onPositionChange?: (position: { x: number; y: number }) => void;
   collapsed?: boolean;
   rasterMeta?: any;
@@ -110,9 +115,12 @@ function uiReducer(state: UIState, action: UIAction): UIState {
 const ColorBar: React.FC<ColorBarProps> = ({
   show,
   onToggle,
+  onToggleCollapse,
   dataset,
   unit = "celsius",
   onUnitChange,
+  onRangeChange,
+  onRangeReset,
   onPositionChange,
   collapsed = false,
   rasterMeta = null,
@@ -121,6 +129,8 @@ const ColorBar: React.FC<ColorBarProps> = ({
 }) => {
   const colorBarRef = useRef<HTMLDivElement>(null);
   const isVertical = orientation === "vertical";
+  const [rangeValue, setRangeValue] = useState<[number, number]>([0, 0]);
+  const [isRangeEditing, setIsRangeEditing] = useState(false);
 
   const [uiState, dispatch] = useReducer(uiReducer, {
     position: { x: 24, y: 24 },
@@ -222,12 +232,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
   // COLOR SCALE CALCULATIONS
   // ============================================================================
 
-  const colorScale = useMemo(() => {
-    const customRangeEnabled = Boolean(customRange?.enabled);
-    const GODAS_DEFAULT_MIN = -0.0000005;
-    const GODAS_DEFAULT_MAX = 0.0000005;
-    const NOAAGLOBALTEMP_DEFAULT_MIN = -2;
-    const NOAAGLOBALTEMP_DEFAULT_MAX = 2;
+  const datasetFlags = useMemo(() => {
     const datasetText = [
       dataset?.id,
       dataset?.slug,
@@ -240,6 +245,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
       .filter((v) => typeof v === "string")
       .map((v) => v.toLowerCase())
       .join(" ");
+
     const isGodas =
       datasetText.includes("godas") ||
       datasetText.includes("global ocean data assimilation system") ||
@@ -250,6 +256,17 @@ const ColorBar: React.FC<ColorBarProps> = ({
       datasetText.includes("noaa global surface temperature") ||
       datasetText.includes("noaa global surface temp") ||
       datasetText.includes("noaa global temperature");
+
+    return { isGodas, isNoaaGlobalTemp };
+  }, [dataset]);
+
+  const colorScale = useMemo(() => {
+    const customRangeEnabled = Boolean(customRange?.enabled);
+    const GODAS_DEFAULT_MIN = -0.0000005;
+    const GODAS_DEFAULT_MAX = 0.0000005;
+    const NOAAGLOBALTEMP_DEFAULT_MIN = -2;
+    const NOAAGLOBALTEMP_DEFAULT_MAX = 2;
+    const { isGodas, isNoaaGlobalTemp } = datasetFlags;
 
     // Prefer the dataset's baseline range for any obvious variant of NOAAGlobalTemp.
     const preferBaselineRange = false;
@@ -330,8 +347,13 @@ const ColorBar: React.FC<ColorBarProps> = ({
 
     const labels = generateLabels();
 
-    return { labels, colors: dataset.colorScale.colors };
-  }, [customRange, dataset.colorScale, rasterMeta, unitInfo.symbol]);
+    return {
+      labels,
+      colors: dataset.colorScale.colors,
+      rangeMin,
+      rangeMax,
+    };
+  }, [customRange, dataset.colorScale, datasetFlags, rasterMeta]);
 
   const displayLabels = useMemo(() => {
     const values =
@@ -359,6 +381,101 @@ const ColorBar: React.FC<ColorBarProps> = ({
   }, [colorScale.labels, unitInfo.allowToggle, unit]);
 
   const labels = isVertical ? [...displayLabels].reverse() : displayLabels;
+
+  const rangeLimits = useMemo(() => {
+    const baseMin =
+      typeof dataset?.colorScale?.min === "number" &&
+      Number.isFinite(dataset.colorScale.min)
+        ? Number(dataset.colorScale.min)
+        : null;
+    const baseMax =
+      typeof dataset?.colorScale?.max === "number" &&
+      Number.isFinite(dataset.colorScale.max)
+        ? Number(dataset.colorScale.max)
+        : null;
+    const metaMin =
+      typeof rasterMeta?.min === "number" && Number.isFinite(rasterMeta.min)
+        ? Number(rasterMeta.min)
+        : null;
+    const metaMax =
+      typeof rasterMeta?.max === "number" && Number.isFinite(rasterMeta.max)
+        ? Number(rasterMeta.max)
+        : null;
+
+    let min = baseMin ?? metaMin ?? 0;
+    let max = baseMax ?? metaMax ?? min + 1;
+
+    if (!Number.isFinite(min)) min = 0;
+    if (!Number.isFinite(max)) max = min + 1;
+    if (min === max) {
+      max = min + 1;
+    }
+    if (min > max) {
+      [min, max] = [max, min];
+    }
+
+    return { min, max };
+  }, [dataset?.colorScale?.min, dataset?.colorScale?.max, rasterMeta]);
+
+  const toDisplayValue = useCallback(
+    (value: number) => {
+      if (!unitInfo.allowToggle || unit !== "fahrenheit") return value;
+      return (value * 9) / 5 + 32;
+    },
+    [unitInfo.allowToggle, unit],
+  );
+
+  const fromDisplayValue = useCallback(
+    (value: number) => {
+      if (!unitInfo.allowToggle || unit !== "fahrenheit") return value;
+      return ((value - 32) * 5) / 9;
+    },
+    [unitInfo.allowToggle, unit],
+  );
+
+  const displayRange = useMemo(() => {
+    const min = toDisplayValue(colorScale.rangeMin);
+    const max = toDisplayValue(colorScale.rangeMax);
+    return min <= max ? { min, max } : { min: max, max: min };
+  }, [colorScale.rangeMin, colorScale.rangeMax, toDisplayValue]);
+
+  const displayLimits = useMemo(() => {
+    const min = toDisplayValue(rangeLimits.min);
+    const max = toDisplayValue(rangeLimits.max);
+    return min <= max ? { min, max } : { min: max, max: min };
+  }, [rangeLimits, toDisplayValue]);
+
+  const sliderStep = useMemo(() => {
+    const span = Math.abs(displayLimits.max - displayLimits.min);
+    if (!Number.isFinite(span) || span <= 0) return 1;
+    const rough = span / 200;
+    const magnitude = Math.pow(10, Math.floor(Math.log10(rough)));
+    const normalized = rough / magnitude;
+    let step = magnitude;
+    if (normalized <= 1) step = 1 * magnitude;
+    else if (normalized <= 2) step = 2 * magnitude;
+    else if (normalized <= 5) step = 5 * magnitude;
+    else step = 10 * magnitude;
+
+    const safeStep = Number.parseFloat(step.toPrecision(2));
+    return Number.isFinite(safeStep) && safeStep > 0 ? safeStep : rough;
+  }, [displayLimits]);
+
+  const formatRangeValue = useCallback((value: number) => {
+    if (!Number.isFinite(value)) return "–";
+    if (value === 0) return "0";
+
+    const abs = Math.abs(value);
+    if (abs < 1e-4) return value.toExponential(2);
+    if (abs < 1) {
+      const precise = Number(value.toPrecision(3));
+      return (Object.is(precise, -0) ? 0 : precise).toString();
+    }
+    if (abs < 10) return value.toFixed(2);
+    if (abs < 100) return value.toFixed(1);
+    if (abs < 1000) return value.toFixed(0);
+    return `${(value / 1000).toFixed(1)}k`;
+  }, []);
 
   const gradientStops = colorScale.colors
     .map((color: string, index: number) => {
@@ -417,10 +534,11 @@ const ColorBar: React.FC<ColorBarProps> = ({
       e.preventDefault();
       e.stopPropagation();
       if (!uiState.isDragging) {
+        onToggleCollapse?.(!uiState.isCollapsed);
         dispatch({ type: "TOGGLE_COLLAPSE" });
       }
     },
-    [uiState.isDragging],
+    [onToggleCollapse, uiState.isCollapsed, uiState.isDragging],
   );
 
   const handleResetPosition = useCallback(
@@ -461,6 +579,39 @@ const ColorBar: React.FC<ColorBarProps> = ({
     [unitInfo.allowToggle, onUnitChange],
   );
 
+  const handleRangeValueChange = useCallback((values: number[]) => {
+    if (!Array.isArray(values) || values.length < 2) return;
+    const min = Math.min(values[0], values[1]);
+    const max = Math.max(values[0], values[1]);
+    setIsRangeEditing(true);
+    setRangeValue([min, max]);
+  }, []);
+
+  const handleRangeValueCommit = useCallback(
+    (values: number[]) => {
+      if (!Array.isArray(values) || values.length < 2) return;
+      const min = Math.min(values[0], values[1]);
+      const max = Math.max(values[0], values[1]);
+      const clampedMin = Math.max(displayLimits.min, Math.min(min, max));
+      const clampedMax = Math.min(displayLimits.max, Math.max(min, max));
+      const baseMin = fromDisplayValue(clampedMin);
+      const baseMax = fromDisplayValue(clampedMax);
+
+      setIsRangeEditing(false);
+      setRangeValue([clampedMin, clampedMax]);
+      onRangeChange?.({ min: baseMin, max: baseMax });
+    },
+    [displayLimits, fromDisplayValue, onRangeChange],
+  );
+
+  const handleRangeReset = useCallback(() => {
+    setIsRangeEditing(false);
+    onRangeReset?.();
+    if (!onRangeReset) {
+      onRangeChange?.({ min: null, max: null });
+    }
+  }, [onRangeChange, onRangeReset]);
+
   // ============================================================================
   // EFFECTS
   // ============================================================================
@@ -496,6 +647,19 @@ const ColorBar: React.FC<ColorBarProps> = ({
   useEffect(() => {
     dispatch({ type: "SET_COLLAPSED", payload: collapsed });
   }, [collapsed]);
+
+  useEffect(() => {
+    if (isRangeEditing) return;
+    const clampedMin = Math.max(
+      displayLimits.min,
+      Math.min(displayRange.min, displayLimits.max),
+    );
+    const clampedMax = Math.min(
+      displayLimits.max,
+      Math.max(displayRange.max, displayLimits.min),
+    );
+    setRangeValue([clampedMin, clampedMax]);
+  }, [displayLimits, displayRange, isRangeEditing]);
 
   // Notify parent of position changes
   useEffect(() => {
@@ -577,7 +741,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
           </span>
         </Button>
       ) : (
-        <div className="border-border bg-card/80 text-primary pointer-events-auto rounded-xl border px-6 py-6 backdrop-blur-sm">
+        <div className="border-border bg-card/80 text-primary group pointer-events-auto relative rounded-xl border px-6 py-6 backdrop-blur-sm">
           {/* Header Controls */}
           <div className="-mt-2 mb-2 flex w-full items-center justify-between gap-2">
             <button
@@ -687,6 +851,39 @@ const ColorBar: React.FC<ColorBarProps> = ({
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="border-border bg-card/90 pointer-events-none absolute top-full left-1/2 z-20 mt-3 w-72 -translate-x-1/2 rounded-xl border px-4 py-3 opacity-0 shadow-lg backdrop-blur-md transition-all duration-200 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
+            <div className="text-muted-foreground mb-3 flex items-center justify-between text-xs font-medium">
+              <span>Color Range</span>
+              {(onRangeReset || onRangeChange) && (
+                <button
+                  type="button"
+                  onClick={handleRangeReset}
+                  className="text-muted-foreground hover:text-card-foreground text-xs transition-colors"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+            <Slider
+              min={displayLimits.min}
+              max={displayLimits.max}
+              step={sliderStep}
+              value={rangeValue}
+              onValueChange={handleRangeValueChange}
+              onValueCommit={handleRangeValueCommit}
+            />
+            <div className="text-muted-foreground mt-2 flex items-center justify-between text-[11px]">
+              <span>
+                Min {formatRangeValue(rangeValue[0])}
+                {currentUnitSymbol ? ` ${currentUnitSymbol}` : ""}
+              </span>
+              <span>
+                Max {formatRangeValue(rangeValue[1])}
+                {currentUnitSymbol ? ` ${currentUnitSymbol}` : ""}
+              </span>
+            </div>
           </div>
         </div>
       )}
