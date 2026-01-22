@@ -24,6 +24,7 @@ type UseRasterGridOptions = {
     min?: number | null;
     max?: number | null;
   };
+  prefetchedData?: Map<string, RasterGridData> | Record<string, RasterGridData>;
 };
 
 export type UseRasterGridResult = {
@@ -399,6 +400,7 @@ export const useRasterGrid = ({
   maskZeroValues = false,
   enabled = true,
   colorbarRange,
+  prefetchedData,
 }: UseRasterGridOptions): UseRasterGridResult => {
   const [data, setData] = useState<RasterGridData | undefined>();
   const [isLoading, setIsLoading] = useState(false);
@@ -465,6 +467,20 @@ export const useRasterGrid = ({
     }
 
     controllerRef.current?.abort();
+
+    const prefetched =
+      requestKey && prefetchedData
+        ? prefetchedData instanceof Map
+          ? prefetchedData.get(requestKey)
+          : prefetchedData[requestKey]
+        : undefined;
+
+    if (prefetched) {
+      setData(prefetched);
+      setIsLoading(false);
+      setError(null);
+      return;
+    }
     const controller = new AbortController();
     controllerRef.current = controller;
     setIsLoading(true);
@@ -504,6 +520,8 @@ export const useRasterGrid = ({
     dataset,
     maskZeroValues,
     effectiveColorbarRange,
+    prefetchedData,
+    requestKey,
   ]);
 
   return {

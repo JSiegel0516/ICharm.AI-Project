@@ -1,5 +1,6 @@
 import type { HTMLAttributes } from "react";
 import type { RasterLayerData } from "@/hooks/useRasterLayer";
+import type { RasterGridData } from "@/hooks/useRasterGrid";
 
 export interface DatasetBackendDetails {
   id?: string | null;
@@ -254,6 +255,10 @@ export interface GlobeProps {
   prefetchedRasters?:
     | Map<string, RasterLayerData>
     | Record<string, RasterLayerData>;
+  prefetchedRasterGrids?:
+    | Map<string, RasterGridData>
+    | Record<string, RasterGridData>;
+  meshFadeDurationMs?: number;
   onRasterMetadataChange?: (
     meta: {
       units?: string | null;

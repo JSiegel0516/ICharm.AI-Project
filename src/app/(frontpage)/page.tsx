@@ -38,6 +38,11 @@ import {
   resolveEffectiveColorbarRange,
   type RasterLayerData,
 } from "@/hooks/useRasterLayer";
+import {
+  buildRasterGridRequestKey,
+  fetchRasterGrid,
+  type RasterGridData,
+} from "@/hooks/useRasterGrid";
 import { Play, Square, Loader2 } from "lucide-react";
 import { SideButtons } from "./_components/SideButtons";
 import { Tutorial } from "./_components/Tutorial";
@@ -244,6 +249,10 @@ export default function HomePage() {
   const [prefetchedRasters, setPrefetchedRasters] = useState<
     Map<string, RasterLayerData>
   >(new Map());
+  const [prefetchedRasterGrids, setPrefetchedRasterGrids] = useState<
+    Map<string, RasterGridData>
+  >(new Map());
+  const [visualizationFadeMs, setVisualizationFadeMs] = useState(300);
   const [showVisualizationBar, setShowVisualizationBar] = useState(true);
   const [visualizationTarget, setVisualizationTarget] = useState<{
     datasetId: string;
@@ -472,6 +481,7 @@ export default function HomePage() {
     if (
       !visualizationDates.length ||
       prefetchedRasters.size === 0 ||
+      prefetchedRasterGrids.size === 0 ||
       !visualizationTarget
     ) {
       return;
@@ -492,6 +502,7 @@ export default function HomePage() {
   }, [
     activeVisualizationIndex,
     prefetchedRasters,
+    prefetchedRasterGrids,
     setSelectedDate,
     visualizationDates,
   ]);
@@ -504,6 +515,7 @@ export default function HomePage() {
     setVisualizationStatus("idle");
     setVisualizationProgress(0);
     setPrefetchedRasters(new Map());
+    setPrefetchedRasterGrids(new Map());
     setVisualizationDates([]);
     setActiveVisualizationIndex(0);
   }, []);
@@ -556,6 +568,7 @@ export default function HomePage() {
     setVisualizationDates(frames);
     setActiveVisualizationIndex(0);
     setPrefetchedRasters(new Map());
+    setPrefetchedRasterGrids(new Map());
 
     const cssColors = currentDataset?.colorScale?.colors
       ?.map((color) => (typeof color === "string" ? color.trim() : ""))
@@ -573,6 +586,7 @@ export default function HomePage() {
 
     try {
       const nextMap = new Map<string, RasterLayerData>();
+      const nextGridMap = new Map<string, RasterGridData>();
       for (let i = 0; i < frames.length; i += 1) {
         if (controller.signal.aborted) {
           return;
@@ -584,6 +598,15 @@ export default function HomePage() {
           date: frameDate,
           level: selectedLevelValue ?? undefined,
           cssColors,
+          maskZeroValues: globeSettings.hideZeroPrecipitation,
+          colorbarRange: colorRangeForRequests,
+          signal: controller.signal,
+        });
+        const rasterGrid = await fetchRasterGrid({
+          dataset: currentDataset,
+          backendDatasetId: keyDatasetId,
+          date: frameDate,
+          level: selectedLevelValue ?? undefined,
           maskZeroValues: globeSettings.hideZeroPrecipitation,
           colorbarRange: colorRangeForRequests,
           signal: controller.signal,
@@ -602,9 +625,22 @@ export default function HomePage() {
         if (key) {
           nextMap.set(key, raster);
         }
+
+        const gridKey = buildRasterGridRequestKey({
+          dataset: currentDataset,
+          backendDatasetId: keyDatasetId,
+          date: frameDate,
+          level: selectedLevelValue ?? undefined,
+          maskZeroValues: globeSettings.hideZeroPrecipitation,
+          colorbarRange: colorRangeForRequests,
+        });
+        if (gridKey) {
+          nextGridMap.set(gridKey, rasterGrid);
+        }
         setVisualizationProgress((i + 1) / frames.length);
       }
       setPrefetchedRasters(nextMap);
+      setPrefetchedRasterGrids(nextGridMap);
       setVisualizationStatus("ready");
       setVisualizationProgress(1);
       setShowVisualizationModal(false);
@@ -724,7 +760,8 @@ export default function HomePage() {
           startPlayback();
         } else if (
           visualizationStatus === "idle" &&
-          prefetchedRasters.size > 0
+          prefetchedRasters.size > 0 &&
+          prefetchedRasterGrids.size > 0
         ) {
           setVisualizationStatus("ready");
           startPlayback();
@@ -733,7 +770,12 @@ export default function HomePage() {
         setVisualizationStatus("ready");
       }
     },
-    [prefetchedRasters, startPlayback, visualizationStatus],
+    [
+      prefetchedRasters,
+      prefetchedRasterGrids,
+      startPlayback,
+      visualizationStatus,
+    ],
   );
 
   const handlePressureLevelChange = useCallback(
@@ -918,6 +960,8 @@ export default function HomePage() {
         onRasterMetadataChange={setRasterMeta}
         isPlaying={visualizationStatus === "playing"}
         prefetchedRasters={prefetchedRasters}
+        prefetchedRasterGrids={prefetchedRasterGrids}
+        meshFadeDurationMs={visualizationFadeMs}
       />
     ),
     [
@@ -936,6 +980,8 @@ export default function HomePage() {
       colorbarRange,
       globeSettings.viewMode,
       prefetchedRasters,
+      prefetchedRasterGrids,
+      visualizationFadeMs,
     ],
   );
 
@@ -999,6 +1045,7 @@ export default function HomePage() {
 
   const isPlaybackReady =
     prefetchedRasters.size > 0 &&
+    prefetchedRasterGrids.size > 0 &&
     visualizationDates.length > 0 &&
     visualizationStatus !== "preparing" &&
     Boolean(visualizationTarget);
@@ -1336,6 +1383,27 @@ export default function HomePage() {
             </select>
             <p className="text-xs text-slate-300">
               Only increments supported by this dataset are available.
+            </p>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            <p className="text-sm font-semibold text-white">Fade time</p>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min={0}
+                max={1500}
+                step={50}
+                value={visualizationFadeMs}
+                onChange={(e) => setVisualizationFadeMs(Number(e.target.value))}
+                className="h-2 w-full cursor-pointer appearance-none rounded-full bg-white/20"
+              />
+              <span className="text-xs text-slate-200">
+                {visualizationFadeMs} ms
+              </span>
+            </div>
+            <p className="text-xs text-slate-300">
+              Only affects mesh transitions during visualization playback.
             </p>
           </div>
 
