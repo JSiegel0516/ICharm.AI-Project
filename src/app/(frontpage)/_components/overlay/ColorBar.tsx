@@ -10,6 +10,10 @@ import React, {
 } from "react";
 import { ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 import { Button } from "../../../../components/ui/button";
+<<<<<<< HEAD
+=======
+import { Slider } from "../../../../components/ui/slider";
+>>>>>>> 09dedf8 (refactoring components to front page)
 
 // Types
 type TemperatureUnit = "celsius" | "fahrenheit";
