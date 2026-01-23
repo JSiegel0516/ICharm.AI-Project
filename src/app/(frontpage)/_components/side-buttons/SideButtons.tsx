@@ -289,26 +289,45 @@ export function SideButtons({
   // Click-outside handler
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+
+      // Check if we're clicking on specific safe zones
+      const isCalendarClick = calendarRef.current?.contains(target);
+      const isCalendarButton = target.closest("#calendar");
+      const isDatasetCardClick = datasetCardRef.current?.contains(target);
+      const isDatasetButton = target.closest("#dataset");
+      const isSideButton = target.closest(".sidebtn"); // Any side button
+      const isInsideModal = target.closest('[role="dialog"]'); // Any modal/dialog
+
+      // If clicking on any of these safe zones, don't close anything
       if (
-        calendarRef.current &&
-        !calendarRef.current.contains(event.target as Node)
+        isCalendarClick ||
+        isCalendarButton ||
+        isDatasetCardClick ||
+        isDatasetButton ||
+        isSideButton ||
+        isInsideModal
       ) {
+        return;
+      }
+
+      // Otherwise, close everything
+      if (showCalendar) {
         closeCalendar();
       }
-      if (
-        datasetCardRef.current &&
-        !datasetCardRef.current.contains(event.target as Node)
-      ) {
+      if (showDatasetCard) {
         closeDatasetCard();
       }
     };
 
-    if (showCalendar || showDatasetCard) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => {
-        document.removeEventListener("mousedown", handleClickOutside);
-      };
-    }
+    // Use both mousedown and click events
+    document.addEventListener("mousedown", handleClickOutside, true);
+    document.addEventListener("click", handleClickOutside, true);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside, true);
+      document.removeEventListener("click", handleClickOutside, true);
+    };
   }, [showCalendar, showDatasetCard, closeCalendar, closeDatasetCard]);
 
   useEffect(() => {
@@ -420,7 +439,7 @@ export function SideButtons({
             initial={{ x: 0 }}
             exit={{ x: -100, opacity: 0 }}
             transition={{ duration: 0.3, ease: "easeInOut" }}
-            className="pointer-events-auto fixed top-0 left-4 z-9999 flex h-screen flex-col items-center justify-center gap-2"
+            className="pointer-events-auto fixed top-0 left-4 z-50 flex h-screen flex-col items-center justify-center gap-2"
           >
             {buttonConfigs.map(
               ({ id, icon, label, onClick, delay, disabled }) => (
@@ -479,7 +498,7 @@ export function SideButtons({
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -100, opacity: 0 }}
             transition={{ duration: 0.3, ease: "easeInOut" }}
-            className="pointer-events-auto fixed top-1/2 left-4 z-9999 w-80 -translate-y-1/2"
+            className="pointer-events-auto fixed top-1/2 left-4 z-50 w-80 -translate-y-1/2"
           >
             <Calendar
               mode="single"
@@ -507,7 +526,7 @@ export function SideButtons({
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -100, opacity: 0 }}
             transition={{ duration: 0.3, ease: "easeInOut" }}
-            className="pointer-events-auto fixed top-1/2 left-4 z-9999 w-96 -translate-y-1/2"
+            className="pointer-events-auto fixed top-1/2 left-4 z-50 w-96 -translate-y-1/2"
           >
             <Card>
               <CardHeader className="pb-3">

@@ -1090,7 +1090,7 @@ export default function HomePage() {
     <section className="bg-background fixed inset-0 h-screen w-screen overflow-hidden">
       {memoizedGlobe}
 
-      <div className="pointer-events-none absolute inset-0 z-10">
+      <div className="pointer-events-none absolute inset-0 z-20">
         {/* Side Menu */}
         <div className="pointer-events-auto">
           <SideButtons
@@ -1265,7 +1265,7 @@ export default function HomePage() {
           }
         }}
       >
-        <DialogContent className="max-w-[95vw] sm:max-w-[900px] lg:max-w-[1000px]">
+        <DialogContent className="max-w-[95vw] sm:max-w-225 lg:max-w-250">
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold text-white sm:text-xl">
               Visualization
