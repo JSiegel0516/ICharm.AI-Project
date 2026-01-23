@@ -49,6 +49,7 @@ import { Tutorial } from "./_components/side-buttons/Tutorial";
 
 type SidebarPanel = "datasets" | "history" | "about" | null;
 
+// Helper Functions
 const normalizeLevelUnit = (
   unit?: string | null,
   descriptor?: string | null,
@@ -221,6 +222,13 @@ const dayIndexToDate = (index: number, minDate: Date, maxDate: Date) => {
   return clampDateToRange(next, minDate, maxDate);
 };
 
+const formatDateISO = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 export default function HomePage() {
   const {
     showColorbar,
@@ -241,8 +249,10 @@ export default function HomePage() {
     temperatureUnit,
     setTemperatureUnit,
   } = useAppState();
+
   const globeRef = useRef<GlobeRef>(null);
   const lastDatasetIdRef = useRef<string | null>(null);
+  const visualizationAbortRef = useRef<AbortController | null>(null);
 
   // Visualization State
   const [showVisualizationModal, setShowVisualizationModal] = useState(false);
@@ -266,6 +276,7 @@ export default function HomePage() {
   const [prefetchedRasters, setPrefetchedRasters] = useState<
     Map<string, RasterLayerData>
   >(new Map());
+
   const [prefetchedRasterGrids, setPrefetchedRasterGrids] = useState<
     Map<string, RasterGridData>
   >(new Map());
@@ -276,7 +287,6 @@ export default function HomePage() {
     datasetSnapshot: Dataset;
     level: number | null;
   } | null>(null);
-  const visualizationAbortRef = useRef<AbortController | null>(null);
 
   // UI State
   const [activeSidebarPanel, setActiveSidebarPanel] =
@@ -285,6 +295,7 @@ export default function HomePage() {
   const [colorBarCollapsed, setColorBarCollapsed] = useState(false);
   const [colorBarPosition, setColorBarPosition] = useState({ x: 24, y: 300 });
 
+  // Dataset Pressure Levels
   const datasetPressureLevels = useMemo<PressureLevel[] | null>(() => {
     if (isSeaSurfaceTemperatureDataset(currentDataset)) {
       return null;
@@ -353,6 +364,7 @@ export default function HomePage() {
     min?: number | null;
     max?: number | null;
   } | null>(null);
+
   const selectedLevelValue =
     hasPressureLevels && selectedPressureLevel
       ? selectedPressureLevel.value
@@ -395,6 +407,7 @@ export default function HomePage() {
       currentDataset?.endDate ? new Date(currentDataset.endDate) : new Date(),
     [currentDataset?.endDate],
   );
+
   const totalDatasetDays = useMemo(
     () =>
       Math.max(
@@ -411,99 +424,13 @@ export default function HomePage() {
     [currentDataset],
   );
 
-  useEffect(() => {
-    const nextStep =
-      stepOptions.includes(visualizationStep) && visualizationStep
-        ? visualizationStep
-        : stepOptions[0];
-    if (nextStep && nextStep !== visualizationStep) {
-      setVisualizationStep(nextStep);
-    }
-
-    const defaultStart =
-      visualizationStart ??
-      selectedDate ??
-      clampDateToRange(new Date(), datasetStartDate, datasetEndDate);
-    const clampedStart = clampDateToRange(
-      defaultStart,
-      datasetStartDate,
-      datasetEndDate,
-    );
-    const desiredEnd =
-      visualizationEnd ??
-      selectedDate ??
-      clampDateToRange(new Date(), datasetStartDate, datasetEndDate);
-    const normalizedEnd = desiredEnd < clampedStart ? clampedStart : desiredEnd;
-    const clampedEnd = clampDateToRange(
-      normalizedEnd,
-      datasetStartDate,
-      datasetEndDate,
-    );
-
-    if (
-      !visualizationStart ||
-      visualizationStart.getTime() !== clampedStart.getTime()
-    ) {
-      setVisualizationStart(clampedStart);
-    }
-    if (
-      !visualizationEnd ||
-      visualizationEnd.getTime() !== clampedEnd.getTime()
-    ) {
-      setVisualizationEnd(clampedEnd);
-    }
-  }, [
-    datasetEndDate,
-    datasetStartDate,
-    selectedDate,
-    stepOptions,
-    visualizationEnd,
-    visualizationStart,
-    visualizationStep,
-  ]);
-
-  useEffect(() => {
-    if (!showVisualizationModal) {
-      return;
-    }
-    const fallbackStart = clampDateToRange(
-      visualizationStart ??
-        selectedDate ??
-        clampDateToRange(new Date(), datasetStartDate, datasetEndDate),
-      datasetStartDate,
-      datasetEndDate,
-    );
-    const fallbackEnd = clampDateToRange(
-      visualizationEnd ??
-        selectedDate ??
-        clampDateToRange(new Date(), datasetStartDate, datasetEndDate),
-      datasetStartDate,
-      datasetEndDate,
-    );
-    setStartInputValue(fallbackStart.toISOString().slice(0, 10));
-    setVisualizationStart(fallbackStart);
-    setEndInputValue(fallbackEnd.toISOString().slice(0, 10));
-    setVisualizationEnd(fallbackEnd);
-  }, [
-    datasetEndDate,
-    datasetStartDate,
-    selectedDate,
-    showVisualizationModal,
-    visualizationEnd,
-    visualizationStart,
-  ]);
-
-  useEffect(() => {
-    // If the user changes visualization inputs while a previous run is active,
-    // we intentionally keep the existing progress so they can browse other datasets.
-  }, []);
-
   const playbackIntervalMs = useMemo(() => {
     if (visualizationStep === "year") return 1200;
     if (visualizationStep === "month") return 800;
     return 500;
   }, [visualizationStep]);
 
+  // Visualization Handlers
   const startPlayback = useCallback(() => {
     if (
       !visualizationDates.length ||
@@ -528,10 +455,13 @@ export default function HomePage() {
     setVisualizationStatus("playing");
   }, [
     activeVisualizationIndex,
+    datasets,
     prefetchedRasters,
     prefetchedRasterGrids,
+    setCurrentDataset,
     setSelectedDate,
     visualizationDates,
+    visualizationTarget,
   ]);
 
   const handleStopVisualization = useCallback(() => {
@@ -615,6 +545,7 @@ export default function HomePage() {
       const nextMap = new Map<string, RasterLayerData>();
       const nextGridMap = new Map<string, RasterGridData>();
       const loadedImageUrls = new Set<string>();
+
       const preloadTextureImages = async (
         textures: RasterLayerData["textures"],
       ) => {
@@ -640,6 +571,7 @@ export default function HomePage() {
           }),
         );
       };
+
       for (let i = 0; i < frames.length; i += 1) {
         if (controller.signal.aborted) {
           return;
@@ -726,75 +658,6 @@ export default function HomePage() {
     visualizationStart,
     visualizationStep,
   ]);
-
-  useEffect(() => {
-    if (visualizationStatus !== "playing") {
-      return;
-    }
-
-    const frames = visualizationDates;
-    if (!frames.length) {
-      setVisualizationStatus("ready");
-      return;
-    }
-
-    let index = activeVisualizationIndex;
-    setSelectedDate(frames[index]);
-
-    const timer = window.setInterval(() => {
-      index += 1;
-      if (index >= frames.length) {
-        setVisualizationStatus("ready");
-        setActiveVisualizationIndex(0);
-        return;
-      }
-      setActiveVisualizationIndex(index);
-      setSelectedDate(frames[index]);
-    }, playbackIntervalMs);
-
-    return () => window.clearInterval(timer);
-  }, [
-    activeVisualizationIndex,
-    playbackIntervalMs,
-    setSelectedDate,
-    visualizationDates,
-    visualizationStatus,
-  ]);
-
-  useEffect(() => {
-    const datasetId = currentDataset?.id;
-    if (!datasetId) {
-      return;
-    }
-
-    const isCmorphDataset = [
-      currentDataset?.name,
-      currentDataset?.description,
-      currentDataset?.backend?.datasetName,
-      currentDataset?.backend?.slug,
-      currentDataset?.backendId,
-      currentDataset?.backendSlug,
-    ]
-      .filter(Boolean)
-      .some((value) => String(value).toLowerCase().includes("cmorph"));
-
-    const isNewDataset = lastDatasetIdRef.current !== datasetId;
-    if (isNewDataset) {
-      lastDatasetIdRef.current = datasetId;
-      setGlobeSettings((prev) => {
-        if (isCmorphDataset) {
-          return prev.hideZeroPrecipitation
-            ? prev
-            : { ...prev, hideZeroPrecipitation: true };
-        }
-
-        // Non-CMORPH datasets should default to showing all values.
-        return prev.hideZeroPrecipitation
-          ? { ...prev, hideZeroPrecipitation: false }
-          : prev;
-      });
-    }
-  }, [currentDataset]);
 
   // Event Handlers
   const handleDateChange = useCallback(
@@ -925,6 +788,156 @@ export default function HomePage() {
     [],
   );
 
+  // Effects
+  useEffect(() => {
+    const nextStep =
+      stepOptions.includes(visualizationStep) && visualizationStep
+        ? visualizationStep
+        : stepOptions[0];
+    if (nextStep && nextStep !== visualizationStep) {
+      setVisualizationStep(nextStep);
+    }
+
+    const defaultStart =
+      visualizationStart ??
+      selectedDate ??
+      clampDateToRange(new Date(), datasetStartDate, datasetEndDate);
+    const clampedStart = clampDateToRange(
+      defaultStart,
+      datasetStartDate,
+      datasetEndDate,
+    );
+    const desiredEnd =
+      visualizationEnd ??
+      selectedDate ??
+      clampDateToRange(new Date(), datasetStartDate, datasetEndDate);
+    const normalizedEnd = desiredEnd < clampedStart ? clampedStart : desiredEnd;
+    const clampedEnd = clampDateToRange(
+      normalizedEnd,
+      datasetStartDate,
+      datasetEndDate,
+    );
+
+    if (
+      !visualizationStart ||
+      visualizationStart.getTime() !== clampedStart.getTime()
+    ) {
+      setVisualizationStart(clampedStart);
+    }
+    if (
+      !visualizationEnd ||
+      visualizationEnd.getTime() !== clampedEnd.getTime()
+    ) {
+      setVisualizationEnd(clampedEnd);
+    }
+  }, [
+    datasetEndDate,
+    datasetStartDate,
+    selectedDate,
+    stepOptions,
+    visualizationEnd,
+    visualizationStart,
+    visualizationStep,
+  ]);
+
+  useEffect(() => {
+    if (!showVisualizationModal) {
+      return;
+    }
+    const fallbackStart = clampDateToRange(
+      visualizationStart ??
+        selectedDate ??
+        clampDateToRange(new Date(), datasetStartDate, datasetEndDate),
+      datasetStartDate,
+      datasetEndDate,
+    );
+    const fallbackEnd = clampDateToRange(
+      visualizationEnd ??
+        selectedDate ??
+        clampDateToRange(new Date(), datasetStartDate, datasetEndDate),
+      datasetStartDate,
+      datasetEndDate,
+    );
+    setStartInputValue(fallbackStart.toISOString().slice(0, 10));
+    setVisualizationStart(fallbackStart);
+    setEndInputValue(fallbackEnd.toISOString().slice(0, 10));
+    setVisualizationEnd(fallbackEnd);
+  }, [
+    datasetEndDate,
+    datasetStartDate,
+    selectedDate,
+    showVisualizationModal,
+    visualizationEnd,
+    visualizationStart,
+  ]);
+
+  useEffect(() => {
+    if (visualizationStatus !== "playing") {
+      return;
+    }
+
+    const frames = visualizationDates;
+    if (!frames.length) {
+      setVisualizationStatus("ready");
+      return;
+    }
+
+    let index = activeVisualizationIndex;
+    setSelectedDate(frames[index]);
+
+    const timer = window.setInterval(() => {
+      index += 1;
+      if (index >= frames.length) {
+        setVisualizationStatus("ready");
+        setActiveVisualizationIndex(0);
+        return;
+      }
+      setActiveVisualizationIndex(index);
+      setSelectedDate(frames[index]);
+    }, playbackIntervalMs);
+
+    return () => window.clearInterval(timer);
+  }, [
+    activeVisualizationIndex,
+    playbackIntervalMs,
+    setSelectedDate,
+    visualizationDates,
+    visualizationStatus,
+  ]);
+
+  useEffect(() => {
+    const datasetId = currentDataset?.id;
+    if (!datasetId) {
+      return;
+    }
+
+    const isCmorphDataset = [
+      currentDataset?.name,
+      currentDataset?.description,
+      currentDataset?.backend?.datasetName,
+      currentDataset?.backend?.slug,
+      currentDataset?.backendId,
+      currentDataset?.backendSlug,
+    ]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes("cmorph"));
+
+    const isNewDataset = lastDatasetIdRef.current !== datasetId;
+    if (isNewDataset) {
+      lastDatasetIdRef.current = datasetId;
+      setGlobeSettings((prev) => {
+        if (isCmorphDataset) {
+          return prev.hideZeroPrecipitation
+            ? prev
+            : { ...prev, hideZeroPrecipitation: true };
+        }
+        return prev.hideZeroPrecipitation
+          ? { ...prev, hideZeroPrecipitation: false }
+          : prev;
+      });
+    }
+  }, [currentDataset]);
+
   useEffect(() => {
     setRasterMeta(null);
   }, [currentDataset]);
@@ -961,37 +974,71 @@ export default function HomePage() {
   }, [selectedPressureLevel, hasPressureLevels]);
 
   useEffect(() => {
-    if (!hasPressureLevels || !datasetPressureLevels) {
-      setSelectedPressureLevel(null);
+    if (!locationFocusRequest || !globeRef.current) {
       return;
     }
 
-    setSelectedPressureLevel((prev) => {
-      if (prev) {
-        const match = datasetPressureLevels.find(
-          (level) => level.value === prev.value,
-        );
-        if (match) {
-          return match;
-        }
-      }
-      return datasetPressureLevels[0];
-    });
+    if (locationFocusRequest.mode === "clear") {
+      globeRef.current.clearSearchMarker();
+      setCurrentLocationMarker(null);
+      clearLocationFocusRequest();
+      return;
+    }
+
+    const { latitude, longitude, name } = locationFocusRequest;
+    if (typeof latitude === "number" && typeof longitude === "number") {
+      globeRef.current.focusOnLocation(locationFocusRequest);
+      setCurrentLocationMarker({
+        latitude,
+        longitude,
+        name: name ?? null,
+        source: "search",
+      });
+    }
+    clearLocationFocusRequest();
   }, [
-    hasPressureLevels,
-    datasetPressureLevels,
-    currentDataset?.id,
-    currentDataset?.backend?.id,
+    locationFocusRequest,
+    clearLocationFocusRequest,
+    setCurrentLocationMarker,
   ]);
 
   useEffect(() => {
-    if (!hasPressureLevels) {
+    if (
+      !visualizationTarget ||
+      !currentDataset ||
+      currentDataset.id !== visualizationTarget.datasetId
+    ) {
       return;
     }
-    setRasterMeta(null);
-  }, [selectedPressureLevel, hasPressureLevels]);
+    if (
+      visualizationTarget.level != null &&
+      hasPressureLevels &&
+      datasetPressureLevels
+    ) {
+      const match = datasetPressureLevels.find(
+        (lvl) => lvl.value === visualizationTarget.level,
+      );
+      if (match) {
+        setSelectedPressureLevel(match);
+      }
+    }
+  }, [
+    currentDataset,
+    datasetPressureLevels,
+    hasPressureLevels,
+    visualizationTarget,
+  ]);
 
   const useMeshRaster = true;
+  const isPlaybackReady =
+    prefetchedRasters.size > 0 &&
+    prefetchedRasterGrids.size > 0 &&
+    visualizationDates.length > 0 &&
+    visualizationStatus !== "preparing" &&
+    Boolean(visualizationTarget);
+  const progressPercent = Math.round(
+    Math.min(Math.max(visualizationProgress, 0), 1) * 100,
+  );
 
   // Memoized Globe
   const memoizedGlobe = useMemo(
@@ -1039,74 +1086,6 @@ export default function HomePage() {
     ],
   );
 
-  useEffect(() => {
-    if (!locationFocusRequest || !globeRef.current) {
-      return;
-    }
-
-    if (locationFocusRequest.mode === "clear") {
-      globeRef.current.clearSearchMarker();
-      setCurrentLocationMarker(null);
-      clearLocationFocusRequest();
-      return;
-    }
-
-    const { latitude, longitude, name } = locationFocusRequest;
-    if (typeof latitude === "number" && typeof longitude === "number") {
-      globeRef.current.focusOnLocation(locationFocusRequest);
-      setCurrentLocationMarker({
-        latitude,
-        longitude,
-        name: name ?? null,
-        source: "search",
-      });
-    }
-    clearLocationFocusRequest();
-  }, [
-    locationFocusRequest,
-    clearLocationFocusRequest,
-    setCurrentLocationMarker,
-  ]);
-
-  // Ensure the stored visualization level is applied when returning to its dataset
-  useEffect(() => {
-    if (
-      !visualizationTarget ||
-      !currentDataset ||
-      currentDataset.id !== visualizationTarget.datasetId
-    ) {
-      return;
-    }
-    if (
-      visualizationTarget.level != null &&
-      hasPressureLevels &&
-      datasetPressureLevels
-    ) {
-      const match = datasetPressureLevels.find(
-        (lvl) => lvl.value === visualizationTarget.level,
-      );
-      if (match) {
-        setSelectedPressureLevel(match);
-      }
-    }
-  }, [
-    currentDataset,
-    datasetPressureLevels,
-    hasPressureLevels,
-    visualizationTarget,
-    setSelectedPressureLevel,
-  ]);
-
-  const isPlaybackReady =
-    prefetchedRasters.size > 0 &&
-    prefetchedRasterGrids.size > 0 &&
-    visualizationDates.length > 0 &&
-    visualizationStatus !== "preparing" &&
-    Boolean(visualizationTarget);
-  const progressPercent = Math.round(
-    Math.min(Math.max(visualizationProgress, 0), 1) * 100,
-  );
-
   return (
     <section className="bg-background fixed inset-0 h-screen w-screen overflow-hidden">
       {memoizedGlobe}
@@ -1143,27 +1122,27 @@ export default function HomePage() {
           (visualizationStatus === "preparing" ||
             isPlaybackReady ||
             visualizationStatus === "playing") && (
-            <div className="pointer-events-auto fixed top-20 left-6 z-60 flex items-center gap-2">
+            <div className="pointer-events-auto fixed top-20 left-6 z-60 flex items-center gap-2 sm:top-16 sm:left-4">
               <Button
                 type="button"
                 size="icon"
                 variant="ghost"
-                className="h-8 w-8 rounded-full bg-black/60 text-white hover:bg-white/10"
+                className="h-7 w-7 rounded-full bg-black/60 text-white hover:bg-white/10 sm:h-8 sm:w-8"
                 onClick={() => setShowVisualizationBar(false)}
                 aria-label="Close visualization bar"
               >
                 ×
               </Button>
-              <div className="flex items-center gap-3 rounded-full border border-white/10 bg-black/70 px-4 py-2 shadow-lg backdrop-blur">
-                <div className="w-48">
-                  <div className="text-xs font-medium text-slate-100">
+              <div className="flex items-center gap-2 rounded-full border border-white/10 bg-black/70 px-3 py-1.5 shadow-lg backdrop-blur sm:gap-3 sm:px-4 sm:py-2">
+                <div className="w-36 sm:w-48">
+                  <div className="text-[10px] font-medium text-slate-100 sm:text-xs">
                     {visualizationStatus === "preparing"
                       ? "Preparing visualization…"
                       : visualizationStatus === "playing"
                         ? "Playing visualization"
                         : "Visualization ready"}
                   </div>
-                  <div className="mt-1 h-1.5 w-full rounded-full bg-white/15">
+                  <div className="mt-1 h-1 w-full rounded-full bg-white/15 sm:h-1.5">
                     <div
                       className="h-full rounded-full bg-emerald-400 transition-all"
                       style={{ width: `${progressPercent}%` }}
@@ -1173,7 +1152,7 @@ export default function HomePage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="border-white/20 bg-white/10 text-white hover:bg-white/20"
+                  className="border-white/20 bg-white/10 text-xs text-white hover:bg-white/20 sm:text-sm"
                   onClick={() => {
                     if (visualizationStatus === "preparing") {
                       handleStopVisualization();
@@ -1189,13 +1168,13 @@ export default function HomePage() {
                   }}
                 >
                   {visualizationStatus === "preparing" ? (
-                    <Square className="h-4 w-4" />
+                    <Square className="h-3 w-3 sm:h-4 sm:w-4" />
                   ) : visualizationStatus === "playing" ? (
-                    <Square className="h-4 w-4" />
+                    <Square className="h-3 w-3 sm:h-4 sm:w-4" />
                   ) : (
-                    <Play className="h-4 w-4" />
+                    <Play className="h-3 w-3 sm:h-4 sm:w-4" />
                   )}
-                  <span className="ml-2">
+                  <span className="ml-1.5 sm:ml-2">
                     {visualizationStatus === "preparing"
                       ? "Stop"
                       : visualizationStatus === "playing"
@@ -1241,8 +1220,8 @@ export default function HomePage() {
         </div>
 
         {/* Bottom Controls */}
-        <div className="pointer-events-auto absolute right-0 bottom-0 left-0 z-20 pb-6">
-          <div className="relative flex items-end justify-center px-4 py-2">
+        <div className="pointer-events-auto absolute right-0 bottom-0 left-0 z-20 pb-4 sm:pb-6">
+          <div className="relative flex items-end justify-center px-2 py-2 sm:px-4">
             {/* TimeBar - Centered */}
             <div className="pointer-events-auto w-full max-w-4xl">
               <TimeBar
@@ -1262,7 +1241,7 @@ export default function HomePage() {
             {/* Pressure Levels Selector - Right of TimeBar */}
             {hasPressureLevels && datasetPressureLevels && (
               <div
-                className="pointer-events-auto absolute bottom-0"
+                className="pointer-events-auto absolute bottom-0 hidden lg:block"
                 style={{ left: "calc(45% + (min(100vw, 896px) / 2))" }}
               >
                 <PressureLevelsSelector
@@ -1276,6 +1255,7 @@ export default function HomePage() {
         </div>
       </div>
 
+      {/* Visualization Modal */}
       <Dialog
         open={showVisualizationModal}
         onOpenChange={(open) => {
@@ -1287,10 +1267,10 @@ export default function HomePage() {
       >
         <DialogContent className="max-w-[95vw] sm:max-w-[900px] lg:max-w-[1000px]">
           <DialogHeader>
-            <DialogTitle className="text-xl font-semibold text-white">
+            <DialogTitle className="text-lg font-semibold text-white sm:text-xl">
               Visualization
             </DialogTitle>
-            <DialogDescription className="text-slate-200">
+            <DialogDescription className="text-xs text-slate-200 sm:text-sm">
               Choose two dates from{" "}
               {datasetStartDate.toLocaleDateString("en-US")} to{" "}
               {datasetEndDate.toLocaleDateString("en-US")} to build a playback
@@ -1298,12 +1278,15 @@ export default function HomePage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid grid-cols-1 gap-6 py-4 md:grid-cols-2">
-            <div className="space-y-2 rounded-lg border border-white/10 bg-white/5 p-3">
-              <p className="mb-2 text-sm font-semibold text-white">Start</p>
+          <div className="grid grid-cols-1 gap-4 py-4 sm:gap-6 md:grid-cols-2">
+            {/* Start Date */}
+            <div className="space-y-2 rounded-lg border border-white/10 bg-white/5 p-2 sm:p-3">
+              <p className="mb-2 text-xs font-semibold text-white sm:text-sm">
+                Start
+              </p>
               <Input
                 type="text"
-                className="mb-3 bg-black/40 text-white"
+                className="mb-2 bg-black/40 text-xs text-white sm:mb-3 sm:text-sm"
                 placeholder="YYYY-MM-DD"
                 value={startInputValue}
                 onChange={(e) => {
@@ -1320,7 +1303,7 @@ export default function HomePage() {
                   }
                 }}
               />
-              <div className="flex items-center justify-center gap-6">
+              <div className="flex items-center justify-center gap-4 sm:gap-6">
                 <Calendar
                   mode="single"
                   selected={
@@ -1355,9 +1338,10 @@ export default function HomePage() {
                   disabled={(date) =>
                     date < datasetStartDate || date > datasetEndDate
                   }
+                  className="scale-90 sm:scale-100"
                 />
-                <div className="flex flex-col items-center gap-2">
-                  <span className="text-[10px] tracking-wide text-slate-300 uppercase">
+                <div className="flex flex-col items-center gap-1.5 sm:gap-2">
+                  <span className="text-[9px] tracking-wide text-slate-300 uppercase sm:text-[10px]">
                     {datasetEndDate.toLocaleDateString("en-US")}
                   </span>
                   <input
@@ -1382,7 +1366,7 @@ export default function HomePage() {
                       setVisualizationStart(next);
                       setStartInputValue(next.toISOString().slice(0, 10));
                     }}
-                    className="h-56 w-5 cursor-pointer appearance-none rounded-full bg-white/10"
+                    className="h-40 w-4 cursor-pointer appearance-none rounded-full bg-white/10 sm:h-56 sm:w-5"
                     style={{
                       WebkitAppearance: "slider-vertical",
                       writingMode: "vertical-rl",
@@ -1390,17 +1374,21 @@ export default function HomePage() {
                     }}
                     aria-label="Start date slider"
                   />
-                  <span className="text-[10px] tracking-wide text-slate-400 uppercase">
+                  <span className="text-[9px] tracking-wide text-slate-400 uppercase sm:text-[10px]">
                     {datasetStartDate.toLocaleDateString("en-US")}
                   </span>
                 </div>
               </div>
             </div>
-            <div className="space-y-2 rounded-lg border border-white/10 bg-white/5 p-3">
-              <p className="mb-2 text-sm font-semibold text-white">End</p>
+
+            {/* End Date */}
+            <div className="space-y-2 rounded-lg border border-white/10 bg-white/5 p-2 sm:p-3">
+              <p className="mb-2 text-xs font-semibold text-white sm:text-sm">
+                End
+              </p>
               <Input
                 type="text"
-                className="mb-3 bg-black/40 text-white"
+                className="mb-2 bg-black/40 text-xs text-white sm:mb-3 sm:text-sm"
                 placeholder="YYYY-MM-DD"
                 value={endInputValue}
                 onChange={(e) => {
@@ -1417,7 +1405,7 @@ export default function HomePage() {
                   }
                 }}
               />
-              <div className="flex items-center justify-center gap-6">
+              <div className="flex items-center justify-center gap-4 sm:gap-6">
                 <Calendar
                   mode="single"
                   selected={
@@ -1452,9 +1440,10 @@ export default function HomePage() {
                   disabled={(date) =>
                     date < datasetStartDate || date > datasetEndDate
                   }
+                  className="scale-90 sm:scale-100"
                 />
-                <div className="flex flex-col items-center gap-2">
-                  <span className="text-[10px] tracking-wide text-slate-300 uppercase">
+                <div className="flex flex-col items-center gap-1.5 sm:gap-2">
+                  <span className="text-[9px] tracking-wide text-slate-300 uppercase sm:text-[10px]">
                     {datasetEndDate.toLocaleDateString("en-US")}
                   </span>
                   <input
@@ -1479,7 +1468,7 @@ export default function HomePage() {
                       setVisualizationEnd(next);
                       setEndInputValue(next.toISOString().slice(0, 10));
                     }}
-                    className="h-56 w-5 cursor-pointer appearance-none rounded-full bg-white/10"
+                    className="h-40 w-4 cursor-pointer appearance-none rounded-full bg-white/10 sm:h-56 sm:w-5"
                     style={{
                       WebkitAppearance: "slider-vertical",
                       writingMode: "vertical-rl",
@@ -1487,7 +1476,7 @@ export default function HomePage() {
                     }}
                     aria-label="End date slider"
                   />
-                  <span className="text-[10px] tracking-wide text-slate-400 uppercase">
+                  <span className="text-[9px] tracking-wide text-slate-400 uppercase sm:text-[10px]">
                     {datasetStartDate.toLocaleDateString("en-US")}
                   </span>
                 </div>
@@ -1495,11 +1484,14 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="mt-4 grid gap-6 lg:grid-cols-2">
+          <div className="mt-2 grid gap-4 sm:mt-4 sm:gap-6 lg:grid-cols-2">
+            {/* Advance By */}
             <div className="space-y-2">
-              <p className="text-sm font-semibold text-white">Advance by</p>
+              <p className="text-xs font-semibold text-white sm:text-sm">
+                Advance by
+              </p>
               <select
-                className="w-full rounded-md border border-white/15 bg-black/40 px-3 py-2 text-sm text-white shadow-sm focus:border-white focus:outline-none"
+                className="w-full rounded-md border border-white/15 bg-black/40 px-2 py-1.5 text-xs text-white shadow-sm focus:border-white focus:outline-none sm:px-3 sm:py-2 sm:text-sm"
                 value={visualizationStep}
                 onChange={(e) => {
                   const next = e.target.value as VisualizationStep;
@@ -1518,14 +1510,17 @@ export default function HomePage() {
                   </option>
                 ))}
               </select>
-              <p className="text-xs text-slate-300">
+              <p className="text-[10px] text-slate-300 sm:text-xs">
                 Only increments supported by this dataset are available.
               </p>
             </div>
 
+            {/* Fade Time */}
             <div className="space-y-2">
-              <p className="text-sm font-semibold text-white">Fade time</p>
-              <div className="flex items-center gap-3">
+              <p className="text-xs font-semibold text-white sm:text-sm">
+                Fade time
+              </p>
+              <div className="flex items-center gap-2 sm:gap-3">
                 <input
                   type="range"
                   min={0}
@@ -1535,20 +1530,20 @@ export default function HomePage() {
                   onChange={(e) =>
                     setVisualizationFadeMs(Number(e.target.value))
                   }
-                  className="h-2 w-full cursor-pointer appearance-none rounded-full bg-white/20"
+                  className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/20 sm:h-2"
                 />
-                <span className="text-xs text-slate-200">
+                <span className="text-[10px] text-slate-200 sm:text-xs">
                   {visualizationFadeMs} ms
                 </span>
               </div>
-              <p className="text-xs text-slate-300">
+              <p className="text-[10px] text-slate-300 sm:text-xs">
                 Only affects mesh transitions during visualization playback.
               </p>
             </div>
           </div>
 
           {visualizationError && (
-            <div className="rounded-md border border-red-500/60 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+            <div className="rounded-md border border-red-500/60 bg-red-500/10 px-2 py-1.5 text-xs text-red-200 sm:px-3 sm:py-2 sm:text-sm">
               {visualizationError}
             </div>
           )}
@@ -1557,12 +1552,14 @@ export default function HomePage() {
             <Button
               type="button"
               variant="outline"
+              size="sm"
               onClick={() => setShowVisualizationModal(false)}
             >
               Cancel
             </Button>
             <Button
               type="button"
+              size="sm"
               onClick={handleBeginVisualization}
               disabled={visualizationStatus === "preparing"}
             >

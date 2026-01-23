@@ -1,4 +1,5 @@
 "use client";
+
 import { Monitor } from "lucide-react";
 import React, {
   useState,
@@ -7,11 +8,18 @@ import React, {
   useMemo,
   useCallback,
 } from "react";
-import { ChevronDown, X, MapPin, Calendar } from "lucide-react";
+import {
+  ChevronDown,
+  X,
+  MapPin,
+  Calendar,
+  Activity,
+  Loader2,
+  Download,
+} from "lucide-react";
 import { RegionInfoPanelProps } from "@/types";
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardFooter,
@@ -37,12 +45,6 @@ import {
 import {
   LineChart,
   Line,
-  BarChart,
-  Bar,
-  AreaChart,
-  Area,
-  ScatterChart,
-  Scatter,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -51,11 +53,43 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
+// Types
 type TemperatureUnitInfo = {
   type: "celsius" | "fahrenheit" | "kelvin" | null;
   symbol: string;
 };
 
+type SeriesPoint = {
+  date: string;
+  value: number | null;
+};
+
+type DateRangeOption =
+  | "all"
+  | "1year"
+  | "6months"
+  | "3months"
+  | "1month"
+  | "custom";
+
+type Position = { x: number; y: number };
+
+// Constants
+const COLLAPSED_HEIGHT = 52;
+const COLLAPSED_WIDTH = 225;
+const DEFAULT_PANEL_WIDTH = 300;
+const DEFAULT_PANEL_HEIGHT = 200;
+const MARGIN = 16;
+
+const chartConfig = {
+  desktop: {
+    label: "Desktop",
+    icon: Monitor,
+    color: "#2563eb",
+  },
+} satisfies ChartConfig;
+
+// Helper Functions
 const normalizeTemperatureUnit = (
   rawUnit?: string | null,
 ): TemperatureUnitInfo => {
@@ -101,28 +135,38 @@ const normalizeTemperatureUnit = (
   return { type: null, symbol: normalized };
 };
 
-const celsiusToFahrenheit = (value: number) => (value * 9) / 5 + 32;
+const celsiusToFahrenheit = (value: number): number => (value * 9) / 5 + 32;
 
-type SeriesPoint = {
-  date: string;
-  value: number | null;
+const formatValue = (value: number | null): string => {
+  if (value === null || !Number.isFinite(value)) return "--";
+
+  const abs = Math.abs(value);
+  if (abs === 0) return "0";
+  if (abs < 1e-4) return value.toExponential(2);
+  if (abs < 1) return Number(value.toPrecision(3)).toString();
+  if (abs < 10) return value.toFixed(2);
+  if (abs < 100) return value.toFixed(1);
+  return value.toFixed(0);
 };
 
-type DateRangeOption =
-  | "all"
-  | "1year"
-  | "6months"
-  | "3months"
-  | "1month"
-  | "custom";
+const formatDate = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
 
-const chartConfig = {
-  desktop: {
-    label: "Desktop",
-    icon: Monitor,
-    color: "#2563eb",
-  },
-} satisfies ChartConfig;
+const downloadFile = (content: string, filename: string, type: string) => {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
 
 const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   show,
@@ -143,47 +187,74 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   currentDataset,
   selectedDate,
   temperatureUnit = "celsius",
+  onExtractData,
+  isExtracting = false,
 }) => {
-  const getDefaultPosition = () => {
-    if (typeof window !== "undefined") {
-      return { x: window.innerWidth - 350, y: 200 };
-    }
-    return { x: 800, y: 200 };
-  };
-
-  const [position, setPosition] = useState(getDefaultPosition);
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [previousPosition, setPreviousPosition] = useState(getDefaultPosition);
+  // Refs
   const panelRef = useRef<HTMLDivElement>(null);
 
+  // Position State
+  const getDefaultPosition = useCallback((): Position => {
+    if (typeof window === "undefined") {
+      return { x: 800, y: 200 };
+    }
+    const cardWidth = 280;
+    const verticalOffset = Math.round(window.innerHeight * 0.2);
+    return {
+      x: window.innerWidth - cardWidth - MARGIN - 200,
+      y: verticalOffset,
+    };
+  }, []);
+
+  const [position, setPosition] = useState<Position>(getDefaultPosition);
+  const [previousPosition, setPreviousPosition] =
+    useState<Position>(getDefaultPosition);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  // Drag State
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState<Position>({ x: 0, y: 0 });
+
+  // Timeseries State
   const [timeseriesOpen, setTimeseriesOpen] = useState(false);
   const [timeseriesLoading, setTimeseriesLoading] = useState(false);
   const [timeseriesError, setTimeseriesError] = useState<string | null>(null);
   const [timeseriesSeries, setTimeseriesSeries] = useState<SeriesPoint[]>([]);
   const [timeseriesUnits, setTimeseriesUnits] = useState<string | null>(null);
-
   const [dateRangeOption, setDateRangeOption] =
     useState<DateRangeOption>("1year");
   const [customStartDate, setCustomStartDate] = useState<string>("");
   const [customEndDate, setCustomEndDate] = useState<string>("");
+  const [zoomWindow, setZoomWindow] = useState<[number, number] | null>(null);
 
-  const datasetUnit = regionData.unit ?? currentDataset?.units ?? "units";
+  // Export Dialog State
+  const [showExportDialog, setShowExportDialog] = useState(false);
 
-  const datasetIdentifier =
-    currentDataset?.backend?.datasetName ??
-    currentDataset?.name ??
-    regionData.dataset ??
-    "No dataset";
+  // Memoized Values
+  const datasetUnit = useMemo(
+    () => regionData.unit ?? currentDataset?.units ?? "units",
+    [regionData.unit, currentDataset?.units],
+  );
+
+  const datasetIdentifier = useMemo(
+    () =>
+      currentDataset?.backend?.datasetName ??
+      currentDataset?.name ??
+      regionData.dataset ??
+      "No dataset",
+    [currentDataset, regionData.dataset],
+  );
 
   const datasetUnitInfo = useMemo(
     () => normalizeTemperatureUnit(datasetUnit),
     [datasetUnit],
   );
 
-  const useFahrenheit =
-    datasetUnitInfo.type === "celsius" && temperatureUnit === "fahrenheit";
+  const useFahrenheit = useMemo(
+    () =>
+      datasetUnitInfo.type === "celsius" && temperatureUnit === "fahrenheit",
+    [datasetUnitInfo.type, temperatureUnit],
+  );
 
   const displayUnitLabel = useMemo(
     () =>
@@ -199,33 +270,27 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     [useFahrenheit, timeseriesUnits, datasetUnitInfo.symbol, datasetUnit],
   );
 
-  const primaryValueSource =
-    typeof regionData.temperature === "number"
-      ? regionData.temperature
-      : typeof regionData.precipitation === "number"
-        ? regionData.precipitation
-        : null;
+  const primaryValueSource = useMemo(() => {
+    if (typeof regionData.temperature === "number") {
+      return regionData.temperature;
+    }
+    if (typeof regionData.precipitation === "number") {
+      return regionData.precipitation;
+    }
+    return null;
+  }, [regionData.temperature, regionData.precipitation]);
 
-  const convertedPrimaryValue =
-    primaryValueSource !== null
-      ? useFahrenheit
-        ? celsiusToFahrenheit(primaryValueSource)
-        : primaryValueSource
-      : null;
+  const convertedPrimaryValue = useMemo(() => {
+    if (primaryValueSource === null) return null;
+    return useFahrenheit
+      ? celsiusToFahrenheit(primaryValueSource)
+      : primaryValueSource;
+  }, [primaryValueSource, useFahrenheit]);
 
-  const formattedPrimaryValue =
-    convertedPrimaryValue !== null && Number.isFinite(convertedPrimaryValue)
-      ? (() => {
-          const abs = Math.abs(convertedPrimaryValue);
-          if (abs === 0) return "0";
-          if (abs < 1e-4) return convertedPrimaryValue.toExponential(2);
-          if (abs < 1)
-            return Number(convertedPrimaryValue.toPrecision(3)).toString();
-          if (abs < 10) return convertedPrimaryValue.toFixed(2);
-          if (abs < 100) return convertedPrimaryValue.toFixed(1);
-          return convertedPrimaryValue.toFixed(0);
-        })()
-      : "--";
+  const formattedPrimaryValue = useMemo(
+    () => formatValue(convertedPrimaryValue),
+    [convertedPrimaryValue],
+  );
 
   const chartData = useMemo(() => {
     return timeseriesSeries.map((entry) => {
@@ -245,23 +310,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     });
   }, [timeseriesSeries, useFahrenheit]);
 
-  const [zoomWindow, setZoomWindow] = useState<[number, number] | null>(null);
-
-  useEffect(() => {
-    if (isCollapsed && typeof window !== "undefined") {
-      const colorBarWidth = colorBarCollapsed ? 160 : 320;
-      const gap = colorBarCollapsed ? 4 : 8;
-      const collapsedHeight = 52;
-      const newX = colorBarPosition.x + colorBarWidth + gap;
-      const newY = window.innerHeight - collapsedHeight - 16;
-      setPosition({ x: newX, y: newY });
-    }
-  }, [isCollapsed, colorBarPosition.x, colorBarCollapsed]);
-
-  useEffect(() => {
-    setZoomWindow(null);
-  }, [chartData]);
-
   const displayedChartData = useMemo(() => {
     if (!zoomWindow || chartData.length === 0) {
       return chartData;
@@ -270,18 +318,18 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     return chartData.slice(start, Math.min(end + 1, chartData.length));
   }, [chartData, zoomWindow]);
 
-  const yAxisDomain = useMemo(() => {
+  const yAxisDomain = useMemo((): [number, number] | undefined => {
     const values = displayedChartData
       .map((point) => point.value)
       .filter((value): value is number => typeof value === "number");
-    if (!values.length) {
-      return undefined;
-    }
+
+    if (!values.length) return undefined;
+
     let min = Math.min(...values);
     let max = Math.max(...values);
-    if (!Number.isFinite(min) || !Number.isFinite(max)) {
-      return undefined;
-    }
+
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return undefined;
+
     if (min === max) {
       const padding = Math.abs(min) * 0.05 || 1;
       min -= padding;
@@ -291,45 +339,9 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       min -= padding;
       max += padding;
     }
-    return [min, max] as [number, number];
+
+    return [min, max];
   }, [displayedChartData]);
-
-  const handleChartWheel = useCallback(
-    (event: React.WheelEvent<HTMLDivElement>) => {
-      if (chartData.length === 0) {
-        return;
-      }
-      event.preventDefault();
-      const directionIn = event.deltaY < 0;
-      setZoomWindow((current) => {
-        const total = chartData.length;
-        const currentWindow = current ?? [0, total - 1];
-        let [start, end] = currentWindow;
-        const windowSize = end - start + 1;
-        const minWindow = Math.max(5, Math.ceil(total * 0.05));
-        const zoomStep = Math.max(1, Math.ceil(windowSize * 0.1));
-
-        if (directionIn) {
-          if (windowSize <= minWindow) {
-            return currentWindow;
-          }
-          start = Math.min(start + zoomStep, end - minWindow + 1);
-          end = Math.max(end - zoomStep, start + minWindow - 1);
-          return [start, end];
-        }
-
-        start = Math.max(0, start - zoomStep);
-        end = Math.min(total - 1, end + zoomStep);
-
-        if (start === 0 && end === total - 1) {
-          return null;
-        }
-
-        return [start, end];
-      });
-    },
-    [chartData],
-  );
 
   const datasetId = useMemo(() => {
     return (
@@ -362,146 +374,64 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     return datasetName.includes("vegetation") || datasetName.includes("ndvi");
   }, [currentDataset]);
 
-  const getOppositeColorBarAnchor = useCallback(() => {
-    if (typeof window === "undefined") {
-      return colorBarOrientation === "vertical"
-        ? { x: 24, y: 180 }
-        : { x: 24, y: 120 };
-    }
+  // Check if we have loaded timeseries data
+  const hasTimeseriesData = useMemo(() => {
+    return chartData.length > 0 && !timeseriesLoading && !timeseriesError;
+  }, [chartData.length, timeseriesLoading, timeseriesError]);
 
-    const margin = 16;
-    if (colorBarOrientation === "vertical") {
-      const estimatedHeight = 290;
-      return { x: margin, y: window.innerHeight - estimatedHeight - margin };
-    }
+  // Event Handlers
+  const handleClose = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    },
+    [onClose],
+  );
 
-    const cardWidth = 280;
-    const verticalOffset = Math.round(window.innerHeight * 0.2);
-    // Shifted 200px more to the left
-    return {
-      x: window.innerWidth - cardWidth - margin - 200,
-      y: verticalOffset,
-    };
-  }, [colorBarOrientation]);
+  const handleCollapseToggle = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
 
-  useEffect(() => {
-    if (show) {
-      const initialPos = getOppositeColorBarAnchor();
-      setPosition(initialPos);
-      setPreviousPosition(initialPos);
-    }
-  }, [show, getOppositeColorBarAnchor]);
+      if (isDragging) return;
 
-  useEffect(() => {
-    const handleResize = () => {
-      if (typeof window === "undefined") return;
-
-      if (isCollapsed) {
-        const colorBarWidth = colorBarCollapsed ? 160 : 320;
-        const gap = colorBarCollapsed ? 4 : 8;
-        const collapsedHeight = 52;
-        const newX = colorBarPosition.x + colorBarWidth + gap;
-        const newY = window.innerHeight - collapsedHeight - 16;
-        setPosition({ x: newX, y: newY });
-      } else if (panelRef.current) {
-        const panelWidth = panelRef.current.offsetWidth;
-        const panelHeight = panelRef.current.offsetHeight;
-
-        setPosition((prev) => ({
-          x: Math.min(prev.x, window.innerWidth - panelWidth),
-          y: Math.min(prev.y, window.innerHeight - panelHeight),
-        }));
-      }
-    };
-
-    if (typeof window !== "undefined") {
-      window.addEventListener("resize", handleResize);
-      return () => window.removeEventListener("resize", handleResize);
-    }
-  }, [isCollapsed, colorBarPosition.x, colorBarCollapsed]);
-
-  const handleClose = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    onClose();
-  };
-
-  const handleCollapseToggle = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (isDragging) {
-      return;
-    }
-
-    setIsCollapsed((prev) => {
-      if (prev) {
-        setPosition(previousPosition);
-        return false;
-      } else {
-        setPreviousPosition(position);
-        if (typeof window !== "undefined") {
-          setPosition({
-            x: window.innerWidth - 225,
-            y: window.innerHeight - 60,
-          });
+      setIsCollapsed((prev) => {
+        if (prev) {
+          setPosition(previousPosition);
+          return false;
+        } else {
+          setPreviousPosition(position);
+          if (typeof window !== "undefined") {
+            setPosition({
+              x: window.innerWidth - COLLAPSED_WIDTH,
+              y: window.innerHeight - 60,
+            });
+          }
+          return true;
         }
-        return true;
-      }
-    });
-  };
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (isCollapsed) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    setIsDragging(true);
-    setDragStart({
-      x: e.clientX - position.x,
-      y: e.clientY - position.y,
-    });
-  };
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging || isCollapsed) return;
-
-      const newX = e.clientX - dragStart.x;
-      const newY = e.clientY - dragStart.y;
-
-      const panelElement = panelRef.current;
-      const panelWidth = panelElement ? panelElement.offsetWidth : 300;
-      const panelHeight = panelElement ? panelElement.offsetHeight : 200;
-
-      const maxX = window.innerWidth - panelWidth;
-      const maxY = window.innerHeight - panelHeight;
-
-      setPosition({
-        x: Math.min(Math.max(0, newX), maxX),
-        y: Math.min(Math.max(0, newY), maxY),
       });
-    };
+    },
+    [isDragging, previousPosition, position],
+  );
 
-    const handleMouseUp = () => {
-      if (isDragging) {
-        setIsDragging(false);
-      }
-    };
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (isCollapsed) return;
 
-    if (isDragging) {
-      document.addEventListener("mousemove", handleMouseMove);
-      document.addEventListener("mouseup", handleMouseUp);
-    }
+      e.preventDefault();
+      e.stopPropagation();
 
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isDragging, dragStart, isCollapsed]);
+      setIsDragging(true);
+      setDragStart({
+        x: e.clientX - position.x,
+        y: e.clientY - position.y,
+      });
+    },
+    [isCollapsed, position],
+  );
 
-  const calculateDateRange = (): { start: Date; end: Date } => {
+  const calculateDateRange = useCallback((): { start: Date; end: Date } => {
     let targetDate = selectedDate ?? datasetEnd ?? new Date();
 
     if (datasetStart && targetDate < datasetStart) {
@@ -643,14 +573,21 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     }
 
     return { start: startDate, end: endDate };
-  };
+  }, [
+    selectedDate,
+    datasetEnd,
+    datasetStart,
+    isHighFrequencyDataset,
+    dateRangeOption,
+    customStartDate,
+    customEndDate,
+  ]);
 
-  const handleTimeseriesClick = async () => {
+  const handleTimeseriesClick = useCallback(async () => {
     setTimeseriesOpen(true);
 
     if (!datasetId) {
       console.error("[Timeseries] No dataset ID found");
-      console.log("[Timeseries] currentDataset:", currentDataset);
       setTimeseriesError(
         "No dataset selected. Please select a dataset from the sidebar.",
       );
@@ -666,14 +603,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
 
     try {
       const focusCoords = `${latitude},${longitude}`;
-
-      const formatDate = (date: Date) => {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, "0");
-        const day = String(date.getDate()).padStart(2, "0");
-        return `${year}-${month}-${day}`;
-      };
-
       const payload = {
         datasetIds: [datasetId],
         startDate: formatDate(startDate),
@@ -685,13 +614,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       };
 
       console.log("[Timeseries] Request payload:", payload);
-      console.log("[Timeseries] Date range:", {
-        startDate: formatDate(startDate),
-        endDate: formatDate(endDate),
-        rangeOption: isHighFrequencyDataset ? "single-month" : dateRangeOption,
-        datasetType: isHighFrequencyDataset ? "high-frequency" : "regular",
-      });
-      console.log("[Timeseries] Fetching from: /api/v2/timeseries/extract");
 
       const response = await fetch(
         "http://localhost:8000/api/v2/timeseries/extract",
@@ -705,7 +627,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       );
 
       console.log("[Timeseries] Response status:", response.status);
-      console.log("[Timeseries] Response headers:", response.headers);
 
       const contentType = response.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
@@ -715,7 +636,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
           text.substring(0, 500),
         );
         throw new Error(
-          `Server returned ${response.status}: ${response.statusText}. Expected JSON but got ${contentType}`,
+          `Server returned ${response.status}: ${response.statusText}`,
         );
       }
 
@@ -728,12 +649,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
 
       const result = await response.json();
       console.log("[Timeseries] Full API Response:", result);
-      console.log("[Timeseries] Data array length:", result?.data?.length);
-      console.log(
-        "[Timeseries] First 3 data points:",
-        result?.data?.slice(0, 3),
-      );
-      console.log("[Timeseries] Processing info:", result?.processingInfo);
 
       if (!result?.data || !Array.isArray(result.data)) {
         throw new Error("Invalid response format");
@@ -744,24 +659,12 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
         value: point.values?.[datasetId] ?? null,
       }));
 
-      console.log("[Timeseries] Transformed series length:", series.length);
-      console.log("[Timeseries] First 3 series points:", series.slice(0, 3));
-      console.log(
-        "[Timeseries] Non-null values:",
-        series.filter((p) => p.value !== null).length,
-      );
-
       const units = result.metadata?.[datasetId]?.units ?? datasetUnit;
 
       setTimeseriesSeries(series);
       setTimeseriesUnits(units);
 
-      console.log(
-        `[Timeseries] Loaded ${series.length} data points for ${currentDataset?.name}`,
-      );
-      console.log(
-        `[Timeseries] Date range: ${series[0]?.date} to ${series[series.length - 1]?.date}`,
-      );
+      console.log(`[Timeseries] Loaded ${series.length} data points`);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to load timeseries";
@@ -772,24 +675,186 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     } finally {
       setTimeseriesLoading(false);
     }
-  };
+  }, [datasetId, calculateDateRange, latitude, longitude, datasetUnit]);
 
-  console.log("[RegionInfoPanel] Debug info:", {
-    currentDataset: currentDataset,
-    datasetId: datasetId,
-    hasBackend: !!currentDataset?.backend,
-    backendId: currentDataset?.backend?.id,
-    directId: currentDataset?.id,
-    isHighFrequency: isHighFrequencyDataset,
-    dateRangeOption: dateRangeOption,
-  });
+  const handleExportCSV = useCallback(() => {
+    if (!chartData.length) return;
+
+    const headers = ["Date", `Value (${resolvedTimeseriesUnit})`];
+    const rows = chartData.map((point) => [
+      point.date,
+      point.value !== null ? point.value.toString() : "",
+    ]);
+
+    const csv = [headers.join(","), ...rows.map((row) => row.join(","))].join(
+      "\n",
+    );
+
+    const filename = `timeseries_${latitude.toFixed(2)}_${longitude.toFixed(2)}_${new Date().toISOString().split("T")[0]}.csv`;
+    downloadFile(csv, filename, "text/csv");
+    setShowExportDialog(false);
+  }, [chartData, resolvedTimeseriesUnit, latitude, longitude]);
+
+  const handleExportJSON = useCallback(() => {
+    if (!chartData.length) return;
+
+    const exportData = {
+      metadata: {
+        dataset: currentDataset?.name || datasetIdentifier,
+        location: {
+          latitude,
+          longitude,
+        },
+        unit: resolvedTimeseriesUnit,
+        exportDate: new Date().toISOString(),
+        dataPoints: chartData.length,
+      },
+      data: chartData,
+    };
+
+    const json = JSON.stringify(exportData, null, 2);
+    const filename = `timeseries_${latitude.toFixed(2)}_${longitude.toFixed(2)}_${new Date().toISOString().split("T")[0]}.json`;
+    downloadFile(json, filename, "application/json");
+    setShowExportDialog(false);
+  }, [
+    chartData,
+    currentDataset,
+    datasetIdentifier,
+    latitude,
+    longitude,
+    resolvedTimeseriesUnit,
+  ]);
+
+  const handleChartWheel = useCallback(
+    (event: React.WheelEvent<HTMLDivElement>) => {
+      if (chartData.length === 0) return;
+
+      event.preventDefault();
+      const directionIn = event.deltaY < 0;
+
+      setZoomWindow((current) => {
+        const total = chartData.length;
+        const currentWindow = current ?? [0, total - 1];
+        let [start, end] = currentWindow;
+        const windowSize = end - start + 1;
+        const minWindow = Math.max(5, Math.ceil(total * 0.05));
+        const zoomStep = Math.max(1, Math.ceil(windowSize * 0.1));
+
+        if (directionIn) {
+          if (windowSize <= minWindow) return currentWindow;
+          start = Math.min(start + zoomStep, end - minWindow + 1);
+          end = Math.max(end - zoomStep, start + minWindow - 1);
+          return [start, end];
+        }
+
+        start = Math.max(0, start - zoomStep);
+        end = Math.min(total - 1, end + zoomStep);
+
+        if (start === 0 && end === total - 1) return null;
+
+        return [start, end];
+      });
+    },
+    [chartData],
+  );
+
+  // Effects
+  useEffect(() => {
+    if (show) {
+      const initialPos = getDefaultPosition();
+      setPosition(initialPos);
+      setPreviousPosition(initialPos);
+    }
+  }, [show, getDefaultPosition]);
+
+  useEffect(() => {
+    if (isCollapsed && typeof window !== "undefined") {
+      const colorBarWidth = colorBarCollapsed ? 160 : 320;
+      const gap = colorBarCollapsed ? 4 : 8;
+      const newX = colorBarPosition.x + colorBarWidth + gap;
+      const newY = window.innerHeight - COLLAPSED_HEIGHT - MARGIN;
+      setPosition({ x: newX, y: newY });
+    }
+  }, [isCollapsed, colorBarPosition.x, colorBarCollapsed]);
+
+  useEffect(() => {
+    setZoomWindow(null);
+  }, [chartData]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (typeof window === "undefined") return;
+
+      if (isCollapsed) {
+        const colorBarWidth = colorBarCollapsed ? 160 : 320;
+        const gap = colorBarCollapsed ? 4 : 8;
+        const newX = colorBarPosition.x + colorBarWidth + gap;
+        const newY = window.innerHeight - COLLAPSED_HEIGHT - MARGIN;
+        setPosition({ x: newX, y: newY });
+      } else if (panelRef.current) {
+        const panelWidth = panelRef.current.offsetWidth;
+        const panelHeight = panelRef.current.offsetHeight;
+
+        setPosition((prev) => ({
+          x: Math.min(prev.x, window.innerWidth - panelWidth),
+          y: Math.min(prev.y, window.innerHeight - panelHeight),
+        }));
+      }
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("resize", handleResize);
+      return () => window.removeEventListener("resize", handleResize);
+    }
+  }, [isCollapsed, colorBarPosition.x, colorBarCollapsed]);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging || isCollapsed) return;
+
+      const newX = e.clientX - dragStart.x;
+      const newY = e.clientY - dragStart.y;
+
+      const panelElement = panelRef.current;
+      const panelWidth = panelElement
+        ? panelElement.offsetWidth
+        : DEFAULT_PANEL_WIDTH;
+      const panelHeight = panelElement
+        ? panelElement.offsetHeight
+        : DEFAULT_PANEL_HEIGHT;
+
+      const maxX = window.innerWidth - panelWidth;
+      const maxY = window.innerHeight - panelHeight;
+
+      setPosition({
+        x: Math.min(Math.max(0, newX), maxX),
+        y: Math.min(Math.max(0, newY), maxY),
+      });
+    };
+
+    const handleMouseUp = () => {
+      if (isDragging) {
+        setIsDragging(false);
+      }
+    };
+
+    if (isDragging) {
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDragging, dragStart, isCollapsed]);
 
   if (!show) return null;
 
   return (
     <div
       ref={panelRef}
-      className={`pointer-events-auto fixed z-20 ${className}`}
+      className={`pointer-events-auto fixed transition-all duration-150 ${className}`}
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,
@@ -798,20 +863,13 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     >
       {isCollapsed ? (
         <div
-          className="border-border bg-card hover:bg-muted-foreground cursor-pointer rounded-xl border transition-all duration-200 hover:border-gray-500/50 hover:shadow-lg"
+          className="border-border bg-card hover:bg-muted/50 cursor-pointer rounded-lg border px-3 py-2 transition-all duration-200 hover:scale-105 hover:shadow-lg sm:rounded-xl"
           onClick={handleCollapseToggle}
-          style={{ transform: "scale(1)" }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "scale(1.05)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "scale(1)";
-          }}
         >
-          <div className="pointer-events-none px-3 py-2">
+          <div className="pointer-events-none">
             <div className="text-muted-foreground hover:text-card-foreground flex items-center gap-2 transition-colors">
-              <MapPin className="h-4 w-4" />
-              <span className="text-sm font-medium select-none">
+              <MapPin className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <span className="text-xs font-medium select-none sm:text-sm">
                 Region Info
               </span>
             </div>
@@ -823,15 +881,15 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
             <div className="flex items-center justify-between gap-1">
               <button
                 onClick={handleCollapseToggle}
-                className="z-10 flex cursor-pointer items-center p-1 text-gray-400 transition-colors hover:text-gray-200 focus:outline-none"
+                className="text-muted-foreground hover:text-card-foreground z-10 flex cursor-pointer items-center p-1 transition-colors focus:outline-none"
                 title="Collapse"
                 type="button"
               >
-                <ChevronDown className="h-3 w-3" />
+                <ChevronDown className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
               </button>
 
               <div
-                className={`flex h-3 items-center justify-center gap-1 px-2 ${isDragging ? "cursor-grabbing" : "cursor-grab"} select-none`}
+                className={`flex h-3 items-center justify-center gap-0.5 px-2 sm:h-3.5 sm:gap-1 ${isDragging ? "cursor-grabbing" : "cursor-grab"} select-none`}
                 onMouseDown={handleMouseDown}
                 title="Drag to move"
               >
@@ -842,34 +900,34 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
 
               <button
                 onClick={handleClose}
-                className="z-10 flex cursor-pointer items-center p-1 text-gray-400 transition-colors hover:text-gray-200 focus:outline-none"
+                className="text-muted-foreground hover:text-card-foreground z-10 flex cursor-pointer items-center p-1 transition-colors focus:outline-none"
                 title="Close"
                 type="button"
               >
-                <X className="h-3 w-3" />
+                <X className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
               </button>
             </div>
-            <CardTitle className="flex flex-row items-center justify-center gap-2 text-center text-xl">
-              <MapPin className="h-4 w-4 text-gray-400" />
+            <CardTitle className="flex flex-row items-center justify-center gap-2 text-center text-lg sm:text-xl">
+              <MapPin className="text-muted-foreground h-3.5 w-3.5 sm:h-4 sm:w-4" />
               {Math.abs(latitude).toFixed(2)}° {latitude >= 0 ? "N" : "S"},{" "}
               {Math.abs(longitude).toFixed(2)}° {longitude >= 0 ? "E" : "W"}
             </CardTitle>
-            <CardDescription className="text-center">
+            <CardDescription className="text-center text-xs sm:text-sm">
               Latitude, Longitude
             </CardDescription>
           </CardHeader>
 
-          <CardContent className="">
+          <CardContent>
             <div className="space-y-3">
-              <div className="bg-secondary/40 border-border rounded-lg border p-2">
+              <div className="bg-secondary/40 border-border rounded-lg border p-2 sm:p-3">
                 <div className="text-center">
-                  <div className="mb-1 font-mono text-xl font-bold text-white">
+                  <div className="mb-1 font-mono text-lg font-bold text-white sm:text-xl">
                     {formattedPrimaryValue}{" "}
-                    <span className="text-xl font-normal text-white">
+                    <span className="text-lg font-normal text-white sm:text-xl">
                       {displayUnitLabel}
                     </span>
                   </div>
-                  <div className="text-sm text-gray-400">
+                  <div className="text-muted-foreground text-xs sm:text-sm">
                     {currentDataset?.name ||
                       regionData.name ||
                       datasetIdentifier ||
@@ -881,7 +939,8 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
           </CardContent>
 
           <CardFooter className="flex-col gap-2">
-            <Dialog>
+            {/* View Time Series Button */}
+            <Dialog open={timeseriesOpen} onOpenChange={setTimeseriesOpen}>
               <DialogTrigger asChild>
                 <Button
                   variant="outline"
@@ -892,16 +951,17 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                       ? "Select a dataset first"
                       : "View time series for this location"
                   }
+                  className="w-full"
                 >
                   View Time Series
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-[825px]">
                 <DialogHeader>
-                  <DialogTitle>
+                  <DialogTitle className="text-base sm:text-lg">
                     {currentDataset?.name || "Time Series"}
                   </DialogTitle>
-                  <DialogDescription>
+                  <DialogDescription className="text-xs sm:text-sm">
                     Location: {latitude.toFixed(2)}°, {longitude.toFixed(2)}°
                   </DialogDescription>
                 </DialogHeader>
@@ -909,12 +969,12 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                 {/* Date Range Selector - Only show for non-high-frequency datasets */}
                 {!isHighFrequencyDataset && (
                   <div className="space-y-2">
-                    <label className="text-card-foreground flex items-center gap-2 text-sm font-medium">
-                      <Calendar className="h-4 w-4" />
+                    <label className="text-card-foreground flex items-center gap-2 text-xs font-medium sm:text-sm">
+                      <Calendar className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                       Date Range
                     </label>
 
-                    <div className="flex flex-wrap items-center gap-4">
+                    <div className="flex flex-wrap items-center gap-3 sm:gap-4">
                       <NativeSelect
                         value={dateRangeOption}
                         onChange={(e) =>
@@ -937,6 +997,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
 
                       <Button
                         variant="outline"
+                        size="sm"
                         onClick={handleTimeseriesClick}
                         disabled={timeseriesLoading}
                       >
@@ -947,12 +1008,15 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                 )}
 
                 {/* Chart Area */}
-                <div className="relative h-80 w-full overflow-hidden rounded-lg border border-gray-700">
+                <div
+                  className="relative h-64 w-full overflow-hidden rounded-lg border border-gray-700 sm:h-80"
+                  onWheel={handleChartWheel}
+                >
                   {timeseriesLoading ? (
                     <div className="flex h-full w-full items-center justify-center">
                       <div className="flex flex-col items-center gap-2">
-                        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-600 border-t-blue-500"></div>
-                        <p className="text-sm text-gray-400">
+                        <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-600 border-t-blue-500 sm:h-8 sm:w-8"></div>
+                        <p className="text-muted-foreground text-xs sm:text-sm">
                           Loading timeseries data...
                         </p>
                       </div>
@@ -960,9 +1024,9 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                   ) : timeseriesError ? (
                     <div className="flex h-full w-full items-center justify-center p-4">
                       <div className="flex flex-col items-center gap-2 text-center">
-                        <div className="rounded-full bg-red-900/20 p-3">
+                        <div className="rounded-full bg-red-900/20 p-2 sm:p-3">
                           <svg
-                            className="h-6 w-6 text-red-400"
+                            className="h-5 w-5 text-red-400 sm:h-6 sm:w-6"
                             fill="none"
                             stroke="currentColor"
                             viewBox="0 0 24 24"
@@ -975,7 +1039,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                             />
                           </svg>
                         </div>
-                        <p className="text-sm text-red-400">
+                        <p className="text-xs text-red-400 sm:text-sm">
                           {timeseriesError}
                         </p>
                       </div>
@@ -987,26 +1051,32 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                     >
                       <LineChart
                         accessibilityLayer
-                        data={chartData}
-                        margin={{ top: 10, right: 10, bottom: 10, left: 10 }}
+                        data={displayedChartData}
+                        margin={{
+                          top: 10,
+                          right: 10,
+                          bottom: 10,
+                          left: 10,
+                        }}
                       >
                         <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                         <XAxis
                           dataKey="date"
                           stroke="#94a3b8"
-                          tick={{ fontSize: 12 }}
+                          tick={{ fontSize: 10 }}
                           tickLine={{ stroke: "#4b5563" }}
                         />
                         <YAxis
                           stroke="#94a3b8"
-                          tick={{ fontSize: 12 }}
+                          tick={{ fontSize: 10 }}
                           tickLine={{ stroke: "#4b5563" }}
+                          domain={yAxisDomain}
                           label={{
-                            value: timeseriesUnits ?? datasetUnit,
+                            value: resolvedTimeseriesUnit,
                             angle: -90,
                             position: "insideLeft",
                             fill: "#94a3b8",
-                            fontSize: 12,
+                            fontSize: 10,
                           }}
                         />
                         <RechartsTooltip
@@ -1016,12 +1086,20 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                             borderRadius: "0.5rem",
                             padding: "8px 12px",
                           }}
-                          labelStyle={{ color: "#e5e7eb", marginBottom: "4px" }}
-                          itemStyle={{ color: "#38bdf8" }}
+                          labelStyle={{
+                            color: "#e5e7eb",
+                            marginBottom: "4px",
+                            fontSize: "12px",
+                          }}
+                          itemStyle={{
+                            color: "#38bdf8",
+                            fontSize: "12px",
+                          }}
                         />
                         <Legend
                           wrapperStyle={{
                             paddingTop: "10px",
+                            fontSize: "12px",
                           }}
                         />
                         <Line
@@ -1039,9 +1117,9 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                   ) : (
                     <div className="flex h-full w-full items-center justify-center">
                       <div className="flex flex-col items-center gap-2 text-center">
-                        <div className="rounded-full bg-gray-700/50 p-3">
+                        <div className="rounded-full bg-gray-700/50 p-2 sm:p-3">
                           <svg
-                            className="h-6 w-6 text-gray-400"
+                            className="h-5 w-5 text-gray-400 sm:h-6 sm:w-6"
                             fill="none"
                             stroke="currentColor"
                             viewBox="0 0 24 24"
@@ -1054,10 +1132,10 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                             />
                           </svg>
                         </div>
-                        <p className="text-sm text-gray-400">
+                        <p className="text-muted-foreground text-xs sm:text-sm">
                           Click on the globe to select a location
                         </p>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-muted-foreground text-[10px] sm:text-xs">
                           Time series data will appear here
                         </p>
                       </div>
@@ -1065,9 +1143,53 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                   )}
                 </div>
 
-                <DialogFooter>
+                <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-between">
+                  <div className="flex gap-2">
+                    {/* Export Data Button - Only show when data is loaded */}
+                    {hasTimeseriesData && (
+                      <Dialog
+                        open={showExportDialog}
+                        onOpenChange={setShowExportDialog}
+                      >
+                        <DialogTrigger asChild>
+                          <Button variant="default" size="sm">
+                            <Download className="mr-2 h-4 w-4" />
+                            Export Data
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-[425px]">
+                          <DialogHeader>
+                            <DialogTitle>Export Time Series Data</DialogTitle>
+                            <DialogDescription>
+                              Choose a format to download your time series data
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="grid gap-4 py-4">
+                            <Button
+                              onClick={handleExportCSV}
+                              className="w-full justify-start"
+                              variant="outline"
+                            >
+                              <Download className="mr-2 h-4 w-4" />
+                              Export as CSV (Spreadsheet)
+                            </Button>
+                            <Button
+                              onClick={handleExportJSON}
+                              className="w-full justify-start"
+                              variant="outline"
+                            >
+                              <Download className="mr-2 h-4 w-4" />
+                              Export as JSON (Raw Data)
+                            </Button>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                    )}
+                  </div>
                   <DialogClose asChild>
-                    <Button variant="outline">Close</Button>
+                    <Button variant="outline" size="sm">
+                      Close
+                    </Button>
                   </DialogClose>
                 </DialogFooter>
               </DialogContent>
