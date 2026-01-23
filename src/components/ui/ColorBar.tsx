@@ -28,6 +28,7 @@ interface ColorBarProps {
   collapsed?: boolean;
   rasterMeta?: any;
   orientation?: "horizontal" | "vertical";
+  selectedLevel?: number | null;
   customRange?: {
     enabled?: boolean;
     min?: number | null;
@@ -125,6 +126,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
   collapsed = false,
   rasterMeta = null,
   orientation = "horizontal",
+  selectedLevel = null,
   customRange,
 }) => {
   const colorBarRef = useRef<HTMLDivElement>(null);
@@ -260,16 +262,24 @@ const ColorBar: React.FC<ColorBarProps> = ({
       datasetText.includes("noaa global surface temp") ||
       datasetText.includes("noaa global temperature");
 
-    return { isGodas, isNoaaGlobalTemp };
-  }, [dataset]);
+    const isGodasDeepLevel =
+      isGodas &&
+      typeof selectedLevel === "number" &&
+      Number.isFinite(selectedLevel) &&
+      Math.abs(selectedLevel - 4736) < 0.5;
+
+    return { isGodas, isNoaaGlobalTemp, isGodasDeepLevel };
+  }, [dataset, selectedLevel]);
 
   const colorScale = useMemo(() => {
     const customRangeEnabled = Boolean(customRange?.enabled);
     const GODAS_DEFAULT_MIN = -0.0000005;
     const GODAS_DEFAULT_MAX = 0.0000005;
+    const GODAS_DEEP_MIN = -0.0000005;
+    const GODAS_DEEP_MAX = 0.0000005;
     const NOAAGLOBALTEMP_DEFAULT_MIN = -2;
     const NOAAGLOBALTEMP_DEFAULT_MAX = 2;
-    const { isGodas, isNoaaGlobalTemp } = datasetFlags;
+    const { isGodas, isNoaaGlobalTemp, isGodasDeepLevel } = datasetFlags;
 
     // Prefer the dataset's baseline range for any obvious variant of NOAAGlobalTemp.
     const preferBaselineRange = false;
@@ -287,8 +297,16 @@ const ColorBar: React.FC<ColorBarProps> = ({
         ? Number(customRange.max)
         : null;
 
-    const godasDefaultMin = isGodas ? GODAS_DEFAULT_MIN : null;
-    const godasDefaultMax = isGodas ? GODAS_DEFAULT_MAX : null;
+    const godasDefaultMin = isGodas
+      ? isGodasDeepLevel
+        ? GODAS_DEEP_MIN
+        : GODAS_DEFAULT_MIN
+      : null;
+    const godasDefaultMax = isGodas
+      ? isGodasDeepLevel
+        ? GODAS_DEEP_MAX
+        : GODAS_DEFAULT_MAX
+      : null;
     const noaaDefaultMin = isNoaaGlobalTemp ? NOAAGLOBALTEMP_DEFAULT_MIN : null;
     const noaaDefaultMax = isNoaaGlobalTemp ? NOAAGLOBALTEMP_DEFAULT_MAX : null;
 
@@ -408,6 +426,11 @@ const ColorBar: React.FC<ColorBarProps> = ({
     let min = baseMin ?? metaMin ?? 0;
     let max = baseMax ?? metaMax ?? min + 1;
 
+    if (datasetFlags.isGodasDeepLevel) {
+      min = -0.0000005;
+      max = 0.0000005;
+    }
+
     if (!Number.isFinite(min)) min = 0;
     if (!Number.isFinite(max)) max = min + 1;
     if (min === max) {
@@ -418,7 +441,12 @@ const ColorBar: React.FC<ColorBarProps> = ({
     }
 
     return { min, max };
-  }, [dataset?.colorScale?.min, dataset?.colorScale?.max, rasterMeta]);
+  }, [
+    dataset?.colorScale?.min,
+    dataset?.colorScale?.max,
+    rasterMeta,
+    datasetFlags.isGodasDeepLevel,
+  ]);
 
   const toDisplayValue = useCallback(
     (value: number) => {
@@ -453,6 +481,13 @@ const ColorBar: React.FC<ColorBarProps> = ({
     if (!Number.isFinite(span) || span <= 0) return 1;
     const rough = span / 200;
     const magnitude = Math.pow(10, Math.floor(Math.log10(rough)));
+
+    if (datasetFlags.isGodasDeepLevel) {
+      const powerStep = Math.pow(10, Math.floor(Math.log10(span)) - 1);
+      const safeStep = Number.parseFloat(powerStep.toPrecision(2));
+      return Number.isFinite(safeStep) && safeStep > 0 ? safeStep : rough;
+    }
+
     const normalized = rough / magnitude;
     let step = magnitude;
     if (normalized <= 1) step = 1 * magnitude;
@@ -462,7 +497,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
 
     const safeStep = Number.parseFloat(step.toPrecision(2));
     return Number.isFinite(safeStep) && safeStep > 0 ? safeStep : rough;
-  }, [displayLimits]);
+  }, [displayLimits, datasetFlags.isGodasDeepLevel]);
 
   const formatRangeValue = useCallback((value: number) => {
     if (!Number.isFinite(value)) return "–";

@@ -24,7 +24,7 @@ export type RasterMeshTile = {
 type RasterMeshOptions = {
   lat: Float64Array;
   lon: Float64Array;
-  values: Float32Array;
+  values: Float32Array | Float64Array;
   mask?: Uint8Array;
   min: number;
   max: number;
@@ -36,6 +36,14 @@ type RasterMeshOptions = {
 };
 
 const MAX_VERTS_PER_TILE = 32000;
+
+const createValueArray = (
+  values: Float32Array | Float64Array,
+  length: number,
+) =>
+  values instanceof Float64Array
+    ? new Float64Array(length)
+    : new Float32Array(length);
 
 export const shouldTileMesh = (rows: number, cols: number): boolean => {
   return rows * cols > MAX_VERTS_PER_TILE;
@@ -50,7 +58,7 @@ const shouldWrapSeam = (lon: Float64Array) => {
 const ensureAscendingGrid = (
   lat: Float64Array,
   lon: Float64Array,
-  values: Float32Array,
+  values: Float32Array | Float64Array,
   mask?: Uint8Array,
 ) => {
   let latValues = lat;
@@ -63,7 +71,7 @@ const ensureAscendingGrid = (
 
   if (rows && lat[0] > lat[rows - 1]) {
     const flipped = new Float64Array(lat).reverse();
-    const next = new Float32Array(rows * cols);
+    const next = createValueArray(values, rows * cols);
     const nextMask = mask ? new Uint8Array(rows * cols) : undefined;
     for (let r = 0; r < rows; r += 1) {
       const srcRow = rows - 1 - r;
@@ -82,7 +90,7 @@ const ensureAscendingGrid = (
 
   if (cols && lon[0] > lon[cols - 1]) {
     const flipped = new Float64Array(lon).reverse();
-    const next = new Float32Array(rows * cols);
+    const next = createValueArray(values, rows * cols);
     const nextMask = maskData ? new Uint8Array(rows * cols) : undefined;
     for (let r = 0; r < rows; r += 1) {
       for (let c = 0; c < cols; c += 1) {
@@ -105,7 +113,7 @@ const ensureAscendingGrid = (
 const expandForSeam = (
   lat: Float64Array,
   lon: Float64Array,
-  values: Float32Array,
+  values: Float32Array | Float64Array,
   mask?: Uint8Array,
 ) => {
   const rows = lat.length;
@@ -115,7 +123,7 @@ const expandForSeam = (
   expandedLon.set(lon);
   expandedLon[newCols - 1] = lon[0] + 360;
 
-  const expandedValues = new Float32Array(rows * newCols);
+  const expandedValues = createValueArray(values, rows * newCols);
   const expandedMask = mask ? new Uint8Array(rows * newCols) : undefined;
 
   for (let r = 0; r < rows; r += 1) {
@@ -140,7 +148,7 @@ const expandForSeam = (
 };
 
 const smoothRasterValues = (
-  values: Float32Array,
+  values: Float32Array | Float64Array,
   rows: number,
   cols: number,
   mask?: Uint8Array,
@@ -149,7 +157,7 @@ const smoothRasterValues = (
     return values;
   }
 
-  const output = new Float32Array(values.length);
+  const output = createValueArray(values, values.length);
   for (let r = 0; r < rows; r += 1) {
     for (let c = 0; c < cols; c += 1) {
       const idx = r * cols + c;

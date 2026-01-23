@@ -59,7 +59,11 @@ const decodeBase64 = (value?: string) => {
   return Buffer.from(value, "base64").toString("binary");
 };
 
-const decodeFloat32 = (base64: string | undefined): Float32Array => {
+const decodeNumericValues = (
+  base64: string | undefined,
+  rows: number,
+  cols: number,
+): Float32Array | Float64Array => {
   if (!base64) {
     return new Float32Array();
   }
@@ -69,11 +73,19 @@ const decodeFloat32 = (base64: string | undefined): Float32Array => {
   for (let i = 0; i < len; i += 1) {
     bytes[i] = binary.charCodeAt(i);
   }
+
+  const expected = rows > 0 && cols > 0 ? rows * cols : null;
+  if (expected && len === expected * 8) {
+    return new Float64Array(bytes.buffer);
+  }
+  if (expected && len === expected * 4) {
+    return new Float32Array(bytes.buffer);
+  }
   return new Float32Array(bytes.buffer);
 };
 
 const computeValueRange = (
-  values: Float32Array,
+  values: Float32Array | Float64Array,
 ): { min: number | null; max: number | null } => {
   // Some NetCDF rasters use huge sentinel values (e.g., 1e20) for missing data.
   // Ignore anything non-finite or beyond this threshold when computing the range.
@@ -149,7 +161,7 @@ const nearestIndex = (values: ArrayLike<number>, target: number) => {
 const buildSampler = (
   latValues: Float64Array,
   lonValues: Float64Array,
-  values: Float32Array,
+  values: Float32Array | Float64Array,
   rows: number,
   cols: number,
 ) => {
@@ -180,6 +192,7 @@ const buildSampler = (
 
 export const resolveEffectiveColorbarRange = (
   dataset?: Dataset,
+  level?: number | null,
   colorbarRange?: {
     enabled?: boolean;
     min?: number | null;
@@ -191,6 +204,11 @@ export const resolveEffectiveColorbarRange = (
   }
 
   const GODAS_DEFAULT_RANGE = {
+    enabled: true,
+    min: -0.0000005,
+    max: 0.0000005,
+  };
+  const GODAS_DEEP_RANGE = {
     enabled: true,
     min: -0.0000005,
     max: 0.0000005,
@@ -225,7 +243,11 @@ export const resolveEffectiveColorbarRange = (
   }
 
   if (isGodas) {
-    return GODAS_DEFAULT_RANGE;
+    const isDeepLevel =
+      typeof level === "number" &&
+      Number.isFinite(level) &&
+      Math.abs(level - 4736) < 0.5;
+    return isDeepLevel ? GODAS_DEEP_RANGE : GODAS_DEFAULT_RANGE;
   }
 
   return colorbarRange;
@@ -299,7 +321,11 @@ export async function fetchRasterVisualization(options: {
     throw new Error("Missing dataset or date for raster request");
   }
 
-  const effectiveRange = resolveEffectiveColorbarRange(dataset, colorbarRange);
+  const effectiveRange = resolveEffectiveColorbarRange(
+    dataset,
+    level,
+    colorbarRange,
+  );
   const customRange = deriveCustomRange(effectiveRange);
   const response = await fetch("/api/raster/visualize", {
     method: "POST",
@@ -332,7 +358,7 @@ export async function fetchRasterVisualization(options: {
 
   const rows = Number(payload?.shape?.[0]) || 0;
   const cols = Number(payload?.shape?.[1]) || 0;
-  const values = decodeFloat32(payload?.values);
+  const values = decodeNumericValues(payload?.values, rows, cols);
   const latArray = Float64Array.from(payload?.lat ?? []);
   const lonArray = Float64Array.from(payload?.lon ?? []);
 
@@ -412,8 +438,8 @@ export const useRasterLayer = ({
   }, [dataset]);
 
   const effectiveColorbarRange = useMemo(
-    () => resolveEffectiveColorbarRange(dataset, colorbarRange),
-    [colorbarRange, dataset],
+    () => resolveEffectiveColorbarRange(dataset, level, colorbarRange),
+    [colorbarRange, dataset, level],
   );
 
   const requestKey = useMemo(
