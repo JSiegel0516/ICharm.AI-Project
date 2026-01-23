@@ -44,8 +44,8 @@ import {
   type RasterGridData,
 } from "@/hooks/useRasterGrid";
 import { Play, Square, Loader2 } from "lucide-react";
-import { SideButtons } from "./_components/SideButtons";
-import { Tutorial } from "./_components/Tutorial";
+import { SideButtons } from "./_components/side-buttons/SideButtons";
+import { Tutorial } from "./_components/side-buttons/Tutorial";
 
 type SidebarPanel = "datasets" | "history" | "about" | null;
 
