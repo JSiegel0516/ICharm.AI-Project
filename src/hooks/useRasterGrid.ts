@@ -5,7 +5,7 @@ import type { Dataset } from "@/types";
 export type RasterGridData = {
   lat: Float64Array;
   lon: Float64Array;
-  values: Float32Array;
+  values: Float32Array | Float64Array;
   mask?: Uint8Array;
   units?: string;
   min?: number;
@@ -52,7 +52,11 @@ const decodeBase64 = (value?: string) => {
   return Buffer.from(value, "base64").toString("binary");
 };
 
-const decodeFloat32 = (base64: string | undefined): Float32Array => {
+const decodeNumericValues = (
+  base64: string | undefined,
+  rows: number,
+  cols: number,
+): Float32Array | Float64Array => {
   if (!base64) {
     return new Float32Array();
   }
@@ -61,6 +65,14 @@ const decodeFloat32 = (base64: string | undefined): Float32Array => {
   const bytes = new Uint8Array(len);
   for (let i = 0; i < len; i += 1) {
     bytes[i] = binary.charCodeAt(i);
+  }
+
+  const expected = rows > 0 && cols > 0 ? rows * cols : null;
+  if (expected && len === expected * 8) {
+    return new Float64Array(bytes.buffer);
+  }
+  if (expected && len === expected * 4) {
+    return new Float32Array(bytes.buffer);
   }
   return new Float32Array(bytes.buffer);
 };
@@ -79,7 +91,7 @@ const decodeUint8 = (base64: string | undefined): Uint8Array => {
 };
 
 const computeValueRange = (
-  values: Float32Array,
+  values: Float32Array | Float64Array,
   mask?: Uint8Array,
 ): { min: number | null; max: number | null } => {
   const FILL_VALUE_THRESHOLD = 1e20;
@@ -155,7 +167,7 @@ const nearestIndex = (values: ArrayLike<number>, target: number) => {
 const buildSampler = (
   latValues: Float64Array,
   lonValues: Float64Array,
-  values: Float32Array,
+  values: Float32Array | Float64Array,
   mask: Uint8Array | undefined,
   rows: number,
   cols: number,
@@ -190,6 +202,7 @@ const buildSampler = (
 
 const resolveEffectiveColorbarRange = (
   dataset?: Dataset,
+  level?: number | null,
   colorbarRange?: {
     enabled?: boolean;
     min?: number | null;
@@ -201,6 +214,11 @@ const resolveEffectiveColorbarRange = (
   }
 
   const GODAS_DEFAULT_RANGE = {
+    enabled: true,
+    min: -0.0000005,
+    max: 0.0000005,
+  };
+  const GODAS_DEEP_RANGE = {
     enabled: true,
     min: -0.0000005,
     max: 0.0000005,
@@ -235,7 +253,11 @@ const resolveEffectiveColorbarRange = (
   }
 
   if (isGodas) {
-    return GODAS_DEFAULT_RANGE;
+    const isDeepLevel =
+      typeof level === "number" &&
+      Number.isFinite(level) &&
+      Math.abs(level - 4736) < 0.5;
+    return isDeepLevel ? GODAS_DEEP_RANGE : GODAS_DEFAULT_RANGE;
   }
 
   return colorbarRange;
@@ -302,7 +324,11 @@ export async function fetchRasterGrid(options: {
     throw new Error("Missing dataset or date for raster grid request");
   }
 
-  const effectiveRange = resolveEffectiveColorbarRange(dataset, colorbarRange);
+  const effectiveRange = resolveEffectiveColorbarRange(
+    dataset,
+    level,
+    colorbarRange,
+  );
   const customRange = deriveCustomRange(effectiveRange);
   const response = await fetch("/api/raster/grid", {
     method: "POST",
@@ -330,7 +356,7 @@ export async function fetchRasterGrid(options: {
   const payload = await response.json();
   const rows = Number(payload?.shape?.[0]) || 0;
   const cols = Number(payload?.shape?.[1]) || 0;
-  const values = decodeFloat32(payload?.values);
+  const values = decodeNumericValues(payload?.values, rows, cols);
   let mask =
     typeof payload?.mask === "string" ? decodeUint8(payload.mask) : undefined;
   const latArray = Float64Array.from(payload?.lat ?? []);
@@ -434,8 +460,8 @@ export const useRasterGrid = ({
   }, [dataset]);
 
   const effectiveColorbarRange = useMemo(
-    () => resolveEffectiveColorbarRange(dataset, colorbarRange),
-    [colorbarRange, dataset],
+    () => resolveEffectiveColorbarRange(dataset, level, colorbarRange),
+    [colorbarRange, dataset, level],
   );
 
   const requestKey = useMemo(

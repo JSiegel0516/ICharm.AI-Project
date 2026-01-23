@@ -355,6 +355,38 @@ export default function HomePage() {
   }, [currentDataset]);
 
   const hasPressureLevels = Boolean(datasetPressureLevels?.length);
+  const isGodasDataset = useMemo(() => {
+    const datasetText = [
+      currentDataset?.id,
+      currentDataset?.slug,
+      currentDataset?.name,
+      currentDataset?.description,
+      currentDataset?.backend?.datasetName,
+      currentDataset?.backend?.slug,
+      currentDataset?.backend?.id,
+    ]
+      .filter((v) => typeof v === "string")
+      .map((v) => v.toLowerCase())
+      .join(" ");
+
+    return (
+      datasetText.includes("godas") ||
+      datasetText.includes("global ocean data assimilation system") ||
+      datasetText.includes("ncep global ocean data assimilation")
+    );
+  }, [currentDataset]);
+  const defaultPressureLevel = useMemo(() => {
+    if (!datasetPressureLevels || datasetPressureLevels.length === 0) {
+      return null;
+    }
+    if (!isGodasDataset) {
+      return datasetPressureLevels[0];
+    }
+    const match = datasetPressureLevels.find(
+      (level) => Math.abs(level.value - 4225) < 0.5,
+    );
+    return match ?? datasetPressureLevels[0];
+  }, [datasetPressureLevels, isGodasDataset]);
 
   // Pressure Level State
   const [selectedPressureLevel, setSelectedPressureLevel] =
@@ -532,6 +564,7 @@ export default function HomePage() {
       .filter(Boolean);
     const colorRangeForRequests = resolveEffectiveColorbarRange(
       currentDataset,
+      selectedLevelValue,
       colorbarRange,
     );
     const keyDatasetId =
@@ -957,13 +990,14 @@ export default function HomePage() {
           return match;
         }
       }
-      return datasetPressureLevels[0];
+      return defaultPressureLevel ?? datasetPressureLevels[0];
     });
   }, [
     hasPressureLevels,
     datasetPressureLevels,
     currentDataset?.id,
     currentDataset?.backend?.id,
+    defaultPressureLevel,
   ]);
 
   useEffect(() => {
@@ -1209,6 +1243,7 @@ export default function HomePage() {
             onToggleCollapse={setColorBarCollapsed}
             rasterMeta={rasterMeta}
             orientation={colorBarOrientation}
+            selectedLevel={selectedLevelValue}
             customRange={{
               enabled:
                 globeSettings.colorbarCustomMin !== null ||
