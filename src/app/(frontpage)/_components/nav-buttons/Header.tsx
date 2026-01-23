@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import NavigationIcons from "@/app/(frontpage)/_components/Header/NavigationIcons";
+import NavigationIcons from "@/app/(frontpage)/_components/nav-buttons/NavigationIcons";
 import Link from "next/link";
 
 const Header: React.FC = () => {
