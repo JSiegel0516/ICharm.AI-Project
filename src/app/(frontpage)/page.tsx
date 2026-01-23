@@ -10,8 +10,8 @@ import React, {
 import Globe, { GlobeRef } from "@/components/Globe/Globe";
 import ColorBar from "@/components/ui/ColorBar";
 import TimeBar from "@/components/ui/TimeBar";
-import PressureLevelsSelector from "@/components/ui/Popups/PressureLevelsSelector";
-import RegionInfoPanel from "@/components/ui/RegionInfoPanel";
+import PressureLevelsSelector from "@/app/(frontpage)/_components/overlay/PressureLevelsSelector";
+import RegionInfoPanel from "@/app/(frontpage)/_components/overlay/RegionInfoPanel";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

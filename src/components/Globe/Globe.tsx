@@ -1962,7 +1962,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
                   </Button>
                 </div>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-[625px]">
+              <DialogContent className="sm:max-w-156">
                 <DialogHeader>
                   <DialogTitle className="mb-2 text-2xl font-semibold">
                     {currentDataset.name}
