@@ -1,6 +1,12 @@
+from dotenv import load_dotenv
+
+load_dotenv()
+
+import io
 import numpy
 import os
 import itertools
+import pandas
 
 from pathlib import Path
 
@@ -342,12 +348,34 @@ class NetCDFtoDbYearlyFiles(NetCDFtoDbBase):
 
                 data_slices = []
                 for file_idx, year in enumerate(self.years):
-                    yearly_files = sorted(
-                        self.folder_path.rglob(f"*{year}*{month_day_str}.nc")
-                    )
+                    # Try multiple patterns to handle different file naming conventions:
+                    patterns = [
+                        #f"*d{year}{month_day_str}*.nc",  # GPCP format: d19961001
+                        #f"*D{year}{month_day_str}*.nc",  # SEAFLUX format: D19880101
+                        f"*{year}{month_day_str}*.nc",   # Generic adjacent (no prefix)
+                    ]
+                    yearly_files = []
+                    for pattern in patterns:
+                        found = list(self.folder_path.rglob(pattern))
+                        if len(found) == 1:
+                            # Perfect match - use this pattern
+                            yearly_files = found
+                            break
+                        elif len(found) > 1:
+                            # Multiple matches - this is an error
+                            yearly_files = found
+                            break
+                        # If 0 matches, continue to next pattern
+                    
+                    # Remove duplicates (shouldn't be any, but just in case)
+                    yearly_files = sorted(set(yearly_files))
 
                     if len(yearly_files) > 1:
-                        raise Exception("Too many files for year")
+                        file_list = "\n".join([f"  - {f}" for f in yearly_files])
+                        raise Exception(
+                            f"Too many files for year {year}, month_day {month_day_str}. "
+                            f"Found {len(yearly_files)} files:\n{file_list}"
+                        )
                     elif len(yearly_files) == 0:
                         # Generate empty data
                         data = numpy.full(
@@ -427,11 +455,76 @@ class NetCDFtoDbYearlyFiles(NetCDFtoDbBase):
                 time_idx += 1
         return
 
+    def _process_multi_level_gridbox_data(
+        self, data, dim_names, fill_value, time_id, cur
+    ):
+        n_lat = len(self.latitudes.keys())
+        n_lon = len(self.longitudes.keys())
+        n_levels = len(self.levels.keys())
+
+        # If it's a masked array, fill masked with NaN
+        if numpy.ma.isMaskedArray(data):
+            data = data.filled(numpy.nan)
+
+        # Replace values with fill_value with numpy.nan
+        if fill_value is not None:
+            data = numpy.where(data == fill_value, numpy.nan, data)
+
+        # Map dim names -> axis indices in `data`
+        name_to_axis = {name: i for i, name in enumerate(dim_names)}
+
+        # Find lat & lon axes
+        try:
+            lat_axis = name_to_axis[self.latitude_variable_name]  # e.g. 'lat'
+            lon_axis = name_to_axis[self.longitude_variable_name]  # e.g. 'lon'
+        except KeyError as e:
+            raise ValueError(
+                f"Could not find lat/lon dims in {dim_names}. "
+                f"lat name={self.latitude_variable_name}, lon name={self.longitude_variable_name}"
+            ) from e
+
+        # Does this dataset have levels?
+        level_axis = (
+            name_to_axis.get(self.level_variable_name) if n_levels > 0 else None
+        )
+
+        if level_axis is None:
+            data_lat_lon = numpy.transpose(data, (lat_axis, lon_axis))
+            assert data_lat_lon.shape == (n_lat, n_lon)
+
+            flat_values = data_lat_lon.reshape(-1)
+            value_cols = ["value_0"]
+
+        else:
+            data_lat_lon_level = numpy.transpose(data, (lat_axis, lon_axis, level_axis))
+            assert data_lat_lon_level.shape == (n_lat, n_lon, n_levels)
+
+            flat_values = data_lat_lon_level.reshape(-1, n_levels)
+            value_cols = [f"value_{k}" for k in list(self.levels.keys())]
+
+        df_griddata = pandas.DataFrame(flat_values, columns=value_cols)
+        df_griddata.insert(0, "gridbox_id", self.gridbox_ids)
+        df_griddata.insert(1, "timestamp_id", time_id)
+
+        # Reshape data to gridbox_id, timestamp_id, value
+        with io.StringIO() as csv_buffer_grid_date:
+            df_griddata.to_csv(csv_buffer_grid_date, index=False)
+            csv_buffer_grid_date.seek(0)
+            values_str = ",".join(value_cols)
+            cur.copy_expert(
+                f"""
+                COPY grid_data (gridbox_id, timestamp_id, {values_str})
+                FROM STDIN WITH (FORMAT csv, HEADER true, NULL '')
+                """,
+                csv_buffer_grid_date,
+            )
+        return
+
 
 def main():
     if True:
         data_path = (
-            "/home/mrsharky/dev/sdsu/ICharm.AI-Project/backend/datasets/cmorph/daily"
+            "/var/www/html/icharm/backend/datasets/cmorph/daily"
         )
         dataset_name = "cmorph_daily_by_year"
         variable_of_interest_name = "cmorph"
@@ -450,7 +543,7 @@ def main():
     netcdf_to_db = NetCDFtoDbYearlyFiles(
         folder_root=data_path,
         variable_of_interest_name=variable_of_interest_name,
-        years=[str(i) for i in range(1998, 2026)],
+        years=[str(i) for i in range(1996, 2026)],
         level_variable_name="year",
     )
     # netcdf_to_db.export_data_to_csv("/home/mrsharky/dev/sdsu/ICharm.AI-Project/backend/datasets/cmorph/daily/")
@@ -476,3 +569,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
