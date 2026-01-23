@@ -620,7 +620,7 @@ class NetCDFtoDB:
 
 def main():
     if True:
-        data_path = "/Users/willruff/Desktop/GitHub/ICharm.AI-Project/backend/datasets/sst/daily"
+        data_path = "/var/www/html/icharm/backend/datasets/sst/daily"
         dataset_name = "sst_daily_by_year"
         variable_of_interest_name = "sst"
     else:
