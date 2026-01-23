@@ -7,9 +7,9 @@ import React, {
   useCallback,
   useEffect,
 } from "react";
-import Globe, { GlobeRef } from "@/components/Globe/Globe";
-import ColorBar from "@/components/ui/ColorBar";
-import TimeBar from "@/components/ui/TimeBar";
+import Globe, { GlobeRef } from "@/app/(frontpage)/_components/globe/Globe";
+import ColorBar from "@/app/(frontpage)/_components/overlay/ColorBar";
+import TimeBar from "@/app/(frontpage)/_components/overlay/TimeBar";
 import PressureLevelsSelector from "@/app/(frontpage)/_components/overlay/PressureLevelsSelector";
 import RegionInfoPanel from "@/app/(frontpage)/_components/overlay/RegionInfoPanel";
 import { Button } from "@/components/ui/button";

@@ -9,8 +9,8 @@ import React, {
   useReducer,
 } from "react";
 import { ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
-import { Button } from "./button";
-import { Slider } from "./slider";
+import { Button } from "../../../../components/ui/button";
+import { Slider } from "../../../../components/ui/slider";
 
 // Types
 type TemperatureUnit = "celsius" | "fahrenheit";
