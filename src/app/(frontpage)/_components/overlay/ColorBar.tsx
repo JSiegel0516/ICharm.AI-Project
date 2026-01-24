@@ -10,13 +10,6 @@ import React, {
 } from "react";
 import { ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 import { Button } from "../../../../components/ui/button";
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-import { Slider } from "../../../../components/ui/slider";
->>>>>>> 09dedf8 (refactoring components to front page)
-=======
->>>>>>> edf124d (Color bar range adjustment on hover rather than popup)
 
 // Types
 type TemperatureUnit = "celsius" | "fahrenheit";
@@ -486,7 +479,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     return min <= max ? { min, max } : { min: max, max: min };
   }, [rangeLimits, toDisplayValue]);
 
-<<<<<<< HEAD
   const sliderStep = useMemo(() => {
     const span = Math.abs(displayLimits.max - displayLimits.min);
     if (!Number.isFinite(span) || span <= 0) return 1;
@@ -510,8 +502,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     return Number.isFinite(safeStep) && safeStep > 0 ? safeStep : rough;
   }, [displayLimits, datasetFlags.isGodasDeepLevel]);
 
-=======
->>>>>>> cc32bf1 (Color bar range adjustment on hover rather than popup)
   const formatRangeValue = useCallback((value: number) => {
     if (!Number.isFinite(value)) return "–";
     if (value === 0) return "0";
