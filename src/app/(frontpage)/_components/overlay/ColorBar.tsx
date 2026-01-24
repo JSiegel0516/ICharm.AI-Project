@@ -10,7 +10,6 @@ import React, {
 } from "react";
 import { ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 import { Button } from "../../../../components/ui/button";
-import { Slider } from "../../../../components/ui/slider";
 
 // Types
 type TemperatureUnit = "celsius" | "fahrenheit";
@@ -85,7 +84,6 @@ function uiReducer(state: UIState, action: UIAction): UIState {
           isCollapsed: true,
           previousPosition: state.position,
           position: { x: 24, y: window.innerHeight - 60 },
-          showDropdown: false,
         };
       }
 
@@ -128,21 +126,31 @@ const ColorBar: React.FC<ColorBarProps> = ({
   customRange,
 }) => {
   const colorBarRef = useRef<HTMLDivElement>(null);
+  const sliderTrackRef = useRef<HTMLDivElement>(null);
   const isVertical = orientation === "vertical";
   const [rangeValue, setRangeValue] = useState<[number, number]>([0, 0]);
-  const [isRangeEditing, setIsRangeEditing] = useState(false);
-  const [isSliderHovering, setIsSliderHovering] = useState(false);
-  const sliderHoverTimeoutRef = useRef<number | null>(null);
+  const [isDraggingMin, setIsDraggingMin] = useState(false);
+  const [isDraggingMax, setIsDraggingMax] = useState(false);
+  const [isHoveringColorBar, setIsHoveringColorBar] = useState(false);
   const [colorBarSize, setColorBarSize] = useState({ width: 0, height: 0 });
 
   const [uiState, dispatch] = useReducer(uiReducer, {
-    position: { x: 24, y: 24 },
+    position: { x: 24, y: 24 }, // Keep simple initial value
     previousPosition: { x: 24, y: 24 },
     isCollapsed: collapsed,
     isDragging: false,
     dragStart: { x: 0, y: 0 },
-    hasInitialized: false,
+    hasInitialized: false, // This prevents the jump
   });
+
+  // Show sliders when hovering or dragging
+  const showSliders = isHoveringColorBar || isDraggingMin || isDraggingMax;
+
+  // Check if color bar is near bottom of screen
+  const isNearBottom = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    return uiState.position.y > window.innerHeight - 350;
+  }, [uiState.position.y]);
 
   // ============================================================================
   // UNIT DETECTION AND CONVERSION
@@ -271,7 +279,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     const NOAAGLOBALTEMP_DEFAULT_MAX = 2;
     const { isGodas, isNoaaGlobalTemp } = datasetFlags;
 
-    // Prefer the dataset's baseline range for any obvious variant of NOAAGlobalTemp.
     const preferBaselineRange = false;
 
     const overrideMin =
@@ -320,25 +327,21 @@ const ColorBar: React.FC<ColorBarProps> = ({
     const safeMin = Number.isFinite(min) ? Number(min) : 0;
     const safeMax = Number.isFinite(max) ? Number(max) : safeMin;
 
-    // Use the actual range (no forced zero-centering)
     const rangeMin = safeMin;
     const rangeMax = safeMax;
 
-    // Limit visible tick count so labels don't flood the UI while keeping band sharpness.
     const MAX_TICKS = 7;
     const labelCount = Math.min(
       MAX_TICKS,
       Math.max(dataset.colorScale.labels.length || 0, 2),
     );
 
-    // Generate labels across the actual range
     const generateLabels = () => {
       if (labelCount <= 1 || Math.abs(rangeMax - rangeMin) < 1e-9) {
         return Array(labelCount).fill(rangeMin);
       }
 
       if (isGodas) {
-        // Show only min and max for GODAS by default.
         return [rangeMin, rangeMax];
       }
 
@@ -448,22 +451,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     return min <= max ? { min, max } : { min: max, max: min };
   }, [rangeLimits, toDisplayValue]);
 
-  const sliderStep = useMemo(() => {
-    const span = Math.abs(displayLimits.max - displayLimits.min);
-    if (!Number.isFinite(span) || span <= 0) return 1;
-    const rough = span / 200;
-    const magnitude = Math.pow(10, Math.floor(Math.log10(rough)));
-    const normalized = rough / magnitude;
-    let step = magnitude;
-    if (normalized <= 1) step = 1 * magnitude;
-    else if (normalized <= 2) step = 2 * magnitude;
-    else if (normalized <= 5) step = 5 * magnitude;
-    else step = 10 * magnitude;
-
-    const safeStep = Number.parseFloat(step.toPrecision(2));
-    return Number.isFinite(safeStep) && safeStep > 0 ? safeStep : rough;
-  }, [displayLimits]);
-
   const formatRangeValue = useCallback((value: number) => {
     if (!Number.isFinite(value)) return "–";
     if (value === 0) return "0";
@@ -489,23 +476,19 @@ const ColorBar: React.FC<ColorBarProps> = ({
     .join(", ");
 
   const gradientBackground = `linear-gradient(${isVertical ? "to top" : "to right"}, ${gradientStops})`;
-  const sliderOrientation = isVertical ? "horizontal" : "vertical";
-  const sliderContainerClass = isVertical
-    ? "top-full left-1/2 mt-4 w-72 -translate-x-1/2"
-    : "left-full top-1/2 ml-4 w-20 -translate-y-1/2";
-  const sliderClassName = isVertical ? "w-full" : "w-4 flex-col";
-  const sliderLength = useMemo(() => {
-    const clamp = (value: number, min: number, max: number) =>
-      Math.min(max, Math.max(min, value));
 
-    if (isVertical) {
-      const width = colorBarSize.width || 280;
-      return clamp(width - 48, 200, 360);
-    }
+  // Calculate slider positions
+  const minPosition = useMemo(() => {
+    const range = displayLimits.max - displayLimits.min;
+    if (range === 0) return 0;
+    return ((rangeValue[0] - displayLimits.min) / range) * 100;
+  }, [rangeValue, displayLimits]);
 
-    const height = colorBarSize.height || 280;
-    return clamp(height - 48, 180, 360);
-  }, [colorBarSize.height, colorBarSize.width, isVertical]);
+  const maxPosition = useMemo(() => {
+    const range = displayLimits.max - displayLimits.min;
+    if (range === 0) return 100;
+    return ((rangeValue[1] - displayLimits.min) / range) * 100;
+  }, [rangeValue, displayLimits]);
 
   // ============================================================================
   // POSITIONING LOGIC
@@ -521,14 +504,14 @@ const ColorBar: React.FC<ColorBarProps> = ({
     if (isVertical) {
       const colorBarElement = colorBarRef.current;
       const cardWidth = colorBarElement ? colorBarElement.offsetWidth : 200;
-      const cardHeight = colorBarElement ? colorBarElement.offsetHeight : 360;
       const x = window.innerWidth - cardWidth - margin;
       const verticalOffset = Math.round(window.innerHeight * 0.25);
       const y = verticalOffset;
       return { x, y };
     }
 
-    const actualHeight = colorBarRef.current?.offsetHeight ?? 220;
+    // Start at the bottom by default
+    const actualHeight = colorBarRef.current?.offsetHeight ?? 280; // Increased default estimate
     return { x: margin, y: window.innerHeight - actualHeight - margin };
   }, [isVertical]);
 
@@ -594,61 +577,59 @@ const ColorBar: React.FC<ColorBarProps> = ({
     (newUnit: TemperatureUnit) => {
       if (!unitInfo.allowToggle) return;
       onUnitChange?.(newUnit);
-      dispatch({ type: "CLOSE_DROPDOWN" });
     },
     [unitInfo.allowToggle, onUnitChange],
   );
 
-  const handleRangeValueChange = useCallback((values: number[]) => {
-    if (!Array.isArray(values) || values.length < 2) return;
-    const min = Math.min(values[0], values[1]);
-    const max = Math.max(values[0], values[1]);
-    setIsRangeEditing(true);
-    setRangeValue([min, max]);
-  }, []);
-
-  const handleRangeValueCommit = useCallback(
-    (values: number[]) => {
-      if (!Array.isArray(values) || values.length < 2) return;
-      const min = Math.min(values[0], values[1]);
-      const max = Math.max(values[0], values[1]);
-      const clampedMin = Math.max(displayLimits.min, Math.min(min, max));
-      const clampedMax = Math.min(displayLimits.max, Math.max(min, max));
-      const baseMin = fromDisplayValue(clampedMin);
-      const baseMax = fromDisplayValue(clampedMax);
-
-      setIsRangeEditing(false);
-      setRangeValue([clampedMin, clampedMax]);
-      onRangeChange?.({ min: baseMin, max: baseMax });
-    },
-    [displayLimits, fromDisplayValue, onRangeChange],
-  );
-
   const handleRangeReset = useCallback(() => {
-    setIsRangeEditing(false);
     onRangeReset?.();
     if (!onRangeReset) {
       onRangeChange?.({ min: null, max: null });
     }
   }, [onRangeChange, onRangeReset]);
 
-  const handleSliderHoverStart = useCallback(() => {
-    if (sliderHoverTimeoutRef.current !== null) {
-      window.clearTimeout(sliderHoverTimeoutRef.current);
-      sliderHoverTimeoutRef.current = null;
-    }
-    setIsSliderHovering(true);
-  }, []);
+  // Slider drag handlers
+  const handleSliderMouseDown = useCallback(
+    (e: React.MouseEvent, isMin: boolean) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (isMin) {
+        setIsDraggingMin(true);
+      } else {
+        setIsDraggingMax(true);
+      }
+    },
+    [],
+  );
 
-  const handleSliderHoverEnd = useCallback(() => {
-    if (sliderHoverTimeoutRef.current !== null) {
-      window.clearTimeout(sliderHoverTimeoutRef.current);
-    }
-    sliderHoverTimeoutRef.current = window.setTimeout(() => {
-      setIsSliderHovering(false);
-      sliderHoverTimeoutRef.current = null;
-    }, 120);
-  }, []);
+  const updateSliderValue = useCallback(
+    (clientX: number, clientY: number, isMin: boolean) => {
+      if (!sliderTrackRef.current) return;
+
+      const rect = sliderTrackRef.current.getBoundingClientRect();
+      let percentage: number;
+
+      if (isVertical) {
+        percentage = ((rect.bottom - clientY) / rect.height) * 100;
+      } else {
+        percentage = ((clientX - rect.left) / rect.width) * 100;
+      }
+
+      percentage = Math.max(0, Math.min(100, percentage));
+
+      const range = displayLimits.max - displayLimits.min;
+      const newValue = displayLimits.min + (percentage / 100) * range;
+
+      if (isMin) {
+        const clampedValue = Math.min(newValue, rangeValue[1]);
+        setRangeValue([clampedValue, rangeValue[1]]);
+      } else {
+        const clampedValue = Math.max(newValue, rangeValue[0]);
+        setRangeValue([rangeValue[0], clampedValue]);
+      }
+    },
+    [displayLimits, rangeValue, isVertical],
+  );
 
   // ============================================================================
   // EFFECTS
@@ -671,15 +652,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => {
-    return () => {
-      if (sliderHoverTimeoutRef.current !== null) {
-        window.clearTimeout(sliderHoverTimeoutRef.current);
-        sliderHoverTimeoutRef.current = null;
-      }
-    };
-  }, []);
-
   // Initialize position on mount
   useEffect(() => {
     if (
@@ -687,11 +659,9 @@ const ColorBar: React.FC<ColorBarProps> = ({
       colorBarRef.current &&
       !uiState.isCollapsed
     ) {
-      const timer = setTimeout(() => {
-        const defaultPosition = getDefaultPosition();
-        dispatch({ type: "INITIALIZE", payload: defaultPosition });
-      }, 0);
-      return () => clearTimeout(timer);
+      // Remove setTimeout - calculate position immediately
+      const defaultPosition = getDefaultPosition();
+      dispatch({ type: "INITIALIZE", payload: defaultPosition });
     }
   }, [uiState.hasInitialized, uiState.isCollapsed, getDefaultPosition]);
 
@@ -713,7 +683,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
   }, [collapsed]);
 
   useEffect(() => {
-    if (isRangeEditing) return;
     const clampedMin = Math.max(
       displayLimits.min,
       Math.min(displayRange.min, displayLimits.max),
@@ -723,14 +692,14 @@ const ColorBar: React.FC<ColorBarProps> = ({
       Math.max(displayRange.max, displayLimits.min),
     );
     setRangeValue([clampedMin, clampedMax]);
-  }, [displayLimits, displayRange, isRangeEditing]);
+  }, [displayLimits, displayRange]);
 
   // Notify parent of position changes
   useEffect(() => {
     onPositionChange?.(uiState.position);
   }, [uiState.position, onPositionChange]);
 
-  // Handle dragging
+  // Handle colorbar dragging
   useEffect(() => {
     if (!uiState.isDragging || uiState.isCollapsed) return;
 
@@ -760,6 +729,44 @@ const ColorBar: React.FC<ColorBarProps> = ({
     clampPosition,
   ]);
 
+  // Handle slider dragging
+  useEffect(() => {
+    if (!isDraggingMin && !isDraggingMax) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isDraggingMin) {
+        updateSliderValue(e.clientX, e.clientY, true);
+      } else if (isDraggingMax) {
+        updateSliderValue(e.clientX, e.clientY, false);
+      }
+    };
+
+    const handleMouseUp = () => {
+      if (isDraggingMin || isDraggingMax) {
+        const baseMin = fromDisplayValue(rangeValue[0]);
+        const baseMax = fromDisplayValue(rangeValue[1]);
+        onRangeChange?.({ min: baseMin, max: baseMax });
+      }
+      setIsDraggingMin(false);
+      setIsDraggingMax(false);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [
+    isDraggingMin,
+    isDraggingMax,
+    updateSliderValue,
+    rangeValue,
+    fromDisplayValue,
+    onRangeChange,
+  ]);
+
   // Handle window resize
   useEffect(() => {
     const handleResize = () => {
@@ -787,11 +794,12 @@ const ColorBar: React.FC<ColorBarProps> = ({
   return (
     <div
       ref={colorBarRef}
-      className="pointer-events-auto fixed"
+      className="pointer-events-auto fixed transition-opacity duration-200"
       style={{
         left: `${uiState.position.x}px`,
         top: `${uiState.position.y}px`,
         zIndex: uiState.isCollapsed ? 1000 : 10,
+        opacity: uiState.hasInitialized ? 1 : 0, // Hide until positioned
       }}
     >
       {uiState.isCollapsed ? (
@@ -806,11 +814,8 @@ const ColorBar: React.FC<ColorBarProps> = ({
         </Button>
       ) : (
         <div
-          className="border-border bg-card/80 text-primary group pointer-events-auto relative rounded-xl border px-6 py-6 backdrop-blur-sm"
-          onMouseEnter={handleSliderHoverStart}
-          onMouseLeave={handleSliderHoverEnd}
-          onFocusCapture={handleSliderHoverStart}
-          onBlurCapture={handleSliderHoverEnd}
+          className="border-border bg-card/80 text-primary group pointer-events-auto relative overflow-visible rounded-xl border px-6 py-6 backdrop-blur-sm"
+          style={{ width: isVertical ? "auto" : "320px" }}
         >
           {/* Header Controls */}
           <div className="-mt-2 mb-2 flex w-full items-center justify-between gap-2">
@@ -883,16 +888,66 @@ const ColorBar: React.FC<ColorBarProps> = ({
             </div>
           </div>
 
-          {/* Color Scale */}
-          <div className="relative">
+          {/* Color Scale with Inline Sliders on Hover */}
+          <div className="relative overflow-visible">
             {isVertical ? (
               <div className="flex w-full items-center justify-center">
                 <div className="relative flex">
-                  <div className="h-64 w-14 rounded-lg bg-white/10 p-px shadow-inner">
+                  <div
+                    ref={sliderTrackRef}
+                    className="relative h-64 w-14 overflow-visible rounded-lg bg-white/10 p-px shadow-inner"
+                    onMouseEnter={() => setIsHoveringColorBar(true)}
+                    onMouseLeave={() => setIsHoveringColorBar(false)}
+                  >
                     <div
                       className="h-full w-full overflow-hidden rounded-[10px]"
                       style={{ background: gradientBackground }}
                     />
+
+                    {/* Draggable range indicators for vertical */}
+                    {showSliders && (
+                      <>
+                        {/* Min slider */}
+                        <div
+                          className="absolute right-0 left-0 z-10 flex items-center justify-center transition-opacity duration-200"
+                          style={{
+                            bottom: `${minPosition}%`,
+                            opacity: showSliders ? 1 : 0,
+                          }}
+                        >
+                          <div
+                            className="hover:bg-primary/80 group/slider relative flex h-6 w-full cursor-ns-resize items-center justify-center bg-black/60 transition-colors"
+                            onMouseDown={(e) => handleSliderMouseDown(e, true)}
+                          >
+                            <div className="pointer-events-none absolute left-full z-20 ml-2 rounded bg-black/80 px-2 py-1 text-[10px] whitespace-nowrap text-white opacity-0 transition-opacity group-hover/slider:opacity-100">
+                              {formatRangeValue(rangeValue[0])}
+                              {currentUnitSymbol && ` ${currentUnitSymbol}`}
+                            </div>
+                            <div className="h-0.5 w-8 bg-white"></div>
+                          </div>
+                        </div>
+
+                        {/* Max slider */}
+                        <div
+                          className="absolute right-0 left-0 z-10 flex items-center justify-center transition-opacity duration-200"
+                          style={{
+                            bottom: `${maxPosition}%`,
+                            opacity: showSliders ? 1 : 0,
+                          }}
+                        >
+                          <div
+                            className="hover:bg-primary/80 group/slider relative flex h-6 w-full cursor-ns-resize items-center justify-center bg-black/60 transition-colors"
+                            onMouseDown={(e) => handleSliderMouseDown(e, false)}
+                          >
+                            <div className="pointer-events-none absolute left-full z-20 ml-2 rounded bg-black/80 px-2 py-1 text-[10px] whitespace-nowrap text-white opacity-0 transition-opacity group-hover/slider:opacity-100">
+                              {formatRangeValue(rangeValue[1])}
+                              {currentUnitSymbol && ` ${currentUnitSymbol}`}
+                            </div>
+                            <div className="h-0.5 w-8 bg-white"></div>
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                   <div className="text-card-foreground absolute inset-y-4 left-full ml-4 flex flex-col justify-between text-right text-xs">
                     {labels.map((label, index) => (
@@ -906,9 +961,69 @@ const ColorBar: React.FC<ColorBarProps> = ({
             ) : (
               <div className="relative mx-auto w-60">
                 <div
-                  className="h-8 w-full rounded-md"
+                  ref={sliderTrackRef}
+                  className="relative h-8 w-full overflow-visible rounded-md"
                   style={{ background: gradientBackground }}
-                />
+                  onMouseEnter={() => setIsHoveringColorBar(true)}
+                  onMouseLeave={() => setIsHoveringColorBar(false)}
+                >
+                  {/* Draggable range indicators for horizontal */}
+                  {showSliders && (
+                    <>
+                      {/* Min slider */}
+                      <div
+                        className="absolute top-0 bottom-0 z-10 flex items-center justify-center transition-opacity duration-200"
+                        style={{
+                          left: `${minPosition}%`,
+                          opacity: showSliders ? 1 : 0,
+                        }}
+                      >
+                        <div
+                          className="hover:bg-primary/80 group/slider relative flex h-full w-6 cursor-ew-resize items-center justify-center bg-black/60 transition-colors"
+                          onMouseDown={(e) => handleSliderMouseDown(e, true)}
+                        >
+                          <div
+                            className={`pointer-events-none absolute ${
+                              isNearBottom
+                                ? "bottom-full mb-2"
+                                : "top-full mt-2"
+                            } z-20 rounded bg-black/80 px-2 py-1 text-[10px] whitespace-nowrap text-white opacity-0 transition-opacity group-hover/slider:opacity-100`}
+                          >
+                            {formatRangeValue(rangeValue[0])}
+                            {currentUnitSymbol && ` ${currentUnitSymbol}`}
+                          </div>
+                          <div className="h-4 w-0.5 bg-white"></div>
+                        </div>
+                      </div>
+
+                      {/* Max slider */}
+                      <div
+                        className="absolute top-0 bottom-0 z-10 flex items-center justify-center transition-opacity duration-200"
+                        style={{
+                          left: `${maxPosition}%`,
+                          opacity: showSliders ? 1 : 0,
+                        }}
+                      >
+                        <div
+                          className="hover:bg-primary/80 group/slider relative flex h-full w-6 cursor-ew-resize items-center justify-center bg-black/60 transition-colors"
+                          onMouseDown={(e) => handleSliderMouseDown(e, false)}
+                        >
+                          <div
+                            className={`pointer-events-none absolute ${
+                              isNearBottom
+                                ? "bottom-full mb-2"
+                                : "top-full mt-2"
+                            } z-20 rounded bg-black/80 px-2 py-1 text-[10px] whitespace-nowrap text-white opacity-0 transition-opacity group-hover/slider:opacity-100`}
+                          >
+                            {formatRangeValue(rangeValue[1])}
+                            {currentUnitSymbol && ` ${currentUnitSymbol}`}
+                          </div>
+                          <div className="h-4 w-0.5 bg-white"></div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
                 <div className="absolute -top-4 left-0 flex w-full justify-between text-xs">
                   {labels.map((label, index) => (
                     <span
@@ -923,63 +1038,26 @@ const ColorBar: React.FC<ColorBarProps> = ({
             )}
           </div>
 
-          <div
-            onMouseEnter={handleSliderHoverStart}
-            onMouseLeave={handleSliderHoverEnd}
-            onFocusCapture={handleSliderHoverStart}
-            onBlurCapture={handleSliderHoverEnd}
-            className={`border-border bg-card/90 absolute z-20 rounded-xl border px-4 py-3 shadow-lg backdrop-blur-md transition-all duration-200 ${sliderContainerClass} ${
-              isRangeEditing || isSliderHovering
-                ? "pointer-events-auto visible opacity-100"
-                : "pointer-events-none invisible opacity-0"
-            }`}
-          >
-            <div className="text-muted-foreground mb-3 flex items-center justify-between text-xs font-medium">
-              <span>Color Range</span>
-            </div>
-            <div className="flex items-center justify-center gap-3">
-              <Slider
-                min={displayLimits.min}
-                max={displayLimits.max}
-                step={sliderStep}
-                value={rangeValue}
-                onValueChange={handleRangeValueChange}
-                onValueCommit={handleRangeValueCommit}
-                onPointerDown={() => setIsRangeEditing(true)}
-                onPointerCancel={() => setIsRangeEditing(false)}
-                orientation={sliderOrientation}
-                className={sliderClassName}
-                style={
-                  sliderOrientation === "vertical"
-                    ? { height: `${sliderLength}px` }
-                    : { width: `${sliderLength}px` }
-                }
-              />
-              {(onRangeReset || onRangeChange) && (
+          {/* Reset Button - Only shows when range is customized */}
+          {customRange?.enabled &&
+            (customRange.min !== null || customRange.max !== null) && (
+              <div className="mt-2 flex items-center justify-center">
                 <button
                   type="button"
                   onClick={handleRangeReset}
-                  className="text-muted-foreground hover:text-card-foreground flex h-6 w-6 items-center justify-center rounded-full transition-colors"
+                  className="text-muted-foreground hover:text-card-foreground flex items-center gap-1.5 rounded-md px-3 text-xs transition-colors hover:bg-white/5"
                   aria-label="Reset color range"
+                  title="Reset range to default"
                 >
-                  <RotateCcw className="h-3.5 w-3.5" />
+                  <RotateCcw className="h-2 w-2" />
+                  <span>Reset Range</span>
                 </button>
-              )}
-            </div>
-            <div className="text-muted-foreground mt-2 flex items-center justify-between text-[11px]">
-              <span>
-                Min {formatRangeValue(rangeValue[0])}
-                {currentUnitSymbol ? ` ${currentUnitSymbol}` : ""}
-              </span>
-              <span>
-                Max {formatRangeValue(rangeValue[1])}
-                {currentUnitSymbol ? ` ${currentUnitSymbol}` : ""}
-              </span>
-            </div>
-          </div>
+              </div>
+            )}
         </div>
       )}
     </div>
   );
 };
+
 export default ColorBar;
