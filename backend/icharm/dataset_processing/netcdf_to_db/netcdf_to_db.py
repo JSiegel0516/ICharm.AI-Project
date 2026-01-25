@@ -89,6 +89,8 @@ def main(argv=None):
             years=[str(i) for i in range(min_year, max_year)],
             level_variable_name="year",
         )
+    else:
+        raise ValueError(f"Unknown command: {args.command}")
 
     # netcdf_to_db.export_data_to_csv("/home/mrsharky/dev/sdsu/ICharm.AI-Project/backend/datasets/cmorph/daily/")
     netcdf_to_db.export_data_to_postgres(

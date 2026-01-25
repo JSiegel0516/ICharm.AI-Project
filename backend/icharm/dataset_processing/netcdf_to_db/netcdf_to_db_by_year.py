@@ -1,12 +1,8 @@
-from dotenv import load_dotenv
+from icharm.dataset_processing.netcdf_to_db.infer_cadence import infer_cadence
 
-load_dotenv()
-
-import io
 import numpy
 import os
 import itertools
-import pandas
 
 from pathlib import Path
 
@@ -95,7 +91,7 @@ class NetCDFtoDbYearlyFiles(NetCDFtoDbBase):
             create_gridbox_table_sql = """
                 CREATE TABLE timestamp_dim (
                     timestamp_id   INTEGER NOT NULL,
-                    timestamp_val  CHAR(4) NOT NULL,
+                    timestamp_val  CHAR(14) NOT NULL,
                     PRIMARY KEY (timestamp_id),
                     UNIQUE (timestamp_val)
                 );
@@ -334,198 +330,232 @@ class NetCDFtoDbYearlyFiles(NetCDFtoDbBase):
 
     @benchmark
     def _populate_postgres_data_tables(self, conn):
-        months = [str(i).zfill(2) for i in range(1, 13)]
-        days = [str(i).zfill(2) for i in range(1, 32)]
-
         with conn.cursor() as cur:
             # For speed increase
             cur.execute("SET synchronous_commit TO OFF;")
 
-            time_idx = 0
-            total_days = len(months) * len(days)
-            for month, day in tqdm(itertools.product(months, days), total=total_days):
-                month_day_str = f"{month}{day}"
+            # Go through all the files and get all the distinct month+day+extras
+            files = sorted(self.folder_path.rglob("*.nc"))
+            all_timestamps = set()
+            for file_idx, file in enumerate(tqdm(files)):
+                # filename_path = str(file)
+                with Dataset(file, "r") as nc:
+                    # Get all dates in the current file (there can be more than 1)
+                    time_variable = nc.variables[self.time_variable_name]
+                    times_dt = num2date(
+                        times=time_variable[:],
+                        units=time_variable.units,
+                        calendar=getattr(time_variable, "calendar", "standard"),
+                    )
+                    for idx, time_dt in enumerate(times_dt):
+                        iso_formatted_time = time_dt.isoformat()
+                        # Remove the year
+                        iso_formatted_time = iso_formatted_time[5:]
+                        all_timestamps.add(iso_formatted_time)
 
-                data_slices = []
-                for file_idx, year in enumerate(self.years):
-                    # Try multiple patterns to handle different file naming conventions:
-                    patterns = [
-                        #f"*d{year}{month_day_str}*.nc",  # GPCP format: d19961001
-                        #f"*D{year}{month_day_str}*.nc",  # SEAFLUX format: D19880101
-                        f"*{year}{month_day_str}*.nc",   # Generic adjacent (no prefix)
+            all_dates = {t: idx for idx, t in enumerate(sorted(all_timestamps))}
+
+            timestamp_rows = [(idx, timestamp) for timestamp, idx in all_dates.items()]
+            cur.executemany(
+                """
+                INSERT INTO timestamp_dim (timestamp_id, timestamp_val)
+                VALUES (%s, %s) ON CONFLICT (timestamp_id) DO NOTHING
+                """,
+                timestamp_rows,
+            )
+
+            # Infer cadence
+            cadence = infer_cadence(files)
+
+            if cadence.cadence == "year":
+                self.process_year(cur, all_dates)
+            elif cadence.cadence == "year_month":
+                self.process_year_month(cur, all_dates)
+            elif cadence.cadence == "year_month_day":
+                self.process_year_month_day(cur, all_dates)
+            else:
+                raise ValueError(f"Unknown cadence: {cadence.cadence}")
+        return
+
+    def process_year(self, cur, all_dates):
+        yearly_files = sorted(self.folder_path.rglob("*.nc"))
+
+        for db_time_value, db_time_index in tqdm(all_dates.items()):
+            data_slices = []
+            for file_idx, yearly_file in enumerate(tqdm(yearly_files)):
+                fill_value = None
+                with Dataset(yearly_file, "r") as nc:
+                    # Get all dates in the current file (there can be more than 1)
+                    time_variable = nc.variables[self.time_variable_name]
+
+                    # Get the specific date we want to process
+                    times_dt = num2date(
+                        times=time_variable[:],
+                        units=time_variable.units,
+                        calendar=getattr(time_variable, "calendar", "standard"),
+                    )
+                    for time_idx, time_dt in enumerate(times_dt):
+                        iso_formatted_time = time_dt.isoformat()
+                        # Remove the year
+                        iso_formatted_time = iso_formatted_time[5:]
+                        if iso_formatted_time == db_time_value:
+                            break
+
+                    # Get the specific variables at given date
+                    variable = nc[self.variable_of_interest_name][time_idx]
+
+                    full_dims = ["year"] + list(
+                        nc[self.variable_of_interest_name].dimensions
+                    )
+                    spatial_dims = [
+                        d for d in full_dims if d != self.time_variable_name
                     ]
-                    yearly_files = []
-                    for pattern in patterns:
-                        found = list(self.folder_path.rglob(pattern))
-                        if len(found) == 1:
-                            # Perfect match - use this pattern
-                            yearly_files = found
-                            break
-                        elif len(found) > 1:
-                            # Multiple matches - this is an error
-                            yearly_files = found
-                            break
-                        # If 0 matches, continue to next pattern
-                    
-                    # Remove duplicates (shouldn't be any, but just in case)
-                    yearly_files = sorted(set(yearly_files))
 
-                    if len(yearly_files) > 1:
-                        file_list = "\n".join([f"  - {f}" for f in yearly_files])
-                        raise Exception(
-                            f"Too many files for year {year}, month_day {month_day_str}. "
-                            f"Found {len(yearly_files)} files:\n{file_list}"
-                        )
-                    elif len(yearly_files) == 0:
-                        # Generate empty data
-                        data = numpy.full(
-                            (len(self.latitudes), len(self.longitudes)), numpy.nan
-                        )
-                        data_slices.append(data)
-                        continue
-                    elif len(yearly_files) == 1:
-                        file = yearly_files[0]
+                    if hasattr(variable, "_FillValue"):
+                        fill_value = float(variable._FillValue)
+                    elif hasattr(variable, "missing_value"):
+                        fill_value = float(variable.missing_value)
 
-                        # filename_path = str(file)
-                        with Dataset(file, "r") as nc:
-                            # Get all dates in the current file (there can be more than 1)
-                            time_variable = nc.variables[self.time_variable_name]
-
-                            times_dt = num2date(
-                                times=time_variable[:],
-                                units=time_variable.units,
-                                calendar=getattr(time_variable, "calendar", "standard"),
-                            )
-                            # it's possible there are multiple dates per file. If there are
-                            # get the idx so we know which index to grab from the file.
-
-                            variable = nc[self.variable_of_interest_name]
-
-                            full_dims = ["year"] + list(variable.dimensions)
-                            spatial_dims = [
-                                d for d in full_dims if d != self.time_variable_name
-                            ]
-
-                            fill_value = None
-                            if hasattr(variable, "_FillValue"):
-                                fill_value = float(variable._FillValue)
-                            elif hasattr(variable, "missing_value"):
-                                fill_value = float(variable.missing_value)
-
-                            for idx, time_dt in enumerate(times_dt):
-                                dt = f"{month}{day}"
-
-                                # Insert the datetime into the datetime_dim table
-                                timestamp_rows = [(time_idx, dt)]
-                                cur.executemany(
-                                    """
-                                    INSERT INTO timestamp_dim (timestamp_id, timestamp_val)
-                                    VALUES (%s, %s) ON CONFLICT (timestamp_id) DO NOTHING
-                                    """,
-                                    timestamp_rows,
-                                )
-
-                                # The time variable could be in many places, slice the data in the correct one
-                                time_idx_loc = self.all_variable_locations[
-                                    self.time_variable_name
-                                ]
-                                indexer = tuple(
-                                    (idx if axis == time_idx_loc else slice(None))
-                                    for axis in range(variable.ndim)
-                                )
-                                data = variable[indexer]
-
-                                data_slices.append(data)
+                    data_slices.append(variable)
 
                 # Some dates (ie: Feb 30th) don't exist in the dataset
                 if len(data_slices) == 0:
                     continue
 
-                # Stack into (n_years_for_this_md, n_lat, n_lon)
-                data_year_lat_lon = numpy.stack(data_slices, axis=0)
+            # Stack into (n_years_for_this_md, n_lat, n_lon)
+            data_year_lat_lon = numpy.stack(data_slices, axis=0)
 
-                self._process_multi_level_gridbox_data(
-                    data=data_year_lat_lon,
-                    dim_names=spatial_dims,
-                    fill_value=fill_value,
-                    time_id=time_idx,
-                    cur=cur,
-                )
-
-                time_idx += 1
+            self._process_multi_level_gridbox_data(
+                data=data_year_lat_lon,
+                dim_names=spatial_dims,
+                fill_value=fill_value,
+                time_id=db_time_index,
+                cur=cur,
+            )
         return
 
-    def _process_multi_level_gridbox_data(
-        self, data, dim_names, fill_value, time_id, cur
-    ):
-        n_lat = len(self.latitudes.keys())
-        n_lon = len(self.longitudes.keys())
-        n_levels = len(self.levels.keys())
+    def process_year_month(self, cur, all_dates):
+        raise NotImplementedError("Haven't implemented this yet")
 
-        # If it's a masked array, fill masked with NaN
-        if numpy.ma.isMaskedArray(data):
-            data = data.filled(numpy.nan)
+    def process_year_month_day(self, cur, all_dates):
+        months = [str(i).zfill(2) for i in range(1, 13)]
+        days = [str(i).zfill(2) for i in range(1, 32)]
+        total_days = len(months) * len(days)
 
-        # Replace values with fill_value with numpy.nan
-        if fill_value is not None:
-            data = numpy.where(data == fill_value, numpy.nan, data)
+        for month, day in tqdm(itertools.product(months, days), total=total_days):
+            month_day_str = f"{month}{day}"
 
-        # Map dim names -> axis indices in `data`
-        name_to_axis = {name: i for i, name in enumerate(dim_names)}
+            data_slices = []
+            for file_idx, year in enumerate(self.years):
+                # Try multiple patterns to handle different file naming conventions:
+                patterns = [
+                    # f"*d{year}{month_day_str}*.nc",  # GPCP format: d19961001
+                    # f"*D{year}{month_day_str}*.nc",  # SEAFLUX format: D19880101
+                    f"*{year}{month_day_str}*.nc",  # Generic adjacent (no prefix)
+                    f"*{year}*.nc",  # Generic adjacent (no prefix)
+                ]
+                yearly_files = []
+                for pattern in patterns:
+                    found = list(self.folder_path.rglob(pattern))
+                    if len(found) == 1:
+                        # Perfect match - use this pattern
+                        yearly_files = found
+                        break
+                    elif len(found) > 1:
+                        # Multiple matches - this is an error
+                        yearly_files = found
+                        break
+                    # If 0 matches, continue to next pattern
 
-        # Find lat & lon axes
-        try:
-            lat_axis = name_to_axis[self.latitude_variable_name]  # e.g. 'lat'
-            lon_axis = name_to_axis[self.longitude_variable_name]  # e.g. 'lon'
-        except KeyError as e:
-            raise ValueError(
-                f"Could not find lat/lon dims in {dim_names}. "
-                f"lat name={self.latitude_variable_name}, lon name={self.longitude_variable_name}"
-            ) from e
+                # Remove duplicates (shouldn't be any, but just in case)
+                yearly_files = sorted(set(yearly_files))
 
-        # Does this dataset have levels?
-        level_axis = (
-            name_to_axis.get(self.level_variable_name) if n_levels > 0 else None
-        )
+                if len(yearly_files) > 1:
+                    file_list = "\n".join([f"  - {f}" for f in yearly_files])
+                    raise Exception(
+                        f"Too many files for year {year}, month_day {month_day_str}. "
+                        f"Found {len(yearly_files)} files:\n{file_list}"
+                    )
+                elif len(yearly_files) == 0:
+                    # Generate empty data
+                    data = numpy.full(
+                        (len(self.latitudes), len(self.longitudes)), numpy.nan
+                    )
+                    data_slices.append(data)
+                    continue
+                elif len(yearly_files) == 1:
+                    file = yearly_files[0]
 
-        if level_axis is None:
-            data_lat_lon = numpy.transpose(data, (lat_axis, lon_axis))
-            assert data_lat_lon.shape == (n_lat, n_lon)
+                    # filename_path = str(file)
+                    with Dataset(file, "r") as nc:
+                        # Get all dates in the current file (there can be more than 1)
+                        time_variable = nc.variables[self.time_variable_name]
 
-            flat_values = data_lat_lon.reshape(-1)
-            value_cols = ["value_0"]
+                        times_dt = num2date(
+                            times=time_variable[:],
+                            units=time_variable.units,
+                            calendar=getattr(time_variable, "calendar", "standard"),
+                        )
+                        # it's possible there are multiple dates per file. If there are
+                        # get the idx so we know which index to grab from the file.
 
-        else:
-            data_lat_lon_level = numpy.transpose(data, (lat_axis, lon_axis, level_axis))
-            assert data_lat_lon_level.shape == (n_lat, n_lon, n_levels)
+                        variable = nc[self.variable_of_interest_name]
 
-            flat_values = data_lat_lon_level.reshape(-1, n_levels)
-            value_cols = [f"value_{k}" for k in list(self.levels.keys())]
+                        full_dims = ["year"] + list(variable.dimensions)
+                        spatial_dims = [
+                            d for d in full_dims if d != self.time_variable_name
+                        ]
 
-        df_griddata = pandas.DataFrame(flat_values, columns=value_cols)
-        df_griddata.insert(0, "gridbox_id", self.gridbox_ids)
-        df_griddata.insert(1, "timestamp_id", time_id)
+                        fill_value = None
+                        if hasattr(variable, "_FillValue"):
+                            fill_value = float(variable._FillValue)
+                        elif hasattr(variable, "missing_value"):
+                            fill_value = float(variable.missing_value)
 
-        # Reshape data to gridbox_id, timestamp_id, value
-        with io.StringIO() as csv_buffer_grid_date:
-            df_griddata.to_csv(csv_buffer_grid_date, index=False)
-            csv_buffer_grid_date.seek(0)
-            values_str = ",".join(value_cols)
-            cur.copy_expert(
-                f"""
-                COPY grid_data (gridbox_id, timestamp_id, {values_str})
-                FROM STDIN WITH (FORMAT csv, HEADER true, NULL '')
-                """,
-                csv_buffer_grid_date,
+                        if len(times_dt) > 1:
+                            raise Exception(
+                                "Cannot process a year_month_day file with multiple time stamps yet!!!"
+                            )
+
+                        for idx, time_dt in enumerate(times_dt):
+                            iso_formatted_time = time_dt.isoformat()
+                            # Remove the year
+                            iso_formatted_time = iso_formatted_time[5:]
+
+                            db_time_index = all_dates[iso_formatted_time]
+
+                            # The time variable could be in many places, slice the data in the correct one
+                            time_idx_loc = self.all_variable_locations[
+                                self.time_variable_name
+                            ]
+                            indexer = tuple(
+                                (idx if axis == time_idx_loc else slice(None))
+                                for axis in range(variable.ndim)
+                            )
+                            data = variable[indexer]
+
+                            data_slices.append(data)
+
+            # Some dates (ie: Feb 30th) don't exist in the dataset
+            if len(data_slices) == 0:
+                continue
+
+            # Stack into (n_years_for_this_md, n_lat, n_lon)
+            data_year_lat_lon = numpy.stack(data_slices, axis=0)
+
+            self._process_multi_level_gridbox_data(
+                data=data_year_lat_lon,
+                dim_names=spatial_dims,
+                fill_value=fill_value,
+                time_id=db_time_index,
+                cur=cur,
             )
         return
 
 
 def main():
     if True:
-        data_path = (
-            "/var/www/html/icharm/backend/datasets/cmorph/daily"
-        )
+        data_path = "/var/www/html/icharm/backend/datasets/cmorph/daily"
         dataset_name = "cmorph_daily_by_year"
         variable_of_interest_name = "cmorph"
     else:
@@ -569,4 +599,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
