@@ -653,7 +653,7 @@ export function useTimeSeries(baseURL: string = ""): UseTimeSeriesAPI {
         });
 
         const response = await apiClientRef.current!.post<TimeSeriesResponse>(
-          "/api/v2/timeseries/extract",
+          "/api/timeseries/extract",
           request,
           {
             cancelToken: cancelTokenRef.current.token,

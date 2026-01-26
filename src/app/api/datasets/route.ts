@@ -1,8 +1,7 @@
-// app/api/datasets/route.ts
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db/index";
 import { climateDataset } from "@/lib/db/schema";
-import { eq, or, like, and, sql } from "drizzle-orm";
+import { eq, or, like, and, sql, SQL } from "drizzle-orm";
 
 export async function GET(request: Request) {
   try {
@@ -19,8 +18,8 @@ export async function GET(request: Request) {
       focusCoordinates,
     });
 
-    let query = db.select().from(climateDataset);
-    const conditions = [];
+    // Build conditions array with proper typing
+    const conditions: SQL[] = [];
 
     if (stored && stored !== "all") {
       console.log(`Filtering by stored: ${stored}`);
@@ -34,14 +33,18 @@ export async function GET(request: Request) {
     }
 
     if (search) {
-      conditions.push(
-        or(
-          like(climateDataset.datasetName, `%${search}%`),
-          like(climateDataset.slug, `%${search}%`),
-          like(climateDataset.layerParameter, `%${search}%`),
-        ),
+      const searchCondition = or(
+        like(climateDataset.datasetName, `%${search}%`),
+        like(climateDataset.slug, `%${search}%`),
+        like(climateDataset.layerParameter, `%${search}%`),
       );
+      if (searchCondition) {
+        conditions.push(searchCondition);
+      }
     }
+
+    // Use $dynamic() to enable dynamic query building
+    let query = db.select().from(climateDataset).$dynamic();
 
     if (conditions.length > 0) {
       query = query.where(and(...conditions));
@@ -49,6 +52,7 @@ export async function GET(request: Request) {
 
     let datasets = await query;
 
+    // Process focus coordinates
     if (focusCoordinates && focusCoordinates.trim()) {
       console.log("Processing focus coordinates:", focusCoordinates);
 
@@ -73,7 +77,7 @@ export async function GET(request: Request) {
       }
     }
 
-    // NORMALIZE THE FIELD NAME HERE - Add lowercase 'stored' field
+    // Normalize the field name - Add lowercase 'stored' field
     const normalizedDatasets = datasets.map((dataset) => ({
       ...dataset,
       stored: dataset.Stored, // Add lowercase version
@@ -96,11 +100,11 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       total: normalizedDatasets.length,
-      datasets: normalizedDatasets, // Use normalized version
+      datasets: normalizedDatasets,
       focusCoordinates: focusCoordinates || null,
     });
   } catch (error) {
-    console.error(" Failed to fetch datasets:", error);
+    console.error("Failed to fetch datasets:", error);
     return NextResponse.json(
       { error: "Failed to fetch datasets", details: String(error) },
       { status: 500 },
