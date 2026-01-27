@@ -258,7 +258,6 @@ const prepareRasterMesh = (options: RasterMeshOptions) => {
         normalized.mask,
       )
     : normalized.values;
-
   const averaged = applyBlockAverage(
     smoothedValues,
     normalized.lat.length,

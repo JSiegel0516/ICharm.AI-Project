@@ -286,6 +286,22 @@ export default function HomePage() {
     level: number | null;
   } | null>(null);
   const visualizationAbortRef = useRef<AbortController | null>(null);
+  const prefetchedRastersRef = useRef<Map<string, RasterLayerData>>(new Map());
+  const prefetchedRasterGridsRef = useRef<Map<string, RasterGridData>>(
+    new Map(),
+  );
+  const visualizationPrefetchIndexRef = useRef(0);
+  const visualizationResumeTimeoutRef = useRef<number | null>(null);
+  const visualizationPausedRef = useRef(false);
+  const visualizationPrefetchConfigRef = useRef<{
+    dataset: Dataset;
+    frames: Date[];
+    cssColors: string[];
+    colorbarRange: ReturnType<typeof resolveEffectiveColorbarRange>;
+    level: number | null;
+    hideZero: boolean;
+    keyDatasetId: string;
+  } | null>(null);
 
   // UI State
   const [activeSidebarPanel, setActiveSidebarPanel] =
@@ -618,12 +634,159 @@ export default function HomePage() {
       visualizationAbortRef.current.abort();
       visualizationAbortRef.current = null;
     }
+    if (visualizationResumeTimeoutRef.current != null) {
+      window.clearTimeout(visualizationResumeTimeoutRef.current);
+      visualizationResumeTimeoutRef.current = null;
+    }
+    visualizationPausedRef.current = false;
+    visualizationPrefetchConfigRef.current = null;
+    visualizationPrefetchIndexRef.current = 0;
     setVisualizationStatus("idle");
     setVisualizationProgress(0);
     setPrefetchedRasters(new Map());
     setPrefetchedRasterGrids(new Map());
     setVisualizationDates([]);
     setActiveVisualizationIndex(0);
+  }, []);
+
+  useEffect(() => {
+    prefetchedRastersRef.current = prefetchedRasters;
+  }, [prefetchedRasters]);
+
+  useEffect(() => {
+    prefetchedRasterGridsRef.current = prefetchedRasterGrids;
+  }, [prefetchedRasterGrids]);
+
+  const runVisualizationPrefetch = useCallback(async (startIndex: number) => {
+    const config = visualizationPrefetchConfigRef.current;
+    if (!config) {
+      return;
+    }
+
+    if (visualizationAbortRef.current) {
+      visualizationAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    visualizationAbortRef.current = controller;
+    visualizationPausedRef.current = false;
+
+    const nextMap = new Map(prefetchedRastersRef.current);
+    const nextGridMap = new Map(prefetchedRasterGridsRef.current);
+    const loadedImageUrls = new Set<string>();
+    const preloadTextureImages = async (
+      textures: RasterLayerData["textures"],
+    ) => {
+      if (!Array.isArray(textures) || textures.length === 0) {
+        return;
+      }
+      await Promise.all(
+        textures.map((texture) => {
+          const url =
+            typeof texture?.imageUrl === "string"
+              ? texture.imageUrl.trim()
+              : "";
+          if (!url || loadedImageUrls.has(url)) {
+            return Promise.resolve();
+          }
+          loadedImageUrls.add(url);
+          return new Promise<void>((resolve) => {
+            const image = new Image();
+            image.onload = () => resolve();
+            image.onerror = () => resolve();
+            image.src = url;
+          });
+        }),
+      );
+    };
+
+    try {
+      for (let i = startIndex; i < config.frames.length; i += 1) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        if (visualizationPausedRef.current) {
+          visualizationPrefetchIndexRef.current = i;
+          return;
+        }
+
+        const frameDate = config.frames[i];
+        const raster = await fetchRasterVisualization({
+          dataset: config.dataset,
+          backendDatasetId: config.keyDatasetId,
+          date: frameDate,
+          level: config.level ?? undefined,
+          cssColors: config.cssColors,
+          maskZeroValues: config.hideZero,
+          colorbarRange: config.colorbarRange,
+          signal: controller.signal,
+        });
+        await preloadTextureImages(raster.textures);
+        const rasterGrid = await fetchRasterGrid({
+          dataset: config.dataset,
+          backendDatasetId: config.keyDatasetId,
+          date: frameDate,
+          level: config.level ?? undefined,
+          maskZeroValues: config.hideZero,
+          colorbarRange: config.colorbarRange,
+          signal: controller.signal,
+        });
+
+        const key = buildRasterRequestKey({
+          dataset: config.dataset,
+          backendDatasetId: config.keyDatasetId,
+          date: frameDate,
+          level: config.level ?? undefined,
+          cssColors: config.cssColors,
+          maskZeroValues: config.hideZero,
+          colorbarRange: config.colorbarRange,
+        });
+
+        if (key) {
+          nextMap.set(key, raster);
+        }
+
+        const gridKey = buildRasterGridRequestKey({
+          dataset: config.dataset,
+          backendDatasetId: config.keyDatasetId,
+          date: frameDate,
+          level: config.level ?? undefined,
+          maskZeroValues: config.hideZero,
+          colorbarRange: config.colorbarRange,
+        });
+        if (gridKey) {
+          nextGridMap.set(gridKey, rasterGrid);
+        }
+
+        visualizationPrefetchIndexRef.current = i + 1;
+        setPrefetchedRasters(new Map(nextMap));
+        setPrefetchedRasterGrids(new Map(nextGridMap));
+        setVisualizationProgress((i + 1) / config.frames.length);
+      }
+
+      visualizationPrefetchIndexRef.current = config.frames.length;
+      setVisualizationStatus("ready");
+      setVisualizationProgress(1);
+    } catch (error) {
+      if (
+        error instanceof DOMException &&
+        (error as DOMException).name === "AbortError"
+      ) {
+        if (visualizationPausedRef.current) {
+          return;
+        }
+      } else {
+        setVisualizationError(
+          error instanceof Error
+            ? error.message
+            : "Failed to prepare visualization.",
+        );
+      }
+      setVisualizationStatus("idle");
+    } finally {
+      if (visualizationAbortRef.current === controller) {
+        visualizationAbortRef.current = null;
+      }
+    }
   }, []);
 
   const handleBeginVisualization = useCallback(async () => {
@@ -661,13 +824,6 @@ export default function HomePage() {
       return;
     }
 
-    if (visualizationAbortRef.current) {
-      visualizationAbortRef.current.abort();
-    }
-
-    const controller = new AbortController();
-    visualizationAbortRef.current = controller;
-
     setVisualizationError(null);
     setVisualizationStatus("preparing");
     setVisualizationProgress(0);
@@ -687,116 +843,30 @@ export default function HomePage() {
     const keyDatasetId =
       currentDataset.id ?? currentDataset.slug ?? currentDataset.id;
 
-    try {
-      const nextMap = new Map<string, RasterLayerData>();
-      const nextGridMap = new Map<string, RasterGridData>();
-      const loadedImageUrls = new Set<string>();
-      const preloadTextureImages = async (
-        textures: RasterLayerData["textures"],
-      ) => {
-        if (!Array.isArray(textures) || textures.length === 0) {
-          return;
-        }
-        await Promise.all(
-          textures.map((texture) => {
-            const url =
-              typeof texture?.imageUrl === "string"
-                ? texture.imageUrl.trim()
-                : "";
-            if (!url || loadedImageUrls.has(url)) {
-              return Promise.resolve();
-            }
-            loadedImageUrls.add(url);
-            return new Promise<void>((resolve) => {
-              const image = new Image();
-              image.onload = () => resolve();
-              image.onerror = () => resolve();
-              image.src = url;
-            });
-          }),
-        );
-      };
-      for (let i = 0; i < frames.length; i += 1) {
-        if (controller.signal.aborted) {
-          return;
-        }
-        const frameDate = frames[i];
-        const raster = await fetchRasterVisualization({
-          dataset: currentDataset,
-          backendDatasetId: keyDatasetId,
-          date: frameDate,
-          level: selectedLevelValue ?? undefined,
-          cssColors,
-          maskZeroValues: globeSettings.hideZeroPrecipitation,
-          colorbarRange: colorRangeForRequests,
-          signal: controller.signal,
-        });
-        await preloadTextureImages(raster.textures);
-        const rasterGrid = await fetchRasterGrid({
-          dataset: currentDataset,
-          backendDatasetId: keyDatasetId,
-          date: frameDate,
-          level: selectedLevelValue ?? undefined,
-          maskZeroValues: globeSettings.hideZeroPrecipitation,
-          colorbarRange: colorRangeForRequests,
-          signal: controller.signal,
-        });
-
-        const key = buildRasterRequestKey({
-          dataset: currentDataset,
-          backendDatasetId: keyDatasetId,
-          date: frameDate,
-          level: selectedLevelValue ?? undefined,
-          cssColors,
-          maskZeroValues: globeSettings.hideZeroPrecipitation,
-          colorbarRange: colorRangeForRequests,
-        });
-
-        if (key) {
-          nextMap.set(key, raster);
-        }
-
-        const gridKey = buildRasterGridRequestKey({
-          dataset: currentDataset,
-          backendDatasetId: keyDatasetId,
-          date: frameDate,
-          level: selectedLevelValue ?? undefined,
-          maskZeroValues: globeSettings.hideZeroPrecipitation,
-          colorbarRange: colorRangeForRequests,
-        });
-        if (gridKey) {
-          nextGridMap.set(gridKey, rasterGrid);
-        }
-        setVisualizationProgress((i + 1) / frames.length);
-      }
-      setPrefetchedRasters(nextMap);
-      setPrefetchedRasterGrids(nextGridMap);
-      setVisualizationStatus("ready");
-      setVisualizationProgress(1);
-      setShowVisualizationModal(false);
-    } catch (error) {
-      if (
-        !(
-          error instanceof DOMException &&
-          (error as DOMException).name === "AbortError"
-        )
-      ) {
-        setVisualizationError(
-          error instanceof Error
-            ? error.message
-            : "Failed to prepare visualization.",
-        );
-      }
-      setVisualizationStatus("idle");
-    } finally {
-      visualizationAbortRef.current = null;
+    visualizationPrefetchConfigRef.current = {
+      dataset: currentDataset,
+      frames,
+      cssColors: cssColors ?? [],
+      colorbarRange: colorRangeForRequests,
+      level: selectedLevelValue ?? null,
+      hideZero: globeSettings.hideZeroPrecipitation,
+      keyDatasetId,
+    };
+    visualizationPrefetchIndexRef.current = 0;
+    if (visualizationResumeTimeoutRef.current != null) {
+      window.clearTimeout(visualizationResumeTimeoutRef.current);
+      visualizationResumeTimeoutRef.current = null;
     }
+    visualizationPausedRef.current = false;
+    runVisualizationPrefetch(0);
+    setShowVisualizationModal(false);
   }, [
     colorbarRange,
     currentDataset,
     datasetEndDate,
     datasetStartDate,
     globeSettings.hideZeroPrecipitation,
+    runVisualizationPrefetch,
     selectedLevelValue,
     visualizationEnd,
     visualizationStart,
@@ -869,6 +939,48 @@ export default function HomePage() {
       });
     }
   }, [currentDataset]);
+
+  useEffect(() => {
+    const datasetId = currentDataset?.id;
+    if (!datasetId || !visualizationTarget?.datasetId) {
+      return;
+    }
+    const switchedDatasets = visualizationTarget.datasetId !== datasetId;
+    if (visualizationStatus !== "preparing") {
+      return;
+    }
+
+    if (!switchedDatasets) {
+      if (visualizationPausedRef.current) {
+        visualizationPausedRef.current = false;
+        if (visualizationResumeTimeoutRef.current != null) {
+          window.clearTimeout(visualizationResumeTimeoutRef.current);
+          visualizationResumeTimeoutRef.current = null;
+        }
+        runVisualizationPrefetch(visualizationPrefetchIndexRef.current);
+      }
+      return;
+    }
+
+    visualizationPausedRef.current = true;
+    if (visualizationAbortRef.current) {
+      visualizationAbortRef.current.abort();
+      visualizationAbortRef.current = null;
+    }
+    if (visualizationResumeTimeoutRef.current != null) {
+      window.clearTimeout(visualizationResumeTimeoutRef.current);
+    }
+    visualizationResumeTimeoutRef.current = window.setTimeout(() => {
+      visualizationResumeTimeoutRef.current = null;
+      visualizationPausedRef.current = false;
+      runVisualizationPrefetch(visualizationPrefetchIndexRef.current);
+    }, 1500);
+  }, [
+    currentDataset?.id,
+    runVisualizationPrefetch,
+    visualizationStatus,
+    visualizationTarget?.datasetId,
+  ]);
 
   // Event Handlers
   const handleDateChange = useCallback(
@@ -961,6 +1073,27 @@ export default function HomePage() {
   const handleRasterGridSizeChange = useCallback((value: number) => {
     setGlobeSettings((prev) => ({ ...prev, rasterGridSize: value }));
   }, []);
+
+  const rasterGridSizeMax = useMemo(() => {
+    const resolution = currentDataset?.spatialResolution ?? "";
+    const matches = String(resolution).match(/[\d.]+/g) ?? [];
+    const values = matches
+      .map((val) => Number.parseFloat(val))
+      .filter((val) => Number.isFinite(val));
+    const reference = values.length ? Math.max(...values) : 5;
+    if (reference >= 5) return 4;
+    if (reference < 1.5) return 6;
+    return 5;
+  }, [currentDataset?.spatialResolution]);
+
+  useEffect(() => {
+    setGlobeSettings((prev) => {
+      if (prev.rasterGridSize <= rasterGridSizeMax) {
+        return prev;
+      }
+      return { ...prev, rasterGridSize: rasterGridSizeMax };
+    });
+  }, [rasterGridSizeMax]);
 
   const handleRasterOpacityChange = useCallback((opacity: number) => {
     setGlobeSettings((prev) => ({ ...prev, rasterOpacity: opacity }));
@@ -1222,6 +1355,7 @@ export default function HomePage() {
             onHideZeroPrecipToggle={handleHideZeroPrecipToggle}
             onRasterBlurToggle={handleRasterBlurToggle}
             onRasterGridSizeChange={handleRasterGridSizeChange}
+            rasterGridSizeMax={rasterGridSizeMax}
             onColorbarRangeChange={handleColorbarRangeChange}
             onColorbarRangeReset={handleColorbarRangeReset}
             viewMode={globeSettings.viewMode ?? "3d"}

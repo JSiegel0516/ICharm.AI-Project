@@ -26,6 +26,7 @@ interface GlobeSettingsPanelProps {
   rasterBlurEnabled: boolean;
   onRasterBlurToggle: (enabled: boolean) => void;
   rasterGridSize: number;
+  rasterGridSizeMax: number;
   onRasterGridSizeChange: (value: number) => void;
   colorbarCustomMin?: number | null;
   colorbarCustomMax?: number | null;
@@ -55,6 +56,7 @@ export function GlobeSettingsPanel({
   rasterBlurEnabled,
   onRasterBlurToggle,
   rasterGridSize,
+  rasterGridSizeMax,
   onRasterGridSizeChange,
   colorbarCustomMin,
   colorbarCustomMax,
@@ -241,7 +243,7 @@ export function GlobeSettingsPanel({
                   <Slider
                     id="raster-grid-size"
                     min={1}
-                    max={8}
+                    max={rasterGridSizeMax}
                     step={1}
                     value={[rasterGridSize]}
                     onValueChange={([value]) => onRasterGridSizeChange(value)}
