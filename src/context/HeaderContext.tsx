@@ -151,6 +151,7 @@ const useAppStateInternal = () => {
       rasterOpacity: 0.9,
       hideZeroPrecipitation: false,
       rasterBlurEnabled: false,
+      rasterGridSize: 1,
     },
     selectedColorMap: "dataset-default",
     selectedColorMapInverse: DEFAULT_COLOR_MAP_INVERSE,

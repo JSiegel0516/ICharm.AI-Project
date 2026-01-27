@@ -407,6 +407,7 @@ export default function HomePage() {
     rasterOpacity: 0.9,
     hideZeroPrecipitation: false,
     rasterBlurEnabled: false,
+    rasterGridSize: 1,
     colorbarCustomMin: null,
     colorbarCustomMax: null,
     viewMode: "3d",
@@ -958,6 +959,10 @@ export default function HomePage() {
     setGlobeSettings((prev) => ({ ...prev, rasterBlurEnabled: enabled }));
   }, []);
 
+  const handleRasterGridSizeChange = useCallback((value: number) => {
+    setGlobeSettings((prev) => ({ ...prev, rasterGridSize: value }));
+  }, []);
+
   const handleRasterOpacityChange = useCallback((opacity: number) => {
     setGlobeSettings((prev) => ({ ...prev, rasterOpacity: opacity }));
   }, []);
@@ -1190,6 +1195,7 @@ export default function HomePage() {
         geographicLinesVisible={globeSettings.geographicLinesVisible}
         rasterOpacity={globeSettings.rasterOpacity}
         rasterBlurEnabled={globeSettings.rasterBlurEnabled}
+        rasterGridSize={globeSettings.rasterGridSize}
         useMeshRaster={useMeshRaster}
         viewMode={globeSettings.viewMode ?? "3d"}
         onRasterMetadataChange={setRasterMeta}
@@ -1216,6 +1222,7 @@ export default function HomePage() {
             onRasterOpacityChange={handleRasterOpacityChange}
             onHideZeroPrecipToggle={handleHideZeroPrecipToggle}
             onRasterBlurToggle={handleRasterBlurToggle}
+            onRasterGridSizeChange={handleRasterGridSizeChange}
             onColorbarRangeChange={handleColorbarRangeChange}
             onColorbarRangeReset={handleColorbarRangeReset}
             viewMode={globeSettings.viewMode ?? "3d"}

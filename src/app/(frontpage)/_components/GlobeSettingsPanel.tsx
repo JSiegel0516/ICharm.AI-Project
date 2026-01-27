@@ -25,6 +25,8 @@ interface GlobeSettingsPanelProps {
   onHideZeroPrecipitationToggle: (enabled: boolean) => void;
   rasterBlurEnabled: boolean;
   onRasterBlurToggle: (enabled: boolean) => void;
+  rasterGridSize: number;
+  onRasterGridSizeChange: (value: number) => void;
   colorbarCustomMin?: number | null;
   colorbarCustomMax?: number | null;
   onColorbarRangeChange: (payload: {
@@ -52,6 +54,8 @@ export function GlobeSettingsPanel({
   onHideZeroPrecipitationToggle,
   rasterBlurEnabled,
   onRasterBlurToggle,
+  rasterGridSize,
+  onRasterGridSizeChange,
   colorbarCustomMin,
   colorbarCustomMax,
   onColorbarRangeChange,
@@ -217,6 +221,36 @@ export function GlobeSettingsPanel({
                     onCheckedChange={onRasterBlurToggle}
                     className="data-[state=checked]:bg-rose-500"
                   />
+                </div>
+
+                <div className="space-y-2 rounded-lg border border-neutral-600 bg-neutral-700/50 p-3">
+                  <div className="flex items-center justify-between">
+                    <Label
+                      htmlFor="raster-grid-size"
+                      className="text-sm font-semibold text-white"
+                    >
+                      Mesh Grid Size
+                    </Label>
+                    <span className="text-sm font-medium text-slate-400">
+                      {rasterGridSize}x
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Increase to make mesh grid squares more defined
+                  </p>
+                  <Slider
+                    id="raster-grid-size"
+                    min={1}
+                    max={8}
+                    step={1}
+                    value={[rasterGridSize]}
+                    onValueChange={([value]) => onRasterGridSizeChange(value)}
+                    className="mt-2 w-full"
+                  />
+                  <div className="mt-2 flex justify-between text-xs text-slate-500">
+                    <span>Fine</span>
+                    <span>Coarse</span>
+                  </div>
                 </div>
               </div>
 

@@ -32,6 +32,7 @@ type RasterMeshOptions = {
   wrapSeam?: boolean;
   opacity?: number;
   smoothValues?: boolean;
+  sampleStep?: number;
   useTiling?: boolean;
 };
 
@@ -187,6 +188,56 @@ const smoothRasterValues = (
   return output;
 };
 
+const applyBlockAverage = (
+  values: Float32Array | Float64Array,
+  rows: number,
+  cols: number,
+  mask: Uint8Array | undefined,
+  step: number,
+) => {
+  if (step <= 1) {
+    return { values, mask };
+  }
+
+  const averaged = createValueArray(values, values.length);
+  const averagedMask = mask ? new Uint8Array(values.length) : undefined;
+
+  for (let rowStart = 0; rowStart < rows; rowStart += step) {
+    const rowEnd = Math.min(rowStart + step, rows);
+    for (let colStart = 0; colStart < cols; colStart += step) {
+      const colEnd = Math.min(colStart + step, cols);
+      let sum = 0;
+      let count = 0;
+
+      for (let r = rowStart; r < rowEnd; r += 1) {
+        for (let c = colStart; c < colEnd; c += 1) {
+          const idx = r * cols + c;
+          if (mask && mask[idx] === 0) continue;
+          const value = values[idx];
+          if (!Number.isFinite(value)) continue;
+          sum += value;
+          count += 1;
+        }
+      }
+
+      const avg = count > 0 ? sum / count : 0;
+      const maskValue = count > 0 ? 1 : 0;
+
+      for (let r = rowStart; r < rowEnd; r += 1) {
+        for (let c = colStart; c < colEnd; c += 1) {
+          const idx = r * cols + c;
+          averaged[idx] = avg;
+          if (averagedMask) {
+            averagedMask[idx] = maskValue;
+          }
+        }
+      }
+    }
+  }
+
+  return { values: averaged, mask: averagedMask };
+};
+
 const prepareRasterMesh = (options: RasterMeshOptions) => {
   const {
     lat,
@@ -195,6 +246,7 @@ const prepareRasterMesh = (options: RasterMeshOptions) => {
     mask,
     wrapSeam = true,
     smoothValues = false,
+    sampleStep = 1,
   } = options;
 
   const normalized = ensureAscendingGrid(lat, lon, values, mask);
@@ -207,18 +259,26 @@ const prepareRasterMesh = (options: RasterMeshOptions) => {
       )
     : normalized.values;
 
+  const averaged = applyBlockAverage(
+    smoothedValues,
+    normalized.lat.length,
+    normalized.lon.length,
+    normalized.mask,
+    Math.max(1, Math.round(sampleStep)),
+  );
+
   return wrapSeam && shouldWrapSeam(normalized.lon)
     ? expandForSeam(
         normalized.lat,
         normalized.lon,
-        smoothedValues,
-        normalized.mask,
+        averaged.values,
+        averaged.mask,
       )
     : {
         lat: normalized.lat,
         lon: normalized.lon,
-        values: smoothedValues,
-        mask: normalized.mask,
+        values: averaged.values,
+        mask: averaged.mask,
         rows: normalized.lat.length,
         cols: normalized.lon.length,
       };

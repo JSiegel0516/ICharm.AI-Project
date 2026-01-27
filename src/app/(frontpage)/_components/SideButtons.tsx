@@ -42,6 +42,7 @@ interface SideButtonsProps {
   onRasterOpacityChange: (opacity: number) => void;
   onHideZeroPrecipToggle: (enabled: boolean) => void;
   onRasterBlurToggle: (enabled: boolean) => void;
+  onRasterGridSizeChange: (value: number) => void;
   onColorbarRangeChange: (payload: {
     min: number | null;
     max: number | null;
@@ -77,6 +78,7 @@ export function SideButtons({
   onRasterOpacityChange,
   onHideZeroPrecipToggle,
   onRasterBlurToggle,
+  onRasterGridSizeChange,
   onColorbarRangeChange,
   onColorbarRangeReset,
   viewMode,
@@ -691,6 +693,8 @@ export function SideButtons({
         onHideZeroPrecipitationToggle={onHideZeroPrecipToggle}
         rasterBlurEnabled={globeSettings.rasterBlurEnabled}
         onRasterBlurToggle={onRasterBlurToggle}
+        rasterGridSize={globeSettings.rasterGridSize}
+        onRasterGridSizeChange={onRasterGridSizeChange}
         colorbarCustomMin={globeSettings.colorbarCustomMin}
         colorbarCustomMax={globeSettings.colorbarCustomMax}
         onColorbarRangeChange={onColorbarRangeChange}

@@ -268,7 +268,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       boundaryLinesVisible = true,
       geographicLinesVisible = false,
       rasterOpacity = 1.0,
-      rasterBlurEnabled = true,
+      rasterBlurEnabled = false,
+      rasterGridSize = 1,
       hideZeroPrecipitation = false,
       useMeshRaster = false,
       onRasterMetadataChange,
@@ -328,6 +329,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       datasetName.includes("noaa/cires/doe") ||
       (currentDataset?.id ?? "").toLowerCase().includes("noaa-cires-doe");
     const rasterLayerDataset = currentDataset;
+    const meshSamplingStep = Math.max(1, Math.round(rasterGridSize));
     const rasterState = useRasterLayer({
       dataset: rasterLayerDataset,
       date: selectedDate,
@@ -1935,13 +1937,18 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         colors: currentDataset.colorScale.colors,
         opacity: effectiveOpacity,
         smoothValues: rasterBlurEnabled,
+        sampleStep: meshSamplingStep,
         useTiling: shouldTileLargeMesh,
       });
-      applyRasterMesh(mesh, rasterGridState.requestKey);
+      const meshKey = rasterGridState.requestKey
+        ? `${rasterGridState.requestKey}|blur:${rasterBlurEnabled ? 1 : 0}|grid:${meshSamplingStep}`
+        : undefined;
+      applyRasterMesh(mesh, meshKey);
     }, [
       applyRasterMesh,
       clearRasterMesh,
       currentDataset?.colorScale?.colors,
+      meshSamplingStep,
       rasterGridState.data,
       rasterGridState.dataKey,
       rasterGridState.requestKey,
@@ -1973,10 +1980,11 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         const [key, grid] = entries[index];
         index += 1;
 
+        const meshKey = `${key}|blur:${rasterBlurEnabled ? 1 : 0}|grid:${meshSamplingStep}`;
         if (
           !grid ||
           !currentDataset?.colorScale?.colors?.length ||
-          meshPrimitiveCacheRef.current.has(key)
+          meshPrimitiveCacheRef.current.has(meshKey)
         ) {
           setTimeout(preloadNext, 0);
           return;
@@ -1994,11 +2002,12 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           colors: currentDataset.colorScale.colors,
           opacity: rasterOpacity,
           smoothValues: rasterBlurEnabled,
+          sampleStep: meshSamplingStep,
           useTiling: shouldTileLargeMesh,
         });
         const created = createMeshPrimitives(mesh);
         if (created) {
-          meshPrimitiveCacheRef.current.set(key, created);
+          meshPrimitiveCacheRef.current.set(meshKey, created);
         }
         setTimeout(preloadNext, 0);
       };
@@ -2011,6 +2020,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     }, [
       createMeshPrimitives,
       currentDataset?.colorScale?.colors,
+      meshSamplingStep,
       prefetchedRasterGrids,
       rasterBlurEnabled,
       rasterOpacity,
