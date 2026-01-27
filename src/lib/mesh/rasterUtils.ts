@@ -52,7 +52,9 @@ export const decodeUint8 = (base64: string | undefined): Uint8Array => {
 // ============================================================================
 
 export const formatDateForApi = (date?: Date): string | null => {
-  if (!date) return null;
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
+    return null;
+  }
   return date.toISOString().split("T")[0];
 };
 

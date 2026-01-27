@@ -205,7 +205,7 @@ export function GlobeSettingsPanel({
                       htmlFor="raster-blur-toggle"
                       className="cursor-pointer text-sm font-medium text-white"
                     >
-                      Raster Blur
+                      Smooth/Grid
                     </Label>
                     <p className="text-xs text-slate-400">
                       Smooth or sharpen raster tile edges

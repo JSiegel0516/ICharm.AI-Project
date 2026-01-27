@@ -28,7 +28,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { GlobeSettingsPanel } from "@/app/(frontpage)/_components/GlobeSettingsPanel";
 import { useAppState } from "@/context/HeaderContext";
 import type { Dataset, GlobeSettings } from "@/types";
-import { Database, Cloud, Globe } from "lucide-react";
+import { Database, Cloud, Server, Globe } from "lucide-react";
 
 interface SideButtonsProps {
   selectedDate: Date;
@@ -96,7 +96,7 @@ export function SideButtons({
   );
   const [calendarMonth, setCalendarMonth] = useState(selectedDate);
   const [dataSourceFilter, setDataSourceFilter] = useState<
-    "all" | "local" | "cloud"
+    "all" | "local" | "cloud" | "postgres"
   >("all");
 
   // Refs for click-outside detection
@@ -361,7 +361,7 @@ export function SideButtons({
       {
         id: "dataset",
         icon: <FileTextIcon size={18} />,
-        label: "Select Dataset",
+        label: "Select Datasets",
         onClick: handleFileTextClick,
         delay: 0,
         disabled: false,
@@ -512,7 +512,7 @@ export function SideButtons({
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center justify-between text-lg">
-                  <span>Select Dataset</span>
+                  <span>Select Datasets</span>
                   <Badge variant="secondary">
                     {selectedDatasets.size} selected
                   </Badge>
@@ -543,6 +543,7 @@ export function SideButtons({
                     <Database className="mr-1.5 h-3.5 w-3.5" />
                     Local
                   </Button>
+
                   <Button
                     variant={
                       dataSourceFilter === "cloud" ? "default" : "outline"
@@ -576,6 +577,9 @@ export function SideButtons({
                 )}
 
                 {filteredDatasets.map((dataset: Dataset) => {
+                  console.log(
+                    `Frontend dataset ${dataset.name}: stored = "${dataset.stored}"`,
+                  );
                   const isSelected = selectedDatasets.has(dataset.id);
                   const category = dataset.dataType ?? dataset.dataType;
                   const resolution = dataset.spatialResolution ?? "";
@@ -615,10 +619,16 @@ export function SideButtons({
                               >
                                 {dataset.stored === "local" ? (
                                   <Database className="text-chart-2 h-3 w-3" />
-                                ) : (
+                                ) : dataset.stored === "cloud" ? (
                                   <Cloud className="text-chart-1 h-3 w-3" />
+                                ) : dataset.stored === "postgres" ? (
+                                  <Server className="text-chart-3 h-3 w-3" />
+                                ) : (
+                                  <Globe className="text-chart-3 h-3 w-3" />
                                 )}
-                                {dataset.stored}
+                                {dataset.stored === "postgres"
+                                  ? "PostgreSQL"
+                                  : dataset.stored}
                               </Badge>
                               <span className="text-xs text-slate-500">
                                 Updated: {lastUpdated}
