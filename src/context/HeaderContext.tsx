@@ -9,25 +9,25 @@ import React, {
 } from "react";
 import type {
   Dataset,
+  ClimateDatasetRecord,
   AppState,
   TemperatureUnit,
   RegionData,
   ColorBarOrientation,
   ColorScale,
 } from "@/types";
-import { mockDatasets } from "@/utils/constants";
 import { getColorMapColors } from "@/utils/colorMaps";
 import {
   AIR_TEMPERATURE_BASE,
   SHARP_BANDS,
   resolveColorMapColors,
 } from "@/utils/colorScales";
+import { transformBackendDataset } from "@/lib/datasets";
 
 const reducePalette = (colors: string[], count: number): string[] => {
   if (!colors.length) return [];
   if (count <= 1) return [colors[0]];
 
-  // Resample to a fixed band count for consistent sharp gradients.
   const result: string[] = [];
   const step = (colors.length - 1) / (count - 1);
 
@@ -107,30 +107,6 @@ const applyColorMapToDataset = (
   };
 };
 
-type DatabaseDataset = {
-  id: string;
-  sourceName: string;
-  datasetName: string;
-  layerParameter: string;
-  statistic: string;
-  datasetType: string;
-  levels: string;
-  levelValues: string | null;
-  levelUnits: string | null;
-  stored: string;
-  inputFile: string;
-  keyVariable: string;
-  units: string;
-  spatialResolution: string;
-  engine: string;
-  kerchunkPath: string | null;
-  origLocation: string;
-  startDate: string;
-  endDate: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
 type AppStateContextType = ReturnType<typeof useAppStateInternal>;
 
 const AppStateContext = createContext<AppStateContextType | undefined>(
@@ -141,237 +117,6 @@ const COLOR_BAR_ORIENTATION_STORAGE_KEY = "icharm_colorBarOrientation";
 const DEFAULT_COLOR_MAP_PRESET = "dataset-default";
 const DEFAULT_COLOR_MAP_INVERSE = false;
 
-// Certain datasets report "present" in metadata even though archives stop earlier.
-const DATASET_END_OVERRIDES: Record<string, string> = {
-  "Sea Surface Temperature – Optimum Interpolation CDR": "2015-12-31",
-};
-
-// Parse date strings from database (handles formats like "1854/1/1" or "9/1/2025" or "present")
-function parseDate(dateStr: string): Date {
-  if (!dateStr || dateStr === "present" || dateStr.includes("present")) {
-    return new Date();
-  }
-
-  const parts = dateStr.split("/");
-  if (parts.length === 3) {
-    const [first, second, third] = parts.map((p) => parseInt(p));
-
-    // Determine if it's YYYY/M/D or M/D/YYYY
-    if (first > 1000) {
-      // YYYY/M/D format
-      return new Date(first, second - 1, third);
-    } else {
-      // M/D/YYYY format
-      return new Date(third, first - 1, second);
-    }
-  }
-
-  // Fallback to standard Date parsing
-  return new Date(dateStr);
-}
-
-// Transform database dataset to app Dataset type
-function transformDataset(db: DatabaseDataset): Dataset {
-  console.log("Transforming dataset:", db.datasetName, "stored:", db.stored);
-
-  return {
-    id: db.id,
-    name: db.datasetName,
-    description: `${db.layerParameter} - ${db.statistic}`,
-    dataType: db.datasetType,
-    units: db.units,
-    // Add default colorScale based on parameter type
-    colorScale: generateColorScale(db.datasetName, db.layerParameter, db.units),
-    // Store full backend data for reference
-    backend: {
-      ...db,
-      id: db.id,
-      sourceName: db.sourceName,
-      datasetName: db.datasetName,
-      layerParameter: db.layerParameter,
-      statistic: db.statistic,
-      datasetType: db.datasetType,
-      levels: db.levels,
-      levelValues: db.levelValues,
-      levelUnits: db.levelUnits,
-      stored: db.stored, // <-- Make sure this is explicitly here
-      inputFile: db.inputFile,
-      keyVariable: db.keyVariable,
-      units: db.units,
-      spatialResolution: db.spatialResolution,
-      engine: db.engine,
-      kerchunkPath: db.kerchunkPath,
-      origLocation: db.origLocation,
-      startDate: db.startDate,
-      endDate: DATASET_END_OVERRIDES[db.datasetName] ?? db.endDate,
-      createdAt: db.createdAt,
-      updatedAt: db.updatedAt,
-    },
-    // Parse dates for easy use
-    startDate: parseDate(db.startDate),
-    endDate: parseDate(DATASET_END_OVERRIDES[db.datasetName] ?? db.endDate),
-  };
-}
-
-// Generate appropriate color scale based on dataset name and parameter type
-function generateColorScale(
-  datasetName: string,
-  parameter: string,
-  units: string,
-) {
-  const name = datasetName.toLowerCase();
-  const param = parameter.toLowerCase();
-  const unitsLower = (units || "").toLowerCase();
-
-  const buildScale = (
-    colors: string[],
-    labels: string[],
-    min: number,
-    max: number,
-  ) => ({
-    labels,
-    colors: reducePalette(colors, SHARP_BANDS),
-    min,
-    max,
-  });
-
-  const SST_COLORS = getColorMapColors("Matlab|Jet");
-  const AIR_COLORS = AIR_TEMPERATURE_BASE;
-  const PRECIP_COLORS = getColorMapColors(
-    "Color Brewer 2.0|Sequential|Multi-hue|9-class YlGnBu",
-  );
-  const WIND_COLORS = getColorMapColors(
-    "Color Brewer 2.0|Sequential|Single-hue|9-class Greys",
-  );
-  const PRESSURE_COLORS = getColorMapColors("Matlab|Bone");
-  const DIVERGING_RD_BU_COLORS = getColorMapColors(
-    "Color Brewer 2.0|Diverging|Zero Centered|11-class RdBu",
-  );
-  const DEFAULT_COLORS = getColorMapColors("Other|Gray scale");
-
-  // Check for Sea Surface Temperature first (more specific)
-  if (
-    name.includes("sst") ||
-    name.includes("sea surface temperature") ||
-    name.includes("amsre") ||
-    name.includes("modis") ||
-    param.includes("sea surface")
-  ) {
-    return buildScale(
-      SST_COLORS,
-      ["-2°C", "5°C", "12°C", "18°C", "25°C", "32°C"],
-      -2,
-      35,
-    );
-  }
-
-  // Air Temperature scales
-  if (
-    name.includes("noaaglobaltemp") ||
-    name.includes("noaa global surface temperature") ||
-    name.includes("noaa global temp") ||
-    name.includes("noaa global temperature")
-  ) {
-    // Match NOAA/CIRES/DOE colorbar styling.
-    return buildScale(
-      AIR_COLORS,
-      ["-40°C", "-20°C", "0°C", "20°C", "40°C"],
-      -40,
-      40,
-    );
-  }
-
-  if (
-    name.includes("air") ||
-    name.includes("airtemp") ||
-    param.includes("air temperature") ||
-    param.includes("temperature") ||
-    unitsLower.includes("degc") ||
-    unitsLower.includes("kelvin")
-  ) {
-    return buildScale(
-      AIR_COLORS,
-      ["-40°C", "-20°C", "0°C", "20°C", "40°C"],
-      -40,
-      40,
-    );
-  }
-
-  // GODAS vertical velocity and similar ocean reanalysis fields:
-  if (
-    name.includes("godas") ||
-    name.includes("global ocean data assimilation system") ||
-    name.includes("ncep global ocean data assimilation") ||
-    param.includes("dzdt")
-  ) {
-    // Purple → teal diverging palette matching requested bar
-    const GODAS_COLORS = [
-      "#6b00b5",
-      "#8a4bcc",
-      "#a777dd",
-      "#c8b6ea",
-      "#e7e7ee",
-      "#b8e2e6",
-      "#7dc9cc",
-      "#3ea3a8",
-      "#137b80",
-    ];
-    return buildScale(
-      GODAS_COLORS,
-      ["-0.000005", "0", "0.000005"],
-      -0.000005,
-      0.000005,
-    );
-  }
-
-  // Precipitation scales
-  if (
-    name.includes("precip") ||
-    name.includes("precipitation") ||
-    name.includes("rain") ||
-    param.includes("precipitation") ||
-    unitsLower.includes("mm")
-  ) {
-    return buildScale(
-      PRECIP_COLORS,
-      ["0", "100", "200", "300", "400", "500"],
-      0,
-      500,
-    );
-  }
-
-  // Wind/velocity scales
-  if (
-    param.includes("velocity") ||
-    param.includes("wind") ||
-    unitsLower.includes("m/s")
-  ) {
-    return buildScale(
-      WIND_COLORS,
-      ["0 m/s", "5 m/s", "10 m/s", "15 m/s", "20 m/s", "25 m/s"],
-      0,
-      25,
-    );
-  }
-
-  if (param.includes("pressure")) {
-    return buildScale(
-      PRESSURE_COLORS,
-      ["900", "940", "980", "1020", "1050"],
-      900,
-      1050,
-    );
-  }
-
-  // Default scale
-  return buildScale(
-    DEFAULT_COLORS,
-    ["Low", "Medium-Low", "Medium", "Medium-High", "High"],
-    0,
-    100,
-  );
-}
-
 const useAppStateInternal = () => {
   const [state, setState] = useState<AppState>({
     showSettings: false,
@@ -380,30 +125,23 @@ const useAppStateInternal = () => {
     showChat: false,
     showColorbar: true,
     showRegionInfo: false,
-    datasets: mockDatasets, // Start with mock, will be replaced by DB data
-    currentDataset: mockDatasets[0],
+    datasets: [], // Start with empty array
+    currentDataset: null, // Start with null
     regionInfoData: {
-      latitude: 21.25,
-      longitude: -71.25,
+      latitude: 0,
+      longitude: 0,
       regionData: {
-        name: "GPCP V2.3 Precipitation",
-        precipitation: 0.9,
-        temperature: 24.5,
-        dataset: "Global Precipitation Climatology Project",
+        name: "",
+        dataset: "",
       },
     },
-    currentLocationMarker: {
-      latitude: 21.25,
-      longitude: -71.25,
-      name: "GPCP V2.3 Precipitation",
-      source: "region",
-    },
+    currentLocationMarker: null,
     globePosition: {
       latitude: 0,
       longitude: 0,
       zoom: 1,
     },
-    isLoading: true, // Start as loading
+    isLoading: true,
     error: null,
     colorBarOrientation: "horizontal",
     globeSettings: {
@@ -416,17 +154,7 @@ const useAppStateInternal = () => {
     },
     selectedColorMap: "dataset-default",
     selectedColorMapInverse: DEFAULT_COLOR_MAP_INVERSE,
-    colorScaleBaselines: mockDatasets.reduce<Record<string, ColorScale>>(
-      (acc, dataset) => {
-        acc[dataset.id] = {
-          ...dataset.colorScale,
-          colors: [...dataset.colorScale.colors],
-          labels: [...dataset.colorScale.labels],
-        };
-        return acc;
-      },
-      {},
-    ),
+    colorScaleBaselines: {},
   });
 
   const [selectedYear, setSelectedYear] = useState<number>(
@@ -441,13 +169,11 @@ const useAppStateInternal = () => {
     longitude: number;
     regionData: RegionData;
   }>({
-    latitude: 21.25,
-    longitude: -71.25,
+    latitude: 0,
+    longitude: 0,
     regionData: {
-      name: "GPCP V2.3 Precipitation",
-      precipitation: 0.9,
-      temperature: 24.5,
-      dataset: "Global Precipitation Climatology Project",
+      name: "",
+      dataset: "",
     },
   });
 
@@ -492,9 +218,7 @@ const useAppStateInternal = () => {
       return {
         ...prev,
         datasets: prev.datasets.map(apply),
-        currentDataset: prev.currentDataset
-          ? apply(prev.currentDataset)
-          : prev.currentDataset,
+        currentDataset: prev.currentDataset ? apply(prev.currentDataset) : null,
       };
     });
   }, [state.selectedColorMap, state.selectedColorMapInverse]);
@@ -625,13 +349,14 @@ const useAppStateInternal = () => {
         }
 
         const payload = await response.json();
+        const rawDatasets = payload.datasets || [];
 
-        console.log("Raw API response:", payload.datasets?.[0]);
+        console.log("Raw API response:", rawDatasets?.[0]);
 
         // Transform database datasets to app format
-        const datasets: Dataset[] = Array.isArray(payload.datasets)
-          ? payload.datasets.map(transformDataset)
-          : [];
+        const datasets: Dataset[] = rawDatasets.map(
+          (record: ClimateDatasetRecord) => transformBackendDataset(record),
+        );
 
         if (signal?.aborted) {
           return false;
@@ -643,28 +368,14 @@ const useAppStateInternal = () => {
 
         setState((prev) => {
           if (!datasets.length) {
-            console.warn("No datasets returned from database, using mock data");
-            const baselines = { ...(prev.colorScaleBaselines ?? {}) };
-            mockDatasets.forEach((ds) => {
-              if (!baselines[ds.id]) {
-                baselines[ds.id] = {
-                  ...ds.colorScale,
-                  colors: [...ds.colorScale.colors],
-                  labels: [...ds.colorScale.labels],
-                };
-              }
-            });
-
-            const apply = (dataset: Dataset) =>
-              applyColorMapToDataset(dataset, preset, baselines, invert);
-
+            // No mock data fallback - just show empty state
             return {
               ...prev,
-              datasets: mockDatasets.map(apply),
-              currentDataset: apply(mockDatasets[0]),
-              colorScaleBaselines: baselines,
+              datasets: [],
+              currentDataset: null,
+              colorScaleBaselines: {},
               isLoading: false,
-              error: "No datasets found in database",
+              error: "No datasets available",
             };
           }
 
@@ -704,41 +415,21 @@ const useAppStateInternal = () => {
 
         console.error("Failed to fetch datasets from database:", error);
 
-        // Fallback to mock data on error
-        const preset = state.selectedColorMap ?? DEFAULT_COLOR_MAP_PRESET;
-        const invert =
-          state.selectedColorMapInverse ?? DEFAULT_COLOR_MAP_INVERSE;
-        setState((prev) => {
-          const baselines = { ...(prev.colorScaleBaselines ?? {}) };
-          mockDatasets.forEach((ds) => {
-            if (!baselines[ds.id]) {
-              baselines[ds.id] = {
-                ...ds.colorScale,
-                colors: [...ds.colorScale.colors],
-                labels: [...ds.colorScale.labels],
-              };
-            }
-          });
-          const apply = (dataset: Dataset) =>
-            applyColorMapToDataset(dataset, preset, baselines, invert);
-
-          return {
-            ...prev,
-            datasets: mockDatasets.map(apply),
-            currentDataset: apply(mockDatasets[0]),
-            colorScaleBaselines: baselines,
-            isLoading: false,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Failed to load datasets",
-          };
-        });
+        // No mock data fallback - just show error state
+        setState((prev) => ({
+          ...prev,
+          datasets: [],
+          currentDataset: null,
+          colorScaleBaselines: {},
+          isLoading: false,
+          error:
+            error instanceof Error ? error.message : "Failed to load datasets",
+        }));
 
         return false;
       }
     },
-    [state.selectedColorMap],
+    [state.selectedColorMap, state.selectedColorMapInverse],
   );
 
   const refreshDatasets = useCallback(() => {

@@ -175,7 +175,7 @@ class WeatherService {
       id: dataset.id,
       name: dataset.name,
       description: dataset.description,
-      unit: dataset.unit,
+      unit: dataset?.unit,
       values,
       bounds: { min, max },
       timestamp: new Date(),

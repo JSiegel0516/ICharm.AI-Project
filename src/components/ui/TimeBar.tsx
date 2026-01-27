@@ -92,8 +92,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
   const formatDate = useCallback(
     (date: Date) => {
       const name = currentDataset?.name?.toLowerCase() ?? "";
-      const backendName =
-        currentDataset?.backend?.datasetName?.toLowerCase() ?? "";
+      const backendName = currentDataset?.name?.toLowerCase() ?? "";
       const isDaily =
         name.includes("cmorph") ||
         backendName.includes("cmorph") ||

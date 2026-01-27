@@ -1,7 +1,6 @@
 /**
  * Spectral Analysis Utilities
  * Based on R code for periodogram and spectrogram generation
- * Enhanced with climate data frequency scale conversions
  */
 
 import FFT from "fft.js";
@@ -17,30 +16,14 @@ export interface SpectrogramData {
   power: number[][]; // 2D array: [time][frequency] in dB
 }
 
-export type FrequencyScale =
-  | "k"
-  | "cycles-per-year"
-  | "cycles-per-month"
-  | "period-months";
-
 /**
  * Compute periodogram from climate time series data
  * Returns power spectrum preserving variance interpretation
  */
 export function computePeriodogram(
   data: number[],
-  samplingInfo: { samplingRate: number; isDaily: boolean; isMonthly: boolean },
-): {
-  k: number[];
-  frequencies: number[];
-  power: number[];
-  samplingInfo: {
-    samplingRate: number;
-    totalPoints: number;
-    isDaily: boolean;
-    isMonthly: boolean;
-  };
-} {
+  samplingRate: number = 1.0, // For daily data: 1.0, for monthly: 12.0
+): PeriodogramData {
   const N = data.length;
 
   // 1. DETREND (not just remove mean) - Important for climate!
@@ -63,7 +46,6 @@ export function computePeriodogram(
 
   const power: number[] = [];
   const frequencies: number[] = [];
-  const k: number[] = [];
   const halfN = Math.floor(n / 2);
 
   // 5. Compute Power Spectral Density
@@ -81,25 +63,12 @@ export function computePeriodogram(
 
     power.push(psd); // Keep in linear scale (variance units)
 
-    // Frequency index
-    k.push(i);
-
-    // Frequency in cycles per day (base unit)
-    const freq = (i * samplingInfo.samplingRate) / n;
+    // Frequency in cycles per unit time
+    const freq = (i * samplingRate) / n;
     frequencies.push(freq);
   }
 
-  return {
-    k,
-    frequencies,
-    power,
-    samplingInfo: {
-      samplingRate: samplingInfo.samplingRate,
-      totalPoints: N,
-      isDaily: samplingInfo.isDaily,
-      isMonthly: samplingInfo.isMonthly,
-    },
-  };
+  return { frequencies, power };
 }
 
 /**
@@ -167,7 +136,7 @@ export function computeSpectrogram(
 
   // Frequencies (only up to Nyquist)
   const frequencies: number[] = [];
-  const numFreqs = Math.floor(nfft / 2) + 1; // Include Nyquist
+  const numFreqs = Math.floor(nfft / 2);
   for (let i = 0; i < numFreqs; i++) {
     frequencies.push((i * samplingRate) / nfft);
   }
@@ -195,16 +164,15 @@ export function computeSpectrogram(
       const magnitudeSq = real * real + imag * imag;
 
       // 5. Compute Power Spectral Density (PSD)
-      // Parseval's theorem: sum of |X[k]|^2 = sum of |x[n]|^2
-      // For one-sided spectrum: multiply by 2 (except DC and Nyquist)
-      // Normalize by: N (FFT length) and window energy
+      // One-sided spectrum (only positive frequencies)
+      // Factor of 2 for all frequencies except DC (i=0) and Nyquist
       let powerValue: number;
       if (i === 0 || i === numFreqs - 1) {
         // DC and Nyquist: no factor of 2
-        powerValue = magnitudeSq / (windowSumSq * nfft);
+        powerValue = magnitudeSq / (windowSumSq * samplingRate);
       } else {
         // All other frequencies: factor of 2 for one-sided spectrum
-        powerValue = (2 * magnitudeSq) / (windowSumSq * nfft);
+        powerValue = (2 * magnitudeSq) / (windowSumSq * samplingRate);
       }
 
       windowPower.push(powerValue);
@@ -222,17 +190,12 @@ export function computeSpectrogram(
 
 /**
  * Estimate sampling rate from time series data with date strings
- * Returns sampling info including data type detection
+ * Assumes dates are in chronological order
  */
-export function estimateSamplingRate(dates: string[]): {
-  samplingRate: number;
-  isDaily: boolean;
-  isMonthly: boolean;
-} {
-  if (dates.length < 2)
-    return { samplingRate: 1.0, isDaily: false, isMonthly: false };
+export function estimateSamplingRate(dates: string[]): number {
+  if (dates.length < 2) return 1.0;
 
-  // Calculate median time difference between consecutive points
+  // Calculate average time difference between consecutive points
   const diffs: number[] = [];
   for (let i = 1; i < Math.min(dates.length, 100); i++) {
     const t1 = new Date(dates[i - 1]).getTime();
@@ -241,26 +204,18 @@ export function estimateSamplingRate(dates: string[]): {
     if (diff > 0) diffs.push(diff);
   }
 
-  if (diffs.length === 0)
-    return { samplingRate: 1.0, isDaily: false, isMonthly: false };
+  if (diffs.length === 0) return 1.0;
 
-  // Calculate median diff
-  diffs.sort((a, b) => a - b);
-  const medianDiff = diffs[Math.floor(diffs.length / 2)];
+  // Average diff in milliseconds
+  const avgDiff = diffs.reduce((sum, d) => sum + d, 0) / diffs.length;
 
-  // Convert to days
-  const medianDiffDays = medianDiff / (1000 * 60 * 60 * 24);
+  // Convert to sampling rate (samples per day, or per month, etc.)
+  // For daily data: ~86400000 ms
+  // For monthly data: ~2592000000 ms
 
-  // Determine if data is daily or monthly
-  const isDaily = medianDiffDays >= 0.8 && medianDiffDays <= 1.2; // ~1 day
-  const isMonthly = medianDiffDays >= 28 && medianDiffDays <= 31; // ~30 days
-
-  // Return sampling rate in samples per day
-  return {
-    samplingRate: 1.0 / medianDiffDays,
-    isDaily,
-    isMonthly,
-  };
+  // Return samples per unit time (normalized)
+  // For visualization purposes, we can just use 1/avgDiff
+  return (1.0 / avgDiff) * 86400000; // samples per day
 }
 
 /**
@@ -287,58 +242,4 @@ export function extractTimeSeriesValues(
   });
 
   return { dates, values };
-}
-
-/**
- * Convert frequency scale for climate data visualization
- */
-export function convertFrequencyScale(
-  baseFrequencies: number[],
-  scale: FrequencyScale,
-  isDaily: boolean,
-  isMonthly: boolean,
-): number[] {
-  switch (scale) {
-    case "k":
-      // Return frequency indices
-      return baseFrequencies.map((_, i) => i);
-
-    case "cycles-per-year":
-      // Convert cycles/day to cycles/year
-      return baseFrequencies.map((f) => f * 365.25);
-
-    case "cycles-per-month":
-      // Convert cycles/day to cycles/month
-      return baseFrequencies.map((f) => f * 30.4375); // Average days per month
-
-    case "period-months":
-      // Period in months (1/frequency, converted to months)
-      return baseFrequencies.map((f) => {
-        if (f === 0) return Infinity;
-        // Convert from cycles/day to period in months
-        const periodDays = 1 / f;
-        return periodDays / 30.4375; // Convert days to months
-      });
-
-    default:
-      return baseFrequencies;
-  }
-}
-
-/**
- * Get label for frequency scale
- */
-export function getFrequencyLabel(scale: FrequencyScale): string {
-  switch (scale) {
-    case "k":
-      return "Frequency Index (k)";
-    case "cycles-per-year":
-      return "Cycles per Year";
-    case "cycles-per-month":
-      return "Cycles per Month";
-    case "period-months":
-      return "Period (Months)";
-    default:
-      return "Frequency";
-  }
 }

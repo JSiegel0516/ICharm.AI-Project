@@ -187,11 +187,9 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
 
       const coverageStart = formatDateOnly(currentDataset.startDate);
       const coverageEnd = formatDateOnly(currentDataset.endDate);
-      const units = currentDataset.units || "dataset units";
+      const units = currentDataset?.units || "dataset units";
       const description =
-        currentDataset.description ||
-        currentDataset.backend?.layerParameter ||
-        null;
+        currentDataset.description || currentDataset.layerParameter || null;
 
       const summarySegments = [
         `You're currently viewing "${currentDataset.name}".`,
@@ -200,12 +198,10 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
         coverageStart && coverageEnd
           ? `Archive coverage spans ${coverageStart} to ${coverageEnd}.`
           : null,
-        currentDataset.backend?.sourceName
-          ? `Source: ${currentDataset.backend.sourceName}.`
+        currentDataset.sourceName
+          ? `Source: ${currentDataset.sourceName}.`
           : null,
-        currentDataset.backend?.datasetType
-          ? `Type: ${currentDataset.backend.datasetType}.`
-          : null,
+        currentDataset.dataType ? `Type: ${currentDataset.dataType}.` : null,
       ].filter((segment): segment is string => Boolean(segment));
 
       appendAnimatedAssistantMessage(summarySegments.join(" "));
@@ -220,11 +216,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
         return null;
       }
 
-      const datasetId =
-        currentDataset.backend?.id ??
-        currentDataset.backendId ??
-        currentDataset.id ??
-        null;
+      const datasetId = currentDataset.id ?? null;
 
       const fallbackLocation =
         regionInfoData &&
@@ -265,10 +257,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
         datasetId,
         datasetName: currentDataset.name,
         datasetUnits:
-          currentDataset.units ??
-          currentDataset.backend?.units ??
-          currentDataset.backend?.layerParameter ??
-          null,
+          currentDataset?.units ?? currentDataset.layerParameter ?? null,
         datasetDescription: currentDataset.description ?? null,
         datasetStartDate: formatDateOnly(currentDataset.startDate),
         datasetEndDate: formatDateOnly(currentDataset.endDate),

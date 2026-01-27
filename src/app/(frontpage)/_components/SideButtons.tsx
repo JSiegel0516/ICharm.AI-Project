@@ -112,15 +112,15 @@ export function SideButtons({
     // Check what stored values actually exist
     const storedValues = datasets.map((d) => ({
       name: d.name,
-      stored: d.backend?.stored,
-      backendExists: !!d.backend,
+      stored: d.stored,
+      backendExists: !!d,
     }));
     console.log("Dataset stored values:", storedValues);
 
     const filtered = datasets.filter((dataset) => {
       if (dataSourceFilter === "all") return true;
 
-      const storedValue = dataset.backend?.stored?.toLowerCase();
+      const storedValue = dataset.stored?.toLowerCase();
       console.log(
         `Checking ${dataset.name}: stored="${storedValue}", filter="${dataSourceFilter}"`,
       );
@@ -170,7 +170,7 @@ export function SideButtons({
       return;
     }
 
-    const origLocation = currentDataset.backend?.origLocation;
+    const origLocation = currentDataset.origLocation;
 
     if (!origLocation) {
       alert("This dataset does not have a download location available.");
@@ -577,12 +577,9 @@ export function SideButtons({
 
                 {filteredDatasets.map((dataset: Dataset) => {
                   const isSelected = selectedDatasets.has(dataset.id);
-                  const category =
-                    dataset.backend?.datasetType ?? dataset.dataType;
-                  const resolution = dataset.backend?.spatialResolution ?? "";
-                  const lastUpdated = formatDisplayDate(
-                    dataset.backend?.endDate,
-                  );
+                  const category = dataset.dataType ?? dataset.dataType;
+                  const resolution = dataset.spatialResolution ?? "";
+                  const lastUpdated = formatDisplayDate(dataset.endDate);
 
                   return (
                     <div
@@ -616,12 +613,12 @@ export function SideButtons({
                                 variant="outline"
                                 className="flex items-center gap-1 text-xs"
                               >
-                                {dataset.backend?.stored === "local" ? (
+                                {dataset.stored === "local" ? (
                                   <Database className="text-chart-2 h-3 w-3" />
                                 ) : (
                                   <Cloud className="text-chart-1 h-3 w-3" />
                                 )}
-                                {dataset.backend?.stored}
+                                {dataset.stored}
                               </Badge>
                               <span className="text-xs text-slate-500">
                                 Updated: {lastUpdated}

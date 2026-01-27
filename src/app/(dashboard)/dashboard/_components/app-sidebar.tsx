@@ -141,7 +141,7 @@ const data = {
     },
     {
       name: "Chat History",
-      url: "/dashboard/chathistory",
+      url: "#",
       icon: FileIcon,
     },
   ],
@@ -177,7 +177,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        <NavUser />
       </SidebarFooter>
     </Sidebar>
   );

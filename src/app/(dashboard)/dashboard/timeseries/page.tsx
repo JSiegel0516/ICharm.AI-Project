@@ -5,6 +5,7 @@ import React, {
   useMemo,
   useCallback,
   useRef,
+  Suspense,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { XCircle, CheckCircle } from "lucide-react";
@@ -18,11 +19,6 @@ import {
   BannerTitle,
 } from "@/components/ui/shadcn-io/banner";
 import { toast } from "sonner";
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable";
 import {
   useTimeSeries,
   AnalysisModel,
@@ -56,7 +52,10 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
-export default function TimeSeriesPage() {
+// ============================================================================
+// MAIN CONTENT COMPONENT
+// ============================================================================
+function TimeSeriesContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -76,7 +75,7 @@ export default function TimeSeriesPage() {
     cancelRequest,
     clearCache,
     reset,
-  } = useTimeSeries("");
+  } = useTimeSeries(process.env.DATA_BACKEND_URL ?? "http://localhost:8000");
 
   // Local state
   const [selectedDatasets, setSelectedDatasets] = useState<DatasetInfo[]>([]);
@@ -126,6 +125,7 @@ export default function TimeSeriesPage() {
       setVisibleDatasets(expandedIds);
     }
   }, [expandedSelectedDatasets, data]);
+
   const [dateRange, setDateRange] = useState({
     start: "2020-01-01",
     end: "2023-12-31",
@@ -378,9 +378,9 @@ export default function TimeSeriesPage() {
   }, [error]);
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="container mx-auto space-y-6 p-6">
       {/* Sticky Banner Container - Processing Info & Errors */}
-      <div className="sticky top-0 z-50 px-4 pt-2">
+      <div className="sticky top-2 z-50">
         {/* Processing Info Banner */}
         {processingInfo && !isLoading && (
           <Banner className="rounded-lg bg-green-200 dark:bg-green-800">
@@ -421,38 +421,37 @@ export default function TimeSeriesPage() {
         )}
       </div>
 
-      {/* Dataset Filter - Fixed/Compact Section */}
-      <div className="shrink-0 px-4 pb-4">
-        <DatasetFilter
-          selectedDatasets={selectedDatasets}
-          setSelectedDatasets={setSelectedDatasets}
-          availableDatasets={availableDatasets}
-          searchTerm={searchTerm}
-          setSearchTerm={setSearchTerm}
-          selectedCategory={selectedCategory}
-          setSelectedCategory={setSelectedCategory}
-          visibleDatasets={visibleDatasets}
-          setVisibleDatasets={setVisibleDatasets}
-          dataSourceFilter={dataSourceFilter}
-          setDataSourceFilter={setDataSourceFilter}
-          dateRange={dateRange}
-          setDateRange={setDateRange}
-          analysisModel={analysisModel}
-          setAnalysisModel={setAnalysisModel}
-          focusCoordinates={focusCoordinates}
-          setFocusCoordinates={setFocusCoordinates}
-          onExtract={handleExtract}
-          onExport={handleExport}
-          onReset={handleReset}
-          isLoading={isLoading}
-          hasData={data && data.length > 0}
-          progress={progress}
-          processingInfo={processingInfo}
-          coordinateValidation={coordinateValidation}
-        />
-      </div>
+      {/* Dataset Filter - Server-side Controls Only */}
+      <DatasetFilter
+        selectedDatasets={selectedDatasets}
+        setSelectedDatasets={setSelectedDatasets}
+        availableDatasets={availableDatasets}
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        selectedCategory={selectedCategory}
+        setSelectedCategory={setSelectedCategory}
+        visibleDatasets={visibleDatasets}
+        setVisibleDatasets={setVisibleDatasets}
+        dataSourceFilter={dataSourceFilter}
+        setDataSourceFilter={setDataSourceFilter}
+        dateRange={dateRange}
+        setDateRange={setDateRange}
+        analysisModel={analysisModel}
+        setAnalysisModel={setAnalysisModel}
+        focusCoordinates={focusCoordinates}
+        setFocusCoordinates={setFocusCoordinates}
+        onExtract={handleExtract}
+        onExport={handleExport}
+        onReset={handleReset}
+        isLoading={isLoading}
+        hasData={data && data.length > 0}
+        progress={progress}
+        processingInfo={processingInfo}
+        coordinateValidation={coordinateValidation}
+      />
 
-      <div className="flex-1 px-4 pb-4">
+      {/* Visualization Panel - Includes ChartOptionsPanel now */}
+      <div data-chart-container>
         <VisualizationPanel
           chartType={chartType}
           setChartType={setChartType}
@@ -479,5 +478,30 @@ export default function TimeSeriesPage() {
         />
       </div>
     </div>
+  );
+}
+
+// ============================================================================
+// LOADING COMPONENT
+// ============================================================================
+function TimeSeriesLoading() {
+  return (
+    <div className="container mx-auto flex min-h-[400px] items-center justify-center p-6">
+      <div className="text-center">
+        <div className="border-primary mb-4 inline-block h-8 w-8 animate-spin rounded-full border-4 border-t-transparent" />
+        <p className="text-muted-foreground">Loading time series...</p>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// MAIN PAGE EXPORT WITH SUSPENSE
+// ============================================================================
+export default function TimeSeriesPage() {
+  return (
+    <Suspense fallback={<TimeSeriesLoading />}>
+      <TimeSeriesContent />
+    </Suspense>
   );
 }

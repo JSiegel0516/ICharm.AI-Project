@@ -228,7 +228,7 @@ const buildSingleMesh = (
   prepared: {
     lat: Float64Array;
     lon: Float64Array;
-    values: Float32Array;
+    values: Float32Array | Float64Array;
     mask?: Uint8Array;
     rows: number;
     cols: number;

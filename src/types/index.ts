@@ -1,43 +1,80 @@
 import type { HTMLAttributes } from "react";
 import type { RasterLayerData } from "@/hooks/useRasterLayer";
 import type { RasterGridData } from "@/hooks/useRasterGrid";
+import type { UseRasterLayerResult } from "@/hooks/useRasterLayer";
+import type { UseRasterGridResult } from "@/hooks/useRasterGrid";
 
-export interface DatasetBackendDetails {
-  id?: string | null;
+// Raw database record - exactly as it comes from the database
+export interface ClimateDatasetRecord {
+  id: string;
   slug?: string | null;
-  sourceName: string | null;
+  sourceName?: string | null;
   datasetName: string;
-  layerParameter: string | null;
-  statistic: string | null;
-  datasetType: string | null;
-  levels: string | null;
-  levelValues: string | null;
-  levelUnits: string | null;
-  stored: string | null;
-  inputFile: string | null;
-  keyVariable: string | null;
-  units: string | null;
-  spatialResolution: string | null;
-  engine: string | null;
-  kerchunkPath: string | null;
-  origLocation: string | null;
-  startDate: string | null;
-  endDate: string | null;
+  layerParameter?: string | null;
+  statistic?: string | null;
+  datasetType?: string | null;
+  levels?: string | null;
+  levelValues?: string | null; // String from DB, will be parsed
+  levelUnits?: string | null;
+  Stored?: string | null; // Note: capital S (database inconsistency)
+  stored?: string | null; // lowercase variant
+  inputFile?: string | null;
+  keyVariable?: string | null;
+  units?: string | null;
+  spatialResolution?: string | null;
+  engine?: string | null;
+  kerchunkPath?: string | null;
+  origLocation?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
+// 2. Frontend dataset model - enriched and parsed
 export interface Dataset {
+  // Core identifiers
   id: string;
-  backendId?: string | null;
-  backendSlug?: string | null;
+  slug?: string | null;
+
+  // Display information
   name: string;
   description: string;
-  units: string;
-  colorScale: ColorScale;
+
+  // Data classification
   dataType: "temperature" | "precipitation" | "wind" | "pressure" | "humidity";
+  units: string;
+
+  // Visual representation
+  colorScale: ColorScale;
+
+  // Temporal information
   temporalResolution: "hourly" | "daily" | "monthly" | "yearly";
-  backend?: DatasetBackendDetails;
   startDate: Date;
   endDate: Date;
+
+  // Backend/source details (flattened, not nested)
+  sourceName?: string | null;
+  layerParameter?: string | null;
+  statistic?: string | null;
+
+  // Level information (parsed)
+  levels?: string | null;
+  levelValues: number[]; // Parsed from string
+  levelUnits?: string | null;
+
+  // Storage and processing
+  stored?: "local" | "cloud" | null;
+  inputFile?: string | null;
+  keyVariable?: string | null;
+  spatialResolution?: string | null;
+  engine?: string | null;
+  kerchunkPath?: string | null;
+  origLocation?: string | null;
+
+  // Timestamps
+  createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface ControlPanelProps {
@@ -162,7 +199,7 @@ export interface AppState {
     name?: string | null;
     source?: "marker" | "search" | "region" | "unknown" | null;
   } | null;
-  currentDataset: Dataset;
+  currentDataset: Dataset | null;
   datasets: Dataset[];
   globePosition: GlobePosition;
   isLoading: boolean;
@@ -250,6 +287,8 @@ export interface GlobeProps {
   hideZeroPrecipitation?: boolean;
   rasterBlurEnabled?: boolean;
   useMeshRaster?: boolean;
+  rasterState: UseRasterLayerResult;
+  rasterGridState: UseRasterGridResult;
   // Disable loading overlays during timeline playback
   isPlaying?: boolean;
   prefetchedRasters?:
@@ -272,8 +311,8 @@ export type GlobeViewMode = "3d" | "2d" | "winkel";
 
 export interface RegionData {
   name: string;
-  precipitation: number;
-  temperature: number;
+  precipitation?: number;
+  temperature?: number;
   dataset: string;
   unit?: string;
 }

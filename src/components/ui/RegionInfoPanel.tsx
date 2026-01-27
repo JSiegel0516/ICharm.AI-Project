@@ -172,10 +172,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   const datasetUnit = regionData.unit ?? currentDataset?.units ?? "units";
 
   const datasetIdentifier =
-    currentDataset?.backend?.datasetName ??
-    currentDataset?.name ??
-    regionData.dataset ??
-    "No dataset";
+    currentDataset?.name ?? regionData.dataset ?? "No dataset";
 
   const datasetUnitInfo = useMemo(
     () => normalizeTemperatureUnit(datasetUnit),
@@ -332,27 +329,19 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   );
 
   const datasetId = useMemo(() => {
-    return (
-      currentDataset?.backend?.id ??
-      currentDataset?.backendId ??
-      currentDataset?.id ??
-      null
-    );
+    return currentDataset?.id ?? null;
   }, [currentDataset]);
 
   const datasetStart = useMemo(() => {
-    if (!currentDataset?.backend?.startDate && !currentDataset?.startDate)
-      return null;
-    const dateStr =
-      currentDataset.backend?.startDate ?? currentDataset.startDate;
+    if (!currentDataset?.startDate && !currentDataset?.startDate) return null;
+    const dateStr = currentDataset.startDate ?? currentDataset.startDate;
     const parsed = new Date(dateStr);
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }, [currentDataset]);
 
   const datasetEnd = useMemo(() => {
-    if (!currentDataset?.backend?.endDate && !currentDataset?.endDate)
-      return null;
-    const dateStr = currentDataset.backend?.endDate ?? currentDataset.endDate;
+    if (!currentDataset?.endDate && !currentDataset?.endDate) return null;
+    const dateStr = currentDataset?.endDate ?? currentDataset.endDate;
     const parsed = new Date(dateStr);
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }, [currentDataset]);
@@ -693,13 +682,16 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       });
       console.log("[Timeseries] Fetching from: /api/v2/timeseries/extract");
 
-      const response = await fetch("/api/timeseries/extract", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const response = await fetch(
+        "http://localhost:8000/api/v2/timeseries/extract",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
         },
-        body: JSON.stringify(payload),
-      });
+      );
 
       console.log("[Timeseries] Response status:", response.status);
       console.log("[Timeseries] Response headers:", response.headers);
@@ -774,8 +766,8 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   console.log("[RegionInfoPanel] Debug info:", {
     currentDataset: currentDataset,
     datasetId: datasetId,
-    hasBackend: !!currentDataset?.backend,
-    backendId: currentDataset?.backend?.id,
+    hasBackend: !!currentDataset,
+    backendId: currentDataset?.id,
     directId: currentDataset?.id,
     isHighFrequency: isHighFrequencyDataset,
     dateRangeOption: dateRangeOption,

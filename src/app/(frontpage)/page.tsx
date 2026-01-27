@@ -7,7 +7,8 @@ import React, {
   useCallback,
   useEffect,
 } from "react";
-import Globe, { GlobeRef } from "@/components/Globe/Globe";
+import Globe from "@/components/Globe/Globe";
+import type { GlobeRef } from "@/types/index";
 import ColorBar from "@/components/ui/ColorBar";
 import TimeBar from "@/components/ui/TimeBar";
 import PressureLevelsSelector from "@/components/ui/Popups/PressureLevelsSelector";
@@ -35,7 +36,6 @@ import { isSeaSurfaceTemperatureDataset } from "@/utils/datasetGuards";
 import {
   buildRasterRequestKey,
   fetchRasterVisualization,
-  resolveEffectiveColorbarRange,
   type RasterLayerData,
 } from "@/hooks/useRasterLayer";
 import {
@@ -43,9 +43,13 @@ import {
   fetchRasterGrid,
   type RasterGridData,
 } from "@/hooks/useRasterGrid";
+import { resolveEffectiveColorbarRange } from "@/lib/mesh/rasterUtils";
 import { Play, Square, Loader2 } from "lucide-react";
 import { SideButtons } from "./_components/SideButtons";
 import { Tutorial } from "./_components/Tutorial";
+
+import { useRasterLayer } from "@/hooks/useRasterLayer";
+import { useRasterGrid } from "@/hooks/useRasterGrid";
 
 type SidebarPanel = "datasets" | "history" | "about" | null;
 
@@ -74,7 +78,7 @@ const normalizeLevelUnit = (
     if (normalized === "km" || normalized.includes("kilometer")) {
       return "km";
     }
-    return unit.trim();
+    return normalized;
   }
 
   const descriptorText = descriptor?.toLowerCase() ?? "";
@@ -240,9 +244,14 @@ export default function HomePage() {
     setCurrentLocationMarker,
     temperatureUnit,
     setTemperatureUnit,
+    isLoading,
+    error,
   } = useAppState();
   const globeRef = useRef<GlobeRef>(null);
   const lastDatasetIdRef = useRef<string | null>(null);
+
+  // FIXED: Add ref to track if we've set initial date for current dataset
+  const initialDateSetRef = useRef<string | null>(null);
 
   // Visualization State
   const [showVisualizationModal, setShowVisualizationModal] = useState(false);
@@ -290,7 +299,7 @@ export default function HomePage() {
       return null;
     }
 
-    const backend = currentDataset?.backend;
+    const backend = currentDataset;
     if (!backend) {
       return null;
     }
@@ -307,7 +316,7 @@ export default function HomePage() {
 
     const isLikelyPressureDataset =
       isPressureUnit(normalizedUnit) ||
-      backend.datasetName?.toLowerCase().includes("pressure") ||
+      backend.name?.toLowerCase().includes("pressure") ||
       backend.layerParameter?.toLowerCase().includes("pressure") ||
       currentDataset?.description?.toLowerCase().includes("pressure") ||
       backend.levels?.toLowerCase().includes("pressure");
@@ -350,9 +359,9 @@ export default function HomePage() {
       currentDataset?.slug,
       currentDataset?.name,
       currentDataset?.description,
-      currentDataset?.backend?.datasetName,
-      currentDataset?.backend?.slug,
-      currentDataset?.backend?.id,
+      currentDataset?.sourceName,
+      currentDataset?.slug,
+      currentDataset?.id,
     ]
       .filter((v) => typeof v === "string")
       .map((v) => v.toLowerCase())
@@ -427,6 +436,31 @@ export default function HomePage() {
       currentDataset?.endDate ? new Date(currentDataset.endDate) : new Date(),
     [currentDataset?.endDate],
   );
+
+  // FIXED: Calculate the default date as the dataset's most recent date
+  const defaultDateForDataset = useMemo(() => {
+    if (!currentDataset) return new Date();
+    return datasetEndDate;
+  }, [currentDataset, datasetEndDate]);
+
+  // FIXED: Set the selected date to the dataset's most recent date when dataset changes
+  useEffect(() => {
+    if (!currentDataset || !currentDataset.id) return;
+
+    // Only set the initial date if we haven't set it for this dataset yet
+    const datasetId = currentDataset.id;
+    if (initialDateSetRef.current !== datasetId) {
+      console.log(
+        "Setting initial date for dataset:",
+        datasetId,
+        "to:",
+        defaultDateForDataset,
+      );
+      setSelectedDate(defaultDateForDataset);
+      initialDateSetRef.current = datasetId;
+    }
+  }, [currentDataset, defaultDateForDataset, setSelectedDate]);
+
   const totalDatasetDays = useMemo(
     () =>
       Math.max(
@@ -455,7 +489,7 @@ export default function HomePage() {
     const defaultStart =
       visualizationStart ??
       selectedDate ??
-      clampDateToRange(new Date(), datasetStartDate, datasetEndDate);
+      clampDateToRange(defaultDateForDataset, datasetStartDate, datasetEndDate);
     const clampedStart = clampDateToRange(
       defaultStart,
       datasetStartDate,
@@ -464,7 +498,7 @@ export default function HomePage() {
     const desiredEnd =
       visualizationEnd ??
       selectedDate ??
-      clampDateToRange(new Date(), datasetStartDate, datasetEndDate);
+      clampDateToRange(defaultDateForDataset, datasetStartDate, datasetEndDate);
     const normalizedEnd = desiredEnd < clampedStart ? clampedStart : desiredEnd;
     const clampedEnd = clampDateToRange(
       normalizedEnd,
@@ -492,6 +526,7 @@ export default function HomePage() {
     visualizationEnd,
     visualizationStart,
     visualizationStep,
+    defaultDateForDataset,
   ]);
 
   useEffect(() => {
@@ -501,14 +536,22 @@ export default function HomePage() {
     const fallbackStart = clampDateToRange(
       visualizationStart ??
         selectedDate ??
-        clampDateToRange(new Date(), datasetStartDate, datasetEndDate),
+        clampDateToRange(
+          defaultDateForDataset,
+          datasetStartDate,
+          datasetEndDate,
+        ),
       datasetStartDate,
       datasetEndDate,
     );
     const fallbackEnd = clampDateToRange(
       visualizationEnd ??
         selectedDate ??
-        clampDateToRange(new Date(), datasetStartDate, datasetEndDate),
+        clampDateToRange(
+          defaultDateForDataset,
+          datasetStartDate,
+          datasetEndDate,
+        ),
       datasetStartDate,
       datasetEndDate,
     );
@@ -523,6 +566,7 @@ export default function HomePage() {
     showVisualizationModal,
     visualizationEnd,
     visualizationStart,
+    defaultDateForDataset,
   ]);
 
   useEffect(() => {
@@ -564,6 +608,8 @@ export default function HomePage() {
     prefetchedRasterGrids,
     setSelectedDate,
     visualizationDates,
+    datasets,
+    setCurrentDataset,
   ]);
 
   const handleStopVisualization = useCallback(() => {
@@ -638,11 +684,7 @@ export default function HomePage() {
       colorbarRange,
     );
     const keyDatasetId =
-      currentDataset.backend?.id ??
-      currentDataset.backendId ??
-      currentDataset.backend?.slug ??
-      currentDataset.backendSlug ??
-      currentDataset.id;
+      currentDataset.id ?? currentDataset.slug ?? currentDataset.id;
 
     try {
       const nextMap = new Map<string, RasterLayerData>();
@@ -803,10 +845,8 @@ export default function HomePage() {
     const isCmorphDataset = [
       currentDataset?.name,
       currentDataset?.description,
-      currentDataset?.backend?.datasetName,
-      currentDataset?.backend?.slug,
-      currentDataset?.backendId,
-      currentDataset?.backendSlug,
+      currentDataset?.slug,
+      currentDataset?.id,
     ]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes("cmorph"));
@@ -983,7 +1023,6 @@ export default function HomePage() {
     hasPressureLevels,
     datasetPressureLevels,
     currentDataset?.id,
-    currentDataset?.backend?.id,
     defaultPressureLevel,
   ]);
 
@@ -1015,7 +1054,6 @@ export default function HomePage() {
     hasPressureLevels,
     datasetPressureLevels,
     currentDataset?.id,
-    currentDataset?.backend?.id,
     defaultPressureLevel,
   ]);
 
@@ -1028,51 +1066,24 @@ export default function HomePage() {
 
   const useMeshRaster = true;
 
-  // Memoized Globe
-  const memoizedGlobe = useMemo(
-    () => (
-      <Globe
-        ref={globeRef}
-        currentDataset={currentDataset}
-        selectedDate={selectedDate}
-        selectedLevel={selectedLevelValue}
-        colorbarRange={colorbarRange}
-        hideZeroPrecipitation={globeSettings.hideZeroPrecipitation}
-        onRegionClick={handleRegionClick}
-        satelliteLayerVisible={globeSettings.satelliteLayerVisible}
-        boundaryLinesVisible={globeSettings.boundaryLinesVisible}
-        geographicLinesVisible={globeSettings.geographicLinesVisible}
-        rasterOpacity={globeSettings.rasterOpacity}
-        rasterBlurEnabled={globeSettings.rasterBlurEnabled}
-        useMeshRaster={useMeshRaster}
-        viewMode={globeSettings.viewMode ?? "3d"}
-        onRasterMetadataChange={setRasterMeta}
-        isPlaying={visualizationStatus === "playing"}
-        prefetchedRasters={prefetchedRasters}
-        prefetchedRasterGrids={prefetchedRasterGrids}
-        meshFadeDurationMs={visualizationFadeMs}
-      />
-    ),
-    [
-      currentDataset,
-      handleRegionClick,
-      selectedDate,
-      selectedLevelValue,
-      visualizationStatus,
-      globeSettings.satelliteLayerVisible,
-      globeSettings.boundaryLinesVisible,
-      globeSettings.geographicLinesVisible,
-      globeSettings.rasterOpacity,
-      globeSettings.rasterBlurEnabled,
-      globeSettings.hideZeroPrecipitation,
-      useMeshRaster,
-      colorbarRange,
-      globeSettings.viewMode,
-      prefetchedRasters,
-      prefetchedRasterGrids,
-      visualizationFadeMs,
-    ],
-  );
+  const rasterState = useRasterLayer({
+    dataset: currentDataset ?? undefined,
+    date: selectedDate,
+    level: selectedLevelValue ?? null,
+    maskZeroValues: globeSettings.hideZeroPrecipitation,
+    colorbarRange,
+    prefetchedData: prefetchedRasters,
+  });
+
+  const rasterGridState = useRasterGrid({
+    dataset: currentDataset ?? undefined,
+    date: selectedDate,
+    level: selectedLevelValue ?? null,
+    maskZeroValues: globeSettings.hideZeroPrecipitation,
+    colorbarRange,
+    enabled: useMeshRaster,
+    prefetchedData: prefetchedRasterGrids,
+  });
 
   useEffect(() => {
     if (!locationFocusRequest || !globeRef.current) {
@@ -1088,7 +1099,11 @@ export default function HomePage() {
 
     const { latitude, longitude, name } = locationFocusRequest;
     if (typeof latitude === "number" && typeof longitude === "number") {
-      globeRef.current.focusOnLocation(locationFocusRequest);
+      globeRef.current.focusOnLocation({
+        latitude,
+        longitude,
+        name,
+      });
       setCurrentLocationMarker({
         latitude,
         longitude,
@@ -1142,9 +1157,49 @@ export default function HomePage() {
     Math.min(Math.max(visualizationProgress, 0), 1) * 100,
   );
 
+  if (isLoading || !currentDataset) {
+    return (
+      <section className="bg-background fixed inset-0 flex h-screen w-screen items-center justify-center">
+        <div className="text-center">
+          <div className="border-primary mb-4 inline-block h-12 w-12 animate-spin rounded-full border-4 border-t-transparent" />
+          <p className="text-muted-foreground">
+            {isLoading ? "Loading datasets..." : "No dataset available"}
+          </p>
+          {!isLoading && !currentDataset && datasets.length === 0 && (
+            <p className="text-muted-foreground mt-2 text-sm">
+              Please check your database connection
+            </p>
+          )}
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="bg-background fixed inset-0 h-screen w-screen overflow-hidden">
-      {memoizedGlobe}
+      <Globe
+        ref={globeRef}
+        currentDataset={currentDataset ?? undefined}
+        selectedDate={selectedDate}
+        selectedLevel={selectedLevelValue}
+        colorbarRange={colorbarRange}
+        hideZeroPrecipitation={globeSettings.hideZeroPrecipitation}
+        onRegionClick={handleRegionClick}
+        satelliteLayerVisible={globeSettings.satelliteLayerVisible}
+        boundaryLinesVisible={globeSettings.boundaryLinesVisible}
+        geographicLinesVisible={globeSettings.geographicLinesVisible}
+        rasterOpacity={globeSettings.rasterOpacity}
+        rasterBlurEnabled={globeSettings.rasterBlurEnabled}
+        useMeshRaster={useMeshRaster}
+        viewMode={globeSettings.viewMode ?? "3d"}
+        onRasterMetadataChange={setRasterMeta}
+        isPlaying={visualizationStatus === "playing"}
+        prefetchedRasters={prefetchedRasters}
+        prefetchedRasterGrids={prefetchedRasterGrids}
+        meshFadeDurationMs={visualizationFadeMs}
+        rasterState={rasterState}
+        rasterGridState={rasterGridState}
+      />
 
       <div className="pointer-events-none absolute inset-0 z-10">
         {/* Side Menu */}
@@ -1621,7 +1676,7 @@ export default function HomePage() {
         colorBarPosition={colorBarPosition}
         colorBarCollapsed={colorBarCollapsed}
         colorBarOrientation={colorBarOrientation}
-        currentDataset={currentDataset}
+        currentDataset={currentDataset ?? undefined}
         selectedDate={selectedDate}
         temperatureUnit={temperatureUnit}
       />

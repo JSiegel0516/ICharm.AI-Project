@@ -4,10 +4,11 @@ import { ChatDB, type ChatMessage } from "@/lib/db";
 const TEST_USER_EMAIL =
   process.env.TEST_CHAT_USER_EMAIL ?? "test-user@icharm.local";
 
+// Fix: params is now a Promise
 type RouteParams = {
-  params: {
+  params: Promise<{
     sessionId: string;
-  };
+  }>;
 };
 
 type NormalizedMessage = {
@@ -24,26 +25,26 @@ function normalizeMessage(message: ChatMessage): NormalizedMessage {
   let createdAtISO: string;
 
   try {
-    if (message.created_at instanceof Date) {
+    if (message.createdAt instanceof Date) {
       // Already a Date object
-      if (isNaN(message.created_at.getTime())) {
+      if (isNaN(message.createdAt.getTime())) {
         // Invalid Date object
         createdAtISO = new Date().toISOString();
       } else {
-        createdAtISO = message.created_at.toISOString();
+        createdAtISO = message.createdAt.toISOString();
       }
-    } else if (typeof message.created_at === "string") {
+    } else if (typeof message.createdAt === "string") {
       // String - try to parse it
-      const parsed = new Date(message.created_at);
+      const parsed = new Date(message.createdAt);
       if (isNaN(parsed.getTime())) {
         // Invalid date string
         createdAtISO = new Date().toISOString();
       } else {
         createdAtISO = parsed.toISOString();
       }
-    } else if (typeof message.created_at === "number") {
+    } else if (typeof message.createdAt === "number") {
       // Unix timestamp
-      const parsed = new Date(message.created_at);
+      const parsed = new Date(message.createdAt);
       if (isNaN(parsed.getTime())) {
         createdAtISO = new Date().toISOString();
       } else {
@@ -61,7 +62,7 @@ function normalizeMessage(message: ChatMessage): NormalizedMessage {
 
   return {
     id: message.id,
-    sessionId: message.session_id,
+    sessionId: message.sessionId,
     role: message.role,
     content: message.content,
     sources: message.sources ?? undefined,
@@ -69,9 +70,9 @@ function normalizeMessage(message: ChatMessage): NormalizedMessage {
   };
 }
 
-export async function GET(_request: NextRequest, ctx: RouteParams) {
-  const params = await ctx.params;
-  const sessionId = params?.sessionId;
+export async function GET(_request: NextRequest, { params }: RouteParams) {
+  // Await params directly in destructuring or here
+  const { sessionId } = await params;
 
   if (!sessionId) {
     return NextResponse.json(

@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Buffer } from "buffer";
 import type { Dataset } from "@/types";
+import {
+  formatDateForApi,
+  decodeNumericValues,
+  computeValueRange,
+  deriveCustomRange,
+  buildSampler,
+  resolveEffectiveColorbarRange,
+} from "@/lib/mesh/rasterUtils";
 
 export type RasterLayerTexture = {
   imageUrl: string;
@@ -42,216 +49,9 @@ export type UseRasterLayerResult = {
   requestKey?: string;
 };
 
-export const formatDateForApi = (date?: Date) => {
-  if (!date) {
-    return null;
-  }
-  return date.toISOString().split("T")[0];
-};
-
-const decodeBase64 = (value?: string) => {
-  if (!value) {
-    return "";
-  }
-  if (typeof atob === "function") {
-    return atob(value);
-  }
-  return Buffer.from(value, "base64").toString("binary");
-};
-
-const decodeNumericValues = (
-  base64: string | undefined,
-  rows: number,
-  cols: number,
-): Float32Array | Float64Array => {
-  if (!base64) {
-    return new Float32Array();
-  }
-  const binary = decodeBase64(base64);
-  const len = binary.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-
-  const expected = rows > 0 && cols > 0 ? rows * cols : null;
-  if (expected && len === expected * 8) {
-    return new Float64Array(bytes.buffer);
-  }
-  if (expected && len === expected * 4) {
-    return new Float32Array(bytes.buffer);
-  }
-  return new Float32Array(bytes.buffer);
-};
-
-const computeValueRange = (
-  values: Float32Array | Float64Array,
-): { min: number | null; max: number | null } => {
-  // Some NetCDF rasters use huge sentinel values (e.g., 1e20) for missing data.
-  // Ignore anything non-finite or beyond this threshold when computing the range.
-  const FILL_VALUE_THRESHOLD = 1e20;
-  let min = Number.POSITIVE_INFINITY;
-  let max = Number.NEGATIVE_INFINITY;
-
-  for (let i = 0; i < values.length; i += 1) {
-    const value = values[i];
-    if (!Number.isFinite(value)) continue;
-    if (Math.abs(value) >= FILL_VALUE_THRESHOLD) continue;
-    if (value < min) min = value;
-    if (value > max) max = value;
-  }
-
-  if (min === Number.POSITIVE_INFINITY || max === Number.NEGATIVE_INFINITY) {
-    return { min: null, max: null };
-  }
-
-  return { min, max };
-};
-
-const deriveCustomRange = (range?: {
-  enabled?: boolean;
-  min?: number | null;
-  max?: number | null;
-}): { min: number; max: number } | null => {
-  const enabled = Boolean(range?.enabled);
-  if (!enabled) return null;
-
-  const hasMin = typeof range?.min === "number" && Number.isFinite(range.min);
-  const hasMax = typeof range?.max === "number" && Number.isFinite(range.max);
-  if (!hasMin && !hasMax) return null;
-
-  let min = hasMin ? Number(range.min) : Number(range.max);
-  let max = hasMax ? Number(range.max) : Number(range.min);
-
-  if (!Number.isFinite(min)) min = 0;
-  if (!Number.isFinite(max)) max = min;
-  if (min > max) {
-    [min, max] = [max, min];
-  }
-
-  return { min, max };
-};
-
-const normalizeLon = (lon: number) => {
-  if (!Number.isFinite(lon)) {
-    return lon;
-  }
-  let value = lon;
-  while (value > 180) value -= 360;
-  while (value < -180) value += 360;
-  return value;
-};
-
-const nearestIndex = (values: ArrayLike<number>, target: number) => {
-  if (!values || values.length === 0) {
-    return 0;
-  }
-  let idx = 0;
-  let minDiff = Number.POSITIVE_INFINITY;
-  for (let i = 0; i < values.length; i += 1) {
-    const diff = Math.abs(values[i] - target);
-    if (diff < minDiff) {
-      minDiff = diff;
-      idx = i;
-    }
-  }
-  return idx;
-};
-
-const buildSampler = (
-  latValues: Float64Array,
-  lonValues: Float64Array,
-  values: Float32Array | Float64Array,
-  rows: number,
-  cols: number,
-) => {
-  if (
-    !rows ||
-    !cols ||
-    !values.length ||
-    latValues.length === 0 ||
-    lonValues.length === 0
-  ) {
-    return () => null;
-  }
-
-  return (latitude: number, longitude: number) => {
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-      return null;
-    }
-    const latIdx = nearestIndex(latValues, latitude);
-    const lonIdx = nearestIndex(lonValues, normalizeLon(longitude));
-    const flatIdx = latIdx * cols + lonIdx;
-    if (flatIdx < 0 || flatIdx >= values.length) {
-      return null;
-    }
-    const sample = values[flatIdx];
-    return Number.isFinite(sample) ? sample : null;
-  };
-};
-
-export const resolveEffectiveColorbarRange = (
-  dataset?: Dataset,
-  level?: number | null,
-  colorbarRange?: {
-    enabled?: boolean;
-    min?: number | null;
-    max?: number | null;
-  },
-) => {
-  if (colorbarRange?.enabled) {
-    return colorbarRange;
-  }
-
-  const GODAS_DEFAULT_RANGE = {
-    enabled: true,
-    min: -0.0000005,
-    max: 0.0000005,
-  };
-  const GODAS_DEEP_RANGE = {
-    enabled: true,
-    min: -0.0000005,
-    max: 0.0000005,
-  };
-
-  const datasetText = [
-    dataset?.id,
-    dataset?.slug,
-    dataset?.name,
-    dataset?.description,
-    dataset?.backend?.datasetName,
-    dataset?.backend?.slug,
-    dataset?.backend?.id,
-  ]
-    .filter((v) => typeof v === "string")
-    .map((v) => v.toLowerCase())
-    .join(" ");
-
-  const isNoaaGlobalTemp =
-    datasetText.includes("noaaglobaltemp") ||
-    datasetText.includes("noaa global temp") ||
-    datasetText.includes("noaa global surface temperature") ||
-    datasetText.includes("noaa global surface temp") ||
-    datasetText.includes("noaa global temperature");
-  const isGodas =
-    datasetText.includes("godas") ||
-    datasetText.includes("global ocean data assimilation system") ||
-    datasetText.includes("ncep global ocean data assimilation");
-
-  if (isNoaaGlobalTemp) {
-    return { enabled: true, min: -2, max: 2 };
-  }
-
-  if (isGodas) {
-    const isDeepLevel =
-      typeof level === "number" &&
-      Number.isFinite(level) &&
-      Math.abs(level - 4736) < 0.5;
-    return isDeepLevel ? GODAS_DEEP_RANGE : GODAS_DEFAULT_RANGE;
-  }
-
-  return colorbarRange;
-};
+// ============================================================================
+// Request Key Builder
+// ============================================================================
 
 export const buildRasterRequestKey = (args: {
   dataset?: Dataset;
@@ -265,7 +65,7 @@ export const buildRasterRequestKey = (args: {
     min?: number | null;
     max?: number | null;
   };
-}) => {
+}): string | undefined => {
   const datasetId = args.backendDatasetId ?? args.dataset?.id ?? null;
   const dateKey = formatDateForApi(args.date);
   if (!datasetId || !dateKey) {
@@ -283,6 +83,10 @@ export const buildRasterRequestKey = (args: {
 
   return `${datasetId}::${dateKey}::${args.level ?? "surface"}::${colorKey}::${maskKey}::${customRangeKey}`;
 };
+
+// ============================================================================
+// Fetch Function
+// ============================================================================
 
 export async function fetchRasterVisualization(options: {
   dataset?: Dataset;
@@ -308,15 +112,10 @@ export async function fetchRasterVisualization(options: {
     colorbarRange,
     signal,
   } = options;
-  const targetDatasetId =
-    backendDatasetId ??
-    dataset?.backend?.id ??
-    dataset?.backendId ??
-    dataset?.backend?.slug ??
-    dataset?.backendSlug ??
-    (typeof dataset?.id === "string" ? dataset.id : null);
 
+  const targetDatasetId = backendDatasetId ?? dataset?.id ?? dataset?.slug;
   const dateKey = formatDateForApi(date);
+
   if (!targetDatasetId || !dateKey) {
     throw new Error("Missing dataset or date for raster request");
   }
@@ -327,6 +126,7 @@ export async function fetchRasterVisualization(options: {
     colorbarRange,
   );
   const customRange = deriveCustomRange(effectiveRange);
+
   const response = await fetch("/api/raster/visualize", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -362,7 +162,14 @@ export async function fetchRasterVisualization(options: {
   const latArray = Float64Array.from(payload?.lat ?? []);
   const lonArray = Float64Array.from(payload?.lon ?? []);
 
-  const sampler = buildSampler(latArray, lonArray, values, rows, cols);
+  const sampler = buildSampler(
+    latArray,
+    lonArray,
+    values,
+    undefined,
+    rows,
+    cols,
+  );
   const computedRange = computeValueRange(values);
   const serverRangeMin = payload?.valueRange?.min ?? null;
   const serverRangeMax = payload?.valueRange?.max ?? null;
@@ -387,6 +194,10 @@ export async function fetchRasterVisualization(options: {
   };
 }
 
+// ============================================================================
+// Hook
+// ============================================================================
+
 export const useRasterLayer = ({
   dataset,
   date,
@@ -401,36 +212,13 @@ export const useRasterLayer = ({
   const controllerRef = useRef<AbortController | null>(null);
 
   const backendDatasetId = useMemo(() => {
-    if (!dataset) {
-      return null;
-    }
-
-    const candidate =
-      dataset.backend?.id ??
-      dataset.backendId ??
-      dataset.backend?.slug ??
-      dataset.backendSlug ??
-      (typeof dataset.id === "string" ? dataset.id : null);
-
-    if (!candidate) {
-      return null;
-    }
-
-    const looksLikeUuid =
-      candidate.length === 36 && candidate.split("-").length === 5;
-
-    if (dataset.backend || dataset.backendId || dataset.backendSlug) {
-      return candidate;
-    }
-
-    return looksLikeUuid ? candidate : null;
+    return dataset?.id ?? dataset?.slug ?? null;
   }, [dataset]);
 
   const cssColors = useMemo(() => {
     const colors = dataset?.colorScale?.colors;
-    if (!Array.isArray(colors)) {
-      return undefined;
-    }
+    if (!Array.isArray(colors)) return undefined;
+
     const sanitized = colors
       .map((color) => (typeof color === "string" ? color.trim() : ""))
       .filter((color) => color.length > 0);
@@ -465,16 +253,14 @@ export const useRasterLayer = ({
   );
 
   const requiresExplicitLevel = useMemo(() => {
-    if (!dataset?.backend) {
-      return false;
-    }
+    if (!dataset) return false;
 
-    const levelValues = dataset.backend.levelValues;
+    const levelValues = dataset?.levelValues;
     if (Array.isArray(levelValues) && levelValues.length > 0) {
       return true;
     }
 
-    const levelsText = (dataset.backend.levels ?? "").trim().toLowerCase();
+    const levelsText = (dataset?.levels ?? "").trim().toLowerCase();
     if (!levelsText || levelsText === "none") {
       return false;
     }
@@ -499,22 +285,25 @@ export const useRasterLayer = ({
       }
     };
 
-    if (!backendDatasetId || !date) {
+    // Early return for invalid states
+    if (!dataset?.id || !backendDatasetId || !date) {
+      abortOngoingRequest();
       setData(undefined);
       setError(null);
       setIsLoading(false);
-      abortOngoingRequest();
-      return () => abortOngoingRequest();
+      return;
     }
 
+    // Wait for level selection if required
     if (waitingForLevel) {
       abortOngoingRequest();
       setData(undefined);
       setError(null);
       setIsLoading(true);
-      return () => abortOngoingRequest();
+      return;
     }
 
+    // Check for prefetched data
     const prefetched =
       requestKey && prefetchedData
         ? prefetchedData instanceof Map
@@ -527,9 +316,10 @@ export const useRasterLayer = ({
       setData(prefetched);
       setError(null);
       setIsLoading(false);
-      return () => abortOngoingRequest();
+      return;
     }
 
+    // Fetch new data
     const run = async () => {
       abortOngoingRequest();
       const controller = new AbortController();
@@ -538,23 +328,6 @@ export const useRasterLayer = ({
       setError(null);
 
       try {
-        // Extract custom range values
-        const customMin =
-          effectiveColorbarRange?.enabled && effectiveColorbarRange?.min != null
-            ? Number(effectiveColorbarRange.min)
-            : null;
-
-        const customMax =
-          effectiveColorbarRange?.enabled && effectiveColorbarRange?.max != null
-            ? Number(effectiveColorbarRange.max)
-            : null;
-
-        console.log("[useRasterLayer] Sending request with custom range:", {
-          enabled: colorbarRange?.enabled,
-          min: customMin,
-          max: customMax,
-        });
-
         const raster = await fetchRasterVisualization({
           dataset,
           backendDatasetId,
@@ -566,21 +339,23 @@ export const useRasterLayer = ({
           signal: controller.signal,
         });
 
-        setData(raster);
-      } catch (err) {
-        if ((err as Error).name === "AbortError") {
-          return;
+        if (!controller.signal.aborted) {
+          setData(raster);
+          setIsLoading(false);
         }
+      } catch (err) {
+        if (controller.signal.aborted) return;
+
         console.error("Raster visualization error", err);
         setError(
           err instanceof Error ? err.message : "Failed to load raster layer",
         );
         setData(undefined);
+        setIsLoading(false);
       } finally {
         if (controllerRef.current === controller) {
           controllerRef.current = null;
         }
-        setIsLoading(false);
       }
     };
 
@@ -599,6 +374,7 @@ export const useRasterLayer = ({
     maskZeroValues,
     waitingForLevel,
     effectiveColorbarRange,
+    requestKey,
   ]);
 
   return { data, isLoading, error, requestKey };

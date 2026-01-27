@@ -93,6 +93,7 @@
     "@babel/preset-env": "^7.28.3",
     "@biomejs/biome": "2.2.0",
     "@tailwindcss/postcss": "^4.1.14",
+    "@types/d3-geo": "^3.1.0",
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^20",
     "@types/pg": "^8.15.5",
