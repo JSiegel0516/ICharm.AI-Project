@@ -21,7 +21,6 @@ import {
   AIR_TEMPERATURE_BASE,
   SHARP_BANDS,
   resolveColorMapColors,
-  ANOMALY_PALETTE_BASE,
 } from "@/utils/colorScales";
 
 const reducePalette = (colors: string[], count: number): string[] => {
@@ -132,30 +131,6 @@ type DatabaseDataset = {
   updatedAt: string;
 };
 
-type DatabaseDataset = {
-  id: string;
-  sourceName: string;
-  datasetName: string;
-  layerParameter: string;
-  statistic: string;
-  datasetType: string;
-  levels: string;
-  levelValues: string | null;
-  levelUnits: string | null;
-  stored: string;
-  inputFile: string;
-  keyVariable: string;
-  units: string;
-  spatialResolution: string;
-  engine: string;
-  kerchunkPath: string | null;
-  origLocation: string;
-  startDate: string;
-  endDate: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
 type AppStateContextType = ReturnType<typeof useAppStateInternal>;
 
 const AppStateContext = createContext<AppStateContextType | undefined>(
@@ -197,6 +172,8 @@ function parseDate(dateStr: string): Date {
 
 // Transform database dataset to app Dataset type
 function transformDataset(db: DatabaseDataset): Dataset {
+  console.log("Transforming dataset:", db.datasetName, "stored:", db.stored);
+
   return {
     id: db.id,
     name: db.datasetName,
@@ -208,11 +185,27 @@ function transformDataset(db: DatabaseDataset): Dataset {
     // Store full backend data for reference
     backend: {
       ...db,
+      id: db.id,
+      sourceName: db.sourceName,
+      datasetName: db.datasetName,
+      layerParameter: db.layerParameter,
+      statistic: db.statistic,
+      datasetType: db.datasetType,
+      levels: db.levels,
+      levelValues: db.levelValues,
+      levelUnits: db.levelUnits,
+      stored: db.stored, // <-- Make sure this is explicitly here
+      inputFile: db.inputFile,
+      keyVariable: db.keyVariable,
+      units: db.units,
+      spatialResolution: db.spatialResolution,
+      engine: db.engine,
+      kerchunkPath: db.kerchunkPath,
+      origLocation: db.origLocation,
       startDate: db.startDate,
       endDate: DATASET_END_OVERRIDES[db.datasetName] ?? db.endDate,
-      spatialResolution: db.spatialResolution,
-      datasetName: db.datasetName,
-      datasetType: db.datasetType,
+      createdAt: db.createdAt,
+      updatedAt: db.updatedAt,
     },
     // Parse dates for easy use
     startDate: parseDate(db.startDate),
@@ -243,7 +236,6 @@ function generateColorScale(
   });
 
   const SST_COLORS = getColorMapColors("Matlab|Jet");
-  const ANOMALY_COLORS = reducePalette(ANOMALY_PALETTE_BASE, SHARP_BANDS);
   const AIR_COLORS = AIR_TEMPERATURE_BASE;
   const PRECIP_COLORS = getColorMapColors(
     "Color Brewer 2.0|Sequential|Multi-hue|9-class YlGnBu",
@@ -280,12 +272,12 @@ function generateColorScale(
     name.includes("noaa global temp") ||
     name.includes("noaa global temperature")
   ) {
-    // NOAA Global Surface Temperature anomalies: custom anomaly palette
+    // Match NOAA/CIRES/DOE colorbar styling.
     return buildScale(
-      ANOMALY_COLORS,
-      ["-2°C", "-1°C", "0°C", "1°C", "2°C"],
-      -2,
-      2,
+      AIR_COLORS,
+      ["-40°C", "-20°C", "0°C", "20°C", "40°C"],
+      -40,
+      40,
     );
   }
 
@@ -418,10 +410,9 @@ const useAppStateInternal = () => {
       satelliteLayerVisible: true,
       boundaryLinesVisible: true,
       geographicLinesVisible: false,
-      rasterOpacity: 1,
-      rasterTransitionMs: 320,
+      rasterOpacity: 0.9,
       hideZeroPrecipitation: false,
-      rasterBlurEnabled: true,
+      rasterBlurEnabled: false,
     },
     selectedColorMap: "dataset-default",
     selectedColorMapInverse: DEFAULT_COLOR_MAP_INVERSE,
@@ -634,6 +625,8 @@ const useAppStateInternal = () => {
         }
 
         const payload = await response.json();
+
+        console.log("Raw API response:", payload.datasets?.[0]);
 
         // Transform database datasets to app format
         const datasets: Dataset[] = Array.isArray(payload.datasets)

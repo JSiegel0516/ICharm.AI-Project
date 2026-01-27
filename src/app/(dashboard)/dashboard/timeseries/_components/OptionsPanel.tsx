@@ -215,12 +215,12 @@ export function DatasetFilter({
   };
 
   return (
-    <div className="">
+    <div className="flex flex-col">
       {/* Dataset Filters */}
-      <Card>
+      <Card className="flex h-full grow flex-col">
         <CardContent className="space-y-2">
           {/* Dataset Selection & Search - Horizontal */}
-          <div className="flex flex-row items-center gap-3">
+          <div className="flex grow flex-row items-center gap-3">
             <div className="relative flex-1">
               <Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
               <Input
@@ -234,7 +234,7 @@ export function DatasetFilter({
               value={selectedCategory}
               onValueChange={setSelectedCategory}
             >
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-45">
                 <Filter className="mr-2 h-4 w-4" />
                 <SelectValue />
               </SelectTrigger>
@@ -252,7 +252,7 @@ export function DatasetFilter({
                 setDataSourceFilter(v)
               }
             >
-              <SelectTrigger className="w-[140px]">
+              <SelectTrigger className="w-35">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -281,7 +281,7 @@ export function DatasetFilter({
           {/* Available Datasets */}
           <div className="space-y-2">
             <h4 className="text-sm font-medium">Available Datasets</h4>
-            <ScrollArea className="h-[200px] rounded-md border">
+            <ScrollArea className="h-60 flex-1 rounded-md border">
               <div className="space-y-2 p-4">
                 <AnimatePresence mode="popLayout">
                   {filteredDatasets.map((dataset) => {
@@ -484,7 +484,7 @@ export function DatasetFilter({
               ) : (
                 <>
                   <Activity className="mr-2 h-4 w-4" />
-                  Extract Data
+                  Analyze Data
                 </>
               )}
             </Button>

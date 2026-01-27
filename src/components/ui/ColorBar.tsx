@@ -5,10 +5,12 @@ import React, {
   useEffect,
   useMemo,
   useCallback,
+  useState,
   useReducer,
 } from "react";
 import { ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 import { Button } from "./button";
+import { Slider } from "./slider";
 
 // Types
 type TemperatureUnit = "celsius" | "fahrenheit";
@@ -16,13 +18,17 @@ type TemperatureUnit = "celsius" | "fahrenheit";
 interface ColorBarProps {
   show: boolean;
   onToggle?: () => void;
+  onToggleCollapse?: (collapsed: boolean) => void;
   dataset: any;
   unit?: TemperatureUnit;
   onUnitChange?: (unit: TemperatureUnit) => void;
+  onRangeChange?: (range: { min: number | null; max: number | null }) => void;
+  onRangeReset?: () => void;
   onPositionChange?: (position: { x: number; y: number }) => void;
   collapsed?: boolean;
   rasterMeta?: any;
   orientation?: "horizontal" | "vertical";
+  selectedLevel?: number | null;
   customRange?: {
     enabled?: boolean;
     min?: number | null;
@@ -110,17 +116,26 @@ function uiReducer(state: UIState, action: UIAction): UIState {
 const ColorBar: React.FC<ColorBarProps> = ({
   show,
   onToggle,
+  onToggleCollapse,
   dataset,
   unit = "celsius",
   onUnitChange,
+  onRangeChange,
+  onRangeReset,
   onPositionChange,
   collapsed = false,
   rasterMeta = null,
   orientation = "horizontal",
+  selectedLevel = null,
   customRange,
 }) => {
   const colorBarRef = useRef<HTMLDivElement>(null);
   const isVertical = orientation === "vertical";
+  const [rangeValue, setRangeValue] = useState<[number, number]>([0, 0]);
+  const [isRangeEditing, setIsRangeEditing] = useState(false);
+  const [isSliderHovering, setIsSliderHovering] = useState(false);
+  const sliderHoverTimeoutRef = useRef<number | null>(null);
+  const [colorBarSize, setColorBarSize] = useState({ width: 0, height: 0 });
 
   const [uiState, dispatch] = useReducer(uiReducer, {
     position: { x: 24, y: 24 },
@@ -222,12 +237,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
   // COLOR SCALE CALCULATIONS
   // ============================================================================
 
-  const colorScale = useMemo(() => {
-    const customRangeEnabled = Boolean(customRange?.enabled);
-    const GODAS_DEFAULT_MIN = -0.0000005;
-    const GODAS_DEFAULT_MAX = 0.0000005;
-    const NOAAGLOBALTEMP_DEFAULT_MIN = -2;
-    const NOAAGLOBALTEMP_DEFAULT_MAX = 2;
+  const datasetFlags = useMemo(() => {
     const datasetText = [
       dataset?.id,
       dataset?.slug,
@@ -240,6 +250,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
       .filter((v) => typeof v === "string")
       .map((v) => v.toLowerCase())
       .join(" ");
+
     const isGodas =
       datasetText.includes("godas") ||
       datasetText.includes("global ocean data assimilation system") ||
@@ -250,6 +261,25 @@ const ColorBar: React.FC<ColorBarProps> = ({
       datasetText.includes("noaa global surface temperature") ||
       datasetText.includes("noaa global surface temp") ||
       datasetText.includes("noaa global temperature");
+
+    const isGodasDeepLevel =
+      isGodas &&
+      typeof selectedLevel === "number" &&
+      Number.isFinite(selectedLevel) &&
+      Math.abs(selectedLevel - 4736) < 0.5;
+
+    return { isGodas, isNoaaGlobalTemp, isGodasDeepLevel };
+  }, [dataset, selectedLevel]);
+
+  const colorScale = useMemo(() => {
+    const customRangeEnabled = Boolean(customRange?.enabled);
+    const GODAS_DEFAULT_MIN = -0.0000005;
+    const GODAS_DEFAULT_MAX = 0.0000005;
+    const GODAS_DEEP_MIN = -0.0000005;
+    const GODAS_DEEP_MAX = 0.0000005;
+    const NOAAGLOBALTEMP_DEFAULT_MIN = -2;
+    const NOAAGLOBALTEMP_DEFAULT_MAX = 2;
+    const { isGodas, isNoaaGlobalTemp, isGodasDeepLevel } = datasetFlags;
 
     // Prefer the dataset's baseline range for any obvious variant of NOAAGlobalTemp.
     const preferBaselineRange = false;
@@ -267,8 +297,16 @@ const ColorBar: React.FC<ColorBarProps> = ({
         ? Number(customRange.max)
         : null;
 
-    const godasDefaultMin = isGodas ? GODAS_DEFAULT_MIN : null;
-    const godasDefaultMax = isGodas ? GODAS_DEFAULT_MAX : null;
+    const godasDefaultMin = isGodas
+      ? isGodasDeepLevel
+        ? GODAS_DEEP_MIN
+        : GODAS_DEFAULT_MIN
+      : null;
+    const godasDefaultMax = isGodas
+      ? isGodasDeepLevel
+        ? GODAS_DEEP_MAX
+        : GODAS_DEFAULT_MAX
+      : null;
     const noaaDefaultMin = isNoaaGlobalTemp ? NOAAGLOBALTEMP_DEFAULT_MIN : null;
     const noaaDefaultMax = isNoaaGlobalTemp ? NOAAGLOBALTEMP_DEFAULT_MAX : null;
 
@@ -330,8 +368,13 @@ const ColorBar: React.FC<ColorBarProps> = ({
 
     const labels = generateLabels();
 
-    return { labels, colors: dataset.colorScale.colors };
-  }, [customRange, dataset.colorScale, rasterMeta, unitInfo.symbol]);
+    return {
+      labels,
+      colors: dataset.colorScale.colors,
+      rangeMin,
+      rangeMax,
+    };
+  }, [customRange, dataset.colorScale, datasetFlags, rasterMeta]);
 
   const displayLabels = useMemo(() => {
     const values =
@@ -360,6 +403,118 @@ const ColorBar: React.FC<ColorBarProps> = ({
 
   const labels = isVertical ? [...displayLabels].reverse() : displayLabels;
 
+  const rangeLimits = useMemo(() => {
+    const baseMin =
+      typeof dataset?.colorScale?.min === "number" &&
+      Number.isFinite(dataset.colorScale.min)
+        ? Number(dataset.colorScale.min)
+        : null;
+    const baseMax =
+      typeof dataset?.colorScale?.max === "number" &&
+      Number.isFinite(dataset.colorScale.max)
+        ? Number(dataset.colorScale.max)
+        : null;
+    const metaMin =
+      typeof rasterMeta?.min === "number" && Number.isFinite(rasterMeta.min)
+        ? Number(rasterMeta.min)
+        : null;
+    const metaMax =
+      typeof rasterMeta?.max === "number" && Number.isFinite(rasterMeta.max)
+        ? Number(rasterMeta.max)
+        : null;
+
+    let min = baseMin ?? metaMin ?? 0;
+    let max = baseMax ?? metaMax ?? min + 1;
+
+    if (datasetFlags.isGodasDeepLevel) {
+      min = -0.0000005;
+      max = 0.0000005;
+    }
+
+    if (!Number.isFinite(min)) min = 0;
+    if (!Number.isFinite(max)) max = min + 1;
+    if (min === max) {
+      max = min + 1;
+    }
+    if (min > max) {
+      [min, max] = [max, min];
+    }
+
+    return { min, max };
+  }, [
+    dataset?.colorScale?.min,
+    dataset?.colorScale?.max,
+    rasterMeta,
+    datasetFlags.isGodasDeepLevel,
+  ]);
+
+  const toDisplayValue = useCallback(
+    (value: number) => {
+      if (!unitInfo.allowToggle || unit !== "fahrenheit") return value;
+      return (value * 9) / 5 + 32;
+    },
+    [unitInfo.allowToggle, unit],
+  );
+
+  const fromDisplayValue = useCallback(
+    (value: number) => {
+      if (!unitInfo.allowToggle || unit !== "fahrenheit") return value;
+      return ((value - 32) * 5) / 9;
+    },
+    [unitInfo.allowToggle, unit],
+  );
+
+  const displayRange = useMemo(() => {
+    const min = toDisplayValue(colorScale.rangeMin);
+    const max = toDisplayValue(colorScale.rangeMax);
+    return min <= max ? { min, max } : { min: max, max: min };
+  }, [colorScale.rangeMin, colorScale.rangeMax, toDisplayValue]);
+
+  const displayLimits = useMemo(() => {
+    const min = toDisplayValue(rangeLimits.min);
+    const max = toDisplayValue(rangeLimits.max);
+    return min <= max ? { min, max } : { min: max, max: min };
+  }, [rangeLimits, toDisplayValue]);
+
+  const sliderStep = useMemo(() => {
+    const span = Math.abs(displayLimits.max - displayLimits.min);
+    if (!Number.isFinite(span) || span <= 0) return 1;
+    const rough = span / 200;
+    const magnitude = Math.pow(10, Math.floor(Math.log10(rough)));
+
+    if (datasetFlags.isGodasDeepLevel) {
+      const powerStep = Math.pow(10, Math.floor(Math.log10(span)) - 1);
+      const safeStep = Number.parseFloat(powerStep.toPrecision(2));
+      return Number.isFinite(safeStep) && safeStep > 0 ? safeStep : rough;
+    }
+
+    const normalized = rough / magnitude;
+    let step = magnitude;
+    if (normalized <= 1) step = 1 * magnitude;
+    else if (normalized <= 2) step = 2 * magnitude;
+    else if (normalized <= 5) step = 5 * magnitude;
+    else step = 10 * magnitude;
+
+    const safeStep = Number.parseFloat(step.toPrecision(2));
+    return Number.isFinite(safeStep) && safeStep > 0 ? safeStep : rough;
+  }, [displayLimits, datasetFlags.isGodasDeepLevel]);
+
+  const formatRangeValue = useCallback((value: number) => {
+    if (!Number.isFinite(value)) return "–";
+    if (value === 0) return "0";
+
+    const abs = Math.abs(value);
+    if (abs < 1e-4) return value.toExponential(2);
+    if (abs < 1) {
+      const precise = Number(value.toPrecision(3));
+      return (Object.is(precise, -0) ? 0 : precise).toString();
+    }
+    if (abs < 10) return value.toFixed(2);
+    if (abs < 100) return value.toFixed(1);
+    if (abs < 1000) return value.toFixed(0);
+    return `${(value / 1000).toFixed(1)}k`;
+  }, []);
+
   const gradientStops = colorScale.colors
     .map((color: string, index: number) => {
       const start = (index / colorScale.colors.length) * 100;
@@ -369,6 +524,23 @@ const ColorBar: React.FC<ColorBarProps> = ({
     .join(", ");
 
   const gradientBackground = `linear-gradient(${isVertical ? "to top" : "to right"}, ${gradientStops})`;
+  const sliderOrientation = isVertical ? "horizontal" : "vertical";
+  const sliderContainerClass = isVertical
+    ? "top-full left-1/2 mt-4 w-72 -translate-x-1/2"
+    : "left-full top-1/2 ml-4 w-20 -translate-y-1/2";
+  const sliderClassName = isVertical ? "w-full" : "w-4 flex-col";
+  const sliderLength = useMemo(() => {
+    const clamp = (value: number, min: number, max: number) =>
+      Math.min(max, Math.max(min, value));
+
+    if (isVertical) {
+      const width = colorBarSize.width || 280;
+      return clamp(width - 48, 200, 360);
+    }
+
+    const height = colorBarSize.height || 280;
+    return clamp(height - 48, 180, 360);
+  }, [colorBarSize.height, colorBarSize.width, isVertical]);
 
   // ============================================================================
   // POSITIONING LOGIC
@@ -417,10 +589,11 @@ const ColorBar: React.FC<ColorBarProps> = ({
       e.preventDefault();
       e.stopPropagation();
       if (!uiState.isDragging) {
+        onToggleCollapse?.(!uiState.isCollapsed);
         dispatch({ type: "TOGGLE_COLLAPSE" });
       }
     },
-    [uiState.isDragging],
+    [onToggleCollapse, uiState.isCollapsed, uiState.isDragging],
   );
 
   const handleResetPosition = useCallback(
@@ -461,9 +634,86 @@ const ColorBar: React.FC<ColorBarProps> = ({
     [unitInfo.allowToggle, onUnitChange],
   );
 
+  const handleRangeValueChange = useCallback((values: number[]) => {
+    if (!Array.isArray(values) || values.length < 2) return;
+    const min = Math.min(values[0], values[1]);
+    const max = Math.max(values[0], values[1]);
+    setIsRangeEditing(true);
+    setRangeValue([min, max]);
+  }, []);
+
+  const handleRangeValueCommit = useCallback(
+    (values: number[]) => {
+      if (!Array.isArray(values) || values.length < 2) return;
+      const min = Math.min(values[0], values[1]);
+      const max = Math.max(values[0], values[1]);
+      const clampedMin = Math.max(displayLimits.min, Math.min(min, max));
+      const clampedMax = Math.min(displayLimits.max, Math.max(min, max));
+      const baseMin = fromDisplayValue(clampedMin);
+      const baseMax = fromDisplayValue(clampedMax);
+
+      setIsRangeEditing(false);
+      setRangeValue([clampedMin, clampedMax]);
+      onRangeChange?.({ min: baseMin, max: baseMax });
+    },
+    [displayLimits, fromDisplayValue, onRangeChange],
+  );
+
+  const handleRangeReset = useCallback(() => {
+    setIsRangeEditing(false);
+    onRangeReset?.();
+    if (!onRangeReset) {
+      onRangeChange?.({ min: null, max: null });
+    }
+  }, [onRangeChange, onRangeReset]);
+
+  const handleSliderHoverStart = useCallback(() => {
+    if (sliderHoverTimeoutRef.current !== null) {
+      window.clearTimeout(sliderHoverTimeoutRef.current);
+      sliderHoverTimeoutRef.current = null;
+    }
+    setIsSliderHovering(true);
+  }, []);
+
+  const handleSliderHoverEnd = useCallback(() => {
+    if (sliderHoverTimeoutRef.current !== null) {
+      window.clearTimeout(sliderHoverTimeoutRef.current);
+    }
+    sliderHoverTimeoutRef.current = window.setTimeout(() => {
+      setIsSliderHovering(false);
+      sliderHoverTimeoutRef.current = null;
+    }, 120);
+  }, []);
+
   // ============================================================================
   // EFFECTS
   // ============================================================================
+
+  useEffect(() => {
+    const element = colorBarRef.current;
+    if (!element || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const { width, height } = entry.contentRect;
+      setColorBarSize({ width, height });
+    });
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (sliderHoverTimeoutRef.current !== null) {
+        window.clearTimeout(sliderHoverTimeoutRef.current);
+        sliderHoverTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   // Initialize position on mount
   useEffect(() => {
@@ -496,6 +746,19 @@ const ColorBar: React.FC<ColorBarProps> = ({
   useEffect(() => {
     dispatch({ type: "SET_COLLAPSED", payload: collapsed });
   }, [collapsed]);
+
+  useEffect(() => {
+    if (isRangeEditing) return;
+    const clampedMin = Math.max(
+      displayLimits.min,
+      Math.min(displayRange.min, displayLimits.max),
+    );
+    const clampedMax = Math.min(
+      displayLimits.max,
+      Math.max(displayRange.max, displayLimits.min),
+    );
+    setRangeValue([clampedMin, clampedMax]);
+  }, [displayLimits, displayRange, isRangeEditing]);
 
   // Notify parent of position changes
   useEffect(() => {
@@ -577,7 +840,13 @@ const ColorBar: React.FC<ColorBarProps> = ({
           </span>
         </Button>
       ) : (
-        <div className="border-border bg-card/80 text-primary pointer-events-auto rounded-xl border px-6 py-6 backdrop-blur-sm">
+        <div
+          className="border-border bg-card/80 text-primary group pointer-events-auto relative rounded-xl border px-6 py-6 backdrop-blur-sm"
+          onMouseEnter={handleSliderHoverStart}
+          onMouseLeave={handleSliderHoverEnd}
+          onFocusCapture={handleSliderHoverStart}
+          onBlurCapture={handleSliderHoverEnd}
+        >
           {/* Header Controls */}
           <div className="-mt-2 mb-2 flex w-full items-center justify-between gap-2">
             <button
@@ -687,6 +956,61 @@ const ColorBar: React.FC<ColorBarProps> = ({
                 </div>
               </div>
             )}
+          </div>
+
+          <div
+            onMouseEnter={handleSliderHoverStart}
+            onMouseLeave={handleSliderHoverEnd}
+            onFocusCapture={handleSliderHoverStart}
+            onBlurCapture={handleSliderHoverEnd}
+            className={`border-border bg-card/90 absolute z-20 rounded-xl border px-4 py-3 shadow-lg backdrop-blur-md transition-all duration-200 ${sliderContainerClass} ${
+              isRangeEditing || isSliderHovering
+                ? "pointer-events-auto visible opacity-100"
+                : "pointer-events-none invisible opacity-0"
+            }`}
+          >
+            <div className="text-muted-foreground mb-3 flex items-center justify-between text-xs font-medium">
+              <span>Color Range</span>
+            </div>
+            <div className="flex items-center justify-center gap-3">
+              <Slider
+                min={displayLimits.min}
+                max={displayLimits.max}
+                step={sliderStep}
+                value={rangeValue}
+                onValueChange={handleRangeValueChange}
+                onValueCommit={handleRangeValueCommit}
+                onPointerDown={() => setIsRangeEditing(true)}
+                onPointerCancel={() => setIsRangeEditing(false)}
+                orientation={sliderOrientation}
+                className={sliderClassName}
+                style={
+                  sliderOrientation === "vertical"
+                    ? { height: `${sliderLength}px` }
+                    : { width: `${sliderLength}px` }
+                }
+              />
+              {(onRangeReset || onRangeChange) && (
+                <button
+                  type="button"
+                  onClick={handleRangeReset}
+                  className="text-muted-foreground hover:text-card-foreground flex h-6 w-6 items-center justify-center rounded-full transition-colors"
+                  aria-label="Reset color range"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            <div className="text-muted-foreground mt-2 flex items-center justify-between text-[11px]">
+              <span>
+                Min {formatRangeValue(rangeValue[0])}
+                {currentUnitSymbol ? ` ${currentUnitSymbol}` : ""}
+              </span>
+              <span>
+                Max {formatRangeValue(rangeValue[1])}
+                {currentUnitSymbol ? ` ${currentUnitSymbol}` : ""}
+              </span>
+            </div>
           </div>
         </div>
       )}

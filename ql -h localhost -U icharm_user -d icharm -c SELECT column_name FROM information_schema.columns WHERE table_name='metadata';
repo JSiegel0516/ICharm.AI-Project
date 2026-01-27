@@ -1,0 +1,26 @@
+    column_name    
+-------------------
+ id
+ sourceName
+ datasetName
+ layerParameter
+ statistic
+ datasetType
+ levels
+ levelValues
+ levelUnits
+ inputFile
+ keyVariable
+ units
+ spatialResolution
+ engine
+ origLocation
+ startDate
+ endDate
+ createdAt
+ updatedAt
+ Stored
+ kerchunkPath
+ slug
+(22 rows)
+

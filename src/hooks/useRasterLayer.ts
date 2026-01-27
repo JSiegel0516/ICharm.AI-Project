@@ -30,6 +30,9 @@ type UseRasterLayerOptions = {
     min?: number | null;
     max?: number | null;
   };
+  prefetchedData?:
+    | Map<string, RasterLayerData>
+    | Record<string, RasterLayerData>;
 };
 
 export type UseRasterLayerResult = {
@@ -39,7 +42,7 @@ export type UseRasterLayerResult = {
   requestKey?: string;
 };
 
-const formatDateForApi = (date?: Date) => {
+export const formatDateForApi = (date?: Date) => {
   if (!date) {
     return null;
   }
@@ -56,7 +59,11 @@ const decodeBase64 = (value?: string) => {
   return Buffer.from(value, "base64").toString("binary");
 };
 
-const decodeFloat32 = (base64: string | undefined): Float32Array => {
+const decodeNumericValues = (
+  base64: string | undefined,
+  rows: number,
+  cols: number,
+): Float32Array | Float64Array => {
   if (!base64) {
     return new Float32Array();
   }
@@ -66,11 +73,19 @@ const decodeFloat32 = (base64: string | undefined): Float32Array => {
   for (let i = 0; i < len; i += 1) {
     bytes[i] = binary.charCodeAt(i);
   }
+
+  const expected = rows > 0 && cols > 0 ? rows * cols : null;
+  if (expected && len === expected * 8) {
+    return new Float64Array(bytes.buffer);
+  }
+  if (expected && len === expected * 4) {
+    return new Float32Array(bytes.buffer);
+  }
   return new Float32Array(bytes.buffer);
 };
 
 const computeValueRange = (
-  values: Float32Array,
+  values: Float32Array | Float64Array,
 ): { min: number | null; max: number | null } => {
   // Some NetCDF rasters use huge sentinel values (e.g., 1e20) for missing data.
   // Ignore anything non-finite or beyond this threshold when computing the range.
@@ -101,23 +116,20 @@ const deriveCustomRange = (range?: {
   const enabled = Boolean(range?.enabled);
   if (!enabled) return null;
 
-  const rawMin =
-    typeof range?.min === "number" && Number.isFinite(range.min)
-      ? Number(range.min)
-      : 0;
-  const rawMax =
-    typeof range?.max === "number" && Number.isFinite(range.max)
-      ? Number(range.max)
-      : 0;
+  const hasMin = typeof range?.min === "number" && Number.isFinite(range.min);
+  const hasMax = typeof range?.max === "number" && Number.isFinite(range.max);
+  if (!hasMin && !hasMax) return null;
 
-  const hasUserValue =
-    (typeof range?.min === "number" && Number.isFinite(range.min)) ||
-    (typeof range?.max === "number" && Number.isFinite(range.max));
-  if (!hasUserValue) return null;
+  let min = hasMin ? Number(range.min) : Number(range.max);
+  let max = hasMax ? Number(range.max) : Number(range.min);
 
-  const magnitude = Math.max(Math.abs(rawMin), Math.abs(rawMax));
-  const safeMagnitude = magnitude > 0 ? magnitude : 1;
-  return { min: -safeMagnitude, max: safeMagnitude };
+  if (!Number.isFinite(min)) min = 0;
+  if (!Number.isFinite(max)) max = min;
+  if (min > max) {
+    [min, max] = [max, min];
+  }
+
+  return { min, max };
 };
 
 const normalizeLon = (lon: number) => {
@@ -149,7 +161,7 @@ const nearestIndex = (values: ArrayLike<number>, target: number) => {
 const buildSampler = (
   latValues: Float64Array,
   lonValues: Float64Array,
-  values: Float32Array,
+  values: Float32Array | Float64Array,
   rows: number,
   cols: number,
 ) => {
@@ -178,12 +190,210 @@ const buildSampler = (
   };
 };
 
+export const resolveEffectiveColorbarRange = (
+  dataset?: Dataset,
+  level?: number | null,
+  colorbarRange?: {
+    enabled?: boolean;
+    min?: number | null;
+    max?: number | null;
+  },
+) => {
+  if (colorbarRange?.enabled) {
+    return colorbarRange;
+  }
+
+  const GODAS_DEFAULT_RANGE = {
+    enabled: true,
+    min: -0.0000005,
+    max: 0.0000005,
+  };
+  const GODAS_DEEP_RANGE = {
+    enabled: true,
+    min: -0.0000005,
+    max: 0.0000005,
+  };
+
+  const datasetText = [
+    dataset?.id,
+    dataset?.slug,
+    dataset?.name,
+    dataset?.description,
+    dataset?.backend?.datasetName,
+    dataset?.backend?.slug,
+    dataset?.backend?.id,
+  ]
+    .filter((v) => typeof v === "string")
+    .map((v) => v.toLowerCase())
+    .join(" ");
+
+  const isNoaaGlobalTemp =
+    datasetText.includes("noaaglobaltemp") ||
+    datasetText.includes("noaa global temp") ||
+    datasetText.includes("noaa global surface temperature") ||
+    datasetText.includes("noaa global surface temp") ||
+    datasetText.includes("noaa global temperature");
+  const isGodas =
+    datasetText.includes("godas") ||
+    datasetText.includes("global ocean data assimilation system") ||
+    datasetText.includes("ncep global ocean data assimilation");
+
+  if (isNoaaGlobalTemp) {
+    return { enabled: true, min: -2, max: 2 };
+  }
+
+  if (isGodas) {
+    const isDeepLevel =
+      typeof level === "number" &&
+      Number.isFinite(level) &&
+      Math.abs(level - 4736) < 0.5;
+    return isDeepLevel ? GODAS_DEEP_RANGE : GODAS_DEFAULT_RANGE;
+  }
+
+  return colorbarRange;
+};
+
+export const buildRasterRequestKey = (args: {
+  dataset?: Dataset;
+  backendDatasetId?: string | null;
+  date?: Date;
+  level?: number | null;
+  cssColors?: string[];
+  maskZeroValues?: boolean;
+  colorbarRange?: {
+    enabled?: boolean;
+    min?: number | null;
+    max?: number | null;
+  };
+}) => {
+  const datasetId = args.backendDatasetId ?? args.dataset?.id ?? null;
+  const dateKey = formatDateForApi(args.date);
+  if (!datasetId || !dateKey) {
+    return undefined;
+  }
+
+  const colorKey =
+    args.cssColors && args.cssColors.length
+      ? args.cssColors.join("|")
+      : "default";
+  const maskKey = args.maskZeroValues ? "mask" : "nomask";
+  const customRangeKey = args.colorbarRange?.enabled
+    ? `range-${Number.isFinite(args.colorbarRange?.min as number) ? args.colorbarRange?.min : "auto"}-${Number.isFinite(args.colorbarRange?.max as number) ? args.colorbarRange?.max : "auto"}`
+    : "norange";
+
+  return `${datasetId}::${dateKey}::${args.level ?? "surface"}::${colorKey}::${maskKey}::${customRangeKey}`;
+};
+
+export async function fetchRasterVisualization(options: {
+  dataset?: Dataset;
+  backendDatasetId?: string | null;
+  date?: Date;
+  level?: number | null;
+  cssColors?: string[];
+  maskZeroValues?: boolean;
+  colorbarRange?: {
+    enabled?: boolean;
+    min?: number | null;
+    max?: number | null;
+  };
+  signal?: AbortSignal;
+}): Promise<RasterLayerData> {
+  const {
+    dataset,
+    backendDatasetId,
+    date,
+    level,
+    cssColors,
+    maskZeroValues,
+    colorbarRange,
+    signal,
+  } = options;
+  const targetDatasetId =
+    backendDatasetId ??
+    dataset?.backend?.id ??
+    dataset?.backendId ??
+    dataset?.backend?.slug ??
+    dataset?.backendSlug ??
+    (typeof dataset?.id === "string" ? dataset.id : null);
+
+  const dateKey = formatDateForApi(date);
+  if (!targetDatasetId || !dateKey) {
+    throw new Error("Missing dataset or date for raster request");
+  }
+
+  const effectiveRange = resolveEffectiveColorbarRange(
+    dataset,
+    level,
+    colorbarRange,
+  );
+  const customRange = deriveCustomRange(effectiveRange);
+  const response = await fetch("/api/raster/visualize", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      datasetId: targetDatasetId,
+      date: dateKey,
+      level: level ?? undefined,
+      cssColors,
+      maskZeroValues: maskZeroValues || undefined,
+      minValue: customRange?.min ?? null,
+      maxValue: customRange?.max ?? null,
+      min: customRange?.min ?? null,
+      max: customRange?.max ?? null,
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(
+      message || `Failed to generate raster (status ${response.status})`,
+    );
+  }
+
+  const payload = await response.json();
+  const textures: RasterLayerTexture[] = Array.isArray(payload?.textures)
+    ? payload.textures
+    : [];
+
+  const rows = Number(payload?.shape?.[0]) || 0;
+  const cols = Number(payload?.shape?.[1]) || 0;
+  const values = decodeNumericValues(payload?.values, rows, cols);
+  const latArray = Float64Array.from(payload?.lat ?? []);
+  const lonArray = Float64Array.from(payload?.lon ?? []);
+
+  const sampler = buildSampler(latArray, lonArray, values, rows, cols);
+  const computedRange = computeValueRange(values);
+  const serverRangeMin = payload?.valueRange?.min ?? null;
+  const serverRangeMax = payload?.valueRange?.max ?? null;
+  const fallbackMin = payload?.actualRange?.min ?? null;
+  const fallbackMax = payload?.actualRange?.max ?? null;
+
+  const appliedMin =
+    effectiveRange?.enabled && effectiveRange?.min != null
+      ? Number(effectiveRange.min)
+      : (serverRangeMin ?? computedRange.min ?? fallbackMin);
+  const appliedMax =
+    effectiveRange?.enabled && effectiveRange?.max != null
+      ? Number(effectiveRange.max)
+      : (serverRangeMax ?? computedRange.max ?? fallbackMax);
+
+  return {
+    textures,
+    units: payload?.units ?? dataset?.units,
+    min: appliedMin ?? undefined,
+    max: appliedMax ?? undefined,
+    sampleValue: sampler,
+  };
+}
+
 export const useRasterLayer = ({
   dataset,
   date,
   level,
   maskZeroValues = false,
   colorbarRange,
+  prefetchedData,
 }: UseRasterLayerOptions): UseRasterLayerResult => {
   const [data, setData] = useState<RasterLayerData | undefined>();
   const [isLoading, setIsLoading] = useState(false);
@@ -227,74 +437,32 @@ export const useRasterLayer = ({
     return sanitized.length ? sanitized : undefined;
   }, [dataset]);
 
-  const effectiveColorbarRange = useMemo(() => {
-    // Respect explicit user overrides first.
-    if (colorbarRange?.enabled) {
-      return colorbarRange;
-    }
+  const effectiveColorbarRange = useMemo(
+    () => resolveEffectiveColorbarRange(dataset, level, colorbarRange),
+    [colorbarRange, dataset, level],
+  );
 
-    const GODAS_DEFAULT_RANGE = {
-      enabled: true,
-      min: -0.0000005,
-      max: 0.0000005,
-    };
-
-    const datasetText = [
-      dataset?.id,
-      dataset?.slug,
-      dataset?.name,
-      dataset?.description,
-      dataset?.backend?.datasetName,
-      dataset?.backend?.slug,
-      dataset?.backend?.id,
-    ]
-      .filter((v) => typeof v === "string")
-      .map((v) => v.toLowerCase())
-      .join(" ");
-
-    const isNoaaGlobalTemp =
-      datasetText.includes("noaaglobaltemp") ||
-      datasetText.includes("noaa global temp") ||
-      datasetText.includes("noaa global surface temperature") ||
-      datasetText.includes("noaa global surface temp") ||
-      datasetText.includes("noaa global temperature");
-    const isGodas =
-      datasetText.includes("godas") ||
-      datasetText.includes("global ocean data assimilation system") ||
-      datasetText.includes("ncep global ocean data assimilation");
-
-    if (isNoaaGlobalTemp) {
-      // Force NOAA Global Surface Temperature to tight anomaly window.
-      return { enabled: true, min: -2, max: 2 };
-    }
-
-    if (isGodas) {
-      // Keep GODAS centered around zero with a tight default range.
-      return GODAS_DEFAULT_RANGE;
-    }
-
-    return colorbarRange;
-  }, [colorbarRange, dataset]);
-
-  const requestKey = useMemo(() => {
-    const dateKey = formatDateForApi(date);
-    if (!backendDatasetId || !dateKey) {
-      return undefined;
-    }
-    const colorKey = cssColors ? cssColors.join("|") : "default";
-    const maskKey = maskZeroValues ? "mask" : "nomask";
-    const customRangeKey = effectiveColorbarRange?.enabled
-      ? `range-${Number.isFinite(effectiveColorbarRange?.min as number) ? effectiveColorbarRange?.min : "auto"}-${Number.isFinite(effectiveColorbarRange?.max as number) ? effectiveColorbarRange?.max : "auto"}`
-      : "norange";
-    return `${backendDatasetId}::${dateKey}::${level ?? "surface"}::${colorKey}::${maskKey}::${customRangeKey}`;
-  }, [
-    backendDatasetId,
-    date,
-    level,
-    cssColors,
-    maskZeroValues,
-    effectiveColorbarRange,
-  ]);
+  const requestKey = useMemo(
+    () =>
+      buildRasterRequestKey({
+        dataset,
+        backendDatasetId,
+        date,
+        level,
+        cssColors,
+        maskZeroValues,
+        colorbarRange: effectiveColorbarRange,
+      }),
+    [
+      dataset,
+      backendDatasetId,
+      date,
+      level,
+      cssColors,
+      maskZeroValues,
+      effectiveColorbarRange,
+    ],
+  );
 
   const requiresExplicitLevel = useMemo(() => {
     if (!dataset?.backend) {
@@ -360,6 +528,21 @@ export const useRasterLayer = ({
       return () => abortOngoingRequest();
     }
 
+    const prefetched =
+      requestKey && prefetchedData
+        ? prefetchedData instanceof Map
+          ? prefetchedData.get(requestKey)
+          : prefetchedData[requestKey]
+        : undefined;
+
+    if (prefetched) {
+      abortOngoingRequest();
+      setData(prefetched);
+      setError(null);
+      setIsLoading(false);
+      return () => abortOngoingRequest();
+    }
+
     const run = async () => {
       abortOngoingRequest();
       const controller = new AbortController();
@@ -385,71 +568,18 @@ export const useRasterLayer = ({
           max: customMax,
         });
 
-        const response = await fetch("/api/raster/visualize", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            datasetId: backendDatasetId,
-            date: formatDateForApi(date),
-            level: level ?? undefined,
-            cssColors,
-            maskZeroValues: maskZeroValues || undefined,
-            // Send custom range - use both field names for compatibility
-            minValue: customMin,
-            maxValue: customMax,
-            min: customMin,
-            max: customMax,
-          }),
+        const raster = await fetchRasterVisualization({
+          dataset,
+          backendDatasetId,
+          date,
+          level,
+          cssColors,
+          maskZeroValues,
+          colorbarRange: effectiveColorbarRange,
           signal: controller.signal,
         });
 
-        if (!response.ok) {
-          const message = await response.text();
-          throw new Error(
-            message || `Failed to generate raster (status ${response.status})`,
-          );
-        }
-
-        const payload = await response.json();
-
-        console.log("[useRasterLayer] Response received:", {
-          valueRange: payload.valueRange,
-          actualRange: payload.actualRange,
-          customRangeApplied: payload.processingInfo?.customRangeApplied,
-        });
-        const textures: RasterLayerTexture[] = Array.isArray(payload?.textures)
-          ? payload.textures
-          : [];
-
-        const rows = Number(payload?.shape?.[0]) || 0;
-        const cols = Number(payload?.shape?.[1]) || 0;
-        const values = decodeFloat32(payload?.values);
-        const latArray = Float64Array.from(payload?.lat ?? []);
-        const lonArray = Float64Array.from(payload?.lon ?? []);
-
-        const sampler = buildSampler(latArray, lonArray, values, rows, cols);
-        const computedRange = computeValueRange(values);
-        const fallbackMin =
-          payload?.valueRange?.min ?? payload?.actualRange?.min ?? null;
-        const fallbackMax =
-          payload?.valueRange?.max ?? payload?.actualRange?.max ?? null;
-        const appliedMin =
-          effectiveColorbarRange?.enabled && effectiveColorbarRange?.min != null
-            ? Number(effectiveColorbarRange.min)
-            : (computedRange.min ?? fallbackMin);
-        const appliedMax =
-          effectiveColorbarRange?.enabled && effectiveColorbarRange?.max != null
-            ? Number(effectiveColorbarRange.max)
-            : (computedRange.max ?? fallbackMax);
-
-        setData({
-          textures,
-          units: payload?.units ?? dataset?.units,
-          // Expose the range actually used for rendering so the ColorBar stays in sync.
-          min: appliedMin ?? undefined,
-          max: appliedMax ?? undefined,
-          sampleValue: sampler,
-        });
+        setData(raster);
       } catch (err) {
         if ((err as Error).name === "AbortError") {
           return;
@@ -473,6 +603,7 @@ export const useRasterLayer = ({
       abortOngoingRequest();
     };
   }, [
+    prefetchedData,
     backendDatasetId,
     dataset,
     date,
