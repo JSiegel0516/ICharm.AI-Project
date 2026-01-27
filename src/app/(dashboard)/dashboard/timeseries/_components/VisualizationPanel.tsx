@@ -659,16 +659,6 @@ export function VisualizationPanel({
         />
       )}
 
-      {/* Data Table */}
-      {chartData.length > 0 && (
-        <DataTable
-          data={chartData}
-          selectedDatasets={selectedDatasets}
-          metadata={metadata}
-          yAxisUnit={yAxisUnit}
-        />
-      )}
-
       {/* Periodogram - Frequency Domain Analysis */}
       {chartData.length > 0 && (
         <PeriodogramPanel
@@ -763,6 +753,17 @@ export function VisualizationPanel({
           </CardContent>
         </Card>
       )}
+
+      {/* Data Table 
+      {chartData.length > 0 && (
+        <DataTable
+          data={chartData}
+          selectedDatasets={selectedDatasets}
+          metadata={metadata}
+          yAxisUnit={yAxisUnit}
+        />
+      )}
+        */}
     </div>
   );
 }
