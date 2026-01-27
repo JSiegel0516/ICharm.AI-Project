@@ -920,10 +920,9 @@ export default function HomePage() {
         latitude,
         longitude,
         regionData: data || {
-          name: "GPCP V2.3 Precipitation",
-          precipitation: Math.random() * 2,
-          temperature: 15 + Math.random() * 20,
-          dataset: "Global Precipitation Climatation Project",
+          name: "No data",
+          dataset: currentDataset?.name ?? "No dataset selected",
+          unit: currentDataset?.units ?? "units",
         },
       });
       setShowRegionInfo(true);

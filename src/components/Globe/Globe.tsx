@@ -982,22 +982,31 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
                   const datasetName = currentDataset?.name?.toLowerCase() ?? "";
                   const datasetType =
                     currentDataset?.dataType?.toLowerCase() ?? "";
+                  const isOceanOnlyDataset =
+                    datasetName.includes("sea surface") ||
+                    datasetName.includes("godas") ||
+                    datasetName.includes("ocean data assimilation");
                   const looksTemperature =
                     datasetType.includes("temp") ||
                     datasetName.includes("temp") ||
                     units.toLowerCase().includes("degc") ||
                     units.toLowerCase().includes("celsius");
 
-                  const fallbackValue = looksTemperature
-                    ? -20 + Math.random() * 60
-                    : Math.random() * 100;
-                  const value = rasterValue ?? fallbackValue;
+                  let value: number | null =
+                    typeof rasterValue === "number" ? rasterValue : null;
+                  if (value === null && !isOceanOnlyDataset) {
+                    value = looksTemperature
+                      ? -20 + Math.random() * 60
+                      : Math.random() * 100;
+                  }
 
                   const regionData: RegionData = {
                     name: `${latitude.toFixed(2)}°, ${longitude.toFixed(2)}°`,
-                    ...(looksTemperature
-                      ? { temperature: value }
-                      : { precipitation: value }),
+                    ...(value === null
+                      ? {}
+                      : looksTemperature
+                        ? { temperature: value }
+                        : { precipitation: value }),
                     dataset: currentDataset?.name || "Sample Dataset",
                     unit: units,
                   };
