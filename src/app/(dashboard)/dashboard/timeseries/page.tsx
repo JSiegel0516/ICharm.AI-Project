@@ -24,11 +24,6 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable";
-import {
   useTimeSeries,
   AnalysisModel,
   ChartType,

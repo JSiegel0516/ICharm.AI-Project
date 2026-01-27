@@ -218,10 +218,8 @@ export function DatasetFilter({
     <div className="flex flex-col">
       {/* Dataset Filters */}
       <Card className="flex h-full grow flex-col">
-      <Card className="flex h-full grow flex-col">
         <CardContent className="space-y-2">
           {/* Dataset Selection & Search - Horizontal */}
-          <div className="flex grow flex-row items-center gap-3">
           <div className="flex grow flex-row items-center gap-3">
             <div className="relative flex-1">
               <Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
