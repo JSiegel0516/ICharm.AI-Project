@@ -11,6 +11,8 @@ import type {
   RasterLayerData,
   RasterLayerTexture,
 } from "@/hooks/useRasterLayer";
+import type { RasterGridData } from "@/hooks/useRasterGrid";
+import { buildColorStops, mapValueToRgba } from "@/lib/mesh/colorMapping";
 import { geoPath, geoTransform } from "d3-geo";
 import {
   renderComposite,
@@ -30,6 +32,7 @@ import type { Dataset, RegionData } from "@/types";
 
 type Props = {
   rasterData?: RasterLayerData;
+  rasterGridData?: RasterGridData;
   rasterOpacity?: number;
   satelliteLayerVisible?: boolean;
   boundaryLinesVisible?: boolean;
@@ -37,6 +40,7 @@ type Props = {
   bounds?: ProjectionSpaceBounds;
   currentDataset?: Dataset;
   onRegionClick?: (lat: number, lon: number, data: RegionData) => void;
+  useMeshRaster?: boolean;
   clearMarkerSignal?: number;
 };
 
@@ -325,6 +329,7 @@ const useWindowSize = () => {
 
 export const WinkelMap: React.FC<Props> = ({
   rasterData,
+  rasterGridData,
   rasterOpacity = 1,
   satelliteLayerVisible = true,
   boundaryLinesVisible = true,
@@ -332,18 +337,21 @@ export const WinkelMap: React.FC<Props> = ({
   bounds,
   currentDataset,
   onRegionClick = () => {},
+  useMeshRaster = false,
   clearMarkerSignal = 0,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const { width, height } = useWindowSize();
-  const renderScale =
-    typeof window !== "undefined"
-      ? Math.max(1.3, Math.min(2.2, (window.devicePixelRatio || 1) * 1.1))
-      : 1.6;
+  const [viewScale, setViewScale] = useState(1);
+  const renderScale = useMemo(() => {
+    if (typeof window === "undefined") return 1.6;
+    const dpr = window.devicePixelRatio || 1;
+    const zoomFactor = viewScale > 3 ? 1.6 : viewScale > 1.6 ? 1.3 : 1.1;
+    return Math.max(1.0, Math.min(2.0, dpr * zoomFactor));
+  }, [viewScale]);
   const renderWidth = Math.max(1, Math.round(width / renderScale));
   const renderHeight = Math.max(1, Math.round(height / renderScale));
   const renderTokenRef = useRef(0);
-  const [viewScale, setViewScale] = useState(1);
   const [viewOffset, setViewOffset] = useState<{ x: number; y: number }>({
     x: 0,
     y: 0,
@@ -394,6 +402,8 @@ export const WinkelMap: React.FC<Props> = ({
     lat: number;
     lon: number;
   } | null>(null);
+  const [useMeshRasterActive, setUseMeshRasterActive] = useState(useMeshRaster);
+  const useMeshRasterActiveRef = useRef(useMeshRaster);
   const pendingRenderRef = useRef(false);
   const boundaryCacheRef = useRef(
     new Map<
@@ -403,6 +413,8 @@ export const WinkelMap: React.FC<Props> = ({
   );
   const renderSizeRef = useRef({ width: renderWidth, height: renderHeight });
   const boundsRef = useRef(bounds);
+  const meshToRasterScale = 1.4;
+  const rasterToMeshScale = 1.2;
   const clampViewOffset = useCallback(
     (scale: number, candidate: { x: number; y: number }) => {
       const pad = 0.08; // keep a thin margin of the ellipse in view to avoid blanks
@@ -469,6 +481,100 @@ export const WinkelMap: React.FC<Props> = ({
     const handle = setTimeout(() => setDebouncedOpacity(rasterOpacity), 120);
     return () => clearTimeout(handle);
   }, [rasterOpacity]);
+
+  useEffect(() => {
+    useMeshRasterActiveRef.current = useMeshRasterActive;
+  }, [useMeshRasterActive]);
+
+  useEffect(() => {
+    if (!useMeshRaster) {
+      setUseMeshRasterActive(false);
+      return;
+    }
+    if (!rasterGridData) {
+      setUseMeshRasterActive(false);
+      return;
+    }
+    const current = useMeshRasterActiveRef.current;
+    if (current && viewScale > meshToRasterScale) {
+      setUseMeshRasterActive(false);
+    } else if (!current && viewScale < rasterToMeshScale) {
+      setUseMeshRasterActive(true);
+    }
+  }, [rasterGridData, useMeshRaster, viewScale]);
+
+  const gridTexture = useMemo(() => {
+    if (
+      !rasterGridData ||
+      !currentDataset?.colorScale?.colors?.length ||
+      !rasterGridData.values?.length
+    ) {
+      return null;
+    }
+    const rows = rasterGridData.lat.length;
+    const cols = rasterGridData.lon.length;
+    if (!rows || !cols || rasterGridData.values.length < rows * cols) {
+      return null;
+    }
+
+    const min = rasterGridData.min ?? 0;
+    const max = rasterGridData.max ?? 1;
+    const stops = buildColorStops(currentDataset.colorScale.colors);
+    const data = new Uint8ClampedArray(rows * cols * 4);
+    const latAscending = rasterGridData.lat[0] < rasterGridData.lat[rows - 1];
+
+    for (let r = 0; r < rows; r += 1) {
+      const destRow = latAscending ? rows - 1 - r : r;
+      for (let c = 0; c < cols; c += 1) {
+        const srcIdx = r * cols + c;
+        const destIdx = (destRow * cols + c) * 4;
+        if (rasterGridData.mask && rasterGridData.mask[srcIdx] === 0) {
+          data[destIdx] = 0;
+          data[destIdx + 1] = 0;
+          data[destIdx + 2] = 0;
+          data[destIdx + 3] = 0;
+          continue;
+        }
+        const value = rasterGridData.values[srcIdx];
+        const rgba = mapValueToRgba(value, min, max, stops);
+        data[destIdx] = rgba[0];
+        data[destIdx + 1] = rgba[1];
+        data[destIdx + 2] = rgba[2];
+        data[destIdx + 3] = rgba[3];
+      }
+    }
+
+    const latMin = Math.min(
+      rasterGridData.lat[0],
+      rasterGridData.lat[rows - 1],
+    );
+    const latMax = Math.max(
+      rasterGridData.lat[0],
+      rasterGridData.lat[rows - 1],
+    );
+    const lonMin = Math.min(
+      rasterGridData.lon[0],
+      rasterGridData.lon[cols - 1],
+    );
+    const lonMax = Math.max(
+      rasterGridData.lon[0],
+      rasterGridData.lon[cols - 1],
+    );
+
+    return {
+      texture: {
+        width: cols,
+        height: rows,
+        data,
+      },
+      rectangle: {
+        west: lonMin,
+        east: lonMax,
+        south: latMin,
+        north: latMax,
+      },
+    };
+  }, [currentDataset?.colorScale?.colors, rasterGridData]);
 
   useEffect(() => {
     pendingViewScaleRef.current = viewScale;
@@ -849,6 +955,8 @@ export const WinkelMap: React.FC<Props> = ({
     };
 
     const isZooming = isZoomingRef.current;
+    const shouldUseGridRaster =
+      useMeshRasterActive && Boolean(gridTexture?.texture);
     const passes = isZooming ? [Math.min(baseDownsample * 4, 8)] : [1];
 
     const token = ++renderTokenRef.current;
@@ -874,11 +982,19 @@ export const WinkelMap: React.FC<Props> = ({
           rasters:
             isZooming && downsample > 1
               ? []
-              : rasterTextures.map((entry) => ({
-                  texture: entry.texture,
-                  rectangle: entry.rectangle,
-                  opacity: debouncedOpacity,
-                })),
+              : shouldUseGridRaster && gridTexture
+                ? [
+                    {
+                      texture: gridTexture.texture,
+                      rectangle: gridTexture.rectangle,
+                      opacity: debouncedOpacity,
+                    },
+                  ]
+                : rasterTextures.map((entry) => ({
+                    texture: entry.texture,
+                    rectangle: entry.rectangle,
+                    opacity: debouncedOpacity,
+                  })),
           bounds,
           downsample,
           scale: viewScale,
@@ -888,6 +1004,7 @@ export const WinkelMap: React.FC<Props> = ({
     );
   }, [
     rasterTextures,
+    gridTexture,
     debouncedOpacity,
     bounds,
     blueMarble,
@@ -898,6 +1015,7 @@ export const WinkelMap: React.FC<Props> = ({
     drawOverlay,
     offsets.offsetX,
     offsets.offsetY,
+    useMeshRasterActive,
   ]);
 
   useEffect(() => {
@@ -935,7 +1053,9 @@ export const WinkelMap: React.FC<Props> = ({
       if (!geo) return;
       setClickMarker({ lat: geo.lat, lon: geo.lon });
 
-      const rasterValue = rasterData?.sampleValue(geo.lat, geo.lon);
+      const rasterSource =
+        useMeshRasterActive && rasterGridData ? rasterGridData : rasterData;
+      const rasterValue = rasterSource?.sampleValue(geo.lat, geo.lon);
       const units = rasterData?.units ?? currentDataset?.units ?? "units";
       const datasetName = currentDataset?.name?.toLowerCase() ?? "";
       const datasetType = currentDataset?.dataType?.toLowerCase() ?? "";
@@ -968,10 +1088,12 @@ export const WinkelMap: React.FC<Props> = ({
     renderHeight,
     onRegionClick,
     rasterData,
+    rasterGridData,
     currentDataset,
     viewScale,
     offsets.offsetX,
     offsets.offsetY,
+    useMeshRasterActive,
   ]);
 
   // Drag to pan the view.

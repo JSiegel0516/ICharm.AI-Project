@@ -269,7 +269,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       geographicLinesVisible = false,
       rasterOpacity = 1.0,
       rasterBlurEnabled = false,
-      rasterGridSize = 1,
       hideZeroPrecipitation = false,
       useMeshRaster = false,
       onRasterMetadataChange,
@@ -329,7 +328,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       datasetName.includes("noaa/cires/doe") ||
       (currentDataset?.id ?? "").toLowerCase().includes("noaa-cires-doe");
     const rasterLayerDataset = currentDataset;
-    const meshSamplingStep = Math.max(1, Math.round(rasterGridSize));
+    const meshSamplingStep = 1;
     const meshOpacityKey = rasterOpacity.toFixed(3);
     const rasterState = useRasterLayer({
       dataset: rasterLayerDataset,
@@ -401,7 +400,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
 
-      if (!useMeshRasterEffective || viewMode !== "3d") {
+      if (!useMeshRasterEffective || viewMode === "winkel") {
         setMeshRasterActive(false);
         return;
       }
@@ -835,6 +834,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             mapMode2D: Cesium.MapMode2D.SINGLE_TILE,
           });
 
+          viewer.scene.requestRenderMode = true;
+          viewer.scene.maximumRenderTimeChange = 0.2;
           viewer.scene.globe.depthTestAgainstTerrain = true;
           viewer.screenSpaceEventHandler.removeInputAction(
             Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK,
@@ -1443,7 +1444,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         if (meshData.tiles && meshData.tiles.length > 0) {
           const primitives: any[] = [];
           for (const tile of meshData.tiles) {
-            const tileVerts = tile.rows * tile.cols;
+            const tileVerts = tile.vertexCount ?? tile.rows * tile.cols;
             const positions = new Float64Array(tileVerts * 3);
             for (let i = 0; i < tileVerts; i += 1) {
               const lon = tile.positionsDegrees[i * 2];
@@ -1511,7 +1512,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           return primitives;
         }
 
-        const totalVerts = meshData.rows * meshData.cols;
+        const totalVerts =
+          meshData.vertexCount ?? meshData.rows * meshData.cols;
         const positions = new Float64Array(totalVerts * 3);
         for (let i = 0; i < totalVerts; i += 1) {
           const lon = meshData.positionsDegrees[i * 2];
@@ -1714,6 +1716,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       const is2D = viewMode === "2d" || viewMode === "winkel";
 
       if (is2D) {
+        viewer.resolutionScale = 0.8;
         viewer.scene.morphTo2D(0.0);
         viewer.scene.globe.show = true;
 
@@ -1726,6 +1729,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
 
+      viewer.resolutionScale = 1.0;
       viewer.scene.morphTo3D(0.0);
       viewer.scene.globe.show = true;
 
@@ -1809,7 +1813,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       const viewer = viewerRef.current;
       const hasRasterTextures = Boolean(rasterState.data?.textures?.length);
       const shouldShowImagery =
-        hasRasterTextures && !useMeshRasterActive && viewMode === "3d";
+        hasRasterTextures && !useMeshRasterActive && viewMode !== "winkel";
 
       // Cesium globe materials override imagery layers, so clear when showing rasters.
       if (shouldShowImagery) {
@@ -1946,7 +1950,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         max,
         colors: currentDataset.colorScale.colors,
         opacity: effectiveOpacity,
-        smoothValues: rasterBlurEnabled,
+        smoothValues: false,
+        flatShading: !rasterBlurEnabled,
         sampleStep: meshSamplingStep,
         useTiling: shouldTileLargeMesh,
       });
@@ -2012,7 +2017,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           max,
           colors: currentDataset.colorScale.colors,
           opacity: rasterOpacity,
-          smoothValues: rasterBlurEnabled,
+          smoothValues: false,
+          flatShading: !rasterBlurEnabled,
           sampleStep: meshSamplingStep,
           useTiling: shouldTileLargeMesh,
         });
@@ -2075,12 +2081,16 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           )}
           <WinkelMap
             rasterData={rasterState.data}
+            rasterGridData={
+              useMeshRasterEffective ? rasterGridState.data : undefined
+            }
             rasterOpacity={rasterOpacity}
             satelliteLayerVisible={satelliteLayerVisible}
             boundaryLinesVisible={boundaryLinesVisible}
             geographicLinesVisible={geographicLinesVisible}
             currentDataset={currentDataset}
             onRegionClick={onRegionClick}
+            useMeshRaster={useMeshRasterEffective}
             clearMarkerSignal={winkelClearMarkerTick}
           />
           {currentDataset && (

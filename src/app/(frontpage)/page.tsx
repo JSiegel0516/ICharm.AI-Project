@@ -422,8 +422,7 @@ export default function HomePage() {
     geographicLinesVisible: false,
     rasterOpacity: 0.9,
     hideZeroPrecipitation: false,
-    rasterBlurEnabled: false,
-    rasterGridSize: 1,
+    rasterBlurEnabled: true,
     colorbarCustomMin: null,
     colorbarCustomMax: null,
     viewMode: "3d",
@@ -1070,31 +1069,6 @@ export default function HomePage() {
     setGlobeSettings((prev) => ({ ...prev, rasterBlurEnabled: enabled }));
   }, []);
 
-  const handleRasterGridSizeChange = useCallback((value: number) => {
-    setGlobeSettings((prev) => ({ ...prev, rasterGridSize: value }));
-  }, []);
-
-  const rasterGridSizeMax = useMemo(() => {
-    const resolution = currentDataset?.spatialResolution ?? "";
-    const matches = String(resolution).match(/[\d.]+/g) ?? [];
-    const values = matches
-      .map((val) => Number.parseFloat(val))
-      .filter((val) => Number.isFinite(val));
-    const reference = values.length ? Math.max(...values) : 5;
-    if (reference >= 5) return 4;
-    if (reference < 1.5) return 6;
-    return 5;
-  }, [currentDataset?.spatialResolution]);
-
-  useEffect(() => {
-    setGlobeSettings((prev) => {
-      if (prev.rasterGridSize <= rasterGridSizeMax) {
-        return prev;
-      }
-      return { ...prev, rasterGridSize: rasterGridSizeMax };
-    });
-  }, [rasterGridSizeMax]);
-
   const handleRasterOpacityChange = useCallback((opacity: number) => {
     setGlobeSettings((prev) => ({ ...prev, rasterOpacity: opacity }));
   }, []);
@@ -1327,7 +1301,6 @@ export default function HomePage() {
         geographicLinesVisible={globeSettings.geographicLinesVisible}
         rasterOpacity={globeSettings.rasterOpacity}
         rasterBlurEnabled={globeSettings.rasterBlurEnabled}
-        rasterGridSize={globeSettings.rasterGridSize}
         useMeshRaster={useMeshRaster}
         viewMode={globeSettings.viewMode ?? "3d"}
         onRasterMetadataChange={setRasterMeta}
@@ -1354,8 +1327,6 @@ export default function HomePage() {
             onRasterOpacityChange={handleRasterOpacityChange}
             onHideZeroPrecipToggle={handleHideZeroPrecipToggle}
             onRasterBlurToggle={handleRasterBlurToggle}
-            onRasterGridSizeChange={handleRasterGridSizeChange}
-            rasterGridSizeMax={rasterGridSizeMax}
             onColorbarRangeChange={handleColorbarRangeChange}
             onColorbarRangeReset={handleColorbarRangeReset}
             viewMode={globeSettings.viewMode ?? "3d"}

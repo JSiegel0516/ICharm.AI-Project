@@ -176,7 +176,6 @@ export interface GlobeSettings {
   rasterOpacity: number;
   hideZeroPrecipitation: boolean;
   rasterBlurEnabled: boolean;
-  rasterGridSize: number;
   colorbarCustomMin?: number | null;
   colorbarCustomMax?: number | null;
   viewMode?: GlobeViewMode;
@@ -287,7 +286,6 @@ export interface GlobeProps {
   rasterOpacity?: number;
   hideZeroPrecipitation?: boolean;
   rasterBlurEnabled?: boolean;
-  rasterGridSize?: number;
   useMeshRaster?: boolean;
   rasterState: UseRasterLayerResult;
   rasterGridState: UseRasterGridResult;
@@ -445,8 +443,6 @@ export interface GlobeSettingsPanelProps {
   onHideZeroPrecipitationToggle: (enabled: boolean) => void;
   rasterBlurEnabled: boolean;
   onRasterBlurToggle: (enabled: boolean) => void;
-  rasterGridSize: number;
-  onRasterGridSizeChange: (value: number) => void;
   colorbarCustomMin?: number | null;
   colorbarCustomMax?: number | null;
   onColorbarRangeChange: (payload: {
