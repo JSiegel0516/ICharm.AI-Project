@@ -7,7 +7,23 @@ const DATA_SERVICE_URL =
 
 export async function POST(request: NextRequest) {
   try {
-    const payload = await request.json();
+    const rawBody = await request.text();
+    if (!rawBody) {
+      return NextResponse.json(
+        { error: "Missing request body" },
+        { status: 400 },
+      );
+    }
+
+    let payload: any;
+    try {
+      payload = JSON.parse(rawBody);
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid JSON payload" },
+        { status: 400 },
+      );
+    }
 
     console.log("[Raster Grid API] Request:", {
       datasetId: payload.datasetId,

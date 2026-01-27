@@ -401,7 +401,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
 
-      const height = viewerRef.current.camera.positionCartographic.height;
+      const viewer = viewerRef.current;
+      const height = viewer.camera.positionCartographic.height;
       const usingMesh = useMeshRasterActiveRef.current;
 
       if (usingMesh && height < MESH_TO_IMAGERY_HEIGHT) {
@@ -409,7 +410,24 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       } else if (!usingMesh && height > IMAGERY_TO_MESH_HEIGHT) {
         setMeshRasterActive(true);
       }
-    }, [setMeshRasterActive, useMeshRasterEffective, viewerReady, viewMode]);
+
+      // Keep imagery in sync with zoom even if mesh state lags.
+      const layers = rasterLayerRef.current;
+      if (layers.length) {
+        const showImagery = height < MESH_TO_IMAGERY_HEIGHT;
+        layers.forEach((layer) => {
+          layer.show = showImagery;
+          layer.alpha = showImagery ? rasterOpacity : 0;
+        });
+        viewer.scene.requestRender();
+      }
+    }, [
+      setMeshRasterActive,
+      useMeshRasterEffective,
+      viewerReady,
+      viewMode,
+      rasterOpacity,
+    ]);
 
     const clearMarker = useCallback(() => {
       if (
