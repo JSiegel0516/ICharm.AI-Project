@@ -240,12 +240,51 @@ export const useRasterGrid = ({
     ],
   );
 
+  const requiresExplicitLevel = useMemo(() => {
+    if (!dataset) return false;
+
+    const levelValues = dataset?.levelValues;
+    if (Array.isArray(levelValues) && levelValues.length > 0) {
+      return true;
+    }
+
+    const levelsText = (dataset?.levels ?? "").trim().toLowerCase();
+    if (!levelsText || levelsText === "none") {
+      return false;
+    }
+
+    const containsNumber = /\d/.test(levelsText);
+    const mentionsVerticalAxis =
+      levelsText.includes("pressure") ||
+      levelsText.includes("height") ||
+      levelsText.includes("altitude");
+
+    return containsNumber || mentionsVerticalAxis;
+  }, [dataset]);
+
+  const waitingForLevel =
+    requiresExplicitLevel && (level === null || level === undefined);
+
   useEffect(() => {
     // Early return for invalid states or disabled
     if (!enabled || !dataset?.id || !backendDatasetId || !date) {
       setData(undefined);
       setDataKey(undefined);
       setIsLoading(false);
+      setError(null);
+      lastRequestKeyRef.current = requestKey;
+      if (controllerRef.current) {
+        controllerRef.current.abort();
+        controllerRef.current = null;
+      }
+      return;
+    }
+
+    // Wait for level selection if required
+    if (waitingForLevel) {
+      setData(undefined);
+      setDataKey(undefined);
+      setIsLoading(true);
       setError(null);
       lastRequestKeyRef.current = requestKey;
       if (controllerRef.current) {
@@ -325,6 +364,7 @@ export const useRasterGrid = ({
     dataset,
     maskZeroValues,
     effectiveColorbarRange,
+    waitingForLevel,
     prefetchedData,
     requestKey,
   ]);

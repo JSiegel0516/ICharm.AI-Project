@@ -352,6 +352,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
     const MESH_TO_IMAGERY_HEIGHT = 2_200_000;
     const IMAGERY_TO_MESH_HEIGHT = 3_000_000;
+    const IMAGERY_OVERLAP_HEIGHT = MESH_TO_IMAGERY_HEIGHT * 1.15;
+    const IMAGERY_HIDE_HEIGHT = IMAGERY_TO_MESH_HEIGHT * 1.1;
     const IMAGERY_PRELOAD_HEIGHT = MESH_TO_IMAGERY_HEIGHT * 1.15;
 
     // FIXED: Add loading timeout to prevent infinite loading
@@ -414,11 +416,20 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       // Keep imagery in sync with zoom even if mesh state lags.
       const layers = rasterLayerRef.current;
       if (layers.length) {
-        const showImagery = height < MESH_TO_IMAGERY_HEIGHT;
+        const showImagery = height < IMAGERY_HIDE_HEIGHT;
         layers.forEach((layer) => {
           layer.show = showImagery;
           layer.alpha = showImagery ? rasterOpacity : 0;
         });
+        if (showImagery) {
+          if (viewer.scene.globe.material) {
+            viewer.scene.globe.material = undefined;
+          }
+        } else if (globeMaterialRef.current) {
+          if (viewer.scene.globe.material !== globeMaterialRef.current) {
+            viewer.scene.globe.material = globeMaterialRef.current;
+          }
+        }
         viewer.scene.requestRender();
       }
     }, [
@@ -1377,12 +1388,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       (meshData: ReturnType<typeof buildRasterMesh>) => {
         const viewer = viewerRef.current;
         if (!viewer || !cesiumInstance) {
-          return null;
-        }
-
-        // OPTIMIZED: Skip mesh generation if too complex
-        if (meshData.rows * meshData.cols > 100000) {
-          console.warn("Mesh too complex, skipping generation");
           return null;
         }
 
