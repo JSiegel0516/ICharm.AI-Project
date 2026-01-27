@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const DATA_SERVICE_URL = process.env.DATA_SERVICE_URL ?? "http://localhost:8000";
+const DATA_SERVICE_URL =
+  process.env.DATA_SERVICE_URL ?? "http://localhost:8000";
 
 export async function POST(request: NextRequest) {
   try {
@@ -31,8 +32,12 @@ export async function POST(request: NextRequest) {
       });
 
       return NextResponse.json(
-        { error: `Backend error: ${response.statusText}`, details: errorText, endpoint },
-        { status: response.status }
+        {
+          error: `Backend error: ${response.statusText}`,
+          details: errorText,
+          endpoint,
+        },
+        { status: response.status },
       );
     }
 
@@ -46,8 +51,10 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[Timeseries Extract] Request failed:", error);
 
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    const isTimeout = errorMessage.includes("timeout") || errorMessage.includes("aborted");
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    const isTimeout =
+      errorMessage.includes("timeout") || errorMessage.includes("aborted");
 
     return NextResponse.json(
       {
@@ -57,7 +64,7 @@ export async function POST(request: NextRequest) {
         details: errorMessage,
         serviceUrl: DATA_SERVICE_URL,
       },
-      { status: isTimeout ? 504 : 502 }
+      { status: isTimeout ? 504 : 502 },
     );
   }
 }

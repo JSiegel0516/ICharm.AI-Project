@@ -297,6 +297,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const [cesiumInstance, setCesiumInstance] = useState<any>(null);
     const [viewerReady, setViewerReady] = useState(false);
     const [isRasterImageryLoading, setIsRasterImageryLoading] = useState(false);
+    const useMeshRasterEffective = useMeshRaster;
 
     const satelliteLayerRef = useRef<any>(null);
     const boundaryEntitiesRef = useRef<any[]>([]);
@@ -341,15 +342,17 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       level: selectedLevel ?? null,
       maskZeroValues: shouldHideZero,
       colorbarRange,
-      enabled: useMeshRaster,
+      enabled: useMeshRasterEffective,
       prefetchedData: prefetchedRasterGrids,
     });
-    const [useMeshRasterActive, setUseMeshRasterActive] =
-      useState(useMeshRaster);
-    const useMeshRasterActiveRef = useRef(useMeshRaster);
+    const [useMeshRasterActive, setUseMeshRasterActive] = useState(
+      useMeshRasterEffective,
+    );
+    const useMeshRasterActiveRef = useRef(useMeshRasterEffective);
 
     const MESH_TO_IMAGERY_HEIGHT = 2_200_000;
     const IMAGERY_TO_MESH_HEIGHT = 3_000_000;
+    const IMAGERY_PRELOAD_HEIGHT = MESH_TO_IMAGERY_HEIGHT * 1.15;
 
     // FIXED: Add loading timeout to prevent infinite loading
     useEffect(() => {
@@ -393,7 +396,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
 
-      if (!useMeshRaster || viewMode !== "3d") {
+      if (!useMeshRasterEffective || viewMode !== "3d") {
         setMeshRasterActive(false);
         return;
       }
@@ -406,7 +409,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       } else if (!usingMesh && height > IMAGERY_TO_MESH_HEIGHT) {
         setMeshRasterActive(true);
       }
-    }, [setMeshRasterActive, useMeshRaster, viewerReady, viewMode]);
+    }, [setMeshRasterActive, useMeshRasterEffective, viewerReady, viewMode]);
 
     const clearMarker = useCallback(() => {
       if (
@@ -687,10 +690,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     );
 
     useEffect(() => {
-      if (!useMeshRaster) {
+      if (!useMeshRasterEffective) {
         setMeshRasterActive(false);
       }
-    }, [setMeshRasterActive, useMeshRaster]);
+    }, [setMeshRasterActive, useMeshRasterEffective]);
 
     useEffect(() => {
       if (isPlaying) {
@@ -1222,12 +1225,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
         const newLayers: any[] = [];
         const height = viewer.camera?.positionCartographic?.height;
-        const forceImagery =
-          Number.isFinite(height) && height < MESH_TO_IMAGERY_HEIGHT;
-        if (forceImagery && useMeshRasterActiveRef.current) {
-          setMeshRasterActive(false);
-        }
-        const visible = forceImagery ? true : !useMeshRasterActiveRef.current;
+        const shouldPreload =
+          Number.isFinite(height) && height < IMAGERY_PRELOAD_HEIGHT;
+        const visible = !useMeshRasterActiveRef.current;
 
         validTextures.forEach((texture, index) => {
           try {
@@ -1266,11 +1266,12 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         const fadeDuration = 100; // Reduced from 220ms
 
         const targetOpacity = visible ? rasterOpacity : 0;
+        const shouldShow = visible || shouldPreload;
 
         // OPTIMIZED: Direct assignment for faster rendering
         newLayers.forEach((layer) => {
           layer.alpha = targetOpacity;
-          layer.show = visible;
+          layer.show = shouldShow;
         });
 
         // OPTIMIZED: Quick cleanup of previous layers
@@ -1817,7 +1818,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     }, [viewerReady, applyViewMode]);
 
     useEffect(() => {
-      if (useMeshRaster && useMeshRasterActive) {
+      if (useMeshRasterEffective && useMeshRasterActive) {
         if (
           rasterGridState.data &&
           rasterGridState.dataKey === rasterGridState.requestKey
@@ -1861,7 +1862,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       rasterGridState.dataKey,
       rasterGridState.requestKey,
       rasterState.data,
-      useMeshRaster,
+      useMeshRasterEffective,
       useMeshRasterActive,
     ]);
 
@@ -1885,7 +1886,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
     useEffect(() => {
       if (!viewerReady) return;
-      if (!useMeshRaster || !useMeshRasterActive) {
+      if (!useMeshRasterEffective || !useMeshRasterActive) {
         clearRasterMesh();
         return;
       }
@@ -1925,13 +1926,13 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       rasterOpacity,
       satelliteLayerVisible,
       shouldTileLargeMesh,
-      useMeshRaster,
+      useMeshRasterEffective,
       useMeshRasterActive,
       viewerReady,
     ]);
 
     useEffect(() => {
-      if (!viewerReady || !useMeshRaster || !prefetchedRasterGrids) {
+      if (!viewerReady || !useMeshRasterEffective || !prefetchedRasterGrids) {
         return;
       }
       const abortSignal = { aborted: false };
@@ -1991,7 +1992,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       rasterBlurEnabled,
       rasterOpacity,
       shouldTileLargeMesh,
-      useMeshRaster,
+      useMeshRasterEffective,
       viewerReady,
     ]);
 
