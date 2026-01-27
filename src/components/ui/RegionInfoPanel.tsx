@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/card";
 import { ChartConfig, ChartContainer } from "@/components/ui/chart";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogClose,
@@ -168,6 +169,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     useState<DateRangeOption>("1year");
   const [customStartDate, setCustomStartDate] = useState<string>("");
   const [customEndDate, setCustomEndDate] = useState<string>("");
+  const isCustomRange = dateRangeOption === "custom";
 
   const datasetUnit = regionData.unit ?? currentDataset?.units ?? "units";
 
@@ -919,12 +921,46 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                         <NativeSelectOption value="1year">
                           1 Year
                         </NativeSelectOption>
+                        <NativeSelectOption value="custom">
+                          Custom range
+                        </NativeSelectOption>
                       </NativeSelect>
+
+                      {isCustomRange && (
+                        <div className="grid w-full gap-2 md:grid-cols-2">
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium text-gray-400">
+                              Start date
+                            </label>
+                            <Input
+                              type="date"
+                              value={customStartDate}
+                              onChange={(e) =>
+                                setCustomStartDate(e.target.value)
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium text-gray-400">
+                              End date
+                            </label>
+                            <Input
+                              type="date"
+                              value={customEndDate}
+                              onChange={(e) => setCustomEndDate(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      )}
 
                       <Button
                         variant="outline"
                         onClick={handleTimeseriesClick}
-                        disabled={timeseriesLoading}
+                        disabled={
+                          timeseriesLoading ||
+                          (isCustomRange &&
+                            (!customStartDate || !customEndDate))
+                        }
                       >
                         {timeseriesLoading ? "Loading..." : "Update"}
                       </Button>
