@@ -653,7 +653,7 @@ export function useTimeSeries(baseURL: string = ""): UseTimeSeriesAPI {
         });
 
         const response = await apiClientRef.current!.post<TimeSeriesResponse>(
-          "/api/v2/timeseries/extract",
+          "/api/timeseries/extract",
           request,
           {
             cancelToken: cancelTokenRef.current.token,
@@ -723,7 +723,7 @@ export function useTimeSeries(baseURL: string = ""): UseTimeSeriesAPI {
         if (filters?.search) params.append("search", filters.search);
 
         const response = await axios.get<{ datasets: DatasetInfo[] }>(
-          `${baseURL}/api/v2/timeseries/datasets?${params.toString()}`,
+          `/api/timeseries/datasets?${params.toString()}`,
         );
 
         setAvailableDatasets(response.data.datasets);

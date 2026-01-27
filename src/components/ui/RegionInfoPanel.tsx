@@ -682,16 +682,13 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       });
       console.log("[Timeseries] Fetching from: /api/v2/timeseries/extract");
 
-      const response = await fetch(
-        "http://localhost:8000/api/v2/timeseries/extract",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
+      const response = await fetch("/api/timeseries/extract", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify(payload),
+      });
 
       console.log("[Timeseries] Response status:", response.status);
       console.log("[Timeseries] Response headers:", response.headers);

@@ -75,7 +75,7 @@ function TimeSeriesContent() {
     cancelRequest,
     clearCache,
     reset,
-  } = useTimeSeries(process.env.DATA_BACKEND_URL ?? "http://localhost:8000");
+  } = useTimeSeries("");
 
   // Local state
   const [selectedDatasets, setSelectedDatasets] = useState<DatasetInfo[]>([]);
