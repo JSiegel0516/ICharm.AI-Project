@@ -7,12 +7,12 @@ import React, {
   useCallback,
   useEffect,
 } from "react";
-import Globe from "@/components/Globe/Globe";
+import Globe from "@/app/(frontpage)/_components/globe/Globe";
 import type { GlobeRef } from "@/types/index";
 import ColorBar from "@/components/ui/ColorBar";
-import TimeBar from "@/components/ui/TimeBar";
-import PressureLevelsSelector from "@/components/ui/Popups/PressureLevelsSelector";
-import RegionInfoPanel from "@/components/ui/RegionInfoPanel";
+import TimeBar from "@/app/(frontpage)/_components/overlay/TimeBar";
+import PressureLevelsSelector from "@/app/(frontpage)/_components/overlay/PressureLevelsSelector";
+import RegionInfoPanel from "@/app/(frontpage)/_components/overlay/RegionInfoPanel";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -45,8 +45,8 @@ import {
 } from "@/hooks/useRasterGrid";
 import { resolveEffectiveColorbarRange } from "@/lib/mesh/rasterUtils";
 import { Play, Square, Loader2 } from "lucide-react";
-import { SideButtons } from "./_components/SideButtons";
-import { Tutorial } from "./_components/Tutorial";
+import { SideButtons } from "./_components/side-buttons/SideButtons";
+import { Tutorial } from "./_components/side-buttons/Tutorial";
 
 import { useRasterLayer } from "@/hooks/useRasterLayer";
 import { useRasterGrid } from "@/hooks/useRasterGrid";

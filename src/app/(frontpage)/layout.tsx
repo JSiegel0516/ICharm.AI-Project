@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { AppStateProvider } from "@/context/HeaderContext";
-import Header from "@/app/(frontpage)/_components/Header/Header";
+import Header from "@/app/(frontpage)/_components/header/Header";
 import ChatBot from "@/components/Chat/ChatBot";
 import { ThemeProvider } from "@/components/theme-provider";
 

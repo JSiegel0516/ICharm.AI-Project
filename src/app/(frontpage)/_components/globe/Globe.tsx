@@ -14,7 +14,7 @@ import { useRasterGrid, RasterGridData } from "@/hooks/useRasterGrid";
 import { buildRasterMesh } from "@/lib/mesh/rasterMesh";
 import type { RasterLayerData } from "@/hooks/useRasterLayer";
 import GlobeLoading from "./GlobeLoading";
-import WinkelMap from "./WinkelMap";
+import WinkelMap from "../../../../components/Globe/WinkelMap";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

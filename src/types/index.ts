@@ -77,10 +77,6 @@ export interface Dataset {
   updatedAt?: string | null;
 }
 
-export interface ControlPanelProps {
-  onShowSettings: () => void;
-}
-
 export interface ColorScale {
   min: number;
   max: number;

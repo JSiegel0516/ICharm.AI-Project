@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { MessageCircle, X } from "lucide-react";
-import ChatPage from "@/components/ui/ChatPage";
+import ChatPage from "@/components/Chat/ChatPage";
 
 // Remove ChatBotProps since we're managing state internally
 const ChatBot: React.FC = () => {
