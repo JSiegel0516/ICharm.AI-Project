@@ -1,4 +1,5 @@
-import type { ColorScale, Dataset, DatasetBackendDetails } from "@/types";
+import type { ColorScale } from "@/types";
+import type { ClimateDatasetRecord, Dataset } from "@/types";
 import { getColorMapColors } from "@/utils/colorMaps";
 import { AIR_TEMPERATURE_BASE, SHARP_BANDS } from "@/utils/colorScales";
 
@@ -48,30 +49,6 @@ const reducePalette = (colors: string[], count: number): string[] => {
 
   return result;
 };
-
-export interface BackendDatasetRecord {
-  id?: string; // ⭐ Add database ID
-  slug?: string; // ⭐ Add slug from database
-  sourceName?: string;
-  datasetName: string;
-  layerParameter?: string;
-  statistic?: string;
-  datasetType?: string;
-  levels?: string | null;
-  levelValues?: string | null;
-  levelUnits?: string | null;
-  Stored?: string | null;
-  stored?: string | null;
-  inputFile?: string | null;
-  keyVariable?: string | null;
-  units?: string | null;
-  spatialResolution?: string | null;
-  engine?: string | null;
-  kerchunkPath?: string | null;
-  origLocation?: string | null;
-  startDate?: string | null;
-  endDate?: string | null;
-}
 
 type DataCategory = Dataset["dataType"] | "default";
 
@@ -164,27 +141,6 @@ function slugify(value: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-function inferDataType(record: BackendDatasetRecord): Dataset["dataType"] {
-  const target = [record.datasetName, record.layerParameter, record.datasetType]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  if (target.includes("precip")) {
-    return "precipitation";
-  }
-  if (target.includes("wind")) {
-    return "wind";
-  }
-  if (target.includes("pressure") || target.includes("geopotential")) {
-    return "pressure";
-  }
-  if (target.includes("vegetation") || target.includes("ndvi")) {
-    return "humidity";
-  }
-  return "temperature";
-}
-
 function inferTemporalResolution(
   statistic?: string,
 ): Dataset["temporalResolution"] {
@@ -226,8 +182,8 @@ function normalizeUnits(units?: string | null, dataType?: string): string {
   }
 }
 
-function parseLevelValues(value?: string | null): number[] {
-  if (!value || value.toLowerCase() === "none") {
+export function parseLevelValues(value?: string | null): number[] {
+  if (!value || value.trim() === "" || value.toLowerCase() === "none") {
     return [];
   }
 
@@ -265,67 +221,237 @@ function toIsoDate(input?: string | null): string | null {
   return trimmed;
 }
 
-function buildBackendDetails(
-  record: BackendDatasetRecord,
-): DatasetBackendDetails {
+function validateDataType(
+  type: string | null | undefined,
+): "temperature" | "precipitation" | "wind" | "pressure" | "humidity" {
+  const normalized = type?.toLowerCase();
+
+  switch (normalized) {
+    case "temperature":
+    case "precipitation":
+    case "wind":
+    case "pressure":
+    case "humidity":
+      return normalized;
+    default:
+      return "temperature";
+  }
+}
+
+function deriveTemporalResolution(
+  datasetName?: string,
+): "hourly" | "daily" | "monthly" | "yearly" {
+  const name = datasetName?.toLowerCase() || "";
+  if (name.includes("hourly")) return "hourly";
+  if (name.includes("monthly")) return "monthly";
+  if (name.includes("yearly") || name.includes("annual")) return "yearly";
+  return "daily";
+}
+
+export function generateColorScale(
+  datasetName: string,
+  parameter: string | null | undefined,
+  units: string | null | undefined,
+): ColorScale {
+  const name = datasetName.toLowerCase();
+  const param = (parameter || "").toLowerCase();
+  const unitsLower = (units || "").toLowerCase();
+
+  const buildScale = (
+    colors: string[],
+    labels: string[],
+    min: number,
+    max: number,
+  ): ColorScale => ({
+    labels,
+    colors: reducePalette(colors, SHARP_BANDS),
+    min,
+    max,
+  });
+
+  const SST_COLORS = getColorMapColors("Matlab|Jet");
+  const AIR_COLORS = AIR_TEMPERATURE_BASE;
+  const PRECIP_COLORS = getColorMapColors(
+    "Color Brewer 2.0|Sequential|Multi-hue|9-class YlGnBu",
+  );
+  const WIND_COLORS = getColorMapColors(
+    "Color Brewer 2.0|Sequential|Single-hue|9-class Greys",
+  );
+  const PRESSURE_COLORS = getColorMapColors("Matlab|Bone");
+  const DEFAULT_COLORS = getColorMapColors("Other|Gray scale");
+
+  // Check for Sea Surface Temperature first (more specific)
+  if (
+    name.includes("sst") ||
+    name.includes("sea surface temperature") ||
+    name.includes("amsre") ||
+    name.includes("modis") ||
+    param.includes("sea surface")
+  ) {
+    return buildScale(
+      SST_COLORS,
+      ["-2°C", "5°C", "12°C", "18°C", "25°C", "32°C"],
+      -2,
+      35,
+    );
+  }
+
+  // Air Temperature scales
+  if (
+    name.includes("noaaglobaltemp") ||
+    name.includes("noaa global surface temperature") ||
+    name.includes("noaa global temp") ||
+    name.includes("noaa global temperature")
+  ) {
+    return buildScale(
+      AIR_COLORS,
+      ["-40°C", "-20°C", "0°C", "20°C", "40°C"],
+      -40,
+      40,
+    );
+  }
+
+  if (
+    name.includes("air") ||
+    name.includes("airtemp") ||
+    param.includes("air temperature") ||
+    param.includes("temperature") ||
+    unitsLower.includes("degc") ||
+    unitsLower.includes("kelvin")
+  ) {
+    return buildScale(
+      AIR_COLORS,
+      ["-40°C", "-20°C", "0°C", "20°C", "40°C"],
+      -40,
+      40,
+    );
+  }
+
+  // GODAS vertical velocity
+  if (
+    name.includes("godas") ||
+    name.includes("global ocean data assimilation system") ||
+    name.includes("ncep global ocean data assimilation") ||
+    param.includes("dzdt")
+  ) {
+    const GODAS_COLORS = [
+      "#6b00b5",
+      "#8a4bcc",
+      "#a777dd",
+      "#c8b6ea",
+      "#e7e7ee",
+      "#b8e2e6",
+      "#7dc9cc",
+      "#3ea3a8",
+      "#137b80",
+    ];
+    return buildScale(
+      GODAS_COLORS,
+      ["-0.000005", "0", "0.000005"],
+      -0.000005,
+      0.000005,
+    );
+  }
+
+  // Precipitation scales
+  if (
+    name.includes("precip") ||
+    name.includes("precipitation") ||
+    name.includes("rain") ||
+    param.includes("precipitation") ||
+    unitsLower.includes("mm")
+  ) {
+    return buildScale(
+      PRECIP_COLORS,
+      ["0", "100", "200", "300", "400", "500"],
+      0,
+      500,
+    );
+  }
+
+  // Wind/velocity scales
+  if (
+    param.includes("velocity") ||
+    param.includes("wind") ||
+    unitsLower.includes("m/s")
+  ) {
+    return buildScale(
+      WIND_COLORS,
+      ["0 m/s", "5 m/s", "10 m/s", "15 m/s", "20 m/s", "25 m/s"],
+      0,
+      25,
+    );
+  }
+
+  if (param.includes("pressure")) {
+    return buildScale(
+      PRESSURE_COLORS,
+      ["900", "940", "980", "1020", "1050"],
+      900,
+      1050,
+    );
+  }
+
+  // Default scale
+  return buildScale(
+    DEFAULT_COLORS,
+    ["Low", "Medium-Low", "Medium", "Medium-High", "High"],
+    0,
+    100,
+  );
+}
+
+export function transformBackendDataset(record: ClimateDatasetRecord): Dataset {
   const storedValue = (record.Stored ?? record.stored ?? "").toLowerCase();
+  const stored =
+    storedValue === "local" || storedValue === "cloud" ? storedValue : null;
 
   return {
-    id: record.id ?? null,
+    // Core identifiers
+    id: record.id,
     slug: record.slug ?? null,
+
+    // Display information
+    name: record.datasetName,
+    description: `${record.layerParameter || "Data"} - ${record.statistic || "Analysis"}`,
+
+    // Data classification
+    dataType: validateDataType(record.datasetType),
+    units: record.units || "",
+
+    // Visual representation (you'll need to implement this)
+    colorScale: generateColorScale(
+      record.datasetName,
+      record.layerParameter,
+      record.units,
+    ),
+
+    // Temporal information
+    temporalResolution: deriveTemporalResolution(record.datasetName),
+    startDate: record.startDate ? new Date(record.startDate) : new Date(),
+    endDate: record.endDate ? new Date(record.endDate) : new Date(),
+
+    // Backend/source details (flattened)
     sourceName: record.sourceName ?? null,
-    datasetName: record.datasetName,
     layerParameter: record.layerParameter ?? null,
     statistic: record.statistic ?? null,
-    datasetType: record.datasetType ?? null,
+
+    // Level information (parsed)
     levels: record.levels ?? null,
     levelValues: parseLevelValues(record.levelValues),
     levelUnits: record.levelUnits ?? null,
-    stored:
-      storedValue === "local" || storedValue === "cloud" ? storedValue : null,
+
+    // Storage and processing
+    stored,
     inputFile: record.inputFile ?? null,
     keyVariable: record.keyVariable ?? null,
-    units: record.units ?? null,
     spatialResolution: record.spatialResolution ?? null,
-    engine:
-      record.engine && record.engine.toLowerCase() !== "none"
-        ? record.engine
-        : null,
-    kerchunkPath:
-      record.kerchunkPath && record.kerchunkPath.toLowerCase() !== "none"
-        ? record.kerchunkPath
-        : null,
+    engine: record.engine ?? null,
+    kerchunkPath: record.kerchunkPath ?? null,
     origLocation: record.origLocation ?? null,
-    startDate: toIsoDate(record.startDate),
-    endDate: toIsoDate(record.endDate),
+
+    // Timestamps
+    createdAt: record.createdAt ?? null,
+    updatedAt: record.updatedAt ?? null,
   };
-}
-
-export function normalizeDataset(record: BackendDatasetRecord): Dataset {
-  const dataType = inferDataType(record);
-  const colorKey: DataCategory =
-    dataType in DEFAULT_COLOR_SCALES ? dataType : "default";
-  const baseColorScale = DEFAULT_COLOR_SCALES[colorKey];
-  const resolvedSlug = record.slug || slugify(record.datasetName);
-
-  return {
-    // ⭐ Use slug from database if available, otherwise fall back to slugified name
-    id: resolvedSlug,
-    slug: resolvedSlug, // ⭐ Add slug field
-    backendId: record.id ?? null,
-    backendSlug: record.slug ?? null,
-    name: record.datasetName,
-    description: [record.layerParameter, record.statistic]
-      .filter(Boolean)
-      .join(" • "),
-    units: normalizeUnits(record.units, dataType),
-    dataType,
-    temporalResolution: inferTemporalResolution(record.statistic),
-    colorScale: cloneColorScale(baseColorScale),
-    backend: buildBackendDetails(record),
-  };
-}
-
-export function normalizeDatasets(records: BackendDatasetRecord[]): Dataset[] {
-  return records.map(normalizeDataset);
 }

@@ -4,15 +4,15 @@ import { ChatDB } from "@/lib/db";
 const TEST_USER_EMAIL =
   process.env.TEST_CHAT_USER_EMAIL ?? "test-user@icharm.local";
 
+// Fix: params is now a Promise
 type RouteParams = {
-  params: {
+  params: Promise<{
     sessionId: string;
-  };
+  }>;
 };
 
-export async function PATCH(request: NextRequest, ctx: RouteParams) {
-  const params = await ctx.params;
-  const sessionId = params?.sessionId;
+export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  const { sessionId } = await params;
 
   if (!sessionId) {
     return NextResponse.json(
@@ -56,9 +56,8 @@ export async function PATCH(request: NextRequest, ctx: RouteParams) {
   }
 }
 
-export async function DELETE(_request: NextRequest, ctx: RouteParams) {
-  const params = await ctx.params;
-  const sessionId = params?.sessionId;
+export async function DELETE(_request: NextRequest, { params }: RouteParams) {
+  const { sessionId } = await params;
 
   if (!sessionId) {
     return NextResponse.json(

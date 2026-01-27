@@ -858,7 +858,7 @@ export const WinkelMap: React.FC<Props> = ({
         downsample: ds,
         onFrame: (frame) => {
           const imageData = new ImageData(
-            frame.data,
+            new Uint8ClampedArray(frame.data),
             frame.width,
             frame.height,
           );

@@ -10,7 +10,7 @@ import React, {
 } from "react";
 import type { Dataset, RegionData, GlobeProps, GlobeRef } from "@/types";
 import { useRasterLayer } from "@/hooks/useRasterLayer";
-import { useRasterGrid } from "@/hooks/useRasterGrid";
+import { useRasterGrid, RasterGridData } from "@/hooks/useRasterGrid";
 import { buildRasterMesh } from "@/lib/mesh/rasterMesh";
 import type { RasterLayerData } from "@/hooks/useRasterLayer";
 import GlobeLoading from "./GlobeLoading";
@@ -282,8 +282,14 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const containerRef = useRef<HTMLDivElement>(null);
     const viewerRef = useRef<any>(null);
     const initializingViewerRef = useRef(false);
+
+    // FIXED: Better loading state management
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [loadingTimeout, setLoadingTimeout] = useState<NodeJS.Timeout | null>(
+      null,
+    );
+
     const currentMarkerRef = useRef<any>(null);
     const searchMarkerRef = useRef<any>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -306,8 +312,11 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const meshPreloadAbortRef = useRef<{ aborted: boolean }>({
       aborted: false,
     });
+    const globeMaterialRef = useRef<any>(null);
 
-    const rasterDataRef = useRef<RasterLayerData | undefined>(undefined);
+    const rasterDataRef = useRef<RasterLayerData | RasterGridData | undefined>(
+      undefined,
+    );
     const [winkelClearMarkerTick, setWinkelClearMarkerTick] = useState(0);
     const datasetName = (currentDataset?.name ?? "").toLowerCase();
     const datasetSupportsZeroMask =
@@ -341,6 +350,33 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
     const MESH_TO_IMAGERY_HEIGHT = 2_200_000;
     const IMAGERY_TO_MESH_HEIGHT = 3_000_000;
+
+    // FIXED: Add loading timeout to prevent infinite loading
+    useEffect(() => {
+      if (isLoading && !loadingTimeout) {
+        const timeout = setTimeout(() => {
+          // noop: timeout fallback to avoid infinite loading.
+          setIsLoading(false);
+          setIsRasterImageryLoading(false);
+        }, 8000); // 8 second timeout (reduced from 15)
+        setLoadingTimeout(timeout);
+      }
+
+      return () => {
+        if (loadingTimeout) {
+          clearTimeout(loadingTimeout);
+          setLoadingTimeout(null);
+        }
+      };
+    }, [isLoading, loadingTimeout]);
+
+    // FIXED: Clear loading timeout when loading completes
+    useEffect(() => {
+      if (!isLoading && loadingTimeout) {
+        clearTimeout(loadingTimeout);
+        setLoadingTimeout(null);
+      }
+    }, [isLoading, loadingTimeout]);
 
     const setMeshRasterActive = useCallback((next: boolean) => {
       if (useMeshRasterActiveRef.current === next) return;
@@ -447,7 +483,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             }
           }
         } else if (entityRef && entityRef.primitive && entityRef.latitude) {
-          const position = Cesium.Cartesian3.fromDegrees(
+          const position = cesiumInstance.Cartesian3.fromDegrees(
             entityRef.longitude,
             entityRef.latitude,
             0,
@@ -726,6 +762,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       controller.inertiaTranslate = 0;
     }, []);
 
+    // FIXED: Improve viewer initialization logic
     useEffect(() => {
       if (
         !containerRef.current ||
@@ -742,7 +779,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         try {
           initializingViewerRef.current = true;
           setIsLoading(true);
-          setError(null);
+          await new Promise((resolve) => setTimeout(resolve, 50));
 
           const Cesium = await loadCesiumFromCDN();
           setCesiumInstance(Cesium);
@@ -762,6 +799,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             imageryProvider: false,
             mapMode2D: Cesium.MapMode2D.SINGLE_TILE,
           });
+
           viewer.scene.globe.depthTestAgainstTerrain = true;
           viewer.screenSpaceEventHandler.removeInputAction(
             Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK,
@@ -826,6 +864,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           });
 
           viewer.scene.globe.material = oceanMaterial;
+          globeMaterialRef.current = oceanMaterial;
           viewer.scene.globe.baseColor =
             Cesium.Color.fromCssColorString("#061e34");
           viewer.scene.globe.enableLighting = false;
@@ -922,8 +961,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
                   const regionData: RegionData = {
                     name: `${latitude.toFixed(2)}°, ${longitude.toFixed(2)}°`,
-                    precipitation: looksTemperature ? undefined : value,
-                    temperature: looksTemperature ? value : undefined,
+                    ...(looksTemperature
+                      ? { temperature: value }
+                      : { precipitation: value }),
                     dataset: currentDataset?.name || "Sample Dataset",
                     unit: units,
                   };
@@ -1005,8 +1045,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           }, 100);
 
           viewerRef.current = viewer;
-          setIsLoading(false);
+
+          // FIXED: Proper sequence of state updates
           setViewerReady(true);
+          setIsLoading(false);
           initializingViewerRef.current = false;
         } catch (err) {
           console.error("Failed to initialize Cesium:", err);
@@ -1028,7 +1070,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       geographicLinesVisible,
       updateMarkerVisibility,
       addClickMarker,
-      viewMode,
+      viewMode, // Include viewMode in dependency array
     ]);
 
     const animateLayerAlpha = useCallback(
@@ -1094,6 +1136,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           layerData.textures.length === 0
         ) {
           rasterLayerRef.current = [];
+          // FIXED: Clear loading state when no data
           setIsRasterImageryLoading(false);
           if (previousLayers.length) {
             animateLayerAlpha(previousLayers, startAlpha, 0, 200, () => {
@@ -1141,6 +1184,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             layerData.textures,
           );
           rasterLayerRef.current = [];
+          // FIXED: Clear loading state when invalid textures
           setIsRasterImageryLoading(false);
           if (previousLayers.length) {
             animateLayerAlpha(previousLayers, startAlpha, 0, 200, () => {
@@ -1166,28 +1210,24 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         textureLoadIdRef.current = loadId;
         setIsRasterImageryLoading(true);
 
-        Promise.all(
-          validTextures.map(
-            (texture) =>
-              new Promise<void>((resolve) => {
-                const image = new Image();
-                image.crossOrigin = "anonymous";
-                image.onload = () => resolve();
-                image.onerror = () => resolve();
-                image.src = texture.imageUrl;
-              }),
-          ),
-        ).finally(() => {
+        // OPTIMIZED: Skip texture preloading for faster rendering
+        setTimeout(() => {
           if (
             textureLoadIdRef.current === loadId &&
             !isComponentUnmountedRef.current
           ) {
             setIsRasterImageryLoading(false);
           }
-        });
+        }, 100);
 
         const newLayers: any[] = [];
-        const visible = !useMeshRasterActiveRef.current;
+        const height = viewer.camera?.positionCartographic?.height;
+        const forceImagery =
+          Number.isFinite(height) && height < MESH_TO_IMAGERY_HEIGHT;
+        if (forceImagery && useMeshRasterActiveRef.current) {
+          setMeshRasterActive(false);
+        }
+        const visible = forceImagery ? true : !useMeshRasterActiveRef.current;
 
         validTextures.forEach((texture, index) => {
           try {
@@ -1223,18 +1263,19 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         });
 
         rasterLayerRef.current = newLayers;
-        const fadeDuration = 220;
+        const fadeDuration = 100; // Reduced from 220ms
 
         const targetOpacity = visible ? rasterOpacity : 0;
-        animateLayerAlpha(newLayers, 0, targetOpacity, fadeDuration, () => {
-          newLayers.forEach((layer) => {
-            layer.alpha = targetOpacity;
-            layer.show = visible;
-          });
+
+        // OPTIMIZED: Direct assignment for faster rendering
+        newLayers.forEach((layer) => {
+          layer.alpha = targetOpacity;
+          layer.show = visible;
         });
 
+        // OPTIMIZED: Quick cleanup of previous layers
         if (previousLayers.length) {
-          animateLayerAlpha(previousLayers, startAlpha, 0, fadeDuration, () => {
+          setTimeout(() => {
             previousLayers.forEach((layer) => {
               try {
                 viewer.scene.imageryLayers.remove(layer, true);
@@ -1242,7 +1283,12 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
                 console.warn("Failed to remove raster layer", err);
               }
             });
-          });
+          }, 50);
+        }
+
+        // FIXED: Ensure loading state is cleared
+        if (loadId === textureLoadIdRef.current) {
+          setIsRasterImageryLoading(false);
         }
 
         viewer.scene.requestRender();
@@ -1312,6 +1358,12 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       (meshData: ReturnType<typeof buildRasterMesh>) => {
         const viewer = viewerRef.current;
         if (!viewer || !cesiumInstance) {
+          return null;
+        }
+
+        // OPTIMIZED: Skip mesh generation if too complex
+        if (meshData.rows * meshData.cols > 100000) {
+          console.warn("Mesh too complex, skipping generation");
           return null;
         }
 
@@ -1404,7 +1456,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             const primitive = new cesiumInstance.Primitive({
               geometryInstances: instance,
               appearance,
-              asynchronous: true,
+              asynchronous: true, // Keep asynchronous for better performance
             });
 
             primitive.show = false;
@@ -1468,7 +1520,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         const primitive = new cesiumInstance.Primitive({
           geometryInstances: instance,
           appearance,
-          asynchronous: true,
+          asynchronous: true, // Keep asynchronous for better performance
         });
         primitive.show = false;
         viewer.scene.primitives.add(primitive);
@@ -1526,7 +1578,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       setMeshVisibility(rasterMeshRef.current, false);
       rasterMeshRef.current = null;
       viewer.scene.requestRender();
-    }, [cancelMeshFade, removeMeshPrimitives]);
+    }, [cancelMeshFade, setMeshVisibility]);
 
     const applyRasterMesh = useCallback(
       (meshData?: ReturnType<typeof buildRasterMesh>, cacheKey?: string) => {
@@ -1554,7 +1606,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       },
       [activateMeshPrimitives, clearRasterMesh, createMeshPrimitives],
     );
-
     useEffect(() => {
       if (viewMode === "winkel" && viewerRef.current) {
         try {
@@ -1604,7 +1655,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       clearMarker,
       clearMeshCache,
       clearSearchMarker,
-      removeMeshPrimitives,
       setMeshVisibility,
     ]);
 
@@ -1720,6 +1770,27 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
     useEffect(() => {
       if (!viewerReady || !viewerRef.current) return;
+      const viewer = viewerRef.current;
+      const hasRasterTextures = Boolean(rasterState.data?.textures?.length);
+      const shouldShowImagery =
+        hasRasterTextures && !useMeshRasterActive && viewMode === "3d";
+
+      // Cesium globe materials override imagery layers, so clear when showing rasters.
+      if (shouldShowImagery) {
+        if (viewer.scene.globe.material) {
+          viewer.scene.globe.material = undefined;
+          viewer.scene.requestRender();
+        }
+      } else if (globeMaterialRef.current) {
+        if (viewer.scene.globe.material !== globeMaterialRef.current) {
+          viewer.scene.globe.material = globeMaterialRef.current;
+          viewer.scene.requestRender();
+        }
+      }
+    }, [viewerReady, rasterState.data, useMeshRasterActive, viewMode]);
+
+    useEffect(() => {
+      if (!viewerReady || !viewerRef.current) return;
 
       const layers = rasterLayerRef.current;
       if (!layers.length) return;
@@ -1790,6 +1861,24 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       rasterGridState.dataKey,
       rasterGridState.requestKey,
       rasterState.data,
+      useMeshRaster,
+      useMeshRasterActive,
+    ]);
+
+    useEffect(() => {
+      if (!useMeshRaster || !useMeshRasterActive) return;
+      const hasMatchingGrid =
+        rasterGridState.data &&
+        rasterGridState.dataKey === rasterGridState.requestKey;
+      if (!hasMatchingGrid && rasterState.data?.textures?.length) {
+        setMeshRasterActive(false);
+      }
+    }, [
+      rasterGridState.data,
+      rasterGridState.dataKey,
+      rasterGridState.requestKey,
+      rasterState.data,
+      setMeshRasterActive,
       useMeshRaster,
       useMeshRasterActive,
     ]);
@@ -1909,16 +1998,17 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     useEffect(() => {
       clearMeshCache();
     }, [clearMeshCache, currentDataset?.id, selectedLevel]);
-
     const isWinkel = viewMode === "winkel";
-    const showInitialLoading = isWinkel ? false : isLoading;
+    const showInitialLoading = !isWinkel && isLoading && !viewerReady;
     const showRasterLoading =
       !isPlaying &&
+      !isLoading &&
+      viewerReady &&
+      // OPTIMIZED: Only show loading if actually loading AND no data available
       ((useMeshRasterActive
-        ? rasterGridState.isLoading
-        : rasterState.isLoading) ||
-        (isWinkel ? false : isRasterImageryLoading) ||
-        false);
+        ? rasterGridState.isLoading && !rasterGridState.data
+        : rasterState.isLoading && !rasterState.data) ||
+        (!isWinkel && isRasterImageryLoading));
 
     if (isWinkel) {
       return (
@@ -1992,7 +2082,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
                         : "Date information not available"}
                     </span>
                     <br />
-                    <span>Units: {currentDataset.units} </span>
+                    <span>Units: {currentDataset?.units} </span>
                   </DialogDescription>
                 </DialogHeader>
                 <DialogFooter>
@@ -2109,7 +2199,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
                       : "Date information not available"}
                   </span>
                   <br />
-                  <span>Units: {currentDataset.units} </span>
+                  <span>Units: {currentDataset?.units} </span>
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>

@@ -250,6 +250,8 @@ export async function fetchDatasetSnippet({
       ? stats.mean
       : series.reduce((acc, curr) => acc + curr.value, 0) / series.length;
 
+  const usesFocusCoordinates = !isGlobal && !!context.location;
+
   // For comparative queries, find extremes
   if (temporal.isComparative) {
     const sorted = [...series].sort((a, b) => a.value - b.value);
@@ -322,8 +324,7 @@ export async function fetchDatasetSnippet({
         ? `in ${context.location.name}`
         : usesFocusCoordinates
           ? `at ${formatNumber(context.location!.latitude!, 2)}°, ${formatNumber(context.location!.longitude!, 2)}°`
-          : (context.location?.name ??
-            `at ${formatNumber(context.location!.latitude!, 2)}°, ${formatNumber(context.location!.longitude!, 2)}°`);
+          : "in the selected area";
 
     let result = `For ${datasetName}, ${scopeLabel} over the past ${years} years:\n`;
     result += `- Starting average (${new Date(series[0].date).getFullYear()}): ${formatNumber(startValue)} ${units}\n`;

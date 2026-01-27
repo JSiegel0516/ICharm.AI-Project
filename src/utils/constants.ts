@@ -1,35 +1,4 @@
-import { Dataset, PressureLevel } from "@/types";
-import { DEFAULT_COLOR_SCALES, cloneColorScale } from "@/lib/datasets";
-
-export const mockDatasets: Dataset[] = [
-  {
-    id: "air-temp-monthly",
-    name: "Air Temperature | Monthly Mean",
-    description: "Global air temperature data with monthly averages",
-    units: "degC",
-    dataType: "temperature",
-    temporalResolution: "monthly",
-    colorScale: cloneColorScale(DEFAULT_COLOR_SCALES.temperature),
-  },
-  {
-    id: "precipitation-monthly",
-    name: "Precipitation | Monthly Total",
-    description: "Global precipitation data with monthly totals",
-    units: "mm",
-    dataType: "precipitation",
-    temporalResolution: "monthly",
-    colorScale: cloneColorScale(DEFAULT_COLOR_SCALES.precipitation),
-  },
-  {
-    id: "sea-surface-temp",
-    name: "Sea Surface Temperature",
-    description: "Ocean surface temperature measurements",
-    units: "degC",
-    dataType: "temperature",
-    temporalResolution: "daily",
-    colorScale: cloneColorScale(DEFAULT_COLOR_SCALES.temperature),
-  },
-];
+import { PressureLevel } from "@/types";
 
 // Predefined pressure levels based on standard atmospheric levels
 export const pressureLevels: PressureLevel[] = [

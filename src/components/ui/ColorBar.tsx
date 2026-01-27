@@ -86,7 +86,6 @@ function uiReducer(state: UIState, action: UIAction): UIState {
           isCollapsed: true,
           previousPosition: state.position,
           position: { x: 24, y: window.innerHeight - 60 },
-          showDropdown: false,
         };
       }
 
@@ -151,7 +150,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
   // ============================================================================
 
   const unitInfo = useMemo(() => {
-    const rawCandidates = [dataset.units, rasterMeta?.units].filter(
+    const rawCandidates = [dataset?.units, rasterMeta?.units].filter(
       (value): value is string =>
         typeof value === "string" && value.trim() !== "",
     );
@@ -211,7 +210,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
       dataset?.backend?.datasetName,
       dataset?.backend?.layerParameter,
     ]
-      .filter((v): v is string => typeof v === "string" && v.trim())
+      .filter((v): v is string => typeof v === "string" && !!v.trim())
       .join(" ")
       .toLowerCase();
 
@@ -281,7 +280,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     const NOAAGLOBALTEMP_DEFAULT_MAX = 2;
     const { isGodas, isNoaaGlobalTemp, isGodasDeepLevel } = datasetFlags;
 
-    // Prefer the dataset's baseline range for any obvious variant of NOAAGlobalTemp.
     const preferBaselineRange = false;
 
     const overrideMin =
@@ -338,25 +336,21 @@ const ColorBar: React.FC<ColorBarProps> = ({
     const safeMin = Number.isFinite(min) ? Number(min) : 0;
     const safeMax = Number.isFinite(max) ? Number(max) : safeMin;
 
-    // Use the actual range (no forced zero-centering)
     const rangeMin = safeMin;
     const rangeMax = safeMax;
 
-    // Limit visible tick count so labels don't flood the UI while keeping band sharpness.
     const MAX_TICKS = 7;
     const labelCount = Math.min(
       MAX_TICKS,
       Math.max(dataset.colorScale.labels.length || 0, 2),
     );
 
-    // Generate labels across the actual range
     const generateLabels = () => {
       if (labelCount <= 1 || Math.abs(rangeMax - rangeMin) < 1e-9) {
         return Array(labelCount).fill(rangeMin);
       }
 
       if (isGodas) {
-        // Show only min and max for GODAS by default.
         return [rangeMin, rangeMax];
       }
 
@@ -556,7 +550,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     if (isVertical) {
       const colorBarElement = colorBarRef.current;
       const cardWidth = colorBarElement ? colorBarElement.offsetWidth : 200;
-      const cardHeight = colorBarElement ? colorBarElement.offsetHeight : 360;
       const x = window.innerWidth - cardWidth - margin;
       const verticalOffset = Math.round(window.innerHeight * 0.25);
       const y = verticalOffset;
@@ -629,7 +622,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     (newUnit: TemperatureUnit) => {
       if (!unitInfo.allowToggle) return;
       onUnitChange?.(newUnit);
-      dispatch({ type: "CLOSE_DROPDOWN" });
     },
     [unitInfo.allowToggle, onUnitChange],
   );
@@ -827,6 +819,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
         left: `${uiState.position.x}px`,
         top: `${uiState.position.y}px`,
         zIndex: uiState.isCollapsed ? 1000 : 10,
+        opacity: uiState.hasInitialized ? 1 : 0,
       }}
     >
       {uiState.isCollapsed ? (
@@ -841,7 +834,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
         </Button>
       ) : (
         <div
-          className="border-border bg-card/80 text-primary group pointer-events-auto relative rounded-xl border px-6 py-6 backdrop-blur-sm"
+          className="border-border bg-card/80 text-primary group pointer-events-auto relative rounded-xl border px-6 py-6 backdrop-blur-sm transition-opacity duration-200"
           onMouseEnter={handleSliderHoverStart}
           onMouseLeave={handleSliderHoverEnd}
           onFocusCapture={handleSliderHoverStart}
@@ -1017,4 +1010,5 @@ const ColorBar: React.FC<ColorBarProps> = ({
     </div>
   );
 };
+
 export default ColorBar;

@@ -18,12 +18,7 @@ export const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
       animate: true,
       overlayOpacity: 0.5,
       smoothScroll: true,
-      preventScroll: true, // Prevent auto-scrolling
       onDestroyStarted: () => {
-        driverObj.destroy();
-        onClose();
-      },
-      onPopoverClose: () => {
         driverObj.destroy();
         onClose();
       },

@@ -587,7 +587,7 @@ export function useTimeSeries(baseURL: string = ""): UseTimeSeriesAPI {
           transformedPoint[datasetId] = converted.value;
 
           // Store display unit in metadata if not already there
-          if (metadata[datasetId] && !metadata[datasetId].displayUnit) {
+          if (metadata[datasetId] && !metadata[datasetId].units) {
             (metadata[datasetId] as any).displayUnit = converted.unit;
           }
         } else {
@@ -653,7 +653,7 @@ export function useTimeSeries(baseURL: string = ""): UseTimeSeriesAPI {
         });
 
         const response = await apiClientRef.current!.post<TimeSeriesResponse>(
-          "/api/timeseries/extract",
+          "/api/v2/timeseries/extract",
           request,
           {
             cancelToken: cancelTokenRef.current.token,
@@ -723,7 +723,7 @@ export function useTimeSeries(baseURL: string = ""): UseTimeSeriesAPI {
         if (filters?.search) params.append("search", filters.search);
 
         const response = await axios.get<{ datasets: DatasetInfo[] }>(
-          `/api/timeseries/datasets?${params.toString()}`,
+          `${baseURL}/api/v2/timeseries/datasets?${params.toString()}`,
         );
 
         setAvailableDatasets(response.data.datasets);
@@ -751,128 +751,32 @@ export function useTimeSeries(baseURL: string = ""): UseTimeSeriesAPI {
 
       try {
         if (format === "csv") {
-          // Get dataset IDs from the data (excluding date and timestamp)
-          const datasetIds = Object.keys(data[0]).filter(
-            (k) => k !== "date" && k !== "timestamp",
-          );
-
-          // Create human-readable headers
+          // Convert data to CSV
           const headers = [
-            "Date",
-            ...datasetIds.map((datasetId) => {
-              const meta = metadata?.[datasetId];
-              if (!meta) return datasetId; // Fallback to ID if no metadata
-
-              // Get display unit (converted unit)
-              const displayUnit = (meta as any).displayUnit || meta.units;
-              
-              // Build header with dataset name and unit
-              let header = meta.name || meta.slug || datasetId;
-              
-              // Add unit in parentheses
-              header = `${header} (${displayUnit})`;
-              
-              return header;
-            }),
+            "date",
+            ...Object.keys(data[0]).filter(
+              (k) => k !== "date" && k !== "timestamp",
+            ),
           ];
-
-          // Create rows with formatted values
-
-          // Create rows with formatted values
           const rows = data.map((point) => {
-            return [
-              point.date,
-              ...datasetIds.map((datasetId) => {
-                const value = point[datasetId];
-                if (value == null) return "";
-                
-                // Format the value appropriately
-                if (Math.abs(value) < 0.01) {
-                  return value.toFixed(4);
-                } else if (Math.abs(value) < 1) {
-                  return value.toFixed(3);
-                } else {
-                  return value.toFixed(2);
-                }
-              }),
-            ];
+            return headers.map((h) => {
+              const value = point[h];
+              return value != null ? value.toString() : "";
+            });
           });
 
-          // Helper function to escape CSV values
-          const escapeCSV = (value: string) => {
-            // If value contains comma, quote, or newline, wrap in quotes and escape quotes
-            if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-              return `"${value.replace(/"/g, '""')}"`;
-            }
-            return value;
-          };
-
           const csvContent = [
-            headers.map(escapeCSV).join(","),
-            ...rows.map((row) => row.map(String).map(escapeCSV).join(",")),
+            headers.join(","),
+            ...rows.map((row) => row.join(",")),
           ].join("\n");
 
           return new Blob([csvContent], { type: "text/csv" });
         } else if (format === "json") {
-          // Create human-readable export with dataset names instead of UUIDs
-          const transformedData = rawData.map((point) => {
-            const transformedPoint: any = {
-              date: point.date,
-              timestamp: point.timestamp,
-            };
-
-            // Map UUID keys to human-readable names
-            Object.entries(point.values).forEach(([datasetId, value]) => {
-              const meta = metadata?.[datasetId];
-              if (!meta) {
-                transformedPoint[datasetId] = value; // Fallback to UUID
-                return;
-              }
-
-              // Get display unit (converted unit)
-              const displayUnit = (meta as any).displayUnit || meta.units;
-
-              // Build readable key with dataset name and unit
-              const readableKey = `${meta.name || meta.slug || datasetId} (${displayUnit})`;
-
-              transformedPoint[readableKey] = value;
-            });
-
-            return transformedPoint;
-          });
-
-          // Also transform metadata keys to be human-readable
-          const transformedMetadata: Record<string, any> = {};
-          if (metadata) {
-            Object.entries(metadata).forEach(([datasetId, meta]) => {
-              const displayUnit = (meta as any).displayUnit || meta.units;
-              const readableKey = `${meta.name || meta.slug || datasetId} (${displayUnit})`;
-              transformedMetadata[readableKey] = {
-                ...meta,
-                originalId: datasetId, // Keep original ID for reference
-              };
-            });
-          }
-
-          // Transform statistics keys similarly
-          const transformedStatistics: Record<string, any> = {};
-          if (statistics) {
-            Object.entries(statistics).forEach(([datasetId, stats]) => {
-              const meta = metadata?.[datasetId];
-              if (meta) {
-                const displayUnit = (meta as any).displayUnit || meta.units;
-                const readableKey = `${meta.name || meta.slug || datasetId} (${displayUnit})`;
-                transformedStatistics[readableKey] = stats;
-              } else {
-                transformedStatistics[datasetId] = stats;
-              }
-            });
-          }
-
+          // Export as JSON
           const exportData = {
-            data: transformedData,
-            metadata: transformedMetadata,
-            statistics: transformedStatistics,
+            data: rawData,
+            metadata,
+            statistics,
             processingInfo,
           };
 

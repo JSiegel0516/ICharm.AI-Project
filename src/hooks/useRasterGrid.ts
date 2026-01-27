@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Buffer } from "buffer";
 import type { Dataset } from "@/types";
+import {
+  formatDateForApi,
+  decodeNumericValues,
+  decodeUint8,
+  computeValueRange,
+  deriveCustomRange,
+  buildSampler,
+  resolveEffectiveColorbarRange,
+  getDatasetIdentifierText,
+} from "@/lib/mesh/rasterUtils";
 
 export type RasterGridData = {
   lat: Float64Array;
@@ -35,233 +44,9 @@ export type UseRasterGridResult = {
   dataKey?: string;
 };
 
-const formatDateForApi = (date?: Date) => {
-  if (!date) {
-    return null;
-  }
-  return date.toISOString().split("T")[0];
-};
-
-const decodeBase64 = (value?: string) => {
-  if (!value) {
-    return "";
-  }
-  if (typeof atob === "function") {
-    return atob(value);
-  }
-  return Buffer.from(value, "base64").toString("binary");
-};
-
-const decodeNumericValues = (
-  base64: string | undefined,
-  rows: number,
-  cols: number,
-): Float32Array | Float64Array => {
-  if (!base64) {
-    return new Float32Array();
-  }
-  const binary = decodeBase64(base64);
-  const len = binary.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-
-  const expected = rows > 0 && cols > 0 ? rows * cols : null;
-  if (expected && len === expected * 8) {
-    return new Float64Array(bytes.buffer);
-  }
-  if (expected && len === expected * 4) {
-    return new Float32Array(bytes.buffer);
-  }
-  return new Float32Array(bytes.buffer);
-};
-
-const decodeUint8 = (base64: string | undefined): Uint8Array => {
-  if (!base64) {
-    return new Uint8Array();
-  }
-  const binary = decodeBase64(base64);
-  const len = binary.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-};
-
-const computeValueRange = (
-  values: Float32Array | Float64Array,
-  mask?: Uint8Array,
-): { min: number | null; max: number | null } => {
-  const FILL_VALUE_THRESHOLD = 1e20;
-  let min = Number.POSITIVE_INFINITY;
-  let max = Number.NEGATIVE_INFINITY;
-
-  for (let i = 0; i < values.length; i += 1) {
-    if (mask && mask[i] === 0) continue;
-    const value = values[i];
-    if (!Number.isFinite(value)) continue;
-    if (Math.abs(value) >= FILL_VALUE_THRESHOLD) continue;
-    if (value < min) min = value;
-    if (value > max) max = value;
-  }
-
-  if (min === Number.POSITIVE_INFINITY || max === Number.NEGATIVE_INFINITY) {
-    return { min: null, max: null };
-  }
-
-  return { min, max };
-};
-
-const deriveCustomRange = (range?: {
-  enabled?: boolean;
-  min?: number | null;
-  max?: number | null;
-}): { min: number; max: number } | null => {
-  const enabled = Boolean(range?.enabled);
-  if (!enabled) return null;
-
-  const hasMin = typeof range?.min === "number" && Number.isFinite(range.min);
-  const hasMax = typeof range?.max === "number" && Number.isFinite(range.max);
-  if (!hasMin && !hasMax) return null;
-
-  let min = hasMin ? Number(range.min) : Number(range.max);
-  let max = hasMax ? Number(range.max) : Number(range.min);
-
-  if (!Number.isFinite(min)) min = 0;
-  if (!Number.isFinite(max)) max = min;
-  if (min > max) {
-    [min, max] = [max, min];
-  }
-
-  return { min, max };
-};
-
-const normalizeLon = (lon: number) => {
-  if (!Number.isFinite(lon)) {
-    return lon;
-  }
-  let value = lon;
-  while (value > 180) value -= 360;
-  while (value < -180) value += 360;
-  return value;
-};
-
-const nearestIndex = (values: ArrayLike<number>, target: number) => {
-  if (!values || values.length === 0) {
-    return 0;
-  }
-  let idx = 0;
-  let minDiff = Number.POSITIVE_INFINITY;
-  for (let i = 0; i < values.length; i += 1) {
-    const diff = Math.abs(values[i] - target);
-    if (diff < minDiff) {
-      minDiff = diff;
-      idx = i;
-    }
-  }
-  return idx;
-};
-
-const buildSampler = (
-  latValues: Float64Array,
-  lonValues: Float64Array,
-  values: Float32Array | Float64Array,
-  mask: Uint8Array | undefined,
-  rows: number,
-  cols: number,
-) => {
-  if (
-    !rows ||
-    !cols ||
-    !values.length ||
-    latValues.length === 0 ||
-    lonValues.length === 0
-  ) {
-    return () => null;
-  }
-
-  return (latitude: number, longitude: number) => {
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-      return null;
-    }
-    const latIdx = nearestIndex(latValues, latitude);
-    const lonIdx = nearestIndex(lonValues, normalizeLon(longitude));
-    const flatIdx = latIdx * cols + lonIdx;
-    if (flatIdx < 0 || flatIdx >= values.length) {
-      return null;
-    }
-    if (mask && mask[flatIdx] === 0) {
-      return null;
-    }
-    const sample = values[flatIdx];
-    return Number.isFinite(sample) ? sample : null;
-  };
-};
-
-const resolveEffectiveColorbarRange = (
-  dataset?: Dataset,
-  level?: number | null,
-  colorbarRange?: {
-    enabled?: boolean;
-    min?: number | null;
-    max?: number | null;
-  },
-) => {
-  if (colorbarRange?.enabled) {
-    return colorbarRange;
-  }
-
-  const GODAS_DEFAULT_RANGE = {
-    enabled: true,
-    min: -0.0000005,
-    max: 0.0000005,
-  };
-  const GODAS_DEEP_RANGE = {
-    enabled: true,
-    min: -0.0000005,
-    max: 0.0000005,
-  };
-
-  const datasetText = [
-    dataset?.id,
-    dataset?.slug,
-    dataset?.name,
-    dataset?.description,
-    dataset?.backend?.datasetName,
-    dataset?.backend?.slug,
-    dataset?.backend?.id,
-  ]
-    .filter((v) => typeof v === "string")
-    .map((v) => v.toLowerCase())
-    .join(" ");
-
-  const isNoaaGlobalTemp =
-    datasetText.includes("noaaglobaltemp") ||
-    datasetText.includes("noaa global temp") ||
-    datasetText.includes("noaa global surface temperature") ||
-    datasetText.includes("noaa global surface temp") ||
-    datasetText.includes("noaa global temperature");
-  const isGodas =
-    datasetText.includes("godas") ||
-    datasetText.includes("global ocean data assimilation system") ||
-    datasetText.includes("ncep global ocean data assimilation");
-
-  if (isNoaaGlobalTemp) {
-    return { enabled: true, min: -2, max: 2 };
-  }
-
-  if (isGodas) {
-    const isDeepLevel =
-      typeof level === "number" &&
-      Number.isFinite(level) &&
-      Math.abs(level - 4736) < 0.5;
-    return isDeepLevel ? GODAS_DEEP_RANGE : GODAS_DEFAULT_RANGE;
-  }
-
-  return colorbarRange;
-};
+// ============================================================================
+// Request Key Builder
+// ============================================================================
 
 export const buildRasterGridRequestKey = (args: {
   dataset?: Dataset;
@@ -274,7 +59,7 @@ export const buildRasterGridRequestKey = (args: {
     min?: number | null;
     max?: number | null;
   };
-}) => {
+}): string | undefined => {
   const datasetId = args.backendDatasetId ?? args.dataset?.id ?? null;
   const dateKey = formatDateForApi(args.date);
   if (!datasetId || !dateKey) {
@@ -288,6 +73,10 @@ export const buildRasterGridRequestKey = (args: {
 
   return `${datasetId}::${dateKey}::${args.level ?? "surface"}::${maskKey}::${customRangeKey}`;
 };
+
+// ============================================================================
+// Fetch Function
+// ============================================================================
 
 export async function fetchRasterGrid(options: {
   dataset?: Dataset;
@@ -311,15 +100,10 @@ export async function fetchRasterGrid(options: {
     colorbarRange,
     signal,
   } = options;
-  const targetDatasetId =
-    backendDatasetId ??
-    dataset?.backend?.id ??
-    dataset?.backendId ??
-    dataset?.backend?.slug ??
-    dataset?.backendSlug ??
-    (typeof dataset?.id === "string" ? dataset.id : null);
 
+  const targetDatasetId = backendDatasetId ?? dataset?.id ?? dataset?.slug;
   const dateKey = formatDateForApi(date);
+
   if (!targetDatasetId || !dateKey) {
     throw new Error("Missing dataset or date for raster grid request");
   }
@@ -330,6 +114,7 @@ export async function fetchRasterGrid(options: {
     colorbarRange,
   );
   const customRange = deriveCustomRange(effectiveRange);
+
   const response = await fetch("/api/raster/grid", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -362,18 +147,8 @@ export async function fetchRasterGrid(options: {
   const latArray = Float64Array.from(payload?.lat ?? []);
   const lonArray = Float64Array.from(payload?.lon ?? []);
 
-  const datasetText = [
-    dataset?.id,
-    dataset?.slug,
-    dataset?.name,
-    dataset?.description,
-    dataset?.backend?.datasetName,
-    dataset?.backend?.slug,
-    dataset?.backend?.id,
-  ]
-    .filter((v) => typeof v === "string")
-    .map((v) => v.toLowerCase())
-    .join(" ");
+  // Drop overly aggressive masks for non-ocean datasets
+  const datasetText = getDatasetIdentifierText(dataset);
   const isOceanDataset =
     datasetText.includes("ocean") ||
     datasetText.includes("sea surface") ||
@@ -384,7 +159,6 @@ export async function fetchRasterGrid(options: {
     const validCount = mask.reduce((acc, value) => acc + (value ? 1 : 0), 0);
     const validFraction = mask.length ? validCount / mask.length : 1;
     if (!isOceanDataset && validFraction < 0.6) {
-      // Drop overly aggressive masks for global fields.
       mask = undefined;
     }
   }
@@ -417,6 +191,10 @@ export async function fetchRasterGrid(options: {
   };
 }
 
+// ============================================================================
+// Hook
+// ============================================================================
+
 export const useRasterGrid = ({
   dataset,
   date,
@@ -434,29 +212,7 @@ export const useRasterGrid = ({
   const lastRequestKeyRef = useRef<string | undefined>(undefined);
 
   const backendDatasetId = useMemo(() => {
-    if (!dataset) {
-      return null;
-    }
-
-    const candidate =
-      dataset.backend?.id ??
-      dataset.backendId ??
-      dataset.backend?.slug ??
-      dataset.backendSlug ??
-      (typeof dataset.id === "string" ? dataset.id : null);
-
-    if (!candidate) {
-      return null;
-    }
-
-    const looksLikeUuid =
-      candidate.length === 36 && candidate.split("-").length === 5;
-
-    if (dataset.backend || dataset.backendId || dataset.backendSlug) {
-      return candidate;
-    }
-
-    return looksLikeUuid ? candidate : null;
+    return dataset?.id ?? dataset?.slug ?? null;
   }, [dataset]);
 
   const effectiveColorbarRange = useMemo(
@@ -485,23 +241,33 @@ export const useRasterGrid = ({
   );
 
   useEffect(() => {
-    if (!enabled || !backendDatasetId || !date) {
+    // Early return for invalid states or disabled
+    if (!enabled || !dataset?.id || !backendDatasetId || !date) {
       setData(undefined);
       setDataKey(undefined);
       setIsLoading(false);
       setError(null);
       lastRequestKeyRef.current = requestKey;
+      if (controllerRef.current) {
+        controllerRef.current.abort();
+        controllerRef.current = null;
+      }
       return;
     }
 
+    // Clear data when request key changes
     if (requestKey && requestKey !== lastRequestKeyRef.current) {
       setData(undefined);
       setDataKey(undefined);
       lastRequestKeyRef.current = requestKey;
     }
 
-    controllerRef.current?.abort();
+    if (controllerRef.current) {
+      controllerRef.current.abort();
+      controllerRef.current = null;
+    }
 
+    // Check for prefetched data
     const prefetched =
       requestKey && prefetchedData
         ? prefetchedData instanceof Map
@@ -516,6 +282,8 @@ export const useRasterGrid = ({
       setError(null);
       return;
     }
+
+    // Fetch new data
     const controller = new AbortController();
     controllerRef.current = controller;
     setIsLoading(true);
@@ -531,14 +299,15 @@ export const useRasterGrid = ({
       signal: controller.signal,
     })
       .then((result) => {
-        setData(result);
-        setDataKey(requestKey);
-        setIsLoading(false);
+        if (!controller.signal.aborted) {
+          setData(result);
+          setDataKey(requestKey);
+          setIsLoading(false);
+        }
       })
       .catch((err) => {
-        if (controller.signal.aborted) {
-          return;
-        }
+        if (controller.signal.aborted) return;
+
         const message =
           err instanceof Error ? err.message : "Failed to load grid";
         setError(message);
