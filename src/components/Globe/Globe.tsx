@@ -15,6 +15,7 @@ import { buildRasterMesh } from "@/lib/mesh/rasterMesh";
 import type { RasterLayerData } from "@/hooks/useRasterLayer";
 import GlobeLoading from "./GlobeLoading";
 import WinkelMap from "./WinkelMap";
+import OrthoGlobe from "./OrthoGlobe";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -319,6 +320,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       undefined,
     );
     const [winkelClearMarkerTick, setWinkelClearMarkerTick] = useState(0);
+    const [orthoClearMarkerTick, setOrthoClearMarkerTick] = useState(0);
     const datasetName = (currentDataset?.name ?? "").toLowerCase();
     const datasetSupportsZeroMask =
       currentDataset?.dataType === "precipitation" ||
@@ -392,6 +394,33 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       viewerRef.current?.scene?.requestRender();
     }, []);
 
+    const updateOrthoFrustum = useCallback(() => {
+      if (!viewerRef.current || !cesiumInstance) return;
+      if (viewMode !== "ortho") return;
+      const viewer = viewerRef.current;
+      const Cesium = cesiumInstance;
+      const camera = viewer.scene.camera;
+      const canvas = viewer.scene.canvas;
+      const cameraHeight = camera.positionCartographic.height;
+      const aspectRatio =
+        canvas && canvas.clientHeight
+          ? canvas.clientWidth / canvas.clientHeight
+          : 1;
+      const globeRadius = Cesium.Ellipsoid.WGS84.maximumRadius;
+      const width = Math.max(1, globeRadius * 2.02);
+
+      let frustum = camera.frustum;
+      if (!(frustum instanceof Cesium.OrthographicFrustum)) {
+        frustum = new Cesium.OrthographicFrustum();
+      }
+      frustum.near = 1.0;
+      frustum.far = Math.max(cameraHeight * 4, globeRadius * 6, 50_000_000);
+      frustum.aspectRatio = aspectRatio;
+      frustum.width = width;
+      camera.frustum = frustum;
+      viewer.scene.requestRender();
+    }, [cesiumInstance, viewMode]);
+
     const updateRasterLod = useCallback(() => {
       if (!viewerRef.current || !viewerReady) return;
 
@@ -400,7 +429,11 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
 
-      if (!useMeshRasterEffective || viewMode === "winkel") {
+      if (
+        !useMeshRasterEffective ||
+        viewMode === "winkel" ||
+        viewMode === "ortho"
+      ) {
         setMeshRasterActive(false);
         return;
       }
@@ -481,6 +514,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
       // Also clear Winkel Tripel marker via signal.
       setWinkelClearMarkerTick((tick) => tick + 1);
+      setOrthoClearMarkerTick((tick) => tick + 1);
     }, []);
 
     const clearSearchMarker = useCallback(() => {
@@ -655,7 +689,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           };
 
           const useMeshMarker =
-            useMeshRasterActiveRef.current && viewMode === "3d";
+            useMeshRasterActiveRef.current &&
+            viewMode !== "2d" &&
+            viewMode !== "winkel" &&
+            viewMode !== "ortho";
 
           if (useMeshMarker) {
             const entity = viewerRef.current.entities.add({
@@ -945,17 +982,24 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
           const boundaryData = await loadGeographicBoundaries();
 
-          const { boundaryEntities, geographicLineEntities } =
-            addGeographicBoundaries(Cesium, viewer, boundaryData);
-          boundaryEntitiesRef.current = boundaryEntities;
-          geographicLineEntitiesRef.current = geographicLineEntities;
+          if (viewMode !== "ortho") {
+            const { boundaryEntities, geographicLineEntities } =
+              addGeographicBoundaries(Cesium, viewer, boundaryData);
+            boundaryEntitiesRef.current = boundaryEntities;
+            geographicLineEntitiesRef.current = geographicLineEntities;
 
-          boundaryEntitiesRef.current.forEach((entity) => {
-            entity.show = boundaryLinesVisible;
-          });
-          geographicLineEntitiesRef.current.forEach((entity) => {
-            entity.show = geographicLinesVisible;
-          });
+            const showBoundaries = boundaryLinesVisible;
+            const showGeographic = geographicLinesVisible;
+            boundaryEntitiesRef.current.forEach((entity) => {
+              entity.show = showBoundaries;
+            });
+            geographicLineEntitiesRef.current.forEach((entity) => {
+              entity.show = showGeographic;
+            });
+          } else {
+            boundaryEntitiesRef.current = [];
+            geographicLineEntitiesRef.current = [];
+          }
 
           viewer.cesiumWidget.screenSpaceEventHandler.setInputAction(
             (event: any) => {
@@ -1170,6 +1214,25 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         }
 
         const previousLayers = [...rasterLayerRef.current];
+
+        if (viewMode === "ortho") {
+          rasterLayerRef.current = [];
+          setIsRasterImageryLoading(false);
+          if (previousLayers.length) {
+            previousLayers.forEach((layer) => {
+              try {
+                viewer.scene.imageryLayers.remove(layer, true);
+              } catch (err) {
+                console.warn(
+                  "Failed to remove raster layer while in ortho view",
+                  err,
+                );
+              }
+            });
+          }
+          viewer.scene.requestRender();
+          return;
+        }
         const startAlpha =
           previousLayers[0]?.alpha !== undefined
             ? previousLayers[0].alpha
@@ -1336,7 +1399,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
         viewer.scene.requestRender();
       },
-      [animateLayerAlpha, cesiumInstance, rasterOpacity, viewerReady],
+      [animateLayerAlpha, cesiumInstance, rasterOpacity, viewerReady, viewMode],
     );
 
     const removeMeshPrimitives = useCallback(
@@ -1731,7 +1794,20 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
       viewer.resolutionScale = 1.0;
       viewer.scene.morphTo3D(0.0);
-      viewer.scene.globe.show = true;
+      viewer.scene.globe.show = viewMode !== "ortho";
+
+      if (viewMode === "ortho") {
+        viewer.scene.morphTo3D(0.0);
+        updateOrthoFrustum();
+        try {
+          viewer.entities.removeAll();
+        } catch (err) {
+          console.warn("Failed to clear Cesium entities for ortho view", err);
+        }
+        boundaryEntitiesRef.current = [];
+        geographicLineEntitiesRef.current = [];
+        return;
+      }
 
       const canvas = viewer.scene.canvas;
       const cameraHeight = viewer.scene.camera.positionCartographic.height;
@@ -1752,7 +1828,26 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       });
 
       viewer.scene.requestRender();
-    }, [viewMode, cesiumInstance, enforceInfiniteScrollDisabled]);
+    }, [
+      viewMode,
+      cesiumInstance,
+      enforceInfiniteScrollDisabled,
+      updateOrthoFrustum,
+    ]);
+
+    useEffect(() => {
+      if (!viewerReady || viewMode !== "ortho" || !viewerRef.current) return;
+      const viewer = viewerRef.current;
+      const handleOrtho = () => updateOrthoFrustum();
+      viewer.camera.changed.addEventListener(handleOrtho);
+      viewer.scene.preRender.addEventListener(handleOrtho);
+      updateOrthoFrustum();
+      return () => {
+        if (!viewerRef.current || viewerRef.current.isDestroyed()) return;
+        viewer.camera.changed.removeEventListener(handleOrtho);
+        viewer.scene.preRender.removeEventListener(handleOrtho);
+      };
+    }, [updateOrthoFrustum, viewerReady, viewMode]);
 
     // Add an effect to periodically enforce infinite scroll disabled in 2D mode
     useEffect(() => {
@@ -1770,24 +1865,62 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     useEffect(() => {
       if (!satelliteLayerRef.current) return;
 
-      satelliteLayerRef.current.show = satelliteLayerVisible;
-    }, [satelliteLayerVisible]);
+      satelliteLayerRef.current.show =
+        viewMode === "ortho" ? false : satelliteLayerVisible;
+    }, [satelliteLayerVisible, viewMode]);
 
     useEffect(() => {
       if (boundaryEntitiesRef.current.length === 0) return;
 
       boundaryEntitiesRef.current.forEach((entity) => {
-        entity.show = boundaryLinesVisible;
+        entity.show = viewMode === "ortho" ? false : boundaryLinesVisible;
       });
-    }, [boundaryLinesVisible]);
+    }, [boundaryLinesVisible, viewMode]);
 
     useEffect(() => {
       if (geographicLineEntitiesRef.current.length === 0) return;
 
       geographicLineEntitiesRef.current.forEach((entity) => {
-        entity.show = geographicLinesVisible;
+        entity.show = viewMode === "ortho" ? false : geographicLinesVisible;
       });
-    }, [geographicLinesVisible]);
+    }, [geographicLinesVisible, viewMode]);
+
+    useEffect(() => {
+      if (!viewerRef.current || !cesiumInstance) return;
+      if (viewMode === "ortho") return;
+
+      if (boundaryEntitiesRef.current.length === 0) {
+        loadGeographicBoundaries()
+          .then((boundaryData) => {
+            if (!viewerRef.current || !cesiumInstance) return;
+            const { boundaryEntities, geographicLineEntities } =
+              addGeographicBoundaries(
+                cesiumInstance,
+                viewerRef.current,
+                boundaryData,
+              );
+            boundaryEntitiesRef.current = boundaryEntities;
+            geographicLineEntitiesRef.current = geographicLineEntities;
+          })
+          .catch((err) => {
+            console.warn("Failed to restore geographic boundaries", err);
+          });
+      }
+
+      const showBoundaries = boundaryLinesVisible;
+      const showGeographic = geographicLinesVisible;
+      boundaryEntitiesRef.current.forEach((entity) => {
+        entity.show = showBoundaries;
+      });
+      geographicLineEntitiesRef.current.forEach((entity) => {
+        entity.show = showGeographic;
+      });
+    }, [
+      boundaryLinesVisible,
+      geographicLinesVisible,
+      viewMode,
+      cesiumInstance,
+    ]);
 
     useEffect(() => {
       if (!viewerReady) {
@@ -1813,7 +1946,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       const viewer = viewerRef.current;
       const hasRasterTextures = Boolean(rasterState.data?.textures?.length);
       const shouldShowImagery =
-        hasRasterTextures && !useMeshRasterActive && viewMode !== "winkel";
+        hasRasterTextures &&
+        !useMeshRasterActive &&
+        viewMode !== "winkel" &&
+        viewMode !== "ortho";
 
       // Cesium globe materials override imagery layers, so clear when showing rasters.
       if (shouldShowImagery) {
@@ -1828,6 +1964,13 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         }
       }
     }, [viewerReady, rasterState.data, useMeshRasterActive, viewMode]);
+
+    useEffect(() => {
+      if (viewMode !== "ortho") return;
+      if (rasterMeshRef.current) {
+        setMeshVisibility(rasterMeshRef.current, false);
+      }
+    }, [setMeshVisibility, viewMode]);
 
     useEffect(() => {
       if (!viewerReady || !viewerRef.current) return;
@@ -2051,6 +2194,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       clearMeshCache();
     }, [clearMeshCache, currentDataset?.id, selectedLevel]);
     const isWinkel = viewMode === "winkel";
+    const isOrtho = viewMode === "ortho";
     const showInitialLoading = !isWinkel && isLoading && !viewerReady;
     const showRasterLoading =
       !isPlaying &&
@@ -2211,6 +2355,24 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             overflow: "hidden",
           }}
         />
+
+        {isOrtho && (
+          <OrthoGlobe
+            rasterData={rasterState.data}
+            rasterGridData={
+              useMeshRasterEffective ? rasterGridState.data : undefined
+            }
+            rasterOpacity={rasterOpacity}
+            satelliteLayerVisible={satelliteLayerVisible}
+            boundaryLinesVisible={boundaryLinesVisible}
+            geographicLinesVisible={geographicLinesVisible}
+            currentDataset={currentDataset}
+            useMeshRaster={useMeshRasterEffective}
+            rasterBlurEnabled={rasterBlurEnabled}
+            onRegionClick={onRegionClick}
+            clearMarkerSignal={orthoClearMarkerTick}
+          />
+        )}
 
         {currentDataset && (
           <Dialog>

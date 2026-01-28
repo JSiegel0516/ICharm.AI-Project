@@ -346,8 +346,8 @@ export function GlobeSettingsPanel({
                 <h3 className="text-sm font-semibold text-white">View Mode</h3>
                 <div className="space-y-2 rounded-lg border border-neutral-600 bg-neutral-700/50 p-3">
                   <p className="text-xs text-slate-400">
-                    Choose between the interactive 3D globe or a flat 2D map
-                    view.
+                    Choose between the interactive 3D globe, orthographic, or a
+                    flat 2D map view.
                   </p>
                   <select
                     className="w-full rounded-md border border-slate-600 bg-neutral-800 px-3 py-2 text-sm text-white shadow-sm focus:border-white focus:outline-none"
@@ -359,6 +359,7 @@ export function GlobeSettingsPanel({
                     }
                   >
                     <option value="3d">3D</option>
+                    <option value="ortho">Orthographic (3D)</option>
                     <option value="2d">2D (Equirectangular)</option>
                     <option value="winkel">Winkel Tripel (2D)</option>
                   </select>
