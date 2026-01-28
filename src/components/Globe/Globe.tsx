@@ -292,7 +292,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
     const currentMarkerRef = useRef<any>(null);
     const searchMarkerRef = useRef<any>(null);
-    const [isModalOpen, setIsModalOpen] = useState(false);
 
     const [cesiumInstance, setCesiumInstance] = useState<any>(null);
     const [viewerReady, setViewerReady] = useState(false);
@@ -2037,62 +2036,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             onRegionClick={onRegionClick}
             clearMarkerSignal={winkelClearMarkerTick}
           />
-          {currentDataset && (
-            <Dialog>
-              <DialogTrigger asChild>
-                <div className="absolute inset-x-0 top-2 z-50 mx-auto max-w-max transition-all duration-150 lg:top-8">
-                  <Button
-                    variant="ghost"
-                    title="Click for dataset details"
-                    id="dataset-title"
-                    className="text-base font-semibold lg:text-3xl"
-                    onClick={() => setIsModalOpen(true)}
-                  >
-                    {currentDataset.name}
-                  </Button>
-                </div>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-156">
-                <DialogHeader>
-                  <DialogTitle className="mb-2 text-2xl font-semibold">
-                    {currentDataset.name}
-                  </DialogTitle>
-                  <DialogDescription className="text-lg">
-                    <span className="text-xl">
-                      {currentDataset.description}
-                    </span>
-                    <br />
-                    <br />
-                    <span>
-                      Date Range:{" "}
-                      {currentDataset?.startDate && currentDataset?.endDate
-                        ? `${new Date(
-                            currentDataset.startDate,
-                          ).toLocaleDateString("en-US", {
-                            year: "numeric",
-                            month: "numeric",
-                            day: "numeric",
-                          })} - ${new Date(
-                            currentDataset.endDate,
-                          ).toLocaleDateString("en-US", {
-                            year: "numeric",
-                            month: "numeric",
-                            day: "numeric",
-                          })}`
-                        : "Date information not available"}
-                    </span>
-                    <br />
-                    <span>Units: {currentDataset?.units} </span>
-                  </DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                  <DialogClose asChild>
-                    <Button variant="outline">Close</Button>
-                  </DialogClose>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          )}
         </div>
       );
     }
