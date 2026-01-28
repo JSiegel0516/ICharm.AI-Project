@@ -64,7 +64,7 @@ export interface Dataset {
   levelUnits?: string | null;
 
   // Storage and processing
-  stored?: "local" | "cloud" | null;
+  stored?: "local" | "cloud" | "postgres" | null;
   inputFile?: string | null;
   keyVariable?: string | null;
   spatialResolution?: string | null;
