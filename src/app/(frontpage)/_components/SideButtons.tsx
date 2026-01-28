@@ -611,14 +611,15 @@ export function SideButtons({
                       onClick={() => toggleDatasetSelection(dataset.id)}
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1">
+                        <div className="flex-1 space-y-2">
                           <h3 className="text-primary text-sm font-medium">
                             {dataset.name}
                           </h3>
-                          <p className="mt-1 text-xs text-slate-400">
+                          <p className="text-xs text-slate-400">
                             {dataset.description}
                           </p>
-                          <div className="mt-2 flex flex-wrap items-center gap-3">
+                          <div className="flex flex-wrap items-center gap-3">
+                            {/*** 
                             <Badge variant="outline" className="text-xs">
                               {category}
                             </Badge>
@@ -627,6 +628,7 @@ export function SideButtons({
                                 Resolution: {resolution}
                               </span>
                             )}
+                            */}
                             <div className="flex items-center gap-3">
                               <Badge
                                 variant="outline"
@@ -640,7 +642,22 @@ export function SideButtons({
                                 {dataset.stored}
                               </Badge>
                               <span className="text-xs text-slate-500">
-                                Updated: {lastUpdated}
+                                {currentDataset?.startDate &&
+                                currentDataset?.endDate
+                                  ? `${new Date(
+                                      currentDataset.startDate,
+                                    ).toLocaleDateString("en-US", {
+                                      year: "numeric",
+                                      month: "numeric",
+                                      day: "numeric",
+                                    })} to ${new Date(
+                                      currentDataset.endDate,
+                                    ).toLocaleDateString("en-US", {
+                                      year: "numeric",
+                                      month: "numeric",
+                                      day: "numeric",
+                                    })}`
+                                  : "Date information not available"}
                               </span>
                             </div>
                           </div>
