@@ -3,12 +3,26 @@
 import React from "react";
 import NavigationIcons from "@/app/(frontpage)/_components/header/NavigationIcons";
 import Link from "next/link";
+import { useAppState } from "@/context/HeaderContext";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 const Header: React.FC = () => {
+  const { currentDataset } = useAppState();
+
   return (
     <>
-      {/* Logo and Title - Top Left */}
-      <div className="absolute top-3.75 left-4 z-50 flex items-center gap-4 leading-relaxed transition-all duration-150 lg:top-8 lg:left-10">
+      <div className="fixed inset-x-0 top-0 z-50 flex items-center justify-between px-4 py-2 lg:px-10 lg:py-8">
+        {/* Logo - Left */}
         <Link href="/" className="flex items-center gap-3 lg:gap-4">
           <img
             src="/images/icharmlogo.png"
@@ -19,10 +33,23 @@ const Header: React.FC = () => {
             iCHARM
           </h1>
         </Link>
-      </div>
 
-      {/* Navigation Icons - Top Right */}
-      <div className="absolute top-2 right-4 z-50 transition-all duration-200 lg:top-8 lg:right-10">
+        {/* Title - Center */}
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button
+              variant="ghost"
+              title="Click for dataset details"
+              id="dataset-title"
+              className="text-base font-semibold lg:text-3xl"
+            >
+              {currentDataset?.name}
+            </Button>
+          </DialogTrigger>
+          {/* ... dialog content */}
+        </Dialog>
+
+        {/* Navigation - Right */}
         <NavigationIcons />
       </div>
     </>

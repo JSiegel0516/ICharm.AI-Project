@@ -2155,61 +2155,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             overflow: "hidden",
           }}
         />
-
-        {currentDataset && (
-          <Dialog>
-            <DialogTrigger asChild>
-              <div className="absolute inset-x-0 top-6 z-30 mx-auto max-w-max">
-                <Button
-                  variant="ghost"
-                  title="Click for dataset details"
-                  id="dataset-title"
-                  className="text-3xl font-semibold"
-                  onClick={() => setIsModalOpen(true)}
-                >
-                  {currentDataset.name}
-                </Button>
-              </div>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[625px]">
-              <DialogHeader>
-                <DialogTitle className="mb-2 text-2xl font-semibold">
-                  {currentDataset.name}
-                </DialogTitle>
-                <DialogDescription className="text-lg">
-                  <span className="text-xl">{currentDataset.description}</span>
-                  <br />
-                  <br />
-                  <span>
-                    Date Range:{" "}
-                    {currentDataset?.startDate && currentDataset?.endDate
-                      ? `${new Date(
-                          currentDataset.startDate,
-                        ).toLocaleDateString("en-US", {
-                          year: "numeric",
-                          month: "numeric",
-                          day: "numeric",
-                        })} - ${new Date(
-                          currentDataset.endDate,
-                        ).toLocaleDateString("en-US", {
-                          year: "numeric",
-                          month: "numeric",
-                          day: "numeric",
-                        })}`
-                      : "Date information not available"}
-                  </span>
-                  <br />
-                  <span>Units: {currentDataset?.units} </span>
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <DialogClose asChild>
-                  <Button variant="outline">Close</Button>
-                </DialogClose>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        )}
       </div>
     );
   },
