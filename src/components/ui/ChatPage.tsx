@@ -34,7 +34,7 @@ type SessionSummary = {
   updatedAt: Date;
 };
 
-const GREETING = "How can I help you analyze the climate data?";
+const GREETING = "How can I help?";
 
 const createGreetingMessage = (): ChatMessage => ({
   id: `welcome-${Date.now()}`,
@@ -979,7 +979,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
                 value={inputValue}
                 onChange={(event) => setInputValue(event.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder="Ask about climate data..."
+                placeholder="Ask anything..."
                 className="flex-1 rounded-xl border border-gray-700/30 bg-neutral-900/30 px-3 py-2 text-sm text-gray-200 placeholder-neutral-500 focus:border-gray-600 focus:ring-2 focus:ring-gray-600 focus:outline-none"
               />
               <button

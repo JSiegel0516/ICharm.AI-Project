@@ -1,11 +1,6 @@
 import { NextRequest } from "next/server";
-import {
-  retrieveRelevantContext,
-  buildContextString,
-} from "@/utils/ragRetriever";
 import { ChatDB } from "@/lib/db";
 import { ConversationContextPayload } from "@/types";
-import { fetchDatasetSnippet, shouldFetchDatasetSnippet } from "./datasetQuery";
 
 const HF_MODEL =
   process.env.LLAMA_MODEL ?? "meta-llama/Meta-Llama-3-8B-Instruct";
@@ -90,52 +85,6 @@ const sanitizeConversationContext = (
     location,
   };
 };
-
-async function buildDatasetSummaryPrompt(
-  userQuery: string,
-  context?: ConversationContextPayload,
-  dataServiceUrl?: string,
-): Promise<string | null> {
-  if (!context) {
-    return null;
-  }
-
-  const datasetLabel = context.datasetName ?? context.datasetId;
-  if (!datasetLabel) {
-    return null;
-  }
-
-  const description = context.datasetDescription;
-  const units = context.datasetUnits ?? "dataset units";
-  const coverageStart = context.datasetStartDate ?? "start unknown";
-  const coverageEnd = context.datasetEndDate ?? "present";
-
-  let summary = `Dataset: "${datasetLabel}"`;
-
-  if (description) {
-    summary += `\nDescription: ${description}`;
-  }
-
-  summary += `\nUnits: ${units}`;
-  summary += `\nTemporal coverage: ${coverageStart} to ${coverageEnd}`;
-
-  if (context.datasetEndDate) {
-    summary += `\nNote: Data ends on ${coverageEnd}. For dates after this, use the last available value.`;
-  }
-
-  if (dataServiceUrl && shouldFetchDatasetSnippet(userQuery)) {
-    const dataSnippet = await fetchDatasetSnippet({
-      query: userQuery,
-      context,
-      dataServiceUrl,
-    });
-    if (dataSnippet) {
-      summary += `\n\n=== ACTUAL DATA FROM BACKEND ===\n${dataSnippet}\n=== USE THIS DATA TO ANSWER ===`;
-    }
-  }
-
-  return summary;
-}
 
 function isValidMessagesPayload(payload: unknown): payload is ChatMessage[] {
   if (!Array.isArray(payload)) {
@@ -416,7 +365,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let contextSources: Array<{
+  const contextSources: Array<{
     id: string;
     title: string;
     category?: string;
@@ -424,133 +373,8 @@ export async function POST(req: NextRequest) {
   }> = [];
   let enhancedMessages = [...messages];
 
-  const datasetSummaryPrompt = await buildDatasetSummaryPrompt(
-    userQuery,
-    conversationContext,
-    DATA_SERVICE_URL,
-  );
-  let systemApplied = false;
-
-  if (userQuery) {
-    console.log("Analyzing query...");
-
-    try {
-      const { results: relevantSections, contextType } =
-        await retrieveRelevantContext(userQuery, 3);
-
-      if (relevantSections.length > 0) {
-        console.log(
-          `Found ${relevantSections.length} relevant sections (${contextType})`,
-        );
-
-        const contextString = buildContextString(
-          relevantSections,
-          contextType === "general"
-            ? "tutorial"
-            : contextType === "analysis"
-              ? "analysis"
-              : (contextType as "tutorial" | "about"),
-        );
-        const combinedContext = datasetSummaryPrompt
-          ? `${contextString}\n\n${datasetSummaryPrompt}`
-          : contextString;
-
-        contextSources = relevantSections.map((section) => ({
-          id: section.id,
-          title: section.title,
-          category: section.category || contextType,
-          score: Math.round(section.score * 100) / 100,
-        }));
-
-        console.log(
-          "Retrieved sources:",
-          contextSources.map((s) => s.title).join(", "),
-        );
-
-        let systemPrompt = "";
-        if (contextType === "about") {
-          systemPrompt = `You are an AI assistant for iCharm/4DVD, a climate visualization platform.
-
-INSTRUCTIONS:
-1. If data is provided below (marked "=== ACTUAL DATA FROM BACKEND ==="), USE IT to answer the question directly and precisely.
-2. NEVER say "no data available" if data is actually provided.
-3. If no specific data is provided, give a helpful general answer from climate science knowledge.
-4. Answer in 1-3 clear sentences. Do NOT describe methodology or processes.
-5. Do NOT mention "the context" or "the backend" - just state the answer naturally.
-
-Context:
-${combinedContext}`;
-        } else if (contextType === "analysis") {
-          systemPrompt = `You are the iCharm climate analysis assistant.
-
-CRITICAL INSTRUCTIONS:
-1. If data appears below marked "=== ACTUAL DATA FROM BACKEND ===" or "=== USE THIS DATA TO ANSWER ===", you MUST use it.
-2. NEVER say "no dataset information available" when data is clearly provided above.
-3. Extract the numbers from the provided data and state them directly in your answer.
-4. If no specific data is provided, use general climate knowledge to give a helpful answer.
-5. Answer in 1-3 sentences. Be direct. Do NOT describe steps or methodology.
-6. Do NOT mention "the context", "the backend", or "the data provided" - just answer naturally.
-
-Context:
-${combinedContext}`;
-        } else {
-          systemPrompt = `You are an AI assistant for iCharm climate platform.
-
-INSTRUCTIONS:
-1. If data is provided (marked "=== ACTUAL DATA ==="), USE IT in your answer.
-2. Extract specific numbers and state them clearly.
-3. If no data provided, give helpful general guidance.
-4. Answer concisely in 1-3 sentences.
-5. Do NOT mention the context or backend.
-
-Context:
-${combinedContext}`;
-        }
-
-        const systemMessage: ChatMessage = {
-          role: "system",
-          content: systemPrompt,
-        };
-
-        const hasSystemMessage = enhancedMessages[0]?.role === "system";
-        if (hasSystemMessage) {
-          enhancedMessages = [systemMessage, ...enhancedMessages.slice(1)];
-        } else {
-          enhancedMessages = [systemMessage, ...enhancedMessages];
-        }
-        systemApplied = true;
-      }
-    } catch (error) {
-      console.error("❌ RAG retrieval error:", error);
-    }
-  }
-
-  // If no context was applied but we have a dataset, still add dataset context
-  if (!systemApplied && datasetSummaryPrompt) {
-    const systemPrompt = `You are the iCharm climate analysis assistant.
-
-CRITICAL INSTRUCTIONS:
-1. If data is marked "=== ACTUAL DATA FROM BACKEND ===" below, you MUST use it to answer.
-2. NEVER say "no data available" when data is provided.
-3. Extract the specific numbers and state them in your answer.
-4. If no data is provided, use general climate knowledge.
-5. Answer directly in 1-3 sentences.
-6. Do NOT mention the context or backend.
-
-${datasetSummaryPrompt}`;
-
-    const systemMessage: ChatMessage = {
-      role: "system",
-      content: systemPrompt,
-    };
-
-    const hasSystemMessage = enhancedMessages[0]?.role === "system";
-    if (hasSystemMessage) {
-      enhancedMessages = [systemMessage, ...enhancedMessages.slice(1)];
-    } else {
-      enhancedMessages = [systemMessage, ...enhancedMessages];
-    }
-  }
+  void conversationContext;
+  void DATA_SERVICE_URL;
 
   try {
     const { content: assistantMessage, model: providerModel } =

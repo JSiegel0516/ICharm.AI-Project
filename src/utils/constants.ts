@@ -29,11 +29,8 @@ export const altitudeDescriptions: { [key: string]: string } = {
 };
 
 export const chatResponses = [
-  "I can help you analyze temperature patterns across different regions. What specific area interests you?",
-  "This dataset shows monthly temperature averages. Would you like to explore seasonal variations?",
-  "The color gradient represents temperature ranges. What questions do you have about the data?",
-  "I can explain climate trends, help you navigate the interface, or provide insights about specific regions.",
-  "Let me help you understand the data visualization. Which aspect would you like to explore?",
-  "Would you like me to explain how to interpret the color patterns on the globe?",
-  "I can guide you through the different datasets available. What type of climate data interests you most?",
+  "I can help answer questions or walk you through steps.",
+  "Let me know what you'd like to explore.",
+  "I'm here to help. What are you trying to accomplish?",
+  "Tell me what you need, and I'll do my best to help.",
 ];
