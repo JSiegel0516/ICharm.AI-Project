@@ -98,6 +98,11 @@ export interface ChatMessage {
     title: string;
     score: number;
   }>;
+  toolCalls?: Array<{
+    name?: string;
+    input?: Record<string, unknown>;
+    output?: Record<string, unknown>;
+  }>;
 }
 
 export interface ConversationContextPayload {

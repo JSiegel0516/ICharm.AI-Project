@@ -2,15 +2,11 @@ import { NextRequest } from "next/server";
 import { ChatDB } from "@/lib/db";
 import { ConversationContextPayload } from "@/types";
 
-const HF_MODEL =
-  process.env.LLAMA_MODEL ?? "meta-llama/Meta-Llama-3-8B-Instruct";
 const TEST_USER_EMAIL =
   process.env.TEST_CHAT_USER_EMAIL ?? "test-user@icharm.local";
 const LLM_SERVICE_URL = (
   process.env.LLM_SERVICE_URL ?? "http://localhost:8001"
 ).replace(/\/$/, "");
-const DATA_SERVICE_URL =
-  process.env.DATA_SERVICE_URL ?? "http://localhost:8000";
 
 type ChatMessage = {
   role: "system" | "user" | "assistant";
@@ -137,156 +133,6 @@ function deriveSessionTitle(lastUserMessage?: ChatMessage): string | undefined {
   return words.length > maxWords ? `${title}…` : title;
 }
 
-function detectProblematicResponse(
-  response: string,
-  contextSources: Array<{ title: string }>,
-): { hasIssues: boolean; issues: string[] } {
-  const issues: string[] = [];
-  const lower = response.toLowerCase();
-
-  const methodologyPhrases = [
-    "i will calculate",
-    "i will analyze",
-    "methodology:",
-    "i can suggest that you examine",
-    "i would extract",
-    "we can estimate",
-    "based on the linear trend",
-  ];
-
-  for (const phrase of methodologyPhrases) {
-    if (lower.includes(phrase)) {
-      issues.push(`Contains methodology language: "${phrase}"`);
-    }
-  }
-
-  const contextMentions = [
-    "the provided context",
-    "based on the available data",
-    "the dataset does not provide",
-    "the context does not include",
-  ];
-
-  for (const mention of contextMentions) {
-    if (lower.includes(mention)) {
-      issues.push(`Mentions context explicitly: "${mention}"`);
-    }
-  }
-
-  // Check for unhelpful refusals when data is actually present
-  const hasNumber = /\d+\.?\d*\s*(°c|degc|degrees|celsius|degk|kelvin)/i.test(
-    response,
-  );
-
-  if (
-    (lower.includes("no dataset information") ||
-      lower.includes("not available") ||
-      lower.includes("i don't have")) &&
-    !hasNumber &&
-    response.length < 200
-  ) {
-    issues.push("Refusing to answer when data may be available");
-  }
-
-  return {
-    hasIssues: issues.length > 0,
-    issues,
-  };
-}
-
-async function callLLMWithRetry(
-  llmServiceUrl: string,
-  hfModel: string,
-  messages: ChatMessage[],
-  maxRetries = 1,
-): Promise<{ content: string; model?: string }> {
-  let lastResponse = "";
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const llmResponse = await fetch(`${llmServiceUrl}/v1/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: hfModel,
-        messages,
-        temperature: attempt > 0 ? 0.3 : 0.5,
-        stream: false,
-      }),
-    });
-
-    if (!llmResponse.ok) {
-      const contentType = llmResponse.headers.get("content-type") ?? "";
-      let result: any;
-
-      if (contentType.includes("application/json")) {
-        result = await llmResponse.json();
-      } else {
-        const text = await llmResponse.text();
-        result = { detail: text };
-      }
-
-      let detail: string;
-      if (typeof result?.detail === "string") {
-        detail = result.detail;
-      } else if (result?.detail && typeof result.detail === "object") {
-        const innerDetail = result.detail as Record<string, unknown>;
-        if (typeof innerDetail.error === "string") {
-          const statusInfo = innerDetail.status
-            ? ` (status ${innerDetail.status})`
-            : "";
-          detail = `${innerDetail.error}${statusInfo}`;
-          if (typeof innerDetail.body === "string" && innerDetail.body.trim()) {
-            detail += `: ${innerDetail.body.slice(0, 240)}${innerDetail.body.length > 240 ? "…" : ""}`;
-          }
-        } else {
-          detail = JSON.stringify(innerDetail);
-        }
-      } else if (result?.error) {
-        detail =
-          typeof result.error === "string"
-            ? result.error
-            : JSON.stringify(result.error);
-      } else {
-        detail = "LLM service error";
-      }
-
-      throw new Error(detail);
-    }
-
-    const result = await llmResponse.json();
-    const content = typeof result?.content === "string" ? result.content : "";
-
-    if (!content.trim()) {
-      throw new Error("Empty response from model");
-    }
-
-    lastResponse = content;
-
-    const validation = detectProblematicResponse(content, []);
-
-    if (!validation.hasIssues || attempt === maxRetries) {
-      return {
-        content,
-        model: result?.model || result?.raw?.model,
-      };
-    }
-
-    console.warn(
-      `Response has issues (attempt ${attempt + 1}):`,
-      validation.issues,
-    );
-    messages.push(
-      { role: "assistant", content },
-      {
-        role: "user",
-        content: `Please revise. The data IS provided above - use it to answer directly. ${validation.issues.join("; ")}. Answer in 1-3 sentences using the actual numbers from the data.`,
-      },
-    );
-  }
-
-  return { content: lastResponse };
-}
-
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 
@@ -365,34 +211,60 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const contextSources: Array<{
-    id: string;
-    title: string;
-    category?: string;
-    score: number;
-  }> = [];
-  let enhancedMessages = [...messages];
-
-  void conversationContext;
-  void DATA_SERVICE_URL;
-
   try {
-    const { content: assistantMessage, model: providerModel } =
-      await callLLMWithRetry(LLM_SERVICE_URL, HF_MODEL, enhancedMessages, 1);
+    const chatContext = conversationContext
+      ? {
+          currentDataset: conversationContext.datasetId
+            ? {
+                id: conversationContext.datasetId,
+                name: conversationContext.datasetName,
+              }
+            : null,
+          selectedLocation: conversationContext.location
+            ? {
+                name: conversationContext.location.name,
+                lat: conversationContext.location.latitude,
+                lng: conversationContext.location.longitude,
+              }
+            : null,
+          selectedDate: conversationContext.selectedDate ?? null,
+          timeRange:
+            conversationContext.datasetStartDate ||
+            conversationContext.datasetEndDate
+              ? {
+                  start: conversationContext.datasetStartDate ?? null,
+                  end: conversationContext.datasetEndDate ?? null,
+                }
+              : null,
+        }
+      : null;
 
-    console.log("[llm] Success! Model response:", assistantMessage);
-    if (providerModel) {
-      console.log("[llm] Provider used:", providerModel);
+    const llmResponse = await fetch(`${LLM_SERVICE_URL}/v1/chat/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: messages.map((message) => ({
+          role: message.role,
+          content: message.content,
+        })),
+        context: chatContext,
+        session_id: sessionId ?? undefined,
+      }),
+    });
+
+    if (!llmResponse.ok) {
+      const detail = await llmResponse.text();
+      throw new Error(detail || "LLM service error");
     }
+
+    const data = await llmResponse.json();
+    const assistantMessage =
+      typeof data?.message === "string" ? data.message : "";
+    const toolCalls = Array.isArray(data?.tool_calls) ? data.tool_calls : [];
 
     if (sessionId && assistantMessage) {
       try {
-        await ChatDB.addMessage(
-          sessionId,
-          "assistant",
-          assistantMessage,
-          contextSources.length > 0 ? contextSources : undefined,
-        );
+        await ChatDB.addMessage(sessionId, "assistant", assistantMessage);
       } catch (assistantStoreError) {
         console.error(
           "Failed to persist assistant message",
@@ -403,10 +275,9 @@ export async function POST(req: NextRequest) {
 
     return Response.json(
       {
-        content: assistantMessage,
-        sources: contextSources.length > 0 ? contextSources : undefined,
+        message: assistantMessage,
         sessionId: sessionId ?? undefined,
-        model: providerModel,
+        toolCalls,
       },
       {
         headers: {

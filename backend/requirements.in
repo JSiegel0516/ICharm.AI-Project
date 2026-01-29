@@ -39,6 +39,11 @@ ujson
 httpx
 requests
 
+# LLM + vector search
+anthropic
+chromadb
+openai
+
 # Geocoding
 geographiclib==2.0
 geopy

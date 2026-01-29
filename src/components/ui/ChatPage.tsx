@@ -116,7 +116,11 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
   }, []);
 
   const appendAnimatedAssistantMessage = useCallback(
-    (content: string, sources?: ChatMessage["sources"]) => {
+    (
+      content: string,
+      sources?: ChatMessage["sources"],
+      toolCalls?: ChatMessage["toolCalls"],
+    ) => {
       const id = `${Date.now()}-bot`;
       const newMessage: ChatMessage = {
         id,
@@ -124,6 +128,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
         message: "",
         timestamp: new Date(),
         sources,
+        toolCalls,
       };
       setMessages((prev) => [...prev, newMessage]);
 
@@ -631,7 +636,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
         activeSessionId = data.sessionId;
       }
 
-      const botResponse = (data.content ?? "").trim();
+      const botResponse = (data.message ?? "").trim();
       if (!botResponse) {
         throw new Error("Empty response from API");
       }
@@ -639,6 +644,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
       appendAnimatedAssistantMessage(
         botResponse,
         Array.isArray(data.sources) ? data.sources : undefined,
+        Array.isArray(data.toolCalls) ? data.toolCalls : undefined,
       );
       void loadSessions();
     } catch (error) {
@@ -930,6 +936,23 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
                       <p className="text-sm leading-relaxed">
                         {message.message}
                       </p>
+                      {message.toolCalls && message.toolCalls.length > 0 && (
+                        <details className="mt-2 text-[11px] text-neutral-400">
+                          <summary className="cursor-pointer">
+                            Used {message.toolCalls.length} tool(s)
+                          </summary>
+                          <ul className="mt-1 space-y-1">
+                            {message.toolCalls.map((toolCall, idx) => (
+                              <li key={idx}>
+                                - {toolCall.name ?? "tool"}
+                                {toolCall.input
+                                  ? ` (${Object.keys(toolCall.input).length} params)`
+                                  : ""}
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
                     </div>
 
                     {message.type === "user" && (
