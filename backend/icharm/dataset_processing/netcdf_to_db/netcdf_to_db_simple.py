@@ -387,7 +387,7 @@ class NetCDFtoDbSimple(NetCDFtoDbBase):
 
 
 def main():
-    data_path = "/Users/willruff/Desktop/Github/ICharm.AI-Project/backend/datasets/temperature_anomaly_monthly"
+    data_path = "/var/www/html/icharm/backend/datasets/temperature_anomaly_monthly"
     dataset_name = "ocean_heat_content"
     variable_of_interest_name = "t_an"
 
