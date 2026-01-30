@@ -14,7 +14,7 @@ from icharm.dataset_processing.postgres_common import PostgresCommon
 TIME_VAR_CANDIDATES = ["time"]
 LAT_VAR_CANDIDATES = ["lat", "latitude"]
 LON_VAR_CANDIDATES = ["lon", "longitude"]
-LEVEL_VAR_CANDIDATES = ["level"]
+LEVEL_VAR_CANDIDATES = ["level", "depth"]
 
 
 class NetCDFtoDbBase:

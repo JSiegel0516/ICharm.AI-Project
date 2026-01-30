@@ -129,7 +129,7 @@ class DatabaseQueries:
             )
 
     @staticmethod
-    async def extract_timeseries_from_postgres(
+    def extract_timeseries_from_postgres(
         start_date: datetime,
         end_date: datetime,
         lat: float,
@@ -333,7 +333,9 @@ class DatabaseQueries:
                         f"[PostgresExtractor] Added {points_added} data points from year-based columns"
                     )
                 else:
-                    # Simple case: just one value column
+                    # Simple/level-based case: columns are value_0, value_1, etc. (depth levels)
+                    # Timestamps are stored as full ISO datetimes, not MMDD
+                    # Default to first level (surface/index 0) for now
                     value_col = value_columns[0]
                     data_query = text(f"""
                         SELECT
@@ -353,26 +355,32 @@ class DatabaseQueries:
                     )
 
                     data_dict = {}
-                    current_year = start_date.year
-                    end_year = end_date.year
+                    for row in results:
+                        timestamp_val = row[0]
+                        value = row[1]
 
-                    for year in range(current_year, end_year + 1):
-                        for row in results:
-                            mmdd = row[0]
-                            value = row[1]
-
+                        # Handle timestamp_val which may be datetime or string
+                        if isinstance(timestamp_val, datetime):
+                            timestamp = timestamp_val
+                        elif isinstance(timestamp_val, str):
                             try:
-                                month = int(mmdd[:2])
-                                day = int(mmdd[2:])
-                                timestamp = datetime(year, month, day)
-
-                                if start_date <= timestamp <= end_date:
-                                    data_dict[timestamp] = value
-                            except (ValueError, IndexError) as e:
+                                # Try ISO format first
+                                timestamp = datetime.fromisoformat(timestamp_val)
+                            except ValueError:
                                 logger.warning(
-                                    f"[PostgresExtractor] Could not parse timestamp: {mmdd}, error: {e}"
+                                    f"[PostgresExtractor] Could not parse timestamp: {timestamp_val}"
                                 )
                                 continue
+                        else:
+                            logger.warning(
+                                f"[PostgresExtractor] Unexpected timestamp type: {type(timestamp_val)}"
+                            )
+                            continue
+
+                        # Check if within date range
+                        if start_date <= timestamp <= end_date:
+                            if value is not None:
+                                data_dict[timestamp] = value
 
                 # Convert to pandas Series
                 series = pandas.Series(data_dict)
