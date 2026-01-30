@@ -17,16 +17,6 @@ import GlobeLoading from "./GlobeLoading";
 import WinkelMap from "./WinkelMap";
 import OrthoGlobe from "./OrthoGlobe";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 
 const loadCesiumFromCDN = async () => {
   if (window.Cesium) {
@@ -2237,62 +2227,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             useMeshRaster={useMeshRasterEffective}
             clearMarkerSignal={winkelClearMarkerTick}
           />
-          {currentDataset && (
-            <Dialog>
-              <DialogTrigger asChild>
-                <div className="absolute inset-x-0 top-6 z-30 mx-auto max-w-max">
-                  <Button
-                    variant="ghost"
-                    title="Click for dataset details"
-                    id="dataset-title"
-                    className="text-3xl font-semibold"
-                    onClick={() => setIsModalOpen(true)}
-                  >
-                    {currentDataset.name}
-                  </Button>
-                </div>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[625px]">
-                <DialogHeader>
-                  <DialogTitle className="mb-2 text-2xl font-semibold">
-                    {currentDataset.name}
-                  </DialogTitle>
-                  <DialogDescription className="text-lg">
-                    <span className="text-xl">
-                      {currentDataset.description}
-                    </span>
-                    <br />
-                    <br />
-                    <span>
-                      Date Range:{" "}
-                      {currentDataset?.startDate && currentDataset?.endDate
-                        ? `${new Date(
-                            currentDataset.startDate,
-                          ).toLocaleDateString("en-US", {
-                            year: "numeric",
-                            month: "numeric",
-                            day: "numeric",
-                          })} - ${new Date(
-                            currentDataset.endDate,
-                          ).toLocaleDateString("en-US", {
-                            year: "numeric",
-                            month: "numeric",
-                            day: "numeric",
-                          })}`
-                        : "Date information not available"}
-                    </span>
-                    <br />
-                    <span>Units: {currentDataset?.units} </span>
-                  </DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                  <DialogClose asChild>
-                    <Button variant="outline">Close</Button>
-                  </DialogClose>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          )}
         </div>
       );
     }
@@ -2372,61 +2306,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             onRegionClick={onRegionClick}
             clearMarkerSignal={orthoClearMarkerTick}
           />
-        )}
-
-        {currentDataset && (
-          <Dialog>
-            <DialogTrigger asChild>
-              <div className="absolute inset-x-0 top-6 z-30 mx-auto max-w-max">
-                <Button
-                  variant="ghost"
-                  title="Click for dataset details"
-                  id="dataset-title"
-                  className="text-3xl font-semibold"
-                  onClick={() => setIsModalOpen(true)}
-                >
-                  {currentDataset.name}
-                </Button>
-              </div>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[625px]">
-              <DialogHeader>
-                <DialogTitle className="mb-2 text-2xl font-semibold">
-                  {currentDataset.name}
-                </DialogTitle>
-                <DialogDescription className="text-lg">
-                  <span className="text-xl">{currentDataset.description}</span>
-                  <br />
-                  <br />
-                  <span>
-                    Date Range:{" "}
-                    {currentDataset?.startDate && currentDataset?.endDate
-                      ? `${new Date(
-                          currentDataset.startDate,
-                        ).toLocaleDateString("en-US", {
-                          year: "numeric",
-                          month: "numeric",
-                          day: "numeric",
-                        })} - ${new Date(
-                          currentDataset.endDate,
-                        ).toLocaleDateString("en-US", {
-                          year: "numeric",
-                          month: "numeric",
-                          day: "numeric",
-                        })}`
-                      : "Date information not available"}
-                  </span>
-                  <br />
-                  <span>Units: {currentDataset?.units} </span>
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <DialogClose asChild>
-                  <Button variant="outline">Close</Button>
-                </DialogClose>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
         )}
       </div>
     );

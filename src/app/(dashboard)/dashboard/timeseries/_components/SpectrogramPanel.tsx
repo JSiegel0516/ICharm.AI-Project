@@ -36,6 +36,19 @@ export function SpectrogramPanel({
   metadata,
 }: SpectrogramPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Hover state
+  const [hoverInfo, setHoverInfo] = useState<{
+    time: number;
+    frequency: number;
+    power: number;
+    powerDB: number;
+    x: number;
+    y: number;
+    timeUnit: string;
+    freqUnit: string;
+  } | null>(null);
 
   // Select which dataset to show spectrogram for
   const visibleDatasetIds = Array.from(visibleDatasets);
@@ -46,6 +59,22 @@ export function SpectrogramPanel({
   // Spectrogram parameters
   const [windowSize, setWindowSize] = useState<number>(256);
   const [overlap, setOverlap] = useState<number>(128);
+
+  // Store plot dimensions for hover calculations
+  const plotDimensions = useRef({
+    marginLeft: 60,
+    marginBottom: 50,
+    marginTop: 10,
+    marginRight: 80,
+    plotWidth: 0,
+    plotHeight: 0,
+    timeDuration: 0,
+    maxFreq: 0,
+    timeUnit: "days",
+    freqUnit: "cycles/day",
+    timeScale: 1,
+    freqScale: 1,
+  });
 
   // Compute spectrogram for selected dataset
   const spectrogramData = useMemo(() => {
@@ -61,13 +90,13 @@ export function SpectrogramPanel({
     }
 
     // Estimate sampling rate
-    const samplingRate = estimateSamplingRate(dates);
+    const samplingInfo = estimateSamplingRate(dates);
 
     // Compute spectrogram
     const nfft = Math.pow(2, Math.ceil(Math.log2(windowSize * 2)));
     const spectrogram = computeSpectrogram(
       values,
-      samplingRate,
+      samplingInfo.samplingRate,
       windowSize,
       overlap,
       nfft,
@@ -103,6 +132,86 @@ export function SpectrogramPanel({
     return { powerDB, minDB, maxDB };
   }, [spectrogramData]);
 
+  // Handle mouse move
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (
+      !canvasRef.current ||
+      !spectrogramData ||
+      !spectrogramDB ||
+      !containerRef.current
+    ) {
+      setHoverInfo(null);
+      return;
+    }
+
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    const { marginLeft, marginTop, plotWidth, plotHeight } =
+      plotDimensions.current;
+
+    // Check if mouse is within plot area
+    if (
+      x < marginLeft ||
+      x > marginLeft + plotWidth ||
+      y < marginTop ||
+      y > marginTop + plotHeight
+    ) {
+      setHoverInfo(null);
+      return;
+    }
+
+    // Calculate which time and frequency bin
+    const relX = x - marginLeft;
+    const relY = y - marginTop;
+
+    const timeIdx = Math.floor(
+      (relX / plotWidth) * spectrogramData.times.length,
+    );
+    const freqIdx = Math.floor(
+      (1 - relY / plotHeight) * spectrogramData.frequencies.length,
+    );
+
+    // Bounds check
+    if (
+      timeIdx < 0 ||
+      timeIdx >= spectrogramData.times.length ||
+      freqIdx < 0 ||
+      freqIdx >= spectrogramData.frequencies.length
+    ) {
+      setHoverInfo(null);
+      return;
+    }
+
+    // Get values
+    const timeStart = spectrogramData.times[0];
+    const relativeTime = spectrogramData.times[timeIdx] - timeStart;
+    const frequency = spectrogramData.frequencies[freqIdx];
+    const power = spectrogramData.power[timeIdx][freqIdx];
+    const powerDB = spectrogramDB.powerDB[timeIdx][freqIdx];
+
+    // Convert to display units
+    const { timeUnit, freqUnit, timeScale, freqScale } = plotDimensions.current;
+    const displayTime = relativeTime * timeScale;
+    const displayFreq = frequency * freqScale;
+
+    setHoverInfo({
+      time: displayTime,
+      frequency: displayFreq,
+      power,
+      powerDB,
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+      timeUnit,
+      freqUnit,
+    });
+  };
+
+  const handleMouseLeave = () => {
+    setHoverInfo(null);
+  };
+
   // Render canvas when data changes
   useEffect(() => {
     if (!canvasRef.current || !spectrogramData || !spectrogramDB) return;
@@ -134,6 +243,14 @@ export function SpectrogramPanel({
 
     const plotWidth = rect.width - marginLeft - marginRight;
     const plotHeight = 400 - marginTop - marginBottom;
+
+    // Store dimensions for hover calculations
+    plotDimensions.current.marginLeft = marginLeft;
+    plotDimensions.current.marginTop = marginTop;
+    plotDimensions.current.marginRight = marginRight;
+    plotDimensions.current.marginBottom = marginBottom;
+    plotDimensions.current.plotWidth = plotWidth;
+    plotDimensions.current.plotHeight = plotHeight;
 
     const imageData = ctx.createImageData(numTimes, numFreqs);
 
@@ -215,6 +332,11 @@ export function SpectrogramPanel({
       timeDuration = timeDurationDays * timeScale;
     }
 
+    // Store for hover
+    plotDimensions.current.timeDuration = timeDuration;
+    plotDimensions.current.timeUnit = timeUnit;
+    plotDimensions.current.timeScale = timeScale;
+
     const numXTicks = 6;
     for (let i = 0; i <= numXTicks; i++) {
       const x = marginLeft + (i / numXTicks) * plotWidth;
@@ -275,6 +397,11 @@ export function SpectrogramPanel({
       freqUnit = "cycles/year";
       freqScale = 365.25; // Convert cycles/day to cycles/year
     }
+
+    // Store for hover
+    plotDimensions.current.maxFreq = maxFreq;
+    plotDimensions.current.freqUnit = freqUnit;
+    plotDimensions.current.freqScale = freqScale;
 
     const numYTicks = 5;
     for (let i = 0; i <= numYTicks; i++) {
@@ -455,13 +582,51 @@ export function SpectrogramPanel({
         </div>
       </CardHeader>
       <CardContent>
-        <div className="relative">
+        <div
+          ref={containerRef}
+          className="relative"
+          onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
+        >
           {/* Canvas for spectrogram - MUCH faster than SVG */}
           <canvas
             ref={canvasRef}
             className="w-full rounded border"
             style={{ height: "400px" }}
           />
+
+          {/* Hover tooltip */}
+          {hoverInfo && (
+            <div
+              className="pointer-events-none absolute z-10 rounded bg-black/90 px-3 py-2 text-xs text-white shadow-lg"
+              style={{
+                left: hoverInfo.x + 15,
+                top: hoverInfo.y - 10,
+                transform:
+                  hoverInfo.x > containerRef.current!.clientWidth - 200
+                    ? "translateX(-100%) translateX(-30px)"
+                    : "none",
+              }}
+            >
+              <div className="space-y-1">
+                <div>
+                  <span className="font-semibold">Time:</span>{" "}
+                  {hoverInfo.time.toFixed(2)} {hoverInfo.timeUnit}
+                </div>
+                <div>
+                  <span className="font-semibold">Frequency:</span>{" "}
+                  {hoverInfo.frequency.toFixed(3)} {hoverInfo.freqUnit}
+                </div>
+                <div>
+                  <span className="font-semibold">Power:</span>{" "}
+                  {hoverInfo.powerDB.toFixed(1)} dB
+                </div>
+                <div className="text-xs opacity-75">
+                  ({hoverInfo.power.toExponential(2)} linear)
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="text-muted-foreground mt-4 text-xs">
@@ -470,7 +635,7 @@ export function SpectrogramPanel({
             frequency content of the signal changes over time. Brighter
             (red/yellow) colors indicate stronger power at that frequency and
             time. Horizontal bands indicate sustained periodic behavior. Power
-            is displayed in decibels (dB).
+            is displayed in decibels (dB). Hover over the plot to see values.
           </p>
         </div>
       </CardContent>

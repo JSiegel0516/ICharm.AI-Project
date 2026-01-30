@@ -4,6 +4,7 @@ import * as fs from "fs";
 import { randomUUID } from "crypto";
 import { db } from "./index";
 import { climateDataset } from "./schema";
+import { Description } from "@radix-ui/react-dialog";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -166,6 +167,7 @@ async function seedDatasets() {
       endDate: row.endDate,
       createdAt: new Date(),
       updatedAt: new Date(),
+      description: row.description,
     };
   });
 
