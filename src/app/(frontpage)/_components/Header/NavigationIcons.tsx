@@ -248,7 +248,7 @@ export default function NavigationIcons() {
               <p>About</p>
             </TooltipContent>
           </Tooltip>
-          <DialogContent className="sm:max-w-[825px]">
+          <DialogContent className="sm:max-w-206">
             <DialogHeader>
               <DialogTitle className="text-center">About iCHARM</DialogTitle>
             </DialogHeader>

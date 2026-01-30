@@ -17,16 +17,19 @@ export const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
       showProgress: true,
       animate: true,
       overlayOpacity: 0.5,
+      overlayColor: "black",
       smoothScroll: true,
       onDestroyStarted: () => {
         driverObj.destroy();
         onClose();
       },
+      showButtons: ["next", "previous", "close"],
       steps: [
         {
           popover: {
             title: "Welcome to iCHARM!",
-            description: "Begin the tutorial to learn the controls.",
+            description:
+              "Begin the tutorial to learn the features and controls of the iCharm interface.",
           },
         },
         {
@@ -34,7 +37,7 @@ export const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
           popover: {
             title: "Current Dataset",
             description:
-              "This shows the name of the currently loaded dataset. Different datasets display different climate or geographical data on the globe. Click on the title to learn more about the dataset.",
+              "This shows the name of the currently loaded dataset. Different datasets display different climate or geographical data on the globe. Clicking the title will display more information about the dataset.",
             side: "bottom",
             align: "center",
           },
@@ -72,7 +75,7 @@ export const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
           popover: {
             title: "Globe",
             description:
-              "Zoom in and out using mouse scroll. Click and drag to rotate the globe. Select an area on the globe to get region-specific data.",
+              "Zoom in and out using mouse scroll or right click + drag.<br>Rotate the globe using left click and drag.<br>To get region-specific data, left click on the globe.<br>Rotate 180 degrees by right clicking.",
             side: "left",
             align: "center",
           },
@@ -101,8 +104,7 @@ export const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
           element: "#download",
           popover: {
             title: "Download Data",
-            description:
-              "Export your current dataset or visualization in various formats.",
+            description: "Export the current dataset in various formats.",
             side: "right",
             align: "start",
           },
@@ -132,7 +134,7 @@ export const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
           popover: {
             title: "Temperature Bar",
             description:
-              "The temperature box is collapsable, draggable, adjusts between C/F, and can be reset to its original position.",
+              "The temperature bar is collapsable, draggable, adjusts between C/F and color ranges, and can be reset to its original position.",
             side: "right",
             align: "center",
           },
@@ -142,7 +144,7 @@ export const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
           popover: {
             title: "Date Selection",
             description:
-              "Slide along the bar or click on the shown date to adjust the time of the dataset.",
+              "Click or slide along the bar or select the shown date to adjust the time of the dataset.",
             side: "top",
             align: "center",
           },
@@ -151,7 +153,8 @@ export const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
           element: "#pressure",
           popover: {
             title: "Pressure Selection",
-            description: "Click on the button to select the pressure.",
+            description:
+              "Click on the button to select the pressure level. This will only appear for datasets with multiple pressure levels.",
             side: "top",
             align: "center",
           },
@@ -160,7 +163,8 @@ export const Tutorial: React.FC<TutorialProps> = ({ isOpen, onClose }) => {
           element: "#chatbot",
           popover: {
             title: "Chat Bot",
-            description: "Prompt the chatbot to ask questions about the data.",
+            description:
+              "Ask questions about the data or interface using the chat bot.",
             side: "top",
             align: "center",
           },

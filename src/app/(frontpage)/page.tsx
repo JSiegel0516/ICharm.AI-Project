@@ -1312,7 +1312,7 @@ export default function HomePage() {
         rasterGridState={rasterGridState}
       />
 
-      <div className="pointer-events-none absolute inset-0 z-10">
+      <div className="pointer-events-none absolute inset-0 z-20">
         {/* Side Menu */}
         <div className="pointer-events-auto">
           <SideButtons
@@ -1487,7 +1487,7 @@ export default function HomePage() {
           }
         }}
       >
-        <DialogContent className="max-w-[95vw] sm:max-w-[900px] lg:max-w-[1000px]">
+        <DialogContent className="max-w-[95vw] sm:max-w-225 lg:max-w-250">
           <DialogHeader>
             <DialogTitle className="text-xl font-semibold text-white">
               Visualization

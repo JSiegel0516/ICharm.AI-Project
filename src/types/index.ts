@@ -29,6 +29,7 @@ export interface ClimateDatasetRecord {
   endDate?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
+  description: string | null;
 }
 
 // 2. Frontend dataset model - enriched and parsed

@@ -31,8 +31,9 @@ CREATE TABLE "chat_sessions" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "climate_datasets" (
+CREATE TABLE "metadata" (
 	"id" text PRIMARY KEY NOT NULL,
+	"slug" text NOT NULL,
 	"sourceName" text NOT NULL,
 	"datasetName" text NOT NULL,
 	"layerParameter" text NOT NULL,
@@ -41,16 +42,20 @@ CREATE TABLE "climate_datasets" (
 	"levels" text NOT NULL,
 	"levelValues" text,
 	"levelUnits" text,
+	"Stored" text NOT NULL,
 	"inputFile" text NOT NULL,
 	"keyVariable" text NOT NULL,
 	"units" text NOT NULL,
 	"spatialResolution" text NOT NULL,
 	"engine" text NOT NULL,
+	"kerchunkPath" text,
 	"origLocation" text NOT NULL,
 	"startDate" text NOT NULL,
 	"endDate" text NOT NULL,
 	"createdAt" timestamp DEFAULT now() NOT NULL,
-	"updatedAt" timestamp DEFAULT now() NOT NULL
+	"description" text,
+	"updatedAt" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "metadata_slug_unique" UNIQUE("slug")
 );
 --> statement-breakpoint
 CREATE TABLE "sessions" (
@@ -85,10 +90,6 @@ CREATE TABLE "verifications" (
 	"updatedAt" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-DROP TABLE "account" CASCADE;--> statement-breakpoint
-DROP TABLE "session" CASCADE;--> statement-breakpoint
-DROP TABLE "user" CASCADE;--> statement-breakpoint
-DROP TABLE "verification" CASCADE;--> statement-breakpoint
 ALTER TABLE "accounts" ADD CONSTRAINT "accounts_userId_users_id_fk" FOREIGN KEY ("userId") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "chat_messages" ADD CONSTRAINT "chat_messages_session_id_chat_sessions_id_fk" FOREIGN KEY ("session_id") REFERENCES "public"."chat_sessions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "chat_sessions" ADD CONSTRAINT "chat_sessions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

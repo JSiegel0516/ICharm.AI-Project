@@ -1,1 +1,0 @@
-ALTER TABLE "climate_datasets" RENAME TO "metadata";

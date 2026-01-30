@@ -751,32 +751,128 @@ export function useTimeSeries(baseURL: string = ""): UseTimeSeriesAPI {
 
       try {
         if (format === "csv") {
-          // Convert data to CSV
+          // Get dataset IDs from the data (excluding date and timestamp)
+          const datasetIds = Object.keys(data[0]).filter(
+            (k) => k !== "date" && k !== "timestamp",
+          );
+
+          // Create human-readable headers
           const headers = [
-            "date",
-            ...Object.keys(data[0]).filter(
-              (k) => k !== "date" && k !== "timestamp",
-            ),
+            "Date",
+            ...datasetIds.map((datasetId) => {
+              const meta = metadata?.[datasetId];
+              if (!meta) return datasetId; // Fallback to ID if no metadata
+
+              // Get display unit (converted unit)
+              const displayUnit = (meta as any).displayUnit || meta.units;
+              
+              // Build header with dataset name and unit
+              let header = meta.name || meta.slug || datasetId;
+              
+              // Add unit in parentheses
+              header = `${header} (${displayUnit})`;
+              
+              return header;
+            }),
           ];
+
+          // Create rows with formatted values
+
+          // Create rows with formatted values
           const rows = data.map((point) => {
-            return headers.map((h) => {
-              const value = point[h];
-              return value != null ? value.toString() : "";
-            });
+            return [
+              point.date,
+              ...datasetIds.map((datasetId) => {
+                const value = point[datasetId];
+                if (value == null) return "";
+                
+                // Format the value appropriately
+                if (Math.abs(value) < 0.01) {
+                  return value.toFixed(4);
+                } else if (Math.abs(value) < 1) {
+                  return value.toFixed(3);
+                } else {
+                  return value.toFixed(2);
+                }
+              }),
+            ];
           });
 
+          // Helper function to escape CSV values
+          const escapeCSV = (value: string) => {
+            // If value contains comma, quote, or newline, wrap in quotes and escape quotes
+            if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+              return `"${value.replace(/"/g, '""')}"`;
+            }
+            return value;
+          };
+
           const csvContent = [
-            headers.join(","),
-            ...rows.map((row) => row.join(",")),
+            headers.map(escapeCSV).join(","),
+            ...rows.map((row) => row.map(String).map(escapeCSV).join(",")),
           ].join("\n");
 
           return new Blob([csvContent], { type: "text/csv" });
         } else if (format === "json") {
-          // Export as JSON
+          // Create human-readable export with dataset names instead of UUIDs
+          const transformedData = rawData.map((point) => {
+            const transformedPoint: any = {
+              date: point.date,
+              timestamp: point.timestamp,
+            };
+
+            // Map UUID keys to human-readable names
+            Object.entries(point.values).forEach(([datasetId, value]) => {
+              const meta = metadata?.[datasetId];
+              if (!meta) {
+                transformedPoint[datasetId] = value; // Fallback to UUID
+                return;
+              }
+
+              // Get display unit (converted unit)
+              const displayUnit = (meta as any).displayUnit || meta.units;
+
+              // Build readable key with dataset name and unit
+              const readableKey = `${meta.name || meta.slug || datasetId} (${displayUnit})`;
+
+              transformedPoint[readableKey] = value;
+            });
+
+            return transformedPoint;
+          });
+
+          // Also transform metadata keys to be human-readable
+          const transformedMetadata: Record<string, any> = {};
+          if (metadata) {
+            Object.entries(metadata).forEach(([datasetId, meta]) => {
+              const displayUnit = (meta as any).displayUnit || meta.units;
+              const readableKey = `${meta.name || meta.slug || datasetId} (${displayUnit})`;
+              transformedMetadata[readableKey] = {
+                ...meta,
+                originalId: datasetId, // Keep original ID for reference
+              };
+            });
+          }
+
+          // Transform statistics keys similarly
+          const transformedStatistics: Record<string, any> = {};
+          if (statistics) {
+            Object.entries(statistics).forEach(([datasetId, stats]) => {
+              const meta = metadata?.[datasetId];
+              if (meta) {
+                const displayUnit = (meta as any).displayUnit || meta.units;
+                const readableKey = `${meta.name || meta.slug || datasetId} (${displayUnit})`;
+                transformedStatistics[readableKey] = stats;
+              } else {
+                transformedStatistics[datasetId] = stats;
+              }
+            });
+          }
+
           const exportData = {
-            data: rawData,
-            metadata,
-            statistics,
+            data: transformedData,
+            metadata: transformedMetadata,
+            statistics: transformedStatistics,
             processingInfo,
           };
 
@@ -802,6 +898,7 @@ export function useTimeSeries(baseURL: string = ""): UseTimeSeriesAPI {
       }
     },
     [data, rawData, metadata, statistics, processingInfo],
+  
   );
 
   // Cancel pending request
