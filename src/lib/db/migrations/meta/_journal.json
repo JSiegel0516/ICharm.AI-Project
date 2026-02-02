@@ -43,6 +43,20 @@
       "when": 1761356896524,
       "tag": "0005_blue_ravenous",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1770014043223,
+      "tag": "0006_easy_hairball",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1770014881735,
+      "tag": "0007_cloudy_killmonger",
+      "breakpoints": true
     }
   ]
 }

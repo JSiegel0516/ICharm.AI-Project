@@ -4,9 +4,10 @@ Supports both local and cloud-based datasets with advanced processing capabiliti
 NOW WITH RASTER VISUALIZATION SUPPORT
 """
 
+import orjson
 from fastapi import FastAPI, APIRouter, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from typing import Optional, Any, Literal
 from datetime import datetime
 import pandas as pd
@@ -27,6 +28,9 @@ from icharm.services.data.app.models import (
     TimeSeriesResponse,
     TimeSeriesRequest,
     RasterRequest,
+    DatasetRequest,
+    GridboxDataRequest,
+    TimeseriesDataRequest,
 )
 
 # Import raster visualization module
@@ -114,7 +118,7 @@ app = FastAPI(
     title="Enhanced Climate Time Series API",
     description="Advanced API for extracting and processing climate time series data",
     version="2.0.0",
-    default_response_class=CustomJSONResponse,
+    # default_response_class=CustomJSONResponse,
 )
 
 # Configure CORS
@@ -167,6 +171,52 @@ async def visualize_raster(request: RasterRequest):
 async def raster_grid(request: RasterRequest):
     """Generate raw raster grid for client-side mesh rendering."""
     return await VisualizeRaster.visualize_raster_grid(request)
+
+
+@router.get(path="/datasets")
+async def get_datasets():
+    data = await DatabaseQueries.get_all_metadata()
+    return data
+
+
+@router.get(path="/timestamps")
+async def timestamps(request: DatasetRequest):
+    """Get all available timestamps for dataset"""
+    data = await DatabaseQueries.get_timestamps(request)
+    payload = orjson.dumps(data)
+    return Response(content=payload, media_type="application/json")
+
+
+@router.get(path="/levels")
+async def get_levels(request: DatasetRequest):
+    """Get all available levels for dataset"""
+    data = await DatabaseQueries.get_levels(request)
+    payload = orjson.dumps(data)
+    return Response(content=payload, media_type="application/json")
+
+
+@router.get(path="/gridboxes")
+async def get_gridboxes(request: DatasetRequest):
+    """Get all available gridboxes for dataset"""
+    data = await DatabaseQueries.get_gridboxes(request)
+    payload = orjson.dumps(data)
+    return Response(content=payload, media_type="application/json")
+
+
+@router.get(path="/gridbox_data")
+async def get_gridbox_data(request: GridboxDataRequest):
+    """Get all available gridboxes for dataset"""
+    data = await DatabaseQueries.get_gridbox_data(request)
+    payload = orjson.dumps(data)
+    return Response(content=payload, media_type="application/json")
+
+
+@router.get(path="/timeseries_data")
+async def get_timeseries_data(request: TimeseriesDataRequest):
+    """Get all available gridboxes for dataset"""
+    data = await DatabaseQueries.get_timeseries_data(request)
+    payload = orjson.dumps(data)
+    return Response(content=payload, media_type="application/json")
 
 
 @router.get("/timeseries/datasets", response_class=CustomJSONResponse)
@@ -275,4 +325,4 @@ if __name__ == "__main__":
     print("   - Spatial filtering and aggregation")
     print("   - Multiple chart types")
     print("   - Data caching for performance")
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8002, reload=True)

@@ -1,4 +1,5 @@
 import logging
+import os
 import subprocess
 from pathlib import Path
 
@@ -18,6 +19,8 @@ class Downloaders:
         dest_path = Path(dest)
         dest_path.mkdir(parents=True, exist_ok=True)
 
+        is_debug = os.getenv("IS_DEBUG", "FALSE").upper() == "TRUE"
+
         for idx, u in enumerate(urls):
             logger.info(f"Downloading {u} -> {dest_path}")
             cmd = ["wget", "-c", "-P", str(dest_path), u]
@@ -25,7 +28,8 @@ class Downloaders:
                 cmd.insert(1, "-q")
             subprocess.run(cmd, check=True)
 
-            if idx > 4:  # Temporary escape
+            if is_debug and idx > 4:  # If Debug, don't download everything!
+                logger.info("IS_DEBUG = TRUE, download breaking early")
                 break
 
     @staticmethod

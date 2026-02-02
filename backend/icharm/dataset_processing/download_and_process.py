@@ -44,6 +44,10 @@ class DownloadAndProcess:
         for _, row in df.iterrows():
             dataset_details = row.to_dict()
 
+            to_process = bool(dataset_details.get("toProcess", False))
+            if not to_process:
+                continue
+
             storage_type = dataset_details.get("StorageType").lower()
             # Find out how we want to process the dataset
 
@@ -53,6 +57,11 @@ class DownloadAndProcess:
             elif storage_type == "local_postgres_netcdf":
                 self.logger.info("Processing Postgres NetCDF dataset")
                 self._process_netcdf_to_db(dataset_details, datasets_root_dir)
+            elif storage_type == "cloud_netcdf":
+                self.logger.info("Skipping Cloud NetCDF dataset")
+                continue
+            else:
+                raise Exception(f"Unknown storage type {storage_type}")
 
         self.logger.info("All datasets processed.")
 
@@ -157,7 +166,7 @@ class DownloadAndProcess:
         self, dataset_details: dict[str, Any], datasets_root_dir: Path
     ):
         dataset_short_name = dataset_details["datasetShortName"]
-        input_file = dataset_details["inputFile"]
+        data_location = dataset_details["origLocation"]
         key_variable = dataset_details.get("keyVariable")
         level_variable = dataset_details.get("levelVariable", None)
         start_date_str = dataset_details.get("startDate", None)
@@ -167,15 +176,15 @@ class DownloadAndProcess:
 
         self.logger.info(f"Processing dataset: {dataset_short_name}")
 
-        if input_file.startswith("s3://"):
+        if data_location.startswith("s3://"):
             # Download the dataset
             self.logger.info("Downloading all files from S3")
-            Downloaders.s3_download(input_file, dataset_download_location)
+            Downloaders.s3_download(data_location, dataset_download_location)
 
-        elif input_file.startswith("ftp://"):
+        elif data_location.startswith("ftp://"):
             # First get all the urls if globbing
             self.logger.info("Getting FTP URLs to download")
-            urls = FtpGlobber.get_urls_from_glob(input_file)
+            urls = FtpGlobber.get_urls_from_glob(data_location)
 
             # Download the URLs
             if len(urls) > 0:
@@ -193,7 +202,9 @@ class DownloadAndProcess:
             )
         elif postgres_processor == "group_by_year":
             if start_date_str is None or end_date_str is None:
-                raise ValueError("start_date_str and/or end_date_str cannot be None")
+                raise ValueError(
+                    "start_date_str and/or end_date_str cannot be None for 'group_by_year'"
+                )
             start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
             end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
 
@@ -227,7 +238,10 @@ def main():
         f"{curr_folder}/../../datasets/metadata.csv"
     )  # replace with your actual CSV path
 
-    datasets_root_dir = Path(f"{curr_folder}/../../datasets")
+    # datasets_root_dir = Path(f"{curr_folder}/../../datasets")
+    datasets_root_dir = Path(
+        "/mnt/Bank/SnapArrays/SsdArray03/Snap3_SSD_8TB_06/sdsu/raw_datasets"
+    )
     datasets_root_dir.mkdir(exist_ok=True)
 
     database_username = os.getenv("POSTGRES_USERNAME", "icharm_user")

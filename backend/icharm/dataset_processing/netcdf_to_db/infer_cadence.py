@@ -3,6 +3,7 @@ Generated from LLM, need to clean up
 """
 
 import re
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Literal
@@ -49,6 +50,11 @@ def infer_cadence(
     ym_vals: list[str] = []
     y_vals: list[str] = []
 
+    # For each file, record the files belonging to each group
+    ymd_group: list[str] = []
+    ym_group: list[str] = []
+    y_group: list[str] = []
+
     ymd_hits = 0
     ym_hits = 0
     y_hits = 0
@@ -60,7 +66,7 @@ def infer_cadence(
             if _valid_month(mo) and _valid_day(d):
                 ymd_hits += 1
                 ymd_vals.append(f"{y:04d}-{mo:02d}-{d:02d}")
-                continue
+                ymd_group.append(f)
 
         m = RE_YM.search(f)
         if m:
@@ -68,12 +74,13 @@ def infer_cadence(
             if _valid_month(mo):
                 ym_hits += 1
                 ym_vals.append(f"{y:04d}-{mo:02d}")
-                continue
+                ym_group.append(f)
 
         m = RE_Y.search(f)
         if m:
             y_hits += 1
             y_vals.append(f"{int(m.group(1)):04d}")
+            y_group.append(f)
 
     n = len(files)
 
@@ -83,12 +90,12 @@ def infer_cadence(
 
     # Prefer the most specific cadence with enough coverage
     candidates = [
-        ("year_month_day", ymd_hits, ymd_vals),
-        ("year_month", ym_hits, ym_vals),
-        ("year", y_hits, y_vals),
+        ("year_month_day", ymd_hits, ymd_vals, ymd_group),
+        ("year_month", ym_hits, ym_vals, ym_group),
+        ("year", y_hits, y_vals, y_group),
     ]
 
-    for cadence, hits, vals in candidates:
+    for cadence, hits, vals, grouping in candidates:
         coverage = hits / n
         if coverage >= min_coverage and hits > 0:
             unique = sorted(set(vals))
@@ -108,3 +115,88 @@ def infer_cadence(
         sorted(set(ymd_vals or ym_vals or y_vals))[:10],
         "No cadence met the coverage threshold; filenames may not contain dates consistently",
     )
+
+
+class GroupFilesByCadence:
+    @staticmethod
+    def group_files_by_month_day(paths: Iterable[str | Path]) -> dict[str, list[Path]]:
+        """
+        Builds:
+          {
+            "MMDD": [Path(...), Path(...), ...],
+            ...
+          }
+        """
+        grouped: dict[str, list[Path]] = defaultdict(list)
+
+        for p in paths:
+            token = GroupFilesByCadence.extract_year_month_day_token(p)
+            if token is None:
+                continue  # or raise, depending on your expectations
+
+            _year, mmdd = token
+            grouped[mmdd].append(Path(p))
+
+        # Sort file lists for stable processing (useful)
+        for mmdd in grouped:
+            grouped[mmdd].sort()
+
+        return dict(grouped)
+
+    @staticmethod
+    def group_files_by_month_day_with_year(
+        paths: Iterable[str | Path],
+    ) -> dict[str, dict[str, Path]]:
+        """
+        Builds:
+          {
+            "MMDD": {
+                "1990": Path(...),
+                "1991": Path(...),
+                ...
+            },
+            ...
+          }
+        """
+        grouped: dict[str, dict[str, Path]] = defaultdict(dict)
+
+        for p in paths:
+            token = GroupFilesByCadence.extract_year_month_day_token(p)
+            if token is None:
+                continue
+
+            year, mmdd = token
+            if mmdd not in grouped.keys():
+                grouped[mmdd] = {}
+            if year in grouped[mmdd].keys():
+                existing_path = grouped[mmdd][year]
+                error = (
+                    f"Path for for {year}{mmdd} already present:\n"
+                    f"Existing path: '{existing_path}'\n"
+                    f"New path: '{p}'\n"
+                )
+                raise Exception(error)
+            grouped[mmdd][year] = Path(p)
+
+        return dict(grouped)
+
+    @staticmethod
+    def extract_year_month_day_token(p: str | Path) -> tuple[str, str] | None:
+        """
+        Return (year, month_day) where month_day is 'MMDD'.
+        If the filename doesn't contain a YMD token, returns None.
+        """
+        s = str(p)
+        m = RE_YMD.search(s)
+        if not m:
+            return None
+
+        year = m.group(1)
+        month = int(m.group(2))
+        day = int(m.group(3))
+
+        # Light validation (keep it simple; strict date validation is optional)
+        if not (1 <= month <= 12 and 1 <= day <= 31):
+            return None
+
+        return year, f"{month:02d}{day:02d}"

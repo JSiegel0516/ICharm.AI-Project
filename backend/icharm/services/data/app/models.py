@@ -64,6 +64,52 @@ class TimeSeriesRequest(BaseModel):
         return v
 
 
+class DatasetRequest(BaseModel):
+    dataset_id: str = Field(..., alias="datasetId", description="Dataset UUID")
+
+
+class GridboxDataRequest(BaseModel):
+    dataset_id: str = Field(..., alias="datasetId", description="Dataset UUID")
+    timestamp_id: int = Field(..., alias="timestampId", description="Timestamp id")
+    level_id: int = Field(..., alias="levelId", description="Level id")
+
+
+class TimeseriesDataRequest(BaseModel):
+    dataset_id: str = Field(..., alias="datasetId", description="Dataset UUID")
+    gridbox_id: int = Field(..., alias="gridboxId", description="Gridbox id")
+    level_id: int = Field(..., alias="levelId", description="Level id")
+
+
+class Metadata(BaseModel):
+    id: str
+    slug: str
+    source_name: str | None = Field(None, alias="sourceName")
+    dataset_name: str | None = Field(None, alias="datasetName")
+    dataset_short_name: str | None = Field(None, alias="datasetShortName")
+    description: str | None = None
+    layer_parameter: str | None = Field(None, alias="layerParameter")
+    statistic: str | None = None
+    dataset_type: str | None = Field(None, alias="datasetType")
+    levels: str | None = None
+    level_values: str | None = Field(None, alias="levelValues")
+    level_units: str | None = Field(None, alias="levelUnits")
+    stored: str | None = None
+    storage_type: str | None = Field(None, alias="storageType")
+    postgres_processor: str | None = Field(None, alias="postgresProcessor")
+    to_process: str | None = Field(None, alias="toProcess")
+    input_file: str | None = Field(None, alias="inputFile")
+    key_variable: str | None = Field(None, alias="keyVariable")
+    level_variable: str | None = Field(None, alias="levelVariable")
+    units: str | None = None
+    spatial_resolution: str | None = Field(None, alias="spatialResolution")
+    engine: str | None = None
+    kerchunk_path: str | None = Field(None, alias="kerchunkPath")
+    info_location: str | None = Field(None, alias="infoLocation")
+    orig_location: str | None = Field(None, alias="origLocation")
+    start_date: str | None = Field(None, alias="startDate")
+    end_date: str | None = Field(None, alias="endDate")
+
+
 class RasterRequest(BaseModel):
     """Request model for raster visualization"""
 

@@ -1,5 +1,6 @@
 # FastAPI and server
 fastapi
+orjson
 pydantic
 uvicorn[standard]
 
