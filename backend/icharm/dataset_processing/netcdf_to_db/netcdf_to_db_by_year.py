@@ -1,8 +1,10 @@
-from icharm.dataset_processing.netcdf_to_db.infer_cadence import infer_cadence
+from icharm.dataset_processing.netcdf_to_db.infer_cadence import (
+    infer_cadence,
+    GroupFilesByCadence,
+)
 
 import numpy
 import os
-import itertools
 
 from pathlib import Path
 
@@ -102,21 +104,22 @@ class NetCDFtoDbYearlyFiles(NetCDFtoDbBase):
         return
 
     def _create_sql_functions(self, conn):
+        self.logger.info("Creating SQL functions")
         with conn.cursor() as cur:
             ###############################
-            # get_dates_internal()
+            # get_timestamps_internal()
             ###############################
             # For internal use only (the front-end shouldn't use this)
             # This is a helper function to get valid only dates from the dataset
-            cur.execute("DROP FUNCTION IF EXISTS get_dates_internal();")
-            get_dates_internal_sql = """
-                CREATE FUNCTION get_dates_internal()
+            cur.execute("DROP FUNCTION IF EXISTS get_timestamps_internal();")
+            get_timestamps_internal_sql = """
+                CREATE FUNCTION get_timestamps_internal()
                 RETURNS TABLE (
-                    date_id         INT
-                    , timestamp_id  INT
-                    , date_val      DATE
-                    , year          CHAR(4)
-                    , month_day     CHAR(4)
+                    usable_timestamp_id INT
+                    , timestamp_id      INT
+                    , timestamp_val     TIMESTAMP
+                    , year              CHAR(4)
+                    , month_day_time    CHAR(4)
                 )
                 LANGUAGE sql
                 AS $$
@@ -124,67 +127,56 @@ class NetCDFtoDbYearlyFiles(NetCDFtoDbBase):
                     -- Also grab all the data for gridbox = 1 (so we can then remove dates that
                     -- do not have values later
                     WITH SubTable AS (
-                      SELECT
-                            td.timestamp_id
-                            , MAKE_DATE(
-                              l.name::INTEGER  -- year
-                              , SUBSTRING(td.timestamp_val, 1, 2)::INTEGER  -- month
-                              , SUBSTRING(td.timestamp_val, 3, 2)::INTEGER  -- day
-                            ) AS date_val
-                            , l.name AS year
-                            , td.timestamp_val AS month_day
-                            , (to_jsonb(gd) ->> ('value_' || l.name))::double precision AS value
-                        FROM level l
-                        CROSS JOIN timestamp_dim td
-                        JOIN grid_data gd ON
-                            td.timestamp_id = gd.timestamp_id
-                            AND gd.gridbox_id = 1
-                        WHERE
-                          -- Don't include invalid (non-leap year) dates
-                          SUBSTRING(td.timestamp_val, 3, 2)::INTEGER -- day
-                          <=
-                          EXTRACT(
-                            DAY FROM (
-                              DATE_TRUNC(
-                                'month'
-                                , MAKE_DATE(
-                                  l.name::INTEGER  -- year
-                                  , SUBSTRING(td.timestamp_val, 1, 2)::INTEGER -- month
-                                  , 1  -- day
+                        SELECT
+                                td.timestamp_id
+                                , TO_TIMESTAMP(
+                                    l.name || '-' || td.timestamp_val
+                                    , 'YYYY-MM-DD"T"HH24:MI:SS'
+                                ) AS timestamp_value
+                                , l.name AS year
+                                , td.timestamp_val AS month_day_time
+                            FROM level l
+                            CROSS JOIN timestamp_dim td
+                            WHERE
+                                SUBSTRING(td.timestamp_val, 4, 2)::INTEGER <= EXTRACT(
+                                    DAY FROM (
+                                        DATE_TRUNC(
+                                            'month'
+                                            , MAKE_DATE(
+                                                l.name::INTEGER
+                                                , SUBSTRING(td.timestamp_val, 1, 2)::INTEGER
+                                                , 1
+                                            )
+                                        ) + INTERVAL '1 month - 1 day'
+                                    )
                                 )
-                              ) + INTERVAL '1 month - 1 day'
-                            )
-                          )
-                        ORDER BY l.Level_ID ASC, td.timestamp_val ASC
                     )
-                    -- Remove rows (newer dates) that don't have data
                     SELECT
-                        ROW_NUMBER() OVER (ORDER BY date_val ASC) AS date_id
-                        , timestamp_id
-                        , date_val
-                        , "year"
-                        , month_day
-                    FROM SubTable
-                    WHERE value IS NOT NULL
-                    ORDER BY date_val ASC
+                            ROW_NUMBER() OVER (ORDER BY timestamp_value ASC) AS usable_timestamp_id
+                            , timestamp_id
+                            , timestamp_value
+                            , "year"
+                            , month_day_time
+                        FROM SubTable
+                        ORDER BY timestamp_value ASC
                 $$;
             """
-            cur.execute(get_dates_internal_sql)
+            cur.execute(get_timestamps_internal_sql)
 
             ###############################
-            # get_dates()
+            # get_timestamps()
             ###############################
-            # Function used by the front-end to get list of all valid dates
-            cur.execute("DROP FUNCTION IF EXISTS get_dates();")
+            # Function used by the front-end to get list of all valid timestamps
+            cur.execute("DROP FUNCTION IF EXISTS get_timestamps();")
             get_dates_sql = """
-                CREATE FUNCTION get_dates()
+                CREATE FUNCTION get_timestamps()
                 RETURNS TABLE (
-                    date_id     INT
-                    , date_val  DATE
+                    timestamp_id       INT
+                    , timestamp_value  TIMESTAMP
                 )
                 LANGUAGE sql
                 AS $$
-                    SELECT date_id, date_val FROM get_dates_internal()
+                    SELECT usable_timestamp_id, timestamp_val FROM get_timestamps_internal()
                 $$;
             """
             cur.execute(get_dates_sql)
@@ -243,46 +235,59 @@ class NetCDFtoDbYearlyFiles(NetCDFtoDbBase):
             ###############################
             # get_gridbox_data()
             ###############################
-            # Function used by the front-end to get all all the gridboxes at a date_id
+            # Function used by the front-end to get all the gridboxes at a timestamp_id
             cur.execute("""
                 DROP FUNCTION IF EXISTS get_gridbox_data(
-                    in_date_id INTEGER
+                    in_timestamp_id INTEGER
                     , in_level_id INTEGER  -- Throw away value (we don't need it)
                 );
             """)
             get_gridbox_data_sql = """
-                CREATE FUNCTION get_gridbox_data(
-                    in_date_id    INTEGER
-                    , in_level_id INTEGER  -- Throw away value (we don't need it)
+                CREATE OR REPLACE FUNCTION get_gridbox_data(
+                    in_timestamp_id INTEGER
+                    , in_level_id   INTEGER
                 )
                 RETURNS TABLE (
-                    gridbox_id    INT
-                    , lat         DOUBLE PRECISION
-                    , lon         DOUBLE PRECISION
-                    , value       DOUBLE PRECISION
+                    gridbox_id INT
+                    , lat        DOUBLE PRECISION
+                    , lon        DOUBLE PRECISION
+                    , value      DOUBLE PRECISION
                 )
-                LANGUAGE sql
+                LANGUAGE plpgsql
                 AS $$
-                    WITH SubTable AS (
+                DECLARE
+                    yr TEXT;
+                    colname TEXT;
+                BEGIN
+                    SELECT d.year INTO yr
+                    FROM get_timestamps_internal() d
+                    WHERE d.usable_timestamp_id = in_timestamp_id
+                    LIMIT 1;
+
+                    -- This is how we get the correct column name
+                    -- and avoid doing the slow "to_jsonb()" method
+                    colname := 'value_' || yr;
+
+                    RETURN QUERY EXECUTE format($q$
+                        WITH s AS (
+                            SELECT timestamp_id
+                            FROM get_timestamps_internal() d
+                            WHERE d.usable_timestamp_id = $1
+                        )
                         SELECT
-                            timestamp_id
-                            , "year"
-                        FROM get_dates_internal() d
-                        WHERE d.date_id = in_date_id
-                    )
-                    SELECT
                             gd.gridbox_id
-                            , lat.lat
-                            , lon.lon
-                            , (to_jsonb(gd) ->> ('value_' || s.year))::double precision AS value
-                        FROM SubTable s
-                        JOIN grid_data gd ON
-                            s.timestamp_id = gd.timestamp_id
-                        JOIN gridbox gb ON
-                            gd.gridbox_id = gb.gridbox_id
+                            , lat.lat::double precision AS lat
+                            , lon.lon::double precision AS lon
+                            , gd.%I::double precision AS value
+                        FROM s
+                        JOIN grid_data gd ON s.timestamp_id = gd.timestamp_id
+                        JOIN gridbox gb ON gd.gridbox_id = gb.gridbox_id
                         JOIN lat ON lat.lat_id = gb.lat_id
                         JOIN lon ON lon.lon_id = gb.lon_id
                         ORDER BY gd.gridbox_id
+                    $q$, colname)
+                    USING in_timestamp_id;
+                END;
                 $$;
             """
             cur.execute(get_gridbox_data_sql)
@@ -301,40 +306,63 @@ class NetCDFtoDbYearlyFiles(NetCDFtoDbBase):
                 );
             """)
             sql_get_timeseries_sql = """
-                CREATE FUNCTION get_timeseries(
+                CREATE OR REPLACE FUNCTION get_timeseries(
                     in_gridbox_id INTEGER
-                    , in_level_id INTEGER  -- Throw away value (we don't need it)
+                    , in_level_id INTEGER  -- unused
                 )
                 RETURNS TABLE (
-                    date_val     DATE
-                    , level_id   INT
-                    , value      DOUBLE PRECISION
+                    timestamp_id       INT
+                    , timestamp_value  TIMESTAMP
+                    , level_id         INT
+                    , value            DOUBLE PRECISION
                 )
-                LANGUAGE sql
+                LANGUAGE plpgsql
                 AS $$
-                    SELECT
-                        d.date_val
-                        , 1 AS level_id
-                        -- Convert the row to a json to grab the column name dynamically
-                        , (to_jsonb(gd) ->> ('value_' || d.year))::double precision AS value
-                    FROM get_dates_internal() AS d
-                    JOIN grid_data gd ON
-                        d.timestamp_id = gd.timestamp_id
-                    WHERE gd.gridbox_id = in_gridbox_id
+                DECLARE
+                    yr TEXT;
+                    colname TEXT;
+                    lvl_id INT;
+                BEGIN
+                    FOR yr, lvl_id IN
+                        SELECT DISTINCT
+                            "year"
+                            , 1 AS level_id
+                        FROM get_timestamps_internal() d
+                        ORDER BY "year"
+                    LOOP
+                        colname := 'value_' || yr;
+
+                        RETURN QUERY EXECUTE format($q$
+                            SELECT
+                                d.usable_timestamp_id AS timestamp_id
+                                , d.timestamp_val
+                                , %s::int AS level_id
+                                , gd.%I::double precision AS value
+                            FROM get_timestamps_internal() d
+                            JOIN grid_data gd
+                              ON d.timestamp_id = gd.timestamp_id
+                            WHERE gd.gridbox_id = $1
+                              AND d.year = %L
+                            ORDER BY d.timestamp_val
+                        $q$, lvl_id, colname, yr)
+                        USING in_gridbox_id;
+                    END LOOP;
+                END;
                 $$;
             """
             cur.execute(sql_get_timeseries_sql)
-
             conn.commit()
         return
 
     @benchmark
     def _populate_postgres_data_tables(self, conn):
+        self.logger.info("Populating postgres data tables")
         with conn.cursor() as cur:
             # For speed increase
             cur.execute("SET synchronous_commit TO OFF;")
 
             # Go through all the files and get all the distinct month+day+extras
+            self.logger.info("Scanning all files to determine all months + days")
             files = sorted(self.folder_path.rglob("*.nc"))
             all_timestamps = set()
             for file_idx, file in enumerate(tqdm(files)):
@@ -353,6 +381,7 @@ class NetCDFtoDbYearlyFiles(NetCDFtoDbBase):
                         iso_formatted_time = iso_formatted_time[5:]
                         all_timestamps.add(iso_formatted_time)
 
+            self.logger.info(f"Unique dates discovered: {len(all_timestamps)}")
             all_dates = {t: idx for idx, t in enumerate(sorted(all_timestamps))}
 
             timestamp_rows = [(idx, timestamp) for timestamp, idx in all_dates.items()]
@@ -365,13 +394,19 @@ class NetCDFtoDbYearlyFiles(NetCDFtoDbBase):
             )
 
             # Infer cadence
+            self.logger.info("Inferring file cadence")
             cadence = infer_cadence(files)
 
+            if cadence.cadence == "single_file":
+                self.process_year()
             if cadence.cadence == "year":
+                self.logger.info("Yearly cadence discovered")
                 self.process_year(cur, all_dates)
             elif cadence.cadence == "year_month":
+                self.logger.info("Year + Monthly cadence discovered")
                 self.process_year_month(cur, all_dates)
             elif cadence.cadence == "year_month_day":
+                self.logger.info("Year + Month + Daily cadence discovered")
                 self.process_year_month_day(cur, all_dates)
             else:
                 raise ValueError(f"Unknown cadence: {cadence.cadence}")
@@ -379,6 +414,9 @@ class NetCDFtoDbYearlyFiles(NetCDFtoDbBase):
 
     def process_year(self, cur, all_dates):
         yearly_files = sorted(self.folder_path.rglob("*.nc"))
+        total_files = len(yearly_files)
+
+        self.logger.info(f"Processing NetCDF Files with Year files: {total_files}")
 
         for db_time_value, db_time_index in tqdm(all_dates.items()):
             data_slices = []
@@ -394,33 +432,35 @@ class NetCDFtoDbYearlyFiles(NetCDFtoDbBase):
                         units=time_variable.units,
                         calendar=getattr(time_variable, "calendar", "standard"),
                     )
+                    found_timestamp = False
                     for time_idx, time_dt in enumerate(times_dt):
                         iso_formatted_time = time_dt.isoformat()
                         # Remove the year
                         iso_formatted_time = iso_formatted_time[5:]
                         if iso_formatted_time == db_time_value:
+                            found_timestamp = True
                             break
 
-                    # Get the specific variables at given date
-                    variable = nc[self.variable_of_interest_name][time_idx]
+                    if found_timestamp:
+                        # Get the specific variables at given date
+                        data = nc[self.variable_of_interest_name][time_idx]
 
-                    full_dims = ["year"] + list(
-                        nc[self.variable_of_interest_name].dimensions
-                    )
-                    spatial_dims = [
-                        d for d in full_dims if d != self.time_variable_name
-                    ]
+                        full_dims = ["year"] + list(
+                            nc[self.variable_of_interest_name].dimensions
+                        )
+                        spatial_dims = [
+                            d for d in full_dims if d != self.time_variable_name
+                        ]
 
-                    if hasattr(variable, "_FillValue"):
-                        fill_value = float(variable._FillValue)
-                    elif hasattr(variable, "missing_value"):
-                        fill_value = float(variable.missing_value)
-
-                    data_slices.append(variable)
-
-                # Some dates (ie: Feb 30th) don't exist in the dataset
-                if len(data_slices) == 0:
-                    continue
+                        if hasattr(data, "_FillValue"):
+                            fill_value = float(data._FillValue)
+                        elif hasattr(data, "missing_value"):
+                            fill_value = float(data.missing_value)
+                    else:
+                        data = numpy.full(
+                            (len(self.latitudes), len(self.longitudes)), numpy.nan
+                        )
+                    data_slices.append(data)
 
             # Stack into (n_years_for_this_md, n_lat, n_lon)
             data_year_lat_lon = numpy.stack(data_slices, axis=0)
@@ -438,118 +478,94 @@ class NetCDFtoDbYearlyFiles(NetCDFtoDbBase):
         raise NotImplementedError("Haven't implemented this yet")
 
     def process_year_month_day(self, cur, all_dates):
-        months = [str(i).zfill(2) for i in range(1, 13)]
-        days = [str(i).zfill(2) for i in range(1, 32)]
-        total_days = len(months) * len(days)
+        # Get all the files to process
+        files = sorted(self.folder_path.rglob("*.nc"))
+        file_groupings = GroupFilesByCadence.group_files_by_month_day_with_year(files)
 
-        for month, day in tqdm(itertools.product(months, days), total=total_days):
-            month_day_str = f"{month}{day}"
+        self.logger.info("Processing NetCDF Files with Year, Month, Day files")
 
-            data_slices = []
-            for file_idx, year in enumerate(self.years):
-                # Try multiple patterns to handle different file naming conventions:
-                patterns = [
-                    # f"*d{year}{month_day_str}*.nc",  # GPCP format: d19961001
-                    # f"*D{year}{month_day_str}*.nc",  # SEAFLUX format: D19880101
-                    f"*{year}{month_day_str}*.nc",  # Generic adjacent (no prefix)
-                    f"*{year}*.nc",  # Generic adjacent (no prefix)
-                ]
-                yearly_files = []
-                for pattern in patterns:
-                    found = list(self.folder_path.rglob(pattern))
-                    if len(found) == 1:
-                        # Perfect match - use this pattern
-                        yearly_files = found
-                        break
-                    elif len(found) > 1:
-                        # Multiple matches - this is an error
-                        yearly_files = found
-                        break
-                    # If 0 matches, continue to next pattern
+        with tqdm(
+            sorted(file_groupings.keys()), desc="Processing MMDD"
+        ) as progress_bar:
+            for month_day_str in progress_bar:
+                progress_bar.set_postfix(mmdd=month_day_str)
 
-                # Remove duplicates (shouldn't be any, but just in case)
-                yearly_files = sorted(set(yearly_files))
+                data_slices = []
+                for file_idx, year in enumerate(self.years):
+                    # Grab the file for this year + month_day combination
+                    file = file_groupings[month_day_str].get(year)
 
-                if len(yearly_files) > 1:
-                    file_list = "\n".join([f"  - {f}" for f in yearly_files])
-                    raise Exception(
-                        f"Too many files for year {year}, month_day {month_day_str}. "
-                        f"Found {len(yearly_files)} files:\n{file_list}"
-                    )
-                elif len(yearly_files) == 0:
-                    # Generate empty data
-                    data = numpy.full(
-                        (len(self.latitudes), len(self.longitudes)), numpy.nan
-                    )
-                    data_slices.append(data)
-                    continue
-                elif len(yearly_files) == 1:
-                    file = yearly_files[0]
-
-                    # filename_path = str(file)
-                    with Dataset(file, "r") as nc:
-                        # Get all dates in the current file (there can be more than 1)
-                        time_variable = nc.variables[self.time_variable_name]
-
-                        times_dt = num2date(
-                            times=time_variable[:],
-                            units=time_variable.units,
-                            calendar=getattr(time_variable, "calendar", "standard"),
+                    # Handle no file exists (ie: Feb 29)
+                    if not file:
+                        self.logger.info(f"Skipping {year}{month_day_str} (YYYYMMDD)")
+                        data = numpy.full(
+                            (len(self.latitudes), len(self.longitudes)), numpy.nan
                         )
-                        # it's possible there are multiple dates per file. If there are
-                        # get the idx so we know which index to grab from the file.
+                        data_slices.append(data)
+                    else:
+                        with Dataset(file, "r") as nc:
+                            # Get all dates in the current file (there can be more than 1)
+                            time_variable = nc.variables[self.time_variable_name]
 
-                        variable = nc[self.variable_of_interest_name]
-
-                        full_dims = ["year"] + list(variable.dimensions)
-                        spatial_dims = [
-                            d for d in full_dims if d != self.time_variable_name
-                        ]
-
-                        fill_value = None
-                        if hasattr(variable, "_FillValue"):
-                            fill_value = float(variable._FillValue)
-                        elif hasattr(variable, "missing_value"):
-                            fill_value = float(variable.missing_value)
-
-                        if len(times_dt) > 1:
-                            raise Exception(
-                                "Cannot process a year_month_day file with multiple time stamps yet!!!"
+                            times_dt = num2date(
+                                times=time_variable[:],
+                                units=time_variable.units,
+                                calendar=getattr(time_variable, "calendar", "standard"),
                             )
+                            # it's possible there are multiple dates per file. If there are
+                            # get the idx so we know which index to grab from the file.
 
-                        for idx, time_dt in enumerate(times_dt):
-                            iso_formatted_time = time_dt.isoformat()
-                            # Remove the year
-                            iso_formatted_time = iso_formatted_time[5:]
+                            variable = nc[self.variable_of_interest_name]
 
-                            db_time_index = all_dates[iso_formatted_time]
-
-                            # The time variable could be in many places, slice the data in the correct one
-                            time_idx_loc = self.all_variable_locations[
-                                self.time_variable_name
+                            full_dims = ["year"] + list(variable.dimensions)
+                            spatial_dims = [
+                                d for d in full_dims if d != self.time_variable_name
                             ]
-                            indexer = tuple(
-                                (idx if axis == time_idx_loc else slice(None))
-                                for axis in range(variable.ndim)
-                            )
-                            data = variable[indexer]
 
-                            data_slices.append(data)
+                            fill_value = None
+                            if hasattr(variable, "_FillValue"):
+                                fill_value = float(variable._FillValue)
+                            elif hasattr(variable, "missing_value"):
+                                fill_value = float(variable.missing_value)
 
-            # Some dates (ie: Feb 30th) don't exist in the dataset
-            if len(data_slices) == 0:
-                continue
+                            if len(times_dt) > 1:
+                                raise Exception(
+                                    "Cannot process a year_month_day file with multiple time stamps yet!!!"
+                                )
 
-            # Stack into (n_years_for_this_md, n_lat, n_lon)
-            data_year_lat_lon = numpy.stack(data_slices, axis=0)
+                            for idx, time_dt in enumerate(times_dt):
+                                iso_formatted_time = time_dt.isoformat()
+                                # Remove the year
+                                iso_formatted_time = iso_formatted_time[5:]
 
-            self._process_multi_level_gridbox_data(
-                data=data_year_lat_lon,
-                dim_names=spatial_dims,
-                fill_value=fill_value,
-                time_id=db_time_index,
-                cur=cur,
-            )
+                                db_time_index = all_dates[iso_formatted_time]
+
+                                # The time variable could be in many places, slice the data in the correct one
+                                time_idx_loc = self.all_variable_locations[
+                                    self.time_variable_name
+                                ]
+                                indexer = tuple(
+                                    (idx if axis == time_idx_loc else slice(None))
+                                    for axis in range(variable.ndim)
+                                )
+                                data = variable[indexer]
+
+                                data_slices.append(data)
+
+                # Some dates (ie: Feb 30th) don't exist in the dataset
+                if len(data_slices) == 0:
+                    continue
+
+                # Stack into (n_years_for_this_md, n_lat, n_lon)
+                data_year_lat_lon = numpy.stack(data_slices, axis=0)
+
+                self._process_multi_level_gridbox_data(
+                    data=data_year_lat_lon,
+                    dim_names=spatial_dims,
+                    fill_value=fill_value,
+                    time_id=db_time_index,
+                    cur=cur,
+                )
         return
 
 

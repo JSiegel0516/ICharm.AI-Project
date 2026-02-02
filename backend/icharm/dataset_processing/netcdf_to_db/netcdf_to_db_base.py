@@ -1,4 +1,5 @@
 import io
+import logging
 import os
 
 import numpy
@@ -50,6 +51,9 @@ class NetCDFtoDbBase:
         self.latitude_variable_name = latitude_variable_name
         self.level_variable_name = level_variable_name
         self.variable_of_interest_name = variable_of_interest_name
+
+        # Setup logging
+        self.logger = logging.getLogger(self.__class__.__name__)
         return
 
     def _guess_variable_name(
@@ -183,6 +187,7 @@ class NetCDFtoDbBase:
         return
 
     def _generate_postgres_tables(self, conn):
+        self.logger.info("Generating Postgres tables")
         with conn.cursor() as cur:
             # Latitude table creation
             cur.execute("DROP TABLE IF EXISTS lat")
@@ -297,6 +302,7 @@ class NetCDFtoDbBase:
         Returns:
 
         """
+        self.logger.info("Updating grid box table for usage: Adding Indexes, etc...")
         with conn.cursor() as cur:
             statements = [
                 "ALTER TABLE grid_data ADD PRIMARY KEY (gridbox_id, timestamp_id);",
@@ -336,6 +342,7 @@ class NetCDFtoDbBase:
         Returns:
 
         """
+        self.logger.info("Populating postgres common tables")
         with conn.cursor() as cur:
             # Insert latitudes
             with io.StringIO() as csv_buffer_latitudes:

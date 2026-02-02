@@ -167,21 +167,21 @@ class NetCDFtoDbSimple(NetCDFtoDbBase):
     def _create_sql_functions(self, conn):
         with conn.cursor() as cur:
             ###############################
-            # get_dates()
+            # get_timestamps()
             ###############################
-            # Function used by the front-end to get list of all valid dates
-            cur.execute("DROP FUNCTION IF EXISTS get_dates();")
+            # Function used by the front-end to get list of all valid timestamps
+            cur.execute("DROP FUNCTION IF EXISTS get_timestamps();")
             get_dates_sql = """
-                CREATE FUNCTION get_dates()
+                CREATE FUNCTION get_timestamps()
                 RETURNS TABLE (
-                    date_id     INT
-                    , date_val  TIMESTAMP
+                    timestamp_id     INT
+                    , timestamp_val  TIMESTAMP
                 )
                 LANGUAGE sql
                 AS $$
                     SELECT
-                        timestamp_id AS date_id
-                        , timestamp_val AS date_val
+                        timestamp_id
+                        , timestamp_val
                     FROM timestamp_dim
                     ORDER BY timestamp_id ASC
                 $$;
@@ -247,13 +247,13 @@ class NetCDFtoDbSimple(NetCDFtoDbBase):
             # Function used by the front-end to get all all the gridboxes at a date_id
             cur.execute("""
                 DROP FUNCTION IF EXISTS get_gridbox_data(
-                    in_date_id INTEGER
+                    in_timestamp_id INTEGER
                     , in_level_id INTEGER
                 );
             """)
             get_gridbox_data_sql = """
                 CREATE FUNCTION get_gridbox_data(
-                    in_date_id    INTEGER
+                    in_timestaamp_id    INTEGER
                     , in_level_id INTEGER
                 )
                 RETURNS TABLE (
@@ -275,7 +275,7 @@ class NetCDFtoDbSimple(NetCDFtoDbBase):
                     JOIN lat ON lat.lat_id = gb.lat_id
                     JOIN lon ON lon.lon_id = gb.lon_id
                     WHERE
-                        gd.timestamp_id = in_date_id
+                        gd.timestamp_id = in_timestamp_id
                     ORDER BY gridbox_id ASC
                 $$;
             """
@@ -299,13 +299,13 @@ class NetCDFtoDbSimple(NetCDFtoDbBase):
                     , in_level_id INTEGER
                 )
                 RETURNS TABLE (
-                    date_val     DATE
-                    , value      DOUBLE PRECISION
+                    timestamp_val  TIMESTAMP
+                    , value        DOUBLE PRECISION
                 )
                 LANGUAGE sql
                 AS $$
                     SELECT
-                        timestamp_val AS date_val
+                        timestamp_val
                         -- Convert the row to a json to grab the column name dynamically
                         , (to_jsonb(gd) ->> ('value_' || in_level_id))::double precision AS value
                     FROM timestamp_dim AS d
