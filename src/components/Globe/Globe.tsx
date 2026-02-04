@@ -12,6 +12,11 @@ import type { Dataset, RegionData, GlobeProps, GlobeRef } from "@/types";
 import { useRasterLayer } from "@/hooks/useRasterLayer";
 import { useRasterGrid, RasterGridData } from "@/hooks/useRasterGrid";
 import { buildRasterMesh } from "@/lib/mesh/rasterMesh";
+import {
+  fetchOpenLayersTile,
+  type LabelFeature,
+  type LabelKind,
+} from "@/lib/labels/openlayersVectorTiles";
 import type { RasterLayerData } from "@/hooks/useRasterLayer";
 import GlobeLoading from "./GlobeLoading";
 import WinkelMap from "./WinkelMap";
@@ -305,6 +310,13 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       aborted: false,
     });
     const globeMaterialRef = useRef<any>(null);
+    const labelTileCacheRef = useRef<Map<string, any[]>>(new Map());
+    const labelTilePendingRef = useRef<Set<string>>(new Set());
+    const labelTileAbortRef = useRef<AbortController | null>(null);
+    const labelUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const labelTileZoomRef = useRef<number | null>(null);
+    const labelUpdateInFlightRef = useRef(false);
+    const labelUpdateRequestedRef = useRef(false);
 
     const rasterDataRef = useRef<RasterLayerData | RasterGridData | undefined>(
       undefined,
@@ -349,6 +361,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const IMAGERY_OVERLAP_HEIGHT = MESH_TO_IMAGERY_HEIGHT * 1.15;
     const IMAGERY_HIDE_HEIGHT = IMAGERY_TO_MESH_HEIGHT * 1.1;
     const IMAGERY_PRELOAD_HEIGHT = MESH_TO_IMAGERY_HEIGHT * 1.15;
+    const LABEL_TILE_URL = "/tiles/labels/{z}/{x}/{y}.pbf";
 
     // FIXED: Add loading timeout to prevent infinite loading
     useEffect(() => {
@@ -464,6 +477,455 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       viewMode,
       rasterOpacity,
     ]);
+
+    const heightToTileZoom = (height: number) => {
+      if (height > 35_000_000) return 2;
+      if (height > 22_000_000) return 3;
+      if (height > 14_000_000) return 4;
+      if (height > 8_000_000) return 5;
+      if (height > 4_500_000) return 6;
+      if (height > 2_500_000) return 7;
+      if (height > 1_300_000) return 8;
+      if (height > 700_000) return 9;
+      if (height > 350_000) return 10;
+      if (height > 180_000) return 11;
+      if (height > 90_000) return 12;
+      return 13;
+    };
+
+    const getActiveLabelKinds = (zoom: number): LabelKind[] => {
+      if (zoom <= 3) return ["continent"];
+      if (zoom <= 4) return ["continent", "country"];
+      if (zoom <= 5) return ["continent", "country", "cityLarge"];
+      return ["continent", "country", "cityLarge", "cityMedium", "citySmall"];
+    };
+
+    const getLabelSpec = (kind: LabelKind) => {
+      if (kind === "continent") {
+        return {
+          font: "20px Inter, sans-serif",
+          color: "#f8fafc",
+          outline: "#0f172a",
+        };
+      }
+      if (kind === "country") {
+        return {
+          font: "16px Inter, sans-serif",
+          color: "#e2e8f0",
+          outline: "#0f172a",
+        };
+      }
+      if (kind === "cityLarge") {
+        return {
+          font: "14px Inter, sans-serif",
+          color: "#e2e8f0",
+          outline: "#0f172a",
+        };
+      }
+      if (kind === "cityMedium") {
+        return {
+          font: "12px Inter, sans-serif",
+          color: "#dbeafe",
+          outline: "#0f172a",
+        };
+      }
+      if (kind === "citySmall") {
+        return {
+          font: "11px Inter, sans-serif",
+          color: "#bfdbfe",
+          outline: "#0f172a",
+        };
+      }
+      return {
+        font: "12px Inter, sans-serif",
+        color: "#cbd5f5",
+        outline: "#0f172a",
+      };
+    };
+
+    const lonToTileX = (lon: number, zoom: number) => {
+      const tileCount = 2 ** zoom;
+      const x = Math.floor(((lon + 180) / 360) * tileCount);
+      return Math.min(tileCount - 1, Math.max(0, x));
+    };
+
+    const latToTileY = (lat: number, zoom: number) => {
+      const maxLat = 85.05112878;
+      const clamped = Math.max(-maxLat, Math.min(maxLat, lat));
+      const latRad = (clamped * Math.PI) / 180;
+      const tileCount = 2 ** zoom;
+      const y = Math.floor(
+        ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) /
+          2) *
+          tileCount,
+      );
+      return Math.min(tileCount - 1, Math.max(0, y));
+    };
+
+    const getTileKeysForView = (viewer: any, zoom: number) => {
+      const Cesium = cesiumInstance;
+      if (!Cesium) return null;
+      const rectangle = viewer.camera.computeViewRectangle(
+        viewer.scene.globe.ellipsoid,
+      );
+      if (!rectangle) return null;
+
+      const west = Cesium.Math.toDegrees(rectangle.west);
+      const east = Cesium.Math.toDegrees(rectangle.east);
+      const south = Cesium.Math.toDegrees(rectangle.south);
+      const north = Cesium.Math.toDegrees(rectangle.north);
+      const buffer = 1;
+      const tileCount = 2 ** zoom;
+
+      const collectRange = (rangeWest: number, rangeEast: number) => {
+        const xStart = lonToTileX(rangeWest, zoom);
+        const xEnd = lonToTileX(rangeEast, zoom);
+        const yStart = latToTileY(north, zoom);
+        const yEnd = latToTileY(south, zoom);
+        const keys: string[] = [];
+        for (
+          let x = Math.max(0, xStart - buffer);
+          x <= Math.min(tileCount - 1, xEnd + buffer);
+          x += 1
+        ) {
+          for (
+            let y = Math.max(0, yStart - buffer);
+            y <= Math.min(tileCount - 1, yEnd + buffer);
+            y += 1
+          ) {
+            keys.push(`${zoom}/${x}/${y}`);
+          }
+        }
+        return keys;
+      };
+
+      if (west <= east) {
+        return collectRange(west, east);
+      }
+      return [...collectRange(west, 180), ...collectRange(-180, east)];
+    };
+
+    const clearLabelTiles = useCallback(() => {
+      if (!viewerRef.current) return;
+      const viewer = viewerRef.current;
+      labelTileCacheRef.current.forEach((entities) => {
+        entities.forEach((entity) => {
+          viewer.entities.remove(entity);
+        });
+      });
+      labelTileCacheRef.current.clear();
+      labelTilePendingRef.current.clear();
+      labelTileZoomRef.current = null;
+      if (labelTileAbortRef.current) {
+        labelTileAbortRef.current.abort();
+        labelTileAbortRef.current = null;
+      }
+    }, []);
+
+    const createLabelEntity = useCallback(
+      (feature: LabelFeature) => {
+        if (!viewerRef.current || !cesiumInstance) return null;
+        const viewer = viewerRef.current;
+        const Cesium = cesiumInstance;
+        const spec = getLabelSpec(feature.kind);
+
+        const entity = viewer.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(feature.lon, feature.lat, 0),
+          show: false,
+          label: {
+            text: feature.name,
+            font: spec.font,
+            fillColor: Cesium.Color.fromCssColorString(spec.color),
+            outlineColor: Cesium.Color.fromCssColorString(spec.outline),
+            outlineWidth: 2,
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+            pixelOffset: new Cesium.Cartesian2(0, -10),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+        });
+        entity.__labelKind = feature.kind;
+        return entity;
+      },
+      [cesiumInstance],
+    );
+
+    const estimateLabelSize = (entity: any) => {
+      const rawFont = entity?.label?.font;
+      const fontText =
+        typeof rawFont === "string" ? rawFont : rawFont?.getValue?.();
+      const fontSize = fontText
+        ? Number.parseFloat(String(fontText).split("px")[0] ?? "12")
+        : 12;
+      const rawText = entity?.label?.text;
+      const text =
+        typeof rawText === "string" ? rawText : rawText?.getValue?.();
+      const length = text ? String(text).length : 0;
+      const width = Math.max(10, Math.round(fontSize * 0.6 * length));
+      const height = Math.max(10, Math.round(fontSize * 1.2));
+      return { width, height, fontSize };
+    };
+
+    const updateLabelTiles = useCallback(async () => {
+      if (!viewerRef.current || !cesiumInstance) return;
+      if (labelUpdateInFlightRef.current) {
+        labelUpdateRequestedRef.current = true;
+        return;
+      }
+      labelUpdateInFlightRef.current = true;
+      if (viewMode === "ortho" || viewMode === "winkel") {
+        clearLabelTiles();
+        labelUpdateInFlightRef.current = false;
+        return;
+      }
+
+      const viewer = viewerRef.current;
+      const Cesium = cesiumInstance;
+      const height = viewer.camera.positionCartographic.height;
+      const zoom = Math.min(6, heightToTileZoom(height));
+      const activeKinds = new Set<LabelKind>(getActiveLabelKinds(zoom));
+      const tileKeys = getTileKeysForView(viewer, zoom);
+      if (!tileKeys || !tileKeys.length) {
+        labelUpdateInFlightRef.current = false;
+        return;
+      }
+      const activeKeys = new Set(tileKeys);
+
+      if (labelTileZoomRef.current !== zoom) {
+        clearLabelTiles();
+        labelTileZoomRef.current = zoom;
+      }
+
+      labelTileCacheRef.current.forEach((entities, key) => {
+        if (!activeKeys.has(key)) {
+          entities.forEach((entity) => viewer.entities.remove(entity));
+          labelTileCacheRef.current.delete(key);
+          return;
+        }
+        const filtered = entities.filter((entity) => {
+          const kind = entity?.__labelKind as LabelKind | undefined;
+          if (!kind || !activeKinds.has(kind)) {
+            viewer.entities.remove(entity);
+            return false;
+          }
+          return true;
+        });
+        labelTileCacheRef.current.set(key, filtered);
+      });
+
+      const occluder = new Cesium.EllipsoidalOccluder(
+        Cesium.Ellipsoid.WGS84,
+        viewer.camera.position,
+      );
+      const cameraPosition = viewer.camera.positionWC;
+      const cameraDirection = viewer.camera.directionWC;
+      const scene = viewer.scene;
+      const canvas = scene.canvas;
+      const now = Cesium.JulianDate.now();
+
+      const occupied = new Map<
+        string,
+        Array<{ x: number; y: number; w: number; h: number }>
+      >();
+      const cellSize = 64;
+
+      const collides = (box: {
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+      }) => {
+        const minCellX = Math.floor(box.x / cellSize);
+        const minCellY = Math.floor(box.y / cellSize);
+        const maxCellX = Math.floor((box.x + box.w) / cellSize);
+        const maxCellY = Math.floor((box.y + box.h) / cellSize);
+        for (let cx = minCellX - 1; cx <= maxCellX + 1; cx += 1) {
+          for (let cy = minCellY - 1; cy <= maxCellY + 1; cy += 1) {
+            const key = `${cx},${cy}`;
+            const entries = occupied.get(key);
+            if (!entries) continue;
+            for (const entry of entries) {
+              const intersects =
+                box.x < entry.x + entry.w &&
+                box.x + box.w > entry.x &&
+                box.y < entry.y + entry.h &&
+                box.y + box.h > entry.y;
+              if (intersects) return true;
+            }
+          }
+        }
+        return false;
+      };
+
+      const addBox = (box: { x: number; y: number; w: number; h: number }) => {
+        const minCellX = Math.floor(box.x / cellSize);
+        const minCellY = Math.floor(box.y / cellSize);
+        const maxCellX = Math.floor((box.x + box.w) / cellSize);
+        const maxCellY = Math.floor((box.y + box.h) / cellSize);
+        for (let cx = minCellX; cx <= maxCellX; cx += 1) {
+          for (let cy = minCellY; cy <= maxCellY; cy += 1) {
+            const key = `${cx},${cy}`;
+            const list = occupied.get(key) ?? [];
+            list.push(box);
+            occupied.set(key, list);
+          }
+        }
+      };
+
+      const priority = (kind: LabelKind) => {
+        if (kind === "continent") return 0;
+        if (kind === "country") return 1;
+        if (kind === "cityLarge") return 2;
+        if (kind === "cityMedium") return 3;
+        if (kind === "citySmall") return 4;
+        return 5;
+      };
+
+      const candidates: any[] = [];
+      labelTileCacheRef.current.forEach((entities, key) => {
+        if (!activeKeys.has(key)) return;
+        entities.forEach((entity) => {
+          entity.show = false;
+          candidates.push(entity);
+        });
+      });
+
+      candidates.sort((a, b) => {
+        const kindA = a?.__labelKind as LabelKind;
+        const kindB = b?.__labelKind as LabelKind;
+        return priority(kindA) - priority(kindB);
+      });
+
+      let shownCount = 0;
+      candidates.forEach((entity) => {
+        const kind = entity?.__labelKind as LabelKind | undefined;
+        if (!kind || !activeKinds.has(kind)) return;
+        const position = entity?.position?.getValue(now);
+        if (!position) return;
+        if (!occluder.isPointVisible(position)) return;
+
+        const vector = Cesium.Cartesian3.subtract(
+          position,
+          cameraPosition,
+          new Cesium.Cartesian3(),
+        );
+        Cesium.Cartesian3.normalize(vector, vector);
+        const centerDot = Cesium.Cartesian3.dot(vector, cameraDirection);
+        if (centerDot < 0.15) return;
+
+        const screenPosition = Cesium.SceneTransforms.wgs84ToWindowCoordinates(
+          scene,
+          position,
+        );
+        if (!screenPosition) return;
+        if (
+          screenPosition.x < 0 ||
+          screenPosition.y < 0 ||
+          screenPosition.x > canvas.clientWidth ||
+          screenPosition.y > canvas.clientHeight
+        ) {
+          return;
+        }
+
+        const { width, height: labelHeight } = estimateLabelSize(entity);
+        const pad = kind === "street" ? 2 : 4;
+        const box = {
+          x: screenPosition.x - width / 2 - pad,
+          y: screenPosition.y - labelHeight - pad,
+          w: width + pad * 2,
+          h: labelHeight + pad * 2,
+        };
+        if (collides(box)) return;
+        addBox(box);
+        entity.show = true;
+        shownCount += 1;
+      });
+
+      const maxTiles = 24;
+      if (tileKeys.length > maxTiles) {
+        tileKeys.length = maxTiles;
+      }
+      if (!labelTileAbortRef.current) {
+        labelTileAbortRef.current = new AbortController();
+      }
+      const { signal } = labelTileAbortRef.current;
+
+      let addedTiles = false;
+      const maxConcurrent = 6;
+      for (let i = 0; i < tileKeys.length; i += maxConcurrent) {
+        const chunk = tileKeys.slice(i, i + maxConcurrent);
+        await Promise.all(
+          chunk.map(async (key) => {
+            if (labelTileCacheRef.current.has(key)) return;
+            if (labelTilePendingRef.current.has(key)) return;
+            labelTilePendingRef.current.add(key);
+
+            const [z, x, y] = key.split("/").map((value) => Number(value));
+            const url = LABEL_TILE_URL.replace("{z}", `${z}`)
+              .replace("{x}", `${x}`)
+              .replace("{y}", `${y}`);
+
+            try {
+              const features = await fetchOpenLayersTile(url, z, x, y, signal);
+              const filtered = features.filter((feature) => {
+                if (!activeKinds.has(feature.kind)) return false;
+                return true;
+              });
+              const entities = filtered
+                .map((feature) => createLabelEntity(feature))
+                .filter(Boolean) as any[];
+              entities.forEach((entity, index) => {
+                const feature = filtered[index];
+                if (!feature) return;
+                entity.__labelKind = feature.kind;
+              });
+              labelTileCacheRef.current.set(key, entities);
+              if (entities.length) {
+                addedTiles = true;
+              }
+            } catch (error) {
+              if ((error as Error).name !== "AbortError") {
+                console.warn("Failed to load label tile", error);
+              }
+            } finally {
+              labelTilePendingRef.current.delete(key);
+            }
+          }),
+        );
+      }
+
+      viewer.scene.requestRender();
+      if (typeof globalThis !== "undefined") {
+        (globalThis as any).__labelDebug = {
+          zoom,
+          tiles: tileKeys.length,
+          cachedTiles: labelTileCacheRef.current.size,
+          candidates: candidates.length,
+          shown: shownCount,
+        };
+      }
+      labelUpdateInFlightRef.current = false;
+
+      if (addedTiles) {
+        setTimeout(() => {
+          if (isComponentUnmountedRef.current) return;
+          updateLabelTiles();
+        }, 0);
+      }
+      if (labelUpdateRequestedRef.current) {
+        labelUpdateRequestedRef.current = false;
+        updateLabelTiles();
+      }
+    }, [cesiumInstance, clearLabelTiles, createLabelEntity, viewMode]);
+
+    const scheduleLabelUpdate = useCallback(() => {
+      if (labelUpdateTimeoutRef.current) {
+        clearTimeout(labelUpdateTimeoutRef.current);
+      }
+      labelUpdateTimeoutRef.current = setTimeout(() => {
+        updateLabelTiles();
+      }, 120);
+    }, [updateLabelTiles]);
 
     const clearMarker = useCallback(() => {
       if (
@@ -780,6 +1242,26 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         );
       };
     }, [updateRasterLod, viewerReady]);
+
+    useEffect(() => {
+      if (!viewerReady || !viewerRef.current || !cesiumInstance) return;
+      const viewer = viewerRef.current;
+
+      const handleCameraChange = () => {
+        scheduleLabelUpdate();
+      };
+
+      viewer.camera.changed.addEventListener(handleCameraChange);
+      scheduleLabelUpdate();
+
+      return () => {
+        if (!viewerRef.current || viewerRef.current.isDestroyed()) return;
+        viewerRef.current.camera.changed.removeEventListener(
+          handleCameraChange,
+        );
+        clearLabelTiles();
+      };
+    }, [cesiumInstance, viewerReady, scheduleLabelUpdate, clearLabelTiles]);
 
     useEffect(() => {
       if (!viewerReady || !viewerRef.current) return;
