@@ -1,11 +1,12 @@
 import io
-import numpy
 import os
-import pandas
-
+import re
+from datetime import datetime, timedelta
 from pathlib import Path
 
-from datetime import datetime
+import numpy
+import pandas
+from dotenv import load_dotenv
 from netCDF4 import Dataset, num2date
 from tqdm import tqdm
 from typing import Any
@@ -13,10 +14,50 @@ from typing import Any
 from icharm.dataset_processing.netcdf_to_db.netcdf_to_db_base import NetCDFtoDbBase
 from icharm.utils.benchmark import benchmark
 
+load_dotenv()
+
 TIME_VAR_CANDIDATES = ["time"]
 LAT_VAR_CANDIDATES = ["lat", "latitude"]
 LON_VAR_CANDIDATES = ["lon", "longitude"]
 LEVEL_VAR_CANDIDATES = ["level"]
+
+
+def _decode_time_months_since(times: numpy.ndarray, units: str) -> list[datetime]:
+    """
+    Decode time values when units are 'months since <reference_date>'.
+    netCDF4.num2date does not support 'months since' with the standard calendar.
+    """
+    # Parse "months since 2005-01-01 00:00:00" or similar
+    match = re.match(
+        r"months\s+since\s+(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{2}):(\d{2}):(\d{2}))?",
+        units,
+        re.IGNORECASE,
+    )
+    if not match:
+        raise ValueError(f"Cannot parse 'months since' reference from units: {units}")
+    y, m, d = int(match.group(1)), int(match.group(2)), int(match.group(3))
+    hh = int(match.group(4) or 0)
+    mm = int(match.group(5) or 0)
+    ss = int(match.group(6) or 0)
+    ref = datetime(y, m, d, hh, mm, ss)
+
+    result = []
+    for val in numpy.atleast_1d(times):
+        v = float(val)
+        months_int = int(v)
+        frac = v - months_int
+        dt = ref
+        # Add whole months
+        for _ in range(months_int):
+            if dt.month == 12:
+                dt = dt.replace(month=1, year=dt.year + 1)
+            else:
+                dt = dt.replace(month=dt.month + 1)
+        # Fractional month: approximate as fraction of 30 days
+        if frac != 0:
+            dt = dt + timedelta(days=frac * 30)
+        result.append(dt)
+    return result
 
 
 class NetCDFtoDbSimple(NetCDFtoDbBase):
@@ -65,12 +106,16 @@ class NetCDFtoDbSimple(NetCDFtoDbBase):
                 with Dataset(file, "r") as nc:
                     # Get all dates in the current file (there can be more than 1)
                     time_variable = nc.variables[self.time_variable_name]
-                    # time_values = nc.variables[self.time_variable_name][:]
-                    times_dt = num2date(
-                        times=time_variable[:],
-                        units=time_variable.units,
-                        calendar=getattr(time_variable, "calendar", "standard"),
-                    )
+                    units = time_variable.units or ""
+                    if "months since" in units.lower():
+                        # num2date does not support "months since" with standard calendar
+                        times_dt = _decode_time_months_since(time_variable[:], units)
+                    else:
+                        times_dt = num2date(
+                            times=time_variable[:],
+                            units=time_variable.units,
+                            calendar=getattr(time_variable, "calendar", "standard"),
+                        )
                     # it's possible there are multiple dates per file. If there are
                     # get the idx so we know which index to grab from the file.
 
@@ -342,9 +387,9 @@ class NetCDFtoDbSimple(NetCDFtoDbBase):
 
 
 def main():
-    data_path = "/home/mrsharky/dev/sdsu/ICharm.AI-Project/backend/datasets/ncep"
-    dataset_name = "ncep"
-    variable_of_interest_name = "air"
+    data_path = "/var/www/html/icharm/backend/datasets/temperature_anomaly_monthly"
+    dataset_name = "ocean_heat_content"
+    variable_of_interest_name = "t_an"
 
     database_username = os.getenv("POSTGRES_USERNAME", "icharm_user")
     database_password = os.getenv("POSTGRES_PASSWORD")

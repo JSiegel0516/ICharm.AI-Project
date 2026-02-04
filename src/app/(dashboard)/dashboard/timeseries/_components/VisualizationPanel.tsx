@@ -659,7 +659,7 @@ export function VisualizationPanel({
         />
       )}
 
-      {/* Data Table */}
+      {/* Data Table 
       {chartData.length > 0 && (
         <DataTable
           data={chartData}
@@ -668,6 +668,7 @@ export function VisualizationPanel({
           yAxisUnit={yAxisUnit}
         />
       )}
+        */}
 
       {/* Periodogram - Frequency Domain Analysis */}
       {chartData.length > 0 && (

@@ -73,7 +73,7 @@ Install Docker before attempting to run the database
 
    # If these coommands do not work, try to delete the container manually in the GUI
 
-   docker compose down -v
+   docker compose down
    docker compose build
    docker compose up -d
 

@@ -413,7 +413,7 @@ export function transformBackendDataset(record: ClimateDatasetRecord): Dataset {
 
     // Display information
     name: record.datasetName,
-    description: `${record.layerParameter || "Data"} - ${record.statistic || "Analysis"}`,
+    description: `${record.description}`,
 
     // Data classification
     dataType: validateDataType(record.datasetType),

@@ -193,8 +193,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
       const coverageStart = formatDateOnly(currentDataset.startDate);
       const coverageEnd = formatDateOnly(currentDataset.endDate);
       const units = currentDataset?.units || "dataset units";
-      const description =
-        currentDataset.description || currentDataset.layerParameter || null;
+      const description = currentDataset.description || null;
 
       const summarySegments = [
         `You're currently viewing "${currentDataset.name}".`,

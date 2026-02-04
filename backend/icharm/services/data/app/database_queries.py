@@ -129,7 +129,7 @@ class DatabaseQueries:
             )
 
     @staticmethod
-    async def extract_timeseries_from_postgres(
+    def extract_timeseries_from_postgres(
         start_date: datetime,
         end_date: datetime,
         lat: float,
@@ -333,7 +333,9 @@ class DatabaseQueries:
                         f"[PostgresExtractor] Added {points_added} data points from year-based columns"
                     )
                 else:
-                    # Simple case: just one value column
+                    # Simple/level-based case: columns are value_0, value_1, etc. (depth levels)
+                    # Timestamps are stored as full ISO datetimes, not MMDD
+                    # Default to first level (surface/index 0) for now
                     value_col = value_columns[0]
                     data_query = text(f"""
                         SELECT
@@ -353,26 +355,32 @@ class DatabaseQueries:
                     )
 
                     data_dict = {}
-                    current_year = start_date.year
-                    end_year = end_date.year
+                    for row in results:
+                        timestamp_val = row[0]
+                        value = row[1]
 
-                    for year in range(current_year, end_year + 1):
-                        for row in results:
-                            mmdd = row[0]
-                            value = row[1]
-
+                        # Handle timestamp_val which may be datetime or string
+                        if isinstance(timestamp_val, datetime):
+                            timestamp = timestamp_val
+                        elif isinstance(timestamp_val, str):
                             try:
-                                month = int(mmdd[:2])
-                                day = int(mmdd[2:])
-                                timestamp = datetime(year, month, day)
-
-                                if start_date <= timestamp <= end_date:
-                                    data_dict[timestamp] = value
-                            except (ValueError, IndexError) as e:
+                                # Try ISO format first
+                                timestamp = datetime.fromisoformat(timestamp_val)
+                            except ValueError:
                                 logger.warning(
-                                    f"[PostgresExtractor] Could not parse timestamp: {mmdd}, error: {e}"
+                                    f"[PostgresExtractor] Could not parse timestamp: {timestamp_val}"
                                 )
                                 continue
+                        else:
+                            logger.warning(
+                                f"[PostgresExtractor] Unexpected timestamp type: {type(timestamp_val)}"
+                            )
+                            continue
+
+                        # Check if within date range
+                        if start_date <= timestamp <= end_date:
+                            if value is not None:
+                                data_dict[timestamp] = value
 
                 # Convert to pandas Series
                 series = pandas.Series(data_dict)
@@ -421,6 +429,24 @@ class DatabaseQueries:
 
         try:
             with db_engine.connect() as conn:
+                # Detect timestamp_val type: date/timestamp vs MMDD string (CHAR(4))
+                ts_type_query = text("""
+                    SELECT data_type
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'timestamp_dim'
+                      AND column_name = 'timestamp_val'
+                """)
+                ts_type_row = conn.execute(ts_type_query).fetchone()
+                timestamp_is_date_type = False
+                if ts_type_row:
+                    data_type = (ts_type_row[0] or "").lower()
+                    timestamp_is_date_type = data_type in (
+                        "timestamp without time zone",
+                        "timestamp with time zone",
+                        "date",
+                    )
+
                 # Get value columns to determine structure
                 column_query = text("""
                                     SELECT column_name
@@ -450,7 +476,15 @@ class DatabaseQueries:
                 else:
                     value_col = value_columns[0]
 
-                mmdd = f"{target_date.month:02d}{target_date.day:02d}"
+                # Use actual date for timestamp/date columns (e.g. ocean_heat_content);
+                # use MMDD string for CHAR(4) (e.g. CMORPH daily)
+                if timestamp_is_date_type:
+                    # Monthly data is typically stored on the 16th of each month
+                    ts_param = target_date.replace(day=16)
+                    ts_param_name = "ts_val"
+                else:
+                    ts_param = f"{target_date.month:02d}{target_date.day:02d}"
+                    ts_param_name = "mmdd"
 
                 combined_query = text(f"""
                     SELECT
@@ -462,11 +496,13 @@ class DatabaseQueries:
                     JOIN gridbox gb ON g.gridbox_id = gb.gridbox_id
                     JOIN lat ON gb.lat_id = lat.lat_id
                     JOIN lon ON gb.lon_id = lon.lon_id
-                    WHERE t.timestamp_val = :mmdd
+                    WHERE t.timestamp_val = :{ts_param_name}
                     ORDER BY lat.lat, lon.lon
                 """)
 
-                results = conn.execute(combined_query, {"mmdd": mmdd}).fetchall()
+                results = conn.execute(
+                    combined_query, {ts_param_name: ts_param}
+                ).fetchall()
 
                 if not results:
                     raise ValueError(f"No data found for date {target_date.date()}")

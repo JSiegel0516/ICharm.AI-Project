@@ -81,6 +81,7 @@ export async function GET(request: Request) {
     const normalizedDatasets = datasets.map((dataset) => ({
       ...dataset,
       stored: dataset.Stored, // Add lowercase version
+      description: dataset.description,
     }));
 
     const cloudCount = normalizedDatasets.filter(
