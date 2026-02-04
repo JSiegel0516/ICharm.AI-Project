@@ -215,21 +215,10 @@ export const resolveEffectiveColorbarRange = (
 
   const datasetText = getDatasetIdentifierText(dataset);
 
-  const isNoaaGlobalTemp =
-    datasetText.includes("noaaglobaltemp") ||
-    datasetText.includes("noaa global temp") ||
-    datasetText.includes("noaa global surface temperature") ||
-    datasetText.includes("noaa global surface temp") ||
-    datasetText.includes("noaa global temperature");
-
   const isGodas =
     datasetText.includes("godas") ||
     datasetText.includes("global ocean data assimilation system") ||
     datasetText.includes("ncep global ocean data assimilation");
-
-  if (isNoaaGlobalTemp) {
-    return { enabled: true, min: -2, max: 2 };
-  }
 
   if (isGodas) {
     const isDeepLevel =
