@@ -606,7 +606,7 @@ const OrthoGlobe: React.FC<Props> = ({
     boundaryOverlayRef.current = boundaryOverlay;
     group.add(boundaryOverlay);
 
-    const sunlight = new THREE.DirectionalLight(0xffffff, 1.3);
+    const sunlight = new THREE.DirectionalLight(0xffffff, 2.0);
     sunlight.position.set(3, 2, 4);
     sunlightRef.current = sunlight;
     scene.add(sunlight);
@@ -915,19 +915,23 @@ const OrthoGlobe: React.FC<Props> = ({
       url,
       (texture) => {
         texture.colorSpace = THREE.NoColorSpace;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.generateMipmaps = false;
         texture.wrapS = THREE.RepeatWrapping;
         texture.wrapT = THREE.ClampToEdgeWrapping;
         baseMaterial.normalMap = texture;
-        baseMaterial.normalScale = new THREE.Vector2(0.6, 0.6);
+        // Increased from 0.6 to match legacy full-strength normals.
+        baseMaterial.normalScale = new THREE.Vector2(2.0, 2.0);
         baseMaterial.needsUpdate = true;
         if (meshMaterial) {
           meshMaterial.normalMap = texture;
-          meshMaterial.normalScale = new THREE.Vector2(0.6, 0.6);
+          meshMaterial.normalScale = new THREE.Vector2(2.0, 2.0);
           meshMaterial.needsUpdate = true;
         }
         if (rasterMaterial) {
           rasterMaterial.normalMap = texture;
-          rasterMaterial.normalScale = new THREE.Vector2(0.6, 0.6);
+          rasterMaterial.normalScale = new THREE.Vector2(2.0, 2.0);
           rasterMaterial.needsUpdate = true;
         }
         normalMapTextureRef.current = texture;
