@@ -260,6 +260,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       selectedLevel,
       colorbarRange,
       viewMode = "3d",
+      baseMapMode = "satellite",
       satelliteLayerVisible = true,
       boundaryLinesVisible = true,
       geographicLinesVisible = false,
@@ -297,6 +298,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const useMeshRasterEffective = useMeshRaster;
 
     const satelliteLayerRef = useRef<any>(null);
+    const streetLayerRef = useRef<any>(null);
+    const streetOverlayLayerRef = useRef<any>(null);
     const boundaryEntitiesRef = useRef<any[]>([]);
     const geographicLineEntitiesRef = useRef<any[]>([]);
     const rasterLayerRef = useRef<any[]>([]);
@@ -1809,6 +1812,43 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             console.error("Failed to load satellite base layer", layerError);
           }
 
+          try {
+            const streetProvider = new Cesium.UrlTemplateImageryProvider({
+              url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+              credit: "© OpenStreetMap contributors",
+            });
+            const streetLayer =
+              viewer.scene.imageryLayers.addImageryProvider(streetProvider);
+            streetLayer.alpha = 1.0;
+            streetLayer.brightness = 1.0;
+            streetLayer.contrast = 1.0;
+            streetLayer.show = false;
+            viewer.scene.imageryLayers.lowerToBottom(streetLayer);
+            streetLayerRef.current = streetLayer;
+          } catch (layerError) {
+            console.error("Failed to load street base layer", layerError);
+          }
+
+          try {
+            const streetOverlayProvider = new Cesium.UrlTemplateImageryProvider(
+              {
+                url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                credit: "© OpenStreetMap contributors",
+              },
+            );
+            const overlayLayer = viewer.scene.imageryLayers.addImageryProvider(
+              streetOverlayProvider,
+            );
+            overlayLayer.alpha = 0.9;
+            overlayLayer.brightness = 1.05;
+            overlayLayer.contrast = 1.05;
+            overlayLayer.show = false;
+            viewer.scene.imageryLayers.raiseToTop(overlayLayer);
+            streetOverlayLayerRef.current = overlayLayer;
+          } catch (layerError) {
+            console.error("Failed to load street overlay layer", layerError);
+          }
+
           viewer.canvas.style.width = "100%";
           viewer.canvas.style.height = "100%";
 
@@ -2707,8 +2747,23 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       if (!satelliteLayerRef.current) return;
 
       satelliteLayerRef.current.show =
-        viewMode === "ortho" ? false : satelliteLayerVisible;
-    }, [satelliteLayerVisible, viewMode]);
+        viewMode === "ortho"
+          ? false
+          : baseMapMode === "satellite" && satelliteLayerVisible;
+    }, [satelliteLayerVisible, viewMode, baseMapMode]);
+
+    useEffect(() => {
+      if (!streetLayerRef.current) return;
+      streetLayerRef.current.show =
+        viewMode === "ortho" ? false : baseMapMode === "street";
+    }, [baseMapMode, viewMode]);
+
+    useEffect(() => {
+      if (!streetOverlayLayerRef.current) return;
+      const shouldShow =
+        viewMode !== "ortho" && baseMapMode === "street" && useMeshRasterActive;
+      streetOverlayLayerRef.current.show = shouldShow;
+    }, [baseMapMode, viewMode, useMeshRasterActive]);
 
     useEffect(() => {
       if (boundaryEntitiesRef.current.length === 0) return;

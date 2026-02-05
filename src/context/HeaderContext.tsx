@@ -145,6 +145,7 @@ const useAppStateInternal = () => {
     error: null,
     colorBarOrientation: "horizontal",
     globeSettings: {
+      baseMapMode: "satellite",
       satelliteLayerVisible: true,
       boundaryLinesVisible: true,
       geographicLinesVisible: false,

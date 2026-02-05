@@ -176,6 +176,7 @@ export interface SettingsIconProps extends HTMLAttributes<HTMLDivElement> {
 
 // NEW: Globe settings interface
 export interface GlobeSettings {
+  baseMapMode?: "satellite" | "street";
   satelliteLayerVisible: boolean;
   boundaryLinesVisible: boolean;
   geographicLinesVisible: boolean;
@@ -271,6 +272,7 @@ export interface GlobeProps {
   currentDataset?: Dataset;
   selectedDate?: Date;
   selectedLevel?: number | null;
+  baseMapMode?: "satellite" | "street";
   colorbarRange?: {
     enabled?: boolean;
     min?: number | null;
@@ -423,6 +425,8 @@ export interface TutorialModalProps extends ModalProps {}
 export interface GlobeSettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;
+  baseMapMode?: "satellite" | "street";
+  onBaseMapModeChange?: (mode: "satellite" | "street") => void;
   satelliteLayerVisible: boolean;
   onSatelliteLayerToggle: (visible: boolean) => void;
   boundaryLinesVisible: boolean;

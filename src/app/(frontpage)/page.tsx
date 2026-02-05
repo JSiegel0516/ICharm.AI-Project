@@ -417,6 +417,7 @@ export default function HomePage() {
 
   // Globe Settings State
   const [globeSettings, setGlobeSettings] = useState<GlobeSettings>({
+    baseMapMode: "satellite",
     satelliteLayerVisible: true,
     boundaryLinesVisible: true,
     geographicLinesVisible: false,
@@ -428,6 +429,7 @@ export default function HomePage() {
     colorbarCustomMax: null,
     viewMode: "3d",
   });
+  const lastSatelliteLabelsVisibleRef = useRef(true);
 
   const colorbarRange = useMemo(
     () => ({
@@ -1066,8 +1068,25 @@ export default function HomePage() {
     setGlobeSettings((prev) => ({ ...prev, geographicLinesVisible: visible }));
   }, []);
 
+  const handleBaseMapModeChange = useCallback(
+    (mode: "satellite" | "street") => {
+      setGlobeSettings((prev) => ({
+        ...prev,
+        baseMapMode: mode,
+        labelsVisible:
+          mode === "street" ? false : lastSatelliteLabelsVisibleRef.current,
+      }));
+    },
+    [],
+  );
+
   const handleLabelsToggle = useCallback((visible: boolean) => {
-    setGlobeSettings((prev) => ({ ...prev, labelsVisible: visible }));
+    setGlobeSettings((prev) => {
+      if (prev.baseMapMode !== "street") {
+        lastSatelliteLabelsVisibleRef.current = visible;
+      }
+      return { ...prev, labelsVisible: visible };
+    });
   }, []);
 
   const handleRasterBlurToggle = useCallback((enabled: boolean) => {
@@ -1301,6 +1320,7 @@ export default function HomePage() {
         colorbarRange={colorbarRange}
         hideZeroPrecipitation={globeSettings.hideZeroPrecipitation}
         onRegionClick={handleRegionClick}
+        baseMapMode={globeSettings.baseMapMode}
         satelliteLayerVisible={globeSettings.satelliteLayerVisible}
         boundaryLinesVisible={globeSettings.boundaryLinesVisible}
         geographicLinesVisible={globeSettings.geographicLinesVisible}
@@ -1327,9 +1347,11 @@ export default function HomePage() {
             onShowTutorial={() => setTutorialOpen(true)}
             onShowSidebarPanel={setActiveSidebarPanel}
             globeSettings={globeSettings}
+            onBaseMapModeChange={handleBaseMapModeChange}
             onSatelliteToggle={handleSatelliteToggle}
             onBoundaryToggle={handleBoundaryToggle}
             onGeographicLinesToggle={handleGeographicLinesToggle}
+            onBaseMapModeChange={handleBaseMapModeChange}
             onLabelsToggle={handleLabelsToggle}
             onRasterOpacityChange={handleRasterOpacityChange}
             onHideZeroPrecipToggle={handleHideZeroPrecipToggle}

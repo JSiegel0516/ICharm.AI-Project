@@ -36,6 +36,7 @@ interface SideButtonsProps {
   onShowTutorial: () => void;
   onShowSidebarPanel: (panel: "datasets" | "history" | "about" | null) => void;
   globeSettings: GlobeSettings;
+  onBaseMapModeChange: (mode: "satellite" | "street") => void;
   onSatelliteToggle: (visible: boolean) => void;
   onBoundaryToggle: (visible: boolean) => void;
   onGeographicLinesToggle: (visible: boolean) => void;
@@ -72,6 +73,7 @@ export function SideButtons({
   onShowTutorial,
   onShowSidebarPanel,
   globeSettings,
+  onBaseMapModeChange,
   onSatelliteToggle,
   onBoundaryToggle,
   onGeographicLinesToggle,
@@ -723,6 +725,8 @@ export function SideButtons({
       <GlobeSettingsPanel
         isOpen={showGlobeSettings}
         onClose={closeGlobeSettings}
+        baseMapMode={globeSettings.baseMapMode ?? "satellite"}
+        onBaseMapModeChange={onBaseMapModeChange}
         satelliteLayerVisible={globeSettings.satelliteLayerVisible}
         onSatelliteLayerToggle={onSatelliteToggle}
         boundaryLinesVisible={globeSettings.boundaryLinesVisible}

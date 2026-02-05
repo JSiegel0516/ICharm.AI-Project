@@ -11,6 +11,8 @@ import type { GlobeSettings } from "@/types";
 interface GlobeSettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;
+  baseMapMode?: "satellite" | "street";
+  onBaseMapModeChange?: (mode: "satellite" | "street") => void;
   // Layer visibility controls
   satelliteLayerVisible: boolean;
   onSatelliteLayerToggle: (visible: boolean) => void;
@@ -42,6 +44,8 @@ interface GlobeSettingsPanelProps {
 export function GlobeSettingsPanel({
   isOpen,
   onClose,
+  baseMapMode = "satellite",
+  onBaseMapModeChange,
   satelliteLayerVisible,
   onSatelliteLayerToggle,
   boundaryLinesVisible,
@@ -125,6 +129,29 @@ export function GlobeSettingsPanel({
                   />
                 </div>
 
+                {/* Base Map Style Toggle */}
+                <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
+                  <div className="space-y-0.5">
+                    <Label
+                      htmlFor="basemap-toggle"
+                      className="cursor-pointer text-sm font-medium text-white"
+                    >
+                      Street View
+                    </Label>
+                    <p className="text-xs text-slate-400">
+                      Switch between satellite imagery and street maps
+                    </p>
+                  </div>
+                  <Switch
+                    id="basemap-toggle"
+                    checked={baseMapMode === "street"}
+                    onCheckedChange={(checked) =>
+                      onBaseMapModeChange?.(checked ? "street" : "satellite")
+                    }
+                    className="data-[state=checked]:bg-rose-500"
+                  />
+                </div>
+
                 {/* Boundary Lines Toggle */}
                 <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
                   <div className="space-y-0.5">
@@ -168,25 +195,27 @@ export function GlobeSettingsPanel({
                 </div>
 
                 {/* Place Names Toggle */}
-                <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
-                  <div className="space-y-0.5">
-                    <Label
-                      htmlFor="labels-toggle"
-                      className="cursor-pointer text-sm font-medium text-white"
-                    >
-                      Place Names
-                    </Label>
-                    <p className="text-xs text-slate-400">
-                      Show/hide continent, country, and city labels
-                    </p>
+                {baseMapMode !== "street" && (
+                  <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
+                    <div className="space-y-0.5">
+                      <Label
+                        htmlFor="labels-toggle"
+                        className="cursor-pointer text-sm font-medium text-white"
+                      >
+                        Place Names
+                      </Label>
+                      <p className="text-xs text-slate-400">
+                        Show/hide continent, country, and city labels
+                      </p>
+                    </div>
+                    <Switch
+                      id="labels-toggle"
+                      checked={labelsVisible}
+                      onCheckedChange={onLabelsToggle}
+                      className="data-[state=checked]:bg-rose-500"
+                    />
                   </div>
-                  <Switch
-                    id="labels-toggle"
-                    checked={labelsVisible}
-                    onCheckedChange={onLabelsToggle}
-                    className="data-[state=checked]:bg-rose-500"
-                  />
-                </div>
+                )}
               </div>
 
               {/* Raster Opacity Section */}
