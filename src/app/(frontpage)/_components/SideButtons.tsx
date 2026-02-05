@@ -44,6 +44,7 @@ interface SideButtonsProps {
   onRasterOpacityChange: (opacity: number) => void;
   onHideZeroPrecipToggle: (enabled: boolean) => void;
   onRasterBlurToggle: (enabled: boolean) => void;
+  onBumpMapModeChange: (mode: "none" | "land" | "landBathymetry") => void;
   onColorbarRangeChange: (payload: {
     min: number | null;
     max: number | null;
@@ -81,6 +82,7 @@ export function SideButtons({
   onRasterOpacityChange,
   onHideZeroPrecipToggle,
   onRasterBlurToggle,
+  onBumpMapModeChange,
   onColorbarRangeChange,
   onColorbarRangeReset,
   viewMode,
@@ -741,6 +743,8 @@ export function SideButtons({
         onHideZeroPrecipitationToggle={onHideZeroPrecipToggle}
         rasterBlurEnabled={globeSettings.rasterBlurEnabled}
         onRasterBlurToggle={onRasterBlurToggle}
+        bumpMapMode={globeSettings.bumpMapMode}
+        onBumpMapModeChange={onBumpMapModeChange}
         colorbarCustomMin={globeSettings.colorbarCustomMin}
         colorbarCustomMax={globeSettings.colorbarCustomMax}
         onColorbarRangeChange={onColorbarRangeChange}

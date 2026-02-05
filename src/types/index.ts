@@ -184,6 +184,7 @@ export interface GlobeSettings {
   rasterOpacity: number;
   hideZeroPrecipitation: boolean;
   rasterBlurEnabled: boolean;
+  bumpMapMode: "none" | "land" | "landBathymetry";
   colorbarCustomMin?: number | null;
   colorbarCustomMax?: number | null;
   viewMode?: GlobeViewMode;
@@ -296,6 +297,7 @@ export interface GlobeProps {
   rasterOpacity?: number;
   hideZeroPrecipitation?: boolean;
   rasterBlurEnabled?: boolean;
+  bumpMapMode?: "none" | "land" | "landBathymetry";
   useMeshRaster?: boolean;
   rasterState: UseRasterLayerResult;
   rasterGridState: UseRasterGridResult;
@@ -441,6 +443,8 @@ export interface GlobeSettingsPanelProps {
   onHideZeroPrecipitationToggle: (enabled: boolean) => void;
   rasterBlurEnabled: boolean;
   onRasterBlurToggle: (enabled: boolean) => void;
+  bumpMapMode: "none" | "land" | "landBathymetry";
+  onBumpMapModeChange: (mode: "none" | "land" | "landBathymetry") => void;
   colorbarCustomMin?: number | null;
   colorbarCustomMax?: number | null;
   onColorbarRangeChange: (payload: {

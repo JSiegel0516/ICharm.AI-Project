@@ -425,6 +425,7 @@ export default function HomePage() {
     rasterOpacity: 0.9,
     hideZeroPrecipitation: false,
     rasterBlurEnabled: true,
+    bumpMapMode: "none",
     colorbarCustomMin: null,
     colorbarCustomMax: null,
     viewMode: "3d",
@@ -1093,6 +1094,13 @@ export default function HomePage() {
     setGlobeSettings((prev) => ({ ...prev, rasterBlurEnabled: enabled }));
   }, []);
 
+  const handleBumpMapModeChange = useCallback(
+    (mode: "none" | "land" | "landBathymetry") => {
+      setGlobeSettings((prev) => ({ ...prev, bumpMapMode: mode }));
+    },
+    [],
+  );
+
   const handleRasterOpacityChange = useCallback((opacity: number) => {
     setGlobeSettings((prev) => ({ ...prev, rasterOpacity: opacity }));
   }, []);
@@ -1327,6 +1335,7 @@ export default function HomePage() {
         labelsVisible={globeSettings.labelsVisible}
         rasterOpacity={globeSettings.rasterOpacity}
         rasterBlurEnabled={globeSettings.rasterBlurEnabled}
+        bumpMapMode={globeSettings.bumpMapMode}
         useMeshRaster={useMeshRaster}
         viewMode={globeSettings.viewMode ?? "3d"}
         onRasterMetadataChange={setRasterMeta}
@@ -1356,6 +1365,7 @@ export default function HomePage() {
             onRasterOpacityChange={handleRasterOpacityChange}
             onHideZeroPrecipToggle={handleHideZeroPrecipToggle}
             onRasterBlurToggle={handleRasterBlurToggle}
+            onBumpMapModeChange={handleBumpMapModeChange}
             onColorbarRangeChange={handleColorbarRangeChange}
             onColorbarRangeReset={handleColorbarRangeReset}
             viewMode={globeSettings.viewMode ?? "3d"}

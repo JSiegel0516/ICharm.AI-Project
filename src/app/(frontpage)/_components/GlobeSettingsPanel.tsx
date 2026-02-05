@@ -29,6 +29,8 @@ interface GlobeSettingsPanelProps {
   onHideZeroPrecipitationToggle: (enabled: boolean) => void;
   rasterBlurEnabled: boolean;
   onRasterBlurToggle: (enabled: boolean) => void;
+  bumpMapMode: "none" | "land" | "landBathymetry";
+  onBumpMapModeChange: (mode: "none" | "land" | "landBathymetry") => void;
   colorbarCustomMin?: number | null;
   colorbarCustomMax?: number | null;
   onColorbarRangeChange: (payload: {
@@ -60,6 +62,8 @@ export function GlobeSettingsPanel({
   onHideZeroPrecipitationToggle,
   rasterBlurEnabled,
   onRasterBlurToggle,
+  bumpMapMode,
+  onBumpMapModeChange,
   colorbarCustomMin,
   colorbarCustomMax,
   onColorbarRangeChange,
@@ -109,48 +113,52 @@ export function GlobeSettingsPanel({
                 </h3>
 
                 {/* Satellite Layer Toggle */}
-                <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
-                  <div className="space-y-0.5">
-                    <Label
-                      htmlFor="satellite-toggle"
-                      className="cursor-pointer text-sm font-medium text-white"
-                    >
-                      Satellite Imagery
-                    </Label>
-                    <p className="text-xs text-slate-400">
-                      Show/hide satellite base layer
-                    </p>
+                {viewMode !== "ortho" && (
+                  <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
+                    <div className="space-y-0.5">
+                      <Label
+                        htmlFor="satellite-toggle"
+                        className="cursor-pointer text-sm font-medium text-white"
+                      >
+                        Satellite Imagery
+                      </Label>
+                      <p className="text-xs text-slate-400">
+                        Show/hide satellite base layer
+                      </p>
+                    </div>
+                    <Switch
+                      id="satellite-toggle"
+                      checked={satelliteLayerVisible}
+                      onCheckedChange={onSatelliteLayerToggle}
+                      className="data-[state=checked]:bg-rose-500"
+                    />
                   </div>
-                  <Switch
-                    id="satellite-toggle"
-                    checked={satelliteLayerVisible}
-                    onCheckedChange={onSatelliteLayerToggle}
-                    className="data-[state=checked]:bg-rose-500"
-                  />
-                </div>
+                )}
 
                 {/* Base Map Style Toggle */}
-                <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
-                  <div className="space-y-0.5">
-                    <Label
-                      htmlFor="basemap-toggle"
-                      className="cursor-pointer text-sm font-medium text-white"
-                    >
-                      Street View
-                    </Label>
-                    <p className="text-xs text-slate-400">
-                      Switch between satellite imagery and street maps
-                    </p>
+                {viewMode !== "ortho" && (
+                  <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
+                    <div className="space-y-0.5">
+                      <Label
+                        htmlFor="basemap-toggle"
+                        className="cursor-pointer text-sm font-medium text-white"
+                      >
+                        Street View
+                      </Label>
+                      <p className="text-xs text-slate-400">
+                        Switch between satellite imagery and street maps
+                      </p>
+                    </div>
+                    <Switch
+                      id="basemap-toggle"
+                      checked={baseMapMode === "street"}
+                      onCheckedChange={(checked) =>
+                        onBaseMapModeChange?.(checked ? "street" : "satellite")
+                      }
+                      className="data-[state=checked]:bg-rose-500"
+                    />
                   </div>
-                  <Switch
-                    id="basemap-toggle"
-                    checked={baseMapMode === "street"}
-                    onCheckedChange={(checked) =>
-                      onBaseMapModeChange?.(checked ? "street" : "satellite")
-                    }
-                    className="data-[state=checked]:bg-rose-500"
-                  />
-                </div>
+                )}
 
                 {/* Boundary Lines Toggle */}
                 <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
@@ -194,8 +202,38 @@ export function GlobeSettingsPanel({
                   />
                 </div>
 
+                {viewMode === "ortho" && (
+                  <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
+                    <div className="space-y-0.5">
+                      <Label
+                        htmlFor="bump-map-select"
+                        className="text-sm font-medium text-white"
+                      >
+                        Bump Mapping
+                      </Label>
+                      <p className="text-xs text-slate-400">
+                        Choose a normal map for orthographic relief
+                      </p>
+                    </div>
+                    <select
+                      id="bump-map-select"
+                      className="rounded-md border border-slate-600 bg-neutral-800 px-2 py-1 text-xs text-white"
+                      value={bumpMapMode}
+                      onChange={(e) =>
+                        onBumpMapModeChange(
+                          e.target.value as "none" | "land" | "landBathymetry",
+                        )
+                      }
+                    >
+                      <option value="none">None</option>
+                      <option value="land">Land</option>
+                      <option value="landBathymetry">Land + Bathymetry</option>
+                    </select>
+                  </div>
+                )}
+
                 {/* Place Names Toggle */}
-                {baseMapMode !== "street" && (
+                {baseMapMode !== "street" && viewMode !== "ortho" && (
                   <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
                     <div className="space-y-0.5">
                       <Label

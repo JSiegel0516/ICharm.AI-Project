@@ -15,6 +15,10 @@ type Props = {
   currentDataset?: Dataset;
   useMeshRaster: boolean;
   rasterBlurEnabled: boolean;
+  useLegacyRendering?: boolean;
+  normalMapMode?: "none" | "land" | "landBathymetry";
+  smoothGridBoxValues?: boolean;
+  hideZeroValues?: boolean;
   minZoom?: number;
   maxZoom?: number;
   clearMarkerSignal?: number;
@@ -22,12 +26,18 @@ type Props = {
 };
 
 const BASE_TEXTURE_URL = "/images/world_imagery_arcgis.png";
+const NORMAL_MAP_LAND_URL = "/_land/earth_normalmap_flat_8192x4096.jpg";
+const NORMAL_MAP_LAND_BATHY_URL = "/_land/earth_normalmap_8192x4096.jpg";
 const BASE_RADIUS = 1;
 const OVERLAY_RADIUS = 1.005;
 const DEFAULT_MIN_ZOOM = 0.2;
 const DEFAULT_MAX_ZOOM = 20.0;
 const MESH_TO_RASTER_ZOOM = 1.35;
 const RASTER_TO_MESH_ZOOM = 1.2;
+const DEFAULT_NORMAL_MAP_MODE: Props["normalMapMode"] = "none";
+const VERTEX_COLOR_GAIN = 1.2;
+const BASE_FILL_COLOR = new THREE.Color("#0b1e2f");
+const DEFAULT_GLOBE_ROTATION = new THREE.Euler(0, -Math.PI / 2, 0, "XYZ");
 
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
@@ -35,6 +45,7 @@ const clamp = (value: number, min: number, max: number) =>
 type GeoPoint = { lon: number; lat: number };
 type BoundaryVector = {
   id: string;
+  layer: string;
   coordinates: GeoPoint[];
   kind: "boundary";
 };
@@ -44,6 +55,22 @@ const boundaryFiles = [
   { name: "ne_110m_lakes.json", kind: "boundary" as const },
   { name: "ne_110m_rivers_lake_centerlines.json", kind: "boundary" as const },
 ];
+
+const latLonToCartesian = (lat: number, lon: number, radius: number) => {
+  const latRad = THREE.MathUtils.degToRad(lat);
+  const lonRad = THREE.MathUtils.degToRad(lon);
+  const cosLat = Math.cos(latRad);
+  return new THREE.Vector3(
+    radius * cosLat * Math.cos(lonRad),
+    radius * Math.sin(latRad),
+    -radius * cosLat * Math.sin(lonRad),
+  );
+};
+
+const srgbToLinear = (value: number) => {
+  const c = value / 255;
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+};
 
 const splitAtDateline = (coords: GeoPoint[]) => {
   const parts: GeoPoint[][] = [];
@@ -105,6 +132,7 @@ const fetchBoundaries = async (): Promise<BoundaryVector[]> => {
           if (segment.length >= 2) {
             results.push({
               id: `${file.name}-${results.length}`,
+              layer: file.name,
               coordinates: segment,
               kind: file.kind,
             });
@@ -139,6 +167,7 @@ const fetchBoundaries = async (): Promise<BoundaryVector[]> => {
         if (coords.length >= 2) {
           results.push({
             id: `${file.name}-series`,
+            layer: file.name,
             coordinates: coords,
             kind: file.kind,
           });
@@ -162,6 +191,10 @@ const OrthoGlobe: React.FC<Props> = ({
   currentDataset,
   useMeshRaster,
   rasterBlurEnabled,
+  useLegacyRendering = false,
+  normalMapMode = DEFAULT_NORMAL_MAP_MODE,
+  smoothGridBoxValues = true,
+  hideZeroValues = false,
   minZoom = DEFAULT_MIN_ZOOM,
   maxZoom = DEFAULT_MAX_ZOOM,
   clearMarkerSignal = 0,
@@ -176,11 +209,16 @@ const OrthoGlobe: React.FC<Props> = ({
   const meshOverlayRef = useRef<THREE.Mesh | null>(null);
   const rasterOverlayRef = useRef<THREE.Mesh | null>(null);
   const boundaryOverlayRef = useRef<THREE.Mesh | null>(null);
+  const boundaryLineGroupRef = useRef<THREE.Group | null>(null);
+  const geographicLineGroupRef = useRef<THREE.Group | null>(null);
   const markerRef = useRef<THREE.Mesh | null>(null);
   const skyboxTextureRef = useRef<THREE.CubeTexture | null>(null);
   const gridTextureRef = useRef<THREE.Texture | null>(null);
   const rasterTextureRef = useRef<THREE.Texture | null>(null);
   const boundaryTextureRef = useRef<THREE.Texture | null>(null);
+  const normalMapTextureRef = useRef<THREE.Texture | null>(null);
+  const baseTextureRef = useRef<THREE.Texture | null>(null);
+  const sunlightRef = useRef<THREE.DirectionalLight | null>(null);
   const markerBaseScaleRef = useRef(1);
   const markerBaseZoomRef = useRef(1);
   const zoomRef = useRef(1);
@@ -189,6 +227,11 @@ const OrthoGlobe: React.FC<Props> = ({
   const useMeshRasterActiveRef = useRef(useMeshRaster);
   const [useMeshRasterActive, setUseMeshRasterActive] = useState(useMeshRaster);
   const [vectors, setVectors] = useState<BoundaryVector[]>([]);
+
+  const useVertexColorsActive =
+    !useLegacyRendering &&
+    useMeshRasterActive &&
+    Boolean(rasterGridData && currentDataset?.colorScale?.colors?.length);
 
   useEffect(() => {
     useMeshRasterRef.current = useMeshRaster;
@@ -233,26 +276,35 @@ const OrthoGlobe: React.FC<Props> = ({
 
   const updateMeshVisibility = useCallback(() => {
     if (meshOverlayRef.current) {
-      meshOverlayRef.current.visible =
-        useMeshRasterActiveRef.current && Boolean(gridTextureRef.current);
+      if (useLegacyRendering) {
+        meshOverlayRef.current.visible =
+          useMeshRasterActiveRef.current && Boolean(gridTextureRef.current);
+      } else {
+        meshOverlayRef.current.visible = useVertexColorsActive;
+      }
     }
     if (rasterOverlayRef.current) {
-      rasterOverlayRef.current.visible =
-        !useMeshRasterActiveRef.current && Boolean(rasterTextureRef.current);
+      if (useLegacyRendering) {
+        rasterOverlayRef.current.visible =
+          !useMeshRasterActiveRef.current && Boolean(rasterTextureRef.current);
+      } else {
+        rasterOverlayRef.current.visible =
+          !useVertexColorsActive && Boolean(rasterTextureRef.current);
+      }
     }
     requestRender();
-  }, [requestRender]);
+  }, [requestRender, useLegacyRendering, useVertexColorsActive]);
 
   const updateRasterOpacity = useCallback(() => {
     const opacity = clamp(rasterOpacity, 0, 1);
     if (meshOverlayRef.current) {
       const material = meshOverlayRef.current
-        .material as THREE.MeshBasicMaterial;
+        .material as THREE.MeshStandardMaterial;
       material.opacity = opacity;
     }
     if (rasterOverlayRef.current) {
       const material = rasterOverlayRef.current
-        .material as THREE.MeshBasicMaterial;
+        .material as THREE.MeshStandardMaterial;
       material.opacity = opacity;
     }
     requestRender();
@@ -260,9 +312,13 @@ const OrthoGlobe: React.FC<Props> = ({
 
   const updateSatelliteVisibility = useCallback(() => {
     if (!baseMeshRef.current) return;
-    const material = baseMeshRef.current.material as THREE.MeshBasicMaterial;
-    material.opacity = satelliteLayerVisible ? 1 : 0;
-    material.transparent = !satelliteLayerVisible;
+    const material = baseMeshRef.current.material as THREE.MeshStandardMaterial;
+    const visible = satelliteLayerVisible && !useMeshRasterActiveRef.current;
+    material.opacity = 1;
+    material.transparent = false;
+    material.color.copy(BASE_FILL_COLOR);
+    material.map = visible ? baseTextureRef.current : null;
+    material.needsUpdate = true;
     requestRender();
   }, [satelliteLayerVisible, requestRender]);
 
@@ -299,6 +355,100 @@ const OrthoGlobe: React.FC<Props> = ({
     markerRef.current.scale.set(scale, scale, scale);
   }, []);
 
+  const buildVertexColorsFromGrid = useCallback(
+    (geometry: THREE.BufferGeometry) => {
+      if (!rasterGridData || !currentDataset?.colorScale?.colors?.length) {
+        return;
+      }
+      const position = geometry.getAttribute("position");
+      if (!position) return;
+      const min = rasterGridData.min ?? 0;
+      const max = rasterGridData.max ?? 1;
+      const stops = buildColorStops(currentDataset.colorScale.colors);
+      const latValues = rasterGridData.lat;
+      const lonValues = rasterGridData.lon;
+      const rows = latValues.length;
+      const cols = lonValues.length;
+      if (!rows || !cols) return;
+
+      const findNearestIndex = (values: number[], target: number) => {
+        let best = 0;
+        let bestDist = Infinity;
+        for (let i = 0; i < values.length; i += 1) {
+          const dist = Math.abs(values[i] - target);
+          if (dist < bestDist) {
+            bestDist = dist;
+            best = i;
+          }
+        }
+        return best;
+      };
+
+      const colors = new Float32Array(position.count * 3);
+      const values = rasterGridData.values;
+      const mask = rasterGridData.mask;
+
+      for (let i = 0; i < position.count; i += 1) {
+        const x = position.getX(i);
+        const y = position.getY(i);
+        const z = position.getZ(i);
+        const r = Math.sqrt(x * x + y * y + z * z) || OVERLAY_RADIUS;
+        const lat = 90 - (Math.acos(y / r) * 180) / Math.PI;
+        const lon = ((Math.atan2(z, x) * 180) / Math.PI) * -1;
+
+        let value: number | null = null;
+        if (smoothGridBoxValues && rasterGridData.sampleValue) {
+          value = rasterGridData.sampleValue(lat, lon);
+        } else {
+          const latIdx = findNearestIndex(latValues, lat);
+          const lonIdx = findNearestIndex(lonValues, lon);
+          const idx = latIdx * cols + lonIdx;
+          if (!mask || mask[idx] !== 0) {
+            value = values[idx];
+          }
+        }
+
+        if (hideZeroValues && value === 0) {
+          value = null;
+        }
+
+        const rgba =
+          value == null || Number.isNaN(value)
+            ? [0, 0, 0, 0]
+            : mapValueToRgba(value, min, max, stops);
+        const rLin = Math.min(1, srgbToLinear(rgba[0]) * VERTEX_COLOR_GAIN);
+        const gLin = Math.min(1, srgbToLinear(rgba[1]) * VERTEX_COLOR_GAIN);
+        const bLin = Math.min(1, srgbToLinear(rgba[2]) * VERTEX_COLOR_GAIN);
+        const base = i * 3;
+        if (value == null || Number.isNaN(value)) {
+          colors[base] = BASE_FILL_COLOR.r;
+          colors[base + 1] = BASE_FILL_COLOR.g;
+          colors[base + 2] = BASE_FILL_COLOR.b;
+        } else {
+          colors[base] = rLin;
+          colors[base + 1] = gLin;
+          colors[base + 2] = bLin;
+        }
+      }
+
+      const colorAttr = geometry.getAttribute(
+        "color",
+      ) as THREE.BufferAttribute | null;
+      if (!colorAttr || colorAttr.count !== position.count) {
+        geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+      } else {
+        colorAttr.copyArray(colors);
+        colorAttr.needsUpdate = true;
+      }
+    },
+    [
+      currentDataset?.colorScale?.colors,
+      hideZeroValues,
+      rasterGridData,
+      smoothGridBoxValues,
+    ],
+  );
+
   const buildGridTexture = useCallback(() => {
     if (!rasterGridData || !currentDataset?.colorScale?.colors?.length) {
       return null;
@@ -330,6 +480,10 @@ const OrthoGlobe: React.FC<Props> = ({
           continue;
         }
         const value = values[srcIdx];
+        if (hideZeroValues && value === 0) {
+          imageData.data[destIdx + 3] = 0;
+          continue;
+        }
         const rgba =
           value == null || Number.isNaN(value)
             ? [0, 0, 0, 0]
@@ -349,7 +503,12 @@ const OrthoGlobe: React.FC<Props> = ({
       : THREE.NearestFilter;
     texture.needsUpdate = true;
     return texture;
-  }, [currentDataset?.colorScale?.colors, rasterBlurEnabled, rasterGridData]);
+  }, [
+    currentDataset?.colorScale?.colors,
+    hideZeroValues,
+    rasterBlurEnabled,
+    rasterGridData,
+  ]);
 
   const loadRasterTexture = useCallback((url: string) => {
     const loader = new THREE.TextureLoader();
@@ -377,7 +536,7 @@ const OrthoGlobe: React.FC<Props> = ({
     });
     renderer.setPixelRatio(window.devicePixelRatio || 1);
     renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setClearColor(0x000000, 0);
+    renderer.setClearColor(0x000000, 1);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
@@ -393,51 +552,73 @@ const OrthoGlobe: React.FC<Props> = ({
 
     const group = new THREE.Group();
     globeGroupRef.current = group;
+    group.rotation.copy(DEFAULT_GLOBE_ROTATION);
     scene.add(group);
 
     const geometry = new THREE.SphereGeometry(BASE_RADIUS, 96, 64);
-    const baseMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: satelliteLayerVisible ? 1 : 0,
+    const baseMaterial = new THREE.MeshStandardMaterial({
+      color: BASE_FILL_COLOR.clone(),
+      transparent: false,
+      opacity: 1,
+      roughness: 1.0,
+      metalness: 0.0,
     });
     const baseMesh = new THREE.Mesh(geometry, baseMaterial);
     baseMeshRef.current = baseMesh;
     group.add(baseMesh);
 
     const overlayGeometry = new THREE.SphereGeometry(OVERLAY_RADIUS, 96, 64);
-    const meshMaterial = new THREE.MeshBasicMaterial({
+    const meshMaterial = new THREE.MeshStandardMaterial({
       transparent: true,
       opacity: rasterOpacity,
       depthWrite: false,
+      vertexColors: true,
+      roughness: 1.0,
+      metalness: 0.0,
+      emissive: new THREE.Color(0xffffff),
+      emissiveIntensity: 0.1,
     });
     const meshOverlay = new THREE.Mesh(overlayGeometry, meshMaterial);
     meshOverlayRef.current = meshOverlay;
     group.add(meshOverlay);
 
-    const rasterMaterial = new THREE.MeshBasicMaterial({
+    const rasterMaterial = new THREE.MeshStandardMaterial({
       transparent: true,
       opacity: rasterOpacity,
       depthWrite: false,
+      roughness: 1.0,
+      metalness: 0.0,
+      emissive: new THREE.Color(0xffffff),
+      emissiveIntensity: 0.08,
     });
     const rasterOverlay = new THREE.Mesh(overlayGeometry, rasterMaterial);
     rasterOverlayRef.current = rasterOverlay;
     group.add(rasterOverlay);
 
-    const boundaryMaterial = new THREE.MeshBasicMaterial({
+    const boundaryMaterial = new THREE.MeshStandardMaterial({
       transparent: true,
       opacity: 0.9,
       depthWrite: false,
+      roughness: 1.0,
+      metalness: 0.0,
     });
     const boundaryOverlay = new THREE.Mesh(overlayGeometry, boundaryMaterial);
     boundaryOverlayRef.current = boundaryOverlay;
     group.add(boundaryOverlay);
 
+    const sunlight = new THREE.DirectionalLight(0xffffff, 1.3);
+    sunlight.position.set(3, 2, 4);
+    sunlightRef.current = sunlight;
+    scene.add(sunlight);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+
     const loader = new THREE.TextureLoader();
     loader.load(BASE_TEXTURE_URL, (texture) => {
       texture.colorSpace = THREE.SRGBColorSpace;
       baseMaterial.map = texture;
+      baseTextureRef.current = texture;
       baseMaterial.needsUpdate = true;
+      updateSatelliteVisibility();
       requestRender();
     });
 
@@ -481,6 +662,8 @@ const OrthoGlobe: React.FC<Props> = ({
       if (gridTextureRef.current) gridTextureRef.current.dispose();
       if (rasterTextureRef.current) rasterTextureRef.current.dispose();
       if (boundaryTextureRef.current) boundaryTextureRef.current.dispose();
+      if (normalMapTextureRef.current) normalMapTextureRef.current.dispose();
+      if (baseTextureRef.current) baseTextureRef.current.dispose();
       if (skyboxTextureRef.current) skyboxTextureRef.current.dispose();
       rendererRef.current = null;
       sceneRef.current = null;
@@ -490,13 +673,16 @@ const OrthoGlobe: React.FC<Props> = ({
       meshOverlayRef.current = null;
       rasterOverlayRef.current = null;
       boundaryOverlayRef.current = null;
+      boundaryLineGroupRef.current = null;
+      geographicLineGroupRef.current = null;
+      sunlightRef.current = null;
       markerRef.current = null;
     };
   }, [rasterOpacity, requestRender, satelliteLayerVisible, updateCamera]);
 
   useEffect(() => {
     updateSatelliteVisibility();
-  }, [updateSatelliteVisibility]);
+  }, [updateSatelliteVisibility, useMeshRasterActive]);
 
   useEffect(() => {
     let mounted = true;
@@ -510,9 +696,19 @@ const OrthoGlobe: React.FC<Props> = ({
 
   useEffect(() => {
     if (!boundaryOverlayRef.current) return;
-    if (!vectors.length || !boundaryLinesVisible) {
+    if (!useLegacyRendering) {
+      boundaryOverlayRef.current.visible = false;
       const material = boundaryOverlayRef.current
-        .material as THREE.MeshBasicMaterial;
+        .material as THREE.MeshStandardMaterial;
+      material.map = null;
+      material.needsUpdate = true;
+      requestRender();
+      return;
+    }
+    if (!vectors.length || !boundaryLinesVisible) {
+      boundaryOverlayRef.current.visible = false;
+      const material = boundaryOverlayRef.current
+        .material as THREE.MeshStandardMaterial;
       material.map = null;
       material.needsUpdate = true;
       requestRender();
@@ -577,12 +773,13 @@ const OrthoGlobe: React.FC<Props> = ({
     if (boundaryTextureRef.current) boundaryTextureRef.current.dispose();
     boundaryTextureRef.current = texture;
 
+    boundaryOverlayRef.current.visible = true;
     const material = boundaryOverlayRef.current
-      .material as THREE.MeshBasicMaterial;
+      .material as THREE.MeshStandardMaterial;
     material.map = texture;
     material.needsUpdate = true;
     requestRender();
-  }, [boundaryLinesVisible, requestRender, vectors]);
+  }, [boundaryLinesVisible, requestRender, useLegacyRendering, vectors]);
 
   useEffect(() => {
     updateRasterOpacity();
@@ -590,26 +787,46 @@ const OrthoGlobe: React.FC<Props> = ({
 
   useEffect(() => {
     if (!meshOverlayRef.current) return;
-    const texture = buildGridTexture();
-    if (!texture) {
-      if (gridTextureRef.current) {
-        gridTextureRef.current.dispose();
-        gridTextureRef.current = null;
+    if (useLegacyRendering) {
+      const texture = buildGridTexture();
+      if (!texture) {
+        if (gridTextureRef.current) {
+          gridTextureRef.current.dispose();
+          gridTextureRef.current = null;
+        }
+        const material = meshOverlayRef.current
+          .material as THREE.MeshStandardMaterial;
+        material.map = null;
+        material.vertexColors = false;
+        material.needsUpdate = true;
+        updateMeshVisibility();
+        return;
       }
+      if (gridTextureRef.current) gridTextureRef.current.dispose();
+      gridTextureRef.current = texture;
       const material = meshOverlayRef.current
-        .material as THREE.MeshBasicMaterial;
-      material.map = null;
+        .material as THREE.MeshStandardMaterial;
+      material.map = texture;
+      material.vertexColors = false;
       material.needsUpdate = true;
       updateMeshVisibility();
       return;
     }
-    if (gridTextureRef.current) gridTextureRef.current.dispose();
-    gridTextureRef.current = texture;
-    const material = meshOverlayRef.current.material as THREE.MeshBasicMaterial;
-    material.map = texture;
+
+    const geometry = meshOverlayRef.current.geometry;
+    buildVertexColorsFromGrid(geometry);
+    const material = meshOverlayRef.current
+      .material as THREE.MeshStandardMaterial;
+    material.vertexColors = true;
+    material.map = null;
     material.needsUpdate = true;
     updateMeshVisibility();
-  }, [buildGridTexture, updateMeshVisibility]);
+  }, [
+    buildGridTexture,
+    buildVertexColorsFromGrid,
+    updateMeshVisibility,
+    useLegacyRendering,
+  ]);
 
   useEffect(() => {
     if (!rasterOverlayRef.current) return;
@@ -619,7 +836,7 @@ const OrthoGlobe: React.FC<Props> = ({
         rasterTextureRef.current = null;
       }
       const material = rasterOverlayRef.current
-        .material as THREE.MeshBasicMaterial;
+        .material as THREE.MeshStandardMaterial;
       material.map = null;
       material.needsUpdate = true;
       updateMeshVisibility();
@@ -637,7 +854,7 @@ const OrthoGlobe: React.FC<Props> = ({
         if (rasterTextureRef.current) rasterTextureRef.current.dispose();
         rasterTextureRef.current = texture;
         const material = rasterOverlayRef.current
-          ?.material as THREE.MeshBasicMaterial;
+          ?.material as THREE.MeshStandardMaterial;
         material.map = texture;
         material.needsUpdate = true;
         updateMeshVisibility();
@@ -660,6 +877,229 @@ const OrthoGlobe: React.FC<Props> = ({
   }, [useMeshRaster, useMeshRasterActive, updateMeshVisibility]);
 
   useEffect(() => {
+    if (!baseMeshRef.current) return;
+    const baseMaterial = baseMeshRef.current
+      .material as THREE.MeshStandardMaterial;
+    const meshMaterial = meshOverlayRef.current
+      ? (meshOverlayRef.current.material as THREE.MeshStandardMaterial)
+      : null;
+    const rasterMaterial = rasterOverlayRef.current
+      ? (rasterOverlayRef.current.material as THREE.MeshStandardMaterial)
+      : null;
+    if (normalMapTextureRef.current) {
+      normalMapTextureRef.current.dispose();
+      normalMapTextureRef.current = null;
+    }
+
+    if (normalMapMode === "none") {
+      baseMaterial.normalMap = null;
+      baseMaterial.needsUpdate = true;
+      if (meshMaterial) {
+        meshMaterial.normalMap = null;
+        meshMaterial.needsUpdate = true;
+      }
+      if (rasterMaterial) {
+        rasterMaterial.normalMap = null;
+        rasterMaterial.needsUpdate = true;
+      }
+      requestRender();
+      return;
+    }
+
+    const url =
+      normalMapMode === "land"
+        ? NORMAL_MAP_LAND_URL
+        : NORMAL_MAP_LAND_BATHY_URL;
+    const loader = new THREE.TextureLoader();
+    loader.load(
+      url,
+      (texture) => {
+        texture.colorSpace = THREE.NoColorSpace;
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.ClampToEdgeWrapping;
+        baseMaterial.normalMap = texture;
+        baseMaterial.normalScale = new THREE.Vector2(0.6, 0.6);
+        baseMaterial.needsUpdate = true;
+        if (meshMaterial) {
+          meshMaterial.normalMap = texture;
+          meshMaterial.normalScale = new THREE.Vector2(0.6, 0.6);
+          meshMaterial.needsUpdate = true;
+        }
+        if (rasterMaterial) {
+          rasterMaterial.normalMap = texture;
+          rasterMaterial.normalScale = new THREE.Vector2(0.6, 0.6);
+          rasterMaterial.needsUpdate = true;
+        }
+        normalMapTextureRef.current = texture;
+        requestRender();
+      },
+      undefined,
+      () => {},
+    );
+  }, [normalMapMode, requestRender]);
+
+  useEffect(() => {
+    if (!sceneRef.current || !globeGroupRef.current) return;
+    if (!boundaryLinesVisible || !vectors.length || useLegacyRendering) {
+      if (boundaryLineGroupRef.current) {
+        boundaryLineGroupRef.current.traverse((child) => {
+          if (child instanceof THREE.LineSegments) {
+            child.geometry.dispose();
+            if (Array.isArray(child.material)) {
+              child.material.forEach((material) => material.dispose());
+            } else {
+              child.material.dispose();
+            }
+          }
+        });
+        boundaryLineGroupRef.current.removeFromParent();
+        boundaryLineGroupRef.current = null;
+      }
+      requestRender();
+      return;
+    }
+
+    if (boundaryLineGroupRef.current) {
+      boundaryLineGroupRef.current.traverse((child) => {
+        if (child instanceof THREE.LineSegments) {
+          child.geometry.dispose();
+          if (Array.isArray(child.material)) {
+            child.material.forEach((material) => material.dispose());
+          } else {
+            child.material.dispose();
+          }
+        }
+      });
+      boundaryLineGroupRef.current.removeFromParent();
+      boundaryLineGroupRef.current = null;
+    }
+
+    const lineGroup = new THREE.Group();
+    const segmentsByLayer = new Map<string, number[]>();
+    vectors.forEach((vec) => {
+      const bucket = segmentsByLayer.get(vec.layer) ?? [];
+      splitAtDateline(vec.coordinates).forEach((segment) => {
+        for (let i = 1; i < segment.length; i += 1) {
+          const start = latLonToCartesian(
+            segment[i - 1].lat,
+            segment[i - 1].lon,
+            OVERLAY_RADIUS + 0.001,
+          );
+          const end = latLonToCartesian(
+            segment[i].lat,
+            segment[i].lon,
+            OVERLAY_RADIUS + 0.001,
+          );
+          bucket.push(start.x, start.y, start.z, end.x, end.y, end.z);
+        }
+      });
+      segmentsByLayer.set(vec.layer, bucket);
+    });
+
+    segmentsByLayer.forEach((segments) => {
+      if (!segments.length) return;
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(segments, 3),
+      );
+      const material = new THREE.LineBasicMaterial({
+        color: 0xe5e7eb,
+        transparent: true,
+        opacity: 0.85,
+      });
+      const lines = new THREE.LineSegments(geometry, material);
+      lineGroup.add(lines);
+    });
+
+    boundaryLineGroupRef.current = lineGroup;
+    globeGroupRef.current.add(lineGroup);
+    requestRender();
+  }, [boundaryLinesVisible, requestRender, useLegacyRendering, vectors]);
+
+  useEffect(() => {
+    if (!sceneRef.current || !globeGroupRef.current) return;
+    if (!geographicLinesVisible) {
+      if (geographicLineGroupRef.current) {
+        geographicLineGroupRef.current.traverse((child) => {
+          if (child instanceof THREE.LineSegments) {
+            child.geometry.dispose();
+            if (Array.isArray(child.material)) {
+              child.material.forEach((material) => material.dispose());
+            } else {
+              child.material.dispose();
+            }
+          }
+        });
+        geographicLineGroupRef.current.removeFromParent();
+        geographicLineGroupRef.current = null;
+      }
+      requestRender();
+      return;
+    }
+
+    if (geographicLineGroupRef.current) {
+      geographicLineGroupRef.current.traverse((child) => {
+        if (child instanceof THREE.LineSegments) {
+          child.geometry.dispose();
+          if (Array.isArray(child.material)) {
+            child.material.forEach((material) => material.dispose());
+          } else {
+            child.material.dispose();
+          }
+        }
+      });
+      geographicLineGroupRef.current.removeFromParent();
+      geographicLineGroupRef.current = null;
+    }
+
+    const segments: number[] = [];
+    const latStep = 10;
+    const lonStep = 10;
+    const sampleStep = 5;
+
+    for (let lat = -80; lat <= 80; lat += latStep) {
+      let prev: THREE.Vector3 | null = null;
+      for (let lon = -180; lon <= 180; lon += sampleStep) {
+        const next = latLonToCartesian(lat, lon, OVERLAY_RADIUS + 0.002);
+        if (prev) {
+          segments.push(prev.x, prev.y, prev.z, next.x, next.y, next.z);
+        }
+        prev = next;
+      }
+    }
+
+    for (let lon = -180; lon <= 180; lon += lonStep) {
+      let prev: THREE.Vector3 | null = null;
+      for (let lat = -80; lat <= 80; lat += sampleStep) {
+        const next = latLonToCartesian(lat, lon, OVERLAY_RADIUS + 0.002);
+        if (prev) {
+          segments.push(prev.x, prev.y, prev.z, next.x, next.y, next.z);
+        }
+        prev = next;
+      }
+    }
+
+    if (!segments.length) return;
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(segments, 3),
+    );
+    const material = new THREE.LineBasicMaterial({
+      color: 0x9ca3af,
+      transparent: true,
+      opacity: 0.35,
+    });
+    const lines = new THREE.LineSegments(geometry, material);
+    const group = new THREE.Group();
+    group.add(lines);
+    geographicLineGroupRef.current = group;
+    globeGroupRef.current.add(group);
+    requestRender();
+  }, [geographicLinesVisible, requestRender]);
+
+  useEffect(() => {
     if (!containerRef.current) return;
     const container = containerRef.current;
     let isDragging = false;
@@ -667,11 +1107,14 @@ const OrthoGlobe: React.FC<Props> = ({
     let lastY = 0;
     let rotX = 0;
     let rotY = 0;
+    let draggedDistance = 0;
+    const dragThreshold = 6;
 
     const handlePointerDown = (event: PointerEvent) => {
       isDragging = true;
       lastX = event.clientX;
       lastY = event.clientY;
+      draggedDistance = 0;
       if (globeGroupRef.current) {
         rotX = globeGroupRef.current.rotation.x;
         rotY = globeGroupRef.current.rotation.y;
@@ -681,6 +1124,7 @@ const OrthoGlobe: React.FC<Props> = ({
       if (!isDragging || !globeGroupRef.current) return;
       const deltaX = event.clientX - lastX;
       const deltaY = event.clientY - lastY;
+      draggedDistance += Math.hypot(deltaX, deltaY);
       const nextY = rotY + deltaX * 0.005;
       const nextX = clamp(rotX + deltaY * 0.005, -1.2, 1.2);
       globeGroupRef.current.rotation.y = nextY;
@@ -692,6 +1136,9 @@ const OrthoGlobe: React.FC<Props> = ({
     const handlePointerUp = (event: PointerEvent) => {
       if (!isDragging) return;
       isDragging = false;
+      if (draggedDistance > dragThreshold) {
+        return;
+      }
       if (!onRegionClick || !globeGroupRef.current || !cameraRef.current) {
         return;
       }

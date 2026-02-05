@@ -88,6 +88,33 @@ const addGeographicBoundaries = (
 ) => {
   const boundaryEntities: any[] = [];
   const geographicLineEntities: any[] = [];
+  const addWrappedPolyline = (
+    positions: any[],
+    width: number,
+    material: any,
+    target: any[],
+  ) => {
+    if (positions.length < 2) return;
+    const wrapped = Cesium.PolylinePipeline.wrapLongitude(positions);
+    const wrappedPositions = wrapped.positions ?? positions;
+    const lengths = wrapped.lengths ?? [wrappedPositions.length];
+    let offset = 0;
+    lengths.forEach((length: number) => {
+      const segment = wrappedPositions.slice(offset, offset + length);
+      offset += length;
+      if (segment.length < 2) return;
+      const entity = viewer.entities.add({
+        polyline: {
+          positions: segment,
+          width,
+          material,
+          clampToGround: false,
+          arcType: Cesium.ArcType.GEODESIC,
+        },
+      });
+      target.push(entity);
+    });
+  };
 
   boundaryData.forEach(({ name, kind, data }) => {
     const isGeographicLines =
@@ -126,17 +153,7 @@ const addGeographicBoundaries = (
             Cesium.Cartesian3.fromDegrees(coord[0], coord[1], 10000),
           );
 
-          if (positions.length > 1) {
-            const entity = viewer.entities.add({
-              polyline: {
-                positions: positions,
-                width: width,
-                material: color,
-                clampToGround: false,
-              },
-            });
-            targetCollection.push(entity);
-          }
+          addWrappedPolyline(positions, width, color, targetCollection);
         };
 
         if (geometry.type === "LineString") {
@@ -181,29 +198,13 @@ const addGeographicBoundaries = (
             Cesium.Cartesian3.fromDegrees(data.Lon[i], data.Lat[i], 10000),
           );
         } else if (positions.length > 0) {
-          const entity = viewer.entities.add({
-            polyline: {
-              positions: positions.slice(),
-              width: width,
-              material: color,
-              clampToGround: false,
-            },
-          });
-          targetCollection.push(entity);
+          addWrappedPolyline(positions.slice(), width, color, targetCollection);
           positions.length = 0;
         }
       }
 
       if (positions.length > 0) {
-        const entity = viewer.entities.add({
-          polyline: {
-            positions: positions,
-            width: width,
-            material: color,
-            clampToGround: false,
-          },
-        });
-        targetCollection.push(entity);
+        addWrappedPolyline(positions, width, color, targetCollection);
       }
     }
   });
@@ -268,6 +269,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       rasterOpacity = 1.0,
       rasterBlurEnabled = false,
       hideZeroPrecipitation = false,
+      bumpMapMode = "none",
       useMeshRaster = false,
       onRasterMetadataChange,
       isPlaying = false,
@@ -343,6 +345,11 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const rasterLayerDataset = currentDataset;
     const meshSamplingStep = 1;
     const meshOpacityKey = rasterOpacity.toFixed(3);
+    const isOrtho = viewMode === "ortho";
+    const effectiveSatelliteVisible = !isOrtho && satelliteLayerVisible;
+    const effectiveLabelsVisible = !isOrtho && labelsVisible;
+    const effectiveBaseMapMode = isOrtho ? "satellite" : baseMapMode;
+
     const rasterState = useRasterLayer({
       dataset: rasterLayerDataset,
       date: selectedDate,
@@ -792,7 +799,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
     const updateLabelVisibility = useCallback(() => {
       if (!viewerRef.current || !cesiumInstance) return;
-      if (!labelsVisible) {
+      if (!effectiveLabelsVisible) {
         labelTileCacheRef.current.forEach((entities) => {
           entities.forEach((entity) => {
             setLabelTarget(entity, false);
@@ -1062,7 +1069,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       }
 
       viewer.scene.requestRender();
-    }, [cesiumInstance, clearLabelTiles, viewMode, labelsVisible]);
+    }, [cesiumInstance, clearLabelTiles, viewMode, effectiveLabelsVisible]);
 
     const updateLabelFades = useCallback(
       (now: number) => {
@@ -1116,7 +1123,11 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
       labelUpdateInFlightRef.current = true;
-      if (!labelsVisible || viewMode === "ortho" || viewMode === "winkel") {
+      if (
+        !effectiveLabelsVisible ||
+        viewMode === "ortho" ||
+        viewMode === "winkel"
+      ) {
         clearLabelTiles();
         labelUpdateInFlightRef.current = false;
         return;
@@ -1220,7 +1231,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       clearLabelTiles,
       createLabelEntity,
       viewMode,
-      labelsVisible,
+      effectiveLabelsVisible,
     ]);
 
     const scheduleLabelUpdate = useCallback(() => {
@@ -1602,13 +1613,18 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
     useEffect(() => {
       if (!viewerReady) return;
-      if (labelsVisible) {
+      if (effectiveLabelsVisible) {
         updateLabelTiles();
         updateLabelVisibility();
       } else {
         updateLabelVisibility();
       }
-    }, [labelsVisible, viewerReady, updateLabelTiles, updateLabelVisibility]);
+    }, [
+      effectiveLabelsVisible,
+      viewerReady,
+      updateLabelTiles,
+      updateLabelVisibility,
+    ]);
 
     useEffect(() => {
       if (!viewerReady) return;
@@ -2747,23 +2763,20 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       if (!satelliteLayerRef.current) return;
 
       satelliteLayerRef.current.show =
-        viewMode === "ortho"
-          ? false
-          : baseMapMode === "satellite" && satelliteLayerVisible;
-    }, [satelliteLayerVisible, viewMode, baseMapMode]);
+        effectiveBaseMapMode === "satellite" && effectiveSatelliteVisible;
+    }, [effectiveSatelliteVisible, effectiveBaseMapMode]);
 
     useEffect(() => {
       if (!streetLayerRef.current) return;
-      streetLayerRef.current.show =
-        viewMode === "ortho" ? false : baseMapMode === "street";
-    }, [baseMapMode, viewMode]);
+      streetLayerRef.current.show = effectiveBaseMapMode === "street";
+    }, [effectiveBaseMapMode]);
 
     useEffect(() => {
       if (!streetOverlayLayerRef.current) return;
       const shouldShow =
-        viewMode !== "ortho" && baseMapMode === "street" && useMeshRasterActive;
+        effectiveBaseMapMode === "street" && useMeshRasterActive;
       streetOverlayLayerRef.current.show = shouldShow;
-    }, [baseMapMode, viewMode, useMeshRasterActive]);
+    }, [effectiveBaseMapMode, useMeshRasterActive]);
 
     useEffect(() => {
       if (boundaryEntitiesRef.current.length === 0) return;
@@ -3090,7 +3103,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       clearMeshCache();
     }, [clearMeshCache, currentDataset?.id, selectedLevel]);
     const isWinkel = viewMode === "winkel";
-    const isOrtho = viewMode === "ortho";
     const showInitialLoading = !isWinkel && isLoading && !viewerReady;
     const showRasterLoading =
       !isPlaying &&
@@ -3203,12 +3215,15 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
               useMeshRasterEffective ? rasterGridState.data : undefined
             }
             rasterOpacity={rasterOpacity}
-            satelliteLayerVisible={satelliteLayerVisible}
+            satelliteLayerVisible={effectiveSatelliteVisible}
             boundaryLinesVisible={boundaryLinesVisible}
             geographicLinesVisible={geographicLinesVisible}
             currentDataset={currentDataset}
             useMeshRaster={useMeshRasterEffective}
             rasterBlurEnabled={rasterBlurEnabled}
+            smoothGridBoxValues={rasterBlurEnabled}
+            hideZeroValues={shouldHideZero}
+            normalMapMode={bumpMapMode}
             onRegionClick={onRegionClick}
             clearMarkerSignal={orthoClearMarkerTick}
           />

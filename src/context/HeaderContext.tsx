@@ -153,6 +153,7 @@ const useAppStateInternal = () => {
       rasterOpacity: 0.9,
       hideZeroPrecipitation: false,
       rasterBlurEnabled: true,
+      bumpMapMode: "none",
     },
     selectedColorMap: "dataset-default",
     selectedColorMapInverse: DEFAULT_COLOR_MAP_INVERSE,
