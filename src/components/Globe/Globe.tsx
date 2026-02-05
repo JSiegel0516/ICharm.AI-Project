@@ -263,6 +263,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       satelliteLayerVisible = true,
       boundaryLinesVisible = true,
       geographicLinesVisible = false,
+      labelsVisible = true,
       rasterOpacity = 1.0,
       rasterBlurEnabled = false,
       hideZeroPrecipitation = false,
@@ -788,6 +789,17 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
     const updateLabelVisibility = useCallback(() => {
       if (!viewerRef.current || !cesiumInstance) return;
+      if (!labelsVisible) {
+        labelTileCacheRef.current.forEach((entities) => {
+          entities.forEach((entity) => {
+            setLabelTarget(entity, false);
+            setLabelOpacity(entity, 0);
+            entity.show = false;
+          });
+        });
+        viewerRef.current.scene?.requestRender();
+        return;
+      }
       if (viewMode === "ortho" || viewMode === "winkel") {
         clearLabelTiles();
         return;
@@ -1047,7 +1059,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       }
 
       viewer.scene.requestRender();
-    }, [cesiumInstance, clearLabelTiles, viewMode]);
+    }, [cesiumInstance, clearLabelTiles, viewMode, labelsVisible]);
 
     const updateLabelFades = useCallback(
       (now: number) => {
@@ -1101,7 +1113,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
       labelUpdateInFlightRef.current = true;
-      if (viewMode === "ortho" || viewMode === "winkel") {
+      if (!labelsVisible || viewMode === "ortho" || viewMode === "winkel") {
         clearLabelTiles();
         labelUpdateInFlightRef.current = false;
         return;
@@ -1200,7 +1212,13 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         labelUpdateRequestedRef.current = false;
         updateLabelTiles();
       }
-    }, [cesiumInstance, clearLabelTiles, createLabelEntity, viewMode]);
+    }, [
+      cesiumInstance,
+      clearLabelTiles,
+      createLabelEntity,
+      viewMode,
+      labelsVisible,
+    ]);
 
     const scheduleLabelUpdate = useCallback(() => {
       if (labelUpdateTimeoutRef.current) {
@@ -1578,6 +1596,16 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       updateLabelTiles,
       updateLabelVisibility,
     ]);
+
+    useEffect(() => {
+      if (!viewerReady) return;
+      if (labelsVisible) {
+        updateLabelTiles();
+        updateLabelVisibility();
+      } else {
+        updateLabelVisibility();
+      }
+    }, [labelsVisible, viewerReady, updateLabelTiles, updateLabelVisibility]);
 
     useEffect(() => {
       if (!viewerReady) return;

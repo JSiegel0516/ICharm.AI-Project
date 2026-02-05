@@ -420,6 +420,7 @@ export default function HomePage() {
     satelliteLayerVisible: true,
     boundaryLinesVisible: true,
     geographicLinesVisible: false,
+    labelsVisible: true,
     rasterOpacity: 0.9,
     hideZeroPrecipitation: false,
     rasterBlurEnabled: true,
@@ -1065,6 +1066,10 @@ export default function HomePage() {
     setGlobeSettings((prev) => ({ ...prev, geographicLinesVisible: visible }));
   }, []);
 
+  const handleLabelsToggle = useCallback((visible: boolean) => {
+    setGlobeSettings((prev) => ({ ...prev, labelsVisible: visible }));
+  }, []);
+
   const handleRasterBlurToggle = useCallback((enabled: boolean) => {
     setGlobeSettings((prev) => ({ ...prev, rasterBlurEnabled: enabled }));
   }, []);
@@ -1299,6 +1304,7 @@ export default function HomePage() {
         satelliteLayerVisible={globeSettings.satelliteLayerVisible}
         boundaryLinesVisible={globeSettings.boundaryLinesVisible}
         geographicLinesVisible={globeSettings.geographicLinesVisible}
+        labelsVisible={globeSettings.labelsVisible}
         rasterOpacity={globeSettings.rasterOpacity}
         rasterBlurEnabled={globeSettings.rasterBlurEnabled}
         useMeshRaster={useMeshRaster}
@@ -1324,6 +1330,7 @@ export default function HomePage() {
             onSatelliteToggle={handleSatelliteToggle}
             onBoundaryToggle={handleBoundaryToggle}
             onGeographicLinesToggle={handleGeographicLinesToggle}
+            onLabelsToggle={handleLabelsToggle}
             onRasterOpacityChange={handleRasterOpacityChange}
             onHideZeroPrecipToggle={handleHideZeroPrecipToggle}
             onRasterBlurToggle={handleRasterBlurToggle}

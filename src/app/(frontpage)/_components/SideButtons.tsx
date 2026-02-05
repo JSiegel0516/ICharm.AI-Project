@@ -39,6 +39,7 @@ interface SideButtonsProps {
   onSatelliteToggle: (visible: boolean) => void;
   onBoundaryToggle: (visible: boolean) => void;
   onGeographicLinesToggle: (visible: boolean) => void;
+  onLabelsToggle: (visible: boolean) => void;
   onRasterOpacityChange: (opacity: number) => void;
   onHideZeroPrecipToggle: (enabled: boolean) => void;
   onRasterBlurToggle: (enabled: boolean) => void;
@@ -74,6 +75,7 @@ export function SideButtons({
   onSatelliteToggle,
   onBoundaryToggle,
   onGeographicLinesToggle,
+  onLabelsToggle,
   onRasterOpacityChange,
   onHideZeroPrecipToggle,
   onRasterBlurToggle,
@@ -619,7 +621,7 @@ export function SideButtons({
                             {dataset?.layerParameter} - {dataset?.statistic}
                           </p>
                           <div className="flex flex-wrap items-center gap-3">
-                            {/*** 
+                            {/***
                             <Badge variant="outline" className="text-xs">
                               {category}
                             </Badge>
@@ -727,6 +729,8 @@ export function SideButtons({
         onBoundaryLinesToggle={onBoundaryToggle}
         geographicLinesVisible={globeSettings.geographicLinesVisible}
         onGeographicLinesToggle={onGeographicLinesToggle}
+        labelsVisible={globeSettings.labelsVisible}
+        onLabelsToggle={onLabelsToggle}
         rasterOpacity={globeSettings.rasterOpacity}
         onRasterOpacityChange={onRasterOpacityChange}
         hideZeroPrecipitation={globeSettings.hideZeroPrecipitation}

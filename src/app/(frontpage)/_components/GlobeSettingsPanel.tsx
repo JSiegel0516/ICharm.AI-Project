@@ -18,6 +18,8 @@ interface GlobeSettingsPanelProps {
   onBoundaryLinesToggle: (visible: boolean) => void;
   geographicLinesVisible: boolean;
   onGeographicLinesToggle: (visible: boolean) => void;
+  labelsVisible: boolean;
+  onLabelsToggle: (visible: boolean) => void;
   // Raster opacity control
   rasterOpacity: number;
   onRasterOpacityChange: (opacity: number) => void;
@@ -46,6 +48,8 @@ export function GlobeSettingsPanel({
   onBoundaryLinesToggle,
   geographicLinesVisible,
   onGeographicLinesToggle,
+  labelsVisible,
+  onLabelsToggle,
   rasterOpacity,
   onRasterOpacityChange,
   hideZeroPrecipitation,
@@ -159,6 +163,27 @@ export function GlobeSettingsPanel({
                     id="geographic-lines-toggle"
                     checked={geographicLinesVisible}
                     onCheckedChange={onGeographicLinesToggle}
+                    className="data-[state=checked]:bg-rose-500"
+                  />
+                </div>
+
+                {/* Place Names Toggle */}
+                <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
+                  <div className="space-y-0.5">
+                    <Label
+                      htmlFor="labels-toggle"
+                      className="cursor-pointer text-sm font-medium text-white"
+                    >
+                      Place Names
+                    </Label>
+                    <p className="text-xs text-slate-400">
+                      Show/hide continent, country, and city labels
+                    </p>
+                  </div>
+                  <Switch
+                    id="labels-toggle"
+                    checked={labelsVisible}
+                    onCheckedChange={onLabelsToggle}
                     className="data-[state=checked]:bg-rose-500"
                   />
                 </div>

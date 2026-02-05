@@ -179,6 +179,7 @@ export interface GlobeSettings {
   satelliteLayerVisible: boolean;
   boundaryLinesVisible: boolean;
   geographicLinesVisible: boolean;
+  labelsVisible: boolean;
   rasterOpacity: number;
   hideZeroPrecipitation: boolean;
   rasterBlurEnabled: boolean;
@@ -289,6 +290,7 @@ export interface GlobeProps {
   satelliteLayerVisible?: boolean;
   boundaryLinesVisible?: boolean;
   geographicLinesVisible?: boolean;
+  labelsVisible?: boolean;
   rasterOpacity?: number;
   hideZeroPrecipitation?: boolean;
   rasterBlurEnabled?: boolean;
@@ -427,6 +429,8 @@ export interface GlobeSettingsPanelProps {
   onBoundaryLinesToggle: (visible: boolean) => void;
   geographicLinesVisible: boolean;
   onGeographicLinesToggle: (visible: boolean) => void;
+  labelsVisible: boolean;
+  onLabelsToggle: (visible: boolean) => void;
   rasterOpacity: number;
   onRasterOpacityChange: (opacity: number) => void;
   hideZeroPrecipitation: boolean;

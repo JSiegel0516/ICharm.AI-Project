@@ -148,6 +148,7 @@ const useAppStateInternal = () => {
       satelliteLayerVisible: true,
       boundaryLinesVisible: true,
       geographicLinesVisible: false,
+      labelsVisible: true,
       rasterOpacity: 0.9,
       hideZeroPrecipitation: false,
       rasterBlurEnabled: true,
