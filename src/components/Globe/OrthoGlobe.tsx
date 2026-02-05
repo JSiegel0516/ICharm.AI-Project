@@ -37,10 +37,149 @@ const RASTER_TO_MESH_ZOOM = 1.2;
 const DEFAULT_NORMAL_MAP_MODE: Props["normalMapMode"] = "none";
 const VERTEX_COLOR_GAIN = 1.2;
 const BASE_FILL_COLOR = new THREE.Color("#0b1e2f");
+const BASE_FILL_COLOR_SRGB = BASE_FILL_COLOR.clone().convertLinearToSRGB();
 const DEFAULT_GLOBE_ROTATION = new THREE.Euler(0, -Math.PI / 2, 0, "XYZ");
+const DEFAULT_LIGHT_DIRECTION = new THREE.Vector3(3, 2, 4).normalize();
+
+const GLOBE_VERTEX_SHADER = `
+  varying vec2 vUv;
+  varying vec3 vColor;
+  varying mat3 vTBN;
+
+  attribute vec3 tangent;
+  attribute vec3 color;
+
+  void main() {
+    vUv = uv;
+    vColor = color;
+
+    vec3 T = normalize(normalMatrix * tangent);
+    vec3 N = normalize(normalMatrix * normal);
+    vec3 B = normalize(cross(N, T));
+    vTBN = mat3(T, B, N);
+
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const GLOBE_FRAGMENT_SHADER = `
+  uniform sampler2D normalMap;
+  uniform sampler2D colorMap;
+  uniform bool useTexture;
+  uniform bool useVertexColor;
+  uniform bool lightingEnabled;
+  uniform vec3 lightDirection;
+  uniform vec3 baseColor;
+  uniform float opacity;
+  uniform float ambientIntensity;
+
+  varying vec2 vUv;
+  varying vec3 vColor;
+  varying mat3 vTBN;
+
+  void main() {
+    vec4 texColor = texture2D(colorMap, vUv);
+    vec3 base = useTexture
+      ? texColor.rgb
+      : (useVertexColor ? vColor : baseColor);
+    float alpha = useTexture ? texColor.a : 1.0;
+
+    if (lightingEnabled) {
+      vec3 normalRGB = texture2D(normalMap, vUv).rgb;
+      vec3 tangentNormal = normalRGB * 2.0 - 1.0;
+      vec3 normal = normalize(vTBN * tangentNormal);
+      float lighting = max(dot(normal, normalize(lightDirection)), 0.0);
+      lighting = max(lighting, ambientIntensity);
+      base *= lighting;
+    }
+
+    gl_FragColor = vec4(base, alpha * opacity);
+  }
+`;
 
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
+
+const createSolidTexture = (rgba: [number, number, number, number]) => {
+  const data = new Uint8Array(rgba);
+  const texture = new THREE.DataTexture(data, 1, 1);
+  texture.needsUpdate = true;
+  texture.colorSpace = THREE.NoColorSpace;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+  return texture;
+};
+
+const DEFAULT_NORMAL_TEXTURE = createSolidTexture([128, 128, 255, 255]);
+const DEFAULT_COLOR_TEXTURE = createSolidTexture([255, 255, 255, 255]);
+
+const setSolidVertexColor = (
+  geometry: THREE.BufferGeometry,
+  color: THREE.Color,
+) => {
+  const position = geometry.getAttribute("position");
+  if (!position) return;
+  const colors = new Float32Array(position.count * 3);
+  for (let i = 0; i < position.count; i += 1) {
+    const base = i * 3;
+    colors[base] = color.r;
+    colors[base + 1] = color.g;
+    colors[base + 2] = color.b;
+  }
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+};
+
+const ensureTangents = (geometry: THREE.BufferGeometry) => {
+  if (!geometry.index || !geometry.getAttribute("uv")) return;
+  geometry.computeTangents();
+};
+
+const createGlobeMaterial = (options: {
+  transparent?: boolean;
+  depthWrite?: boolean;
+  opacity?: number;
+  useTexture?: boolean;
+  useVertexColor?: boolean;
+  baseColor?: THREE.Color;
+  colorMap?: THREE.Texture;
+  normalMap?: THREE.Texture;
+  lightingEnabled?: boolean;
+  lightDirection?: THREE.Vector3;
+}) => {
+  const {
+    transparent = false,
+    depthWrite = true,
+    opacity = 1,
+    useTexture = false,
+    useVertexColor = true,
+    baseColor = BASE_FILL_COLOR_SRGB,
+    colorMap = DEFAULT_COLOR_TEXTURE,
+    normalMap = DEFAULT_NORMAL_TEXTURE,
+    lightingEnabled = false,
+    lightDirection = DEFAULT_LIGHT_DIRECTION,
+    ambientIntensity = 0.45,
+  } = options;
+
+  return new THREE.ShaderMaterial({
+    vertexShader: GLOBE_VERTEX_SHADER,
+    fragmentShader: GLOBE_FRAGMENT_SHADER,
+    transparent,
+    depthWrite,
+    lights: false,
+    uniforms: {
+      normalMap: { value: normalMap },
+      colorMap: { value: colorMap },
+      useTexture: { value: useTexture },
+      useVertexColor: { value: useVertexColor },
+      lightingEnabled: { value: lightingEnabled },
+      lightDirection: { value: lightDirection.clone() },
+      baseColor: { value: baseColor.clone() },
+      opacity: { value: opacity },
+      ambientIntensity: { value: ambientIntensity },
+    },
+  });
+};
 
 type GeoPoint = { lon: number; lat: number };
 type BoundaryVector = {
@@ -65,11 +204,6 @@ const latLonToCartesian = (lat: number, lon: number, radius: number) => {
     radius * Math.sin(latRad),
     -radius * cosLat * Math.sin(lonRad),
   );
-};
-
-const srgbToLinear = (value: number) => {
-  const c = value / 255;
-  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
 };
 
 const splitAtDateline = (coords: GeoPoint[]) => {
@@ -206,9 +340,13 @@ const OrthoGlobe: React.FC<Props> = ({
   const cameraRef = useRef<THREE.OrthographicCamera | null>(null);
   const globeGroupRef = useRef<THREE.Group | null>(null);
   const baseMeshRef = useRef<THREE.Mesh | null>(null);
+  const baseMaterialRef = useRef<THREE.ShaderMaterial | null>(null);
   const meshOverlayRef = useRef<THREE.Mesh | null>(null);
+  const meshMaterialRef = useRef<THREE.ShaderMaterial | null>(null);
   const rasterOverlayRef = useRef<THREE.Mesh | null>(null);
+  const rasterMaterialRef = useRef<THREE.ShaderMaterial | null>(null);
   const boundaryOverlayRef = useRef<THREE.Mesh | null>(null);
+  const boundaryMaterialRef = useRef<THREE.ShaderMaterial | null>(null);
   const boundaryLineGroupRef = useRef<THREE.Group | null>(null);
   const geographicLineGroupRef = useRef<THREE.Group | null>(null);
   const markerRef = useRef<THREE.Mesh | null>(null);
@@ -297,28 +435,28 @@ const OrthoGlobe: React.FC<Props> = ({
 
   const updateRasterOpacity = useCallback(() => {
     const opacity = clamp(rasterOpacity, 0, 1);
-    if (meshOverlayRef.current) {
-      const material = meshOverlayRef.current
-        .material as THREE.MeshStandardMaterial;
-      material.opacity = opacity;
+    if (meshMaterialRef.current) {
+      meshMaterialRef.current.uniforms.opacity.value = opacity;
     }
-    if (rasterOverlayRef.current) {
-      const material = rasterOverlayRef.current
-        .material as THREE.MeshStandardMaterial;
-      material.opacity = opacity;
+    if (rasterMaterialRef.current) {
+      rasterMaterialRef.current.uniforms.opacity.value = opacity;
     }
     requestRender();
   }, [rasterOpacity, requestRender]);
 
   const updateSatelliteVisibility = useCallback(() => {
-    if (!baseMeshRef.current) return;
-    const material = baseMeshRef.current.material as THREE.MeshStandardMaterial;
     const visible = satelliteLayerVisible && !useMeshRasterActiveRef.current;
-    material.opacity = 1;
-    material.transparent = false;
-    material.color.copy(BASE_FILL_COLOR);
-    material.map = visible ? baseTextureRef.current : null;
-    material.needsUpdate = true;
+    if (baseMaterialRef.current) {
+      baseMaterialRef.current.uniforms.useTexture.value = visible;
+      baseMaterialRef.current.uniforms.colorMap.value = visible
+        ? (baseTextureRef.current ?? DEFAULT_COLOR_TEXTURE)
+        : DEFAULT_COLOR_TEXTURE;
+      baseMaterialRef.current.uniforms.useVertexColor.value = false;
+      baseMaterialRef.current.uniforms.baseColor.value.copy(
+        BASE_FILL_COLOR_SRGB,
+      );
+      baseMaterialRef.current.uniforms.opacity.value = 1;
+    }
     requestRender();
   }, [satelliteLayerVisible, requestRender]);
 
@@ -416,18 +554,18 @@ const OrthoGlobe: React.FC<Props> = ({
           value == null || Number.isNaN(value)
             ? [0, 0, 0, 0]
             : mapValueToRgba(value, min, max, stops);
-        const rLin = Math.min(1, srgbToLinear(rgba[0]) * VERTEX_COLOR_GAIN);
-        const gLin = Math.min(1, srgbToLinear(rgba[1]) * VERTEX_COLOR_GAIN);
-        const bLin = Math.min(1, srgbToLinear(rgba[2]) * VERTEX_COLOR_GAIN);
+        const rColor = Math.min(1, (rgba[0] / 255) * VERTEX_COLOR_GAIN);
+        const gColor = Math.min(1, (rgba[1] / 255) * VERTEX_COLOR_GAIN);
+        const bColor = Math.min(1, (rgba[2] / 255) * VERTEX_COLOR_GAIN);
         const base = i * 3;
         if (value == null || Number.isNaN(value)) {
-          colors[base] = BASE_FILL_COLOR.r;
-          colors[base + 1] = BASE_FILL_COLOR.g;
-          colors[base + 2] = BASE_FILL_COLOR.b;
+          colors[base] = BASE_FILL_COLOR_SRGB.r;
+          colors[base + 1] = BASE_FILL_COLOR_SRGB.g;
+          colors[base + 2] = BASE_FILL_COLOR_SRGB.b;
         } else {
-          colors[base] = rLin;
-          colors[base + 1] = gLin;
-          colors[base + 2] = bLin;
+          colors[base] = rColor;
+          colors[base + 1] = gColor;
+          colors[base + 2] = bColor;
         }
       }
 
@@ -556,68 +694,74 @@ const OrthoGlobe: React.FC<Props> = ({
     scene.add(group);
 
     const geometry = new THREE.SphereGeometry(BASE_RADIUS, 96, 64);
-    const baseMaterial = new THREE.MeshStandardMaterial({
-      color: BASE_FILL_COLOR.clone(),
+    setSolidVertexColor(geometry, BASE_FILL_COLOR_SRGB);
+    ensureTangents(geometry);
+    const baseMaterial = createGlobeMaterial({
       transparent: false,
+      depthWrite: true,
       opacity: 1,
-      roughness: 1.0,
-      metalness: 0.0,
+      useTexture: false,
+      useVertexColor: false,
+      baseColor: BASE_FILL_COLOR_SRGB,
+      lightingEnabled: false,
     });
     const baseMesh = new THREE.Mesh(geometry, baseMaterial);
     baseMeshRef.current = baseMesh;
+    baseMaterialRef.current = baseMaterial;
     group.add(baseMesh);
 
     const overlayGeometry = new THREE.SphereGeometry(OVERLAY_RADIUS, 96, 64);
-    const meshMaterial = new THREE.MeshStandardMaterial({
+    setSolidVertexColor(overlayGeometry, BASE_FILL_COLOR_SRGB);
+    ensureTangents(overlayGeometry);
+    const meshMaterial = createGlobeMaterial({
       transparent: true,
-      opacity: rasterOpacity,
       depthWrite: false,
-      vertexColors: true,
-      roughness: 1.0,
-      metalness: 0.0,
-      emissive: new THREE.Color(0xffffff),
-      emissiveIntensity: 0.1,
+      opacity: rasterOpacity,
+      useTexture: false,
+      useVertexColor: true,
+      baseColor: BASE_FILL_COLOR_SRGB,
+      lightingEnabled: false,
     });
     const meshOverlay = new THREE.Mesh(overlayGeometry, meshMaterial);
     meshOverlayRef.current = meshOverlay;
+    meshMaterialRef.current = meshMaterial;
     group.add(meshOverlay);
 
-    const rasterMaterial = new THREE.MeshStandardMaterial({
+    const rasterMaterial = createGlobeMaterial({
       transparent: true,
-      opacity: rasterOpacity,
       depthWrite: false,
-      roughness: 1.0,
-      metalness: 0.0,
-      emissive: new THREE.Color(0xffffff),
-      emissiveIntensity: 0.08,
+      opacity: rasterOpacity,
+      useTexture: false,
+      useVertexColor: false,
+      baseColor: BASE_FILL_COLOR_SRGB,
+      lightingEnabled: false,
     });
     const rasterOverlay = new THREE.Mesh(overlayGeometry, rasterMaterial);
     rasterOverlayRef.current = rasterOverlay;
+    rasterMaterialRef.current = rasterMaterial;
     group.add(rasterOverlay);
 
-    const boundaryMaterial = new THREE.MeshStandardMaterial({
+    const boundaryMaterial = createGlobeMaterial({
       transparent: true,
-      opacity: 0.9,
       depthWrite: false,
-      roughness: 1.0,
-      metalness: 0.0,
+      opacity: 0.9,
+      useTexture: false,
+      useVertexColor: false,
+      baseColor: BASE_FILL_COLOR_SRGB,
+      lightingEnabled: false,
     });
     const boundaryOverlay = new THREE.Mesh(overlayGeometry, boundaryMaterial);
     boundaryOverlayRef.current = boundaryOverlay;
+    boundaryMaterialRef.current = boundaryMaterial;
     group.add(boundaryOverlay);
-
-    const sunlight = new THREE.DirectionalLight(0xffffff, 2.0);
-    sunlight.position.set(3, 2, 4);
-    sunlightRef.current = sunlight;
-    scene.add(sunlight);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
 
     const loader = new THREE.TextureLoader();
     loader.load(BASE_TEXTURE_URL, (texture) => {
       texture.colorSpace = THREE.SRGBColorSpace;
-      baseMaterial.map = texture;
       baseTextureRef.current = texture;
-      baseMaterial.needsUpdate = true;
+      if (baseMaterialRef.current) {
+        baseMaterialRef.current.uniforms.colorMap.value = texture;
+      }
       updateSatelliteVisibility();
       requestRender();
     });
@@ -665,14 +809,22 @@ const OrthoGlobe: React.FC<Props> = ({
       if (normalMapTextureRef.current) normalMapTextureRef.current.dispose();
       if (baseTextureRef.current) baseTextureRef.current.dispose();
       if (skyboxTextureRef.current) skyboxTextureRef.current.dispose();
+      if (baseMaterialRef.current) baseMaterialRef.current.dispose();
+      if (meshMaterialRef.current) meshMaterialRef.current.dispose();
+      if (rasterMaterialRef.current) rasterMaterialRef.current.dispose();
+      if (boundaryMaterialRef.current) boundaryMaterialRef.current.dispose();
       rendererRef.current = null;
       sceneRef.current = null;
       cameraRef.current = null;
       globeGroupRef.current = null;
       baseMeshRef.current = null;
+      baseMaterialRef.current = null;
       meshOverlayRef.current = null;
+      meshMaterialRef.current = null;
       rasterOverlayRef.current = null;
+      rasterMaterialRef.current = null;
       boundaryOverlayRef.current = null;
+      boundaryMaterialRef.current = null;
       boundaryLineGroupRef.current = null;
       geographicLineGroupRef.current = null;
       sunlightRef.current = null;
@@ -698,19 +850,23 @@ const OrthoGlobe: React.FC<Props> = ({
     if (!boundaryOverlayRef.current) return;
     if (!useLegacyRendering) {
       boundaryOverlayRef.current.visible = false;
-      const material = boundaryOverlayRef.current
-        .material as THREE.MeshStandardMaterial;
-      material.map = null;
-      material.needsUpdate = true;
+      if (boundaryMaterialRef.current) {
+        boundaryMaterialRef.current.uniforms.useTexture.value = false;
+        boundaryMaterialRef.current.uniforms.colorMap.value =
+          DEFAULT_COLOR_TEXTURE;
+        boundaryMaterialRef.current.uniforms.useVertexColor.value = false;
+      }
       requestRender();
       return;
     }
     if (!vectors.length || !boundaryLinesVisible) {
       boundaryOverlayRef.current.visible = false;
-      const material = boundaryOverlayRef.current
-        .material as THREE.MeshStandardMaterial;
-      material.map = null;
-      material.needsUpdate = true;
+      if (boundaryMaterialRef.current) {
+        boundaryMaterialRef.current.uniforms.useTexture.value = false;
+        boundaryMaterialRef.current.uniforms.colorMap.value =
+          DEFAULT_COLOR_TEXTURE;
+        boundaryMaterialRef.current.uniforms.useVertexColor.value = false;
+      }
       requestRender();
       return;
     }
@@ -774,10 +930,11 @@ const OrthoGlobe: React.FC<Props> = ({
     boundaryTextureRef.current = texture;
 
     boundaryOverlayRef.current.visible = true;
-    const material = boundaryOverlayRef.current
-      .material as THREE.MeshStandardMaterial;
-    material.map = texture;
-    material.needsUpdate = true;
+    if (boundaryMaterialRef.current) {
+      boundaryMaterialRef.current.uniforms.useTexture.value = true;
+      boundaryMaterialRef.current.uniforms.colorMap.value = texture;
+      boundaryMaterialRef.current.uniforms.useVertexColor.value = false;
+    }
     requestRender();
   }, [boundaryLinesVisible, requestRender, useLegacyRendering, vectors]);
 
@@ -794,32 +951,36 @@ const OrthoGlobe: React.FC<Props> = ({
           gridTextureRef.current.dispose();
           gridTextureRef.current = null;
         }
-        const material = meshOverlayRef.current
-          .material as THREE.MeshStandardMaterial;
-        material.map = null;
-        material.vertexColors = false;
-        material.needsUpdate = true;
+        if (meshMaterialRef.current) {
+          meshMaterialRef.current.uniforms.useTexture.value = false;
+          meshMaterialRef.current.uniforms.useVertexColor.value = false;
+          meshMaterialRef.current.uniforms.colorMap.value =
+            DEFAULT_COLOR_TEXTURE;
+          meshMaterialRef.current.uniforms.baseColor.value.copy(
+            BASE_FILL_COLOR_SRGB,
+          );
+        }
         updateMeshVisibility();
         return;
       }
       if (gridTextureRef.current) gridTextureRef.current.dispose();
       gridTextureRef.current = texture;
-      const material = meshOverlayRef.current
-        .material as THREE.MeshStandardMaterial;
-      material.map = texture;
-      material.vertexColors = false;
-      material.needsUpdate = true;
+      if (meshMaterialRef.current) {
+        meshMaterialRef.current.uniforms.useTexture.value = true;
+        meshMaterialRef.current.uniforms.useVertexColor.value = false;
+        meshMaterialRef.current.uniforms.colorMap.value = texture;
+      }
       updateMeshVisibility();
       return;
     }
 
     const geometry = meshOverlayRef.current.geometry;
     buildVertexColorsFromGrid(geometry);
-    const material = meshOverlayRef.current
-      .material as THREE.MeshStandardMaterial;
-    material.vertexColors = true;
-    material.map = null;
-    material.needsUpdate = true;
+    if (meshMaterialRef.current) {
+      meshMaterialRef.current.uniforms.useTexture.value = false;
+      meshMaterialRef.current.uniforms.useVertexColor.value = true;
+      meshMaterialRef.current.uniforms.colorMap.value = DEFAULT_COLOR_TEXTURE;
+    }
     updateMeshVisibility();
   }, [
     buildGridTexture,
@@ -835,10 +996,15 @@ const OrthoGlobe: React.FC<Props> = ({
         rasterTextureRef.current.dispose();
         rasterTextureRef.current = null;
       }
-      const material = rasterOverlayRef.current
-        .material as THREE.MeshStandardMaterial;
-      material.map = null;
-      material.needsUpdate = true;
+      if (rasterMaterialRef.current) {
+        rasterMaterialRef.current.uniforms.useTexture.value = false;
+        rasterMaterialRef.current.uniforms.useVertexColor.value = false;
+        rasterMaterialRef.current.uniforms.colorMap.value =
+          DEFAULT_COLOR_TEXTURE;
+        rasterMaterialRef.current.uniforms.baseColor.value.copy(
+          BASE_FILL_COLOR_SRGB,
+        );
+      }
       updateMeshVisibility();
       return;
     }
@@ -853,10 +1019,11 @@ const OrthoGlobe: React.FC<Props> = ({
         }
         if (rasterTextureRef.current) rasterTextureRef.current.dispose();
         rasterTextureRef.current = texture;
-        const material = rasterOverlayRef.current
-          ?.material as THREE.MeshStandardMaterial;
-        material.map = texture;
-        material.needsUpdate = true;
+        if (rasterMaterialRef.current) {
+          rasterMaterialRef.current.uniforms.useTexture.value = true;
+          rasterMaterialRef.current.uniforms.useVertexColor.value = false;
+          rasterMaterialRef.current.uniforms.colorMap.value = texture;
+        }
         updateMeshVisibility();
       })
       .catch(() => {});
@@ -877,31 +1044,22 @@ const OrthoGlobe: React.FC<Props> = ({
   }, [useMeshRaster, useMeshRasterActive, updateMeshVisibility]);
 
   useEffect(() => {
-    if (!baseMeshRef.current) return;
-    const baseMaterial = baseMeshRef.current
-      .material as THREE.MeshStandardMaterial;
-    const meshMaterial = meshOverlayRef.current
-      ? (meshOverlayRef.current.material as THREE.MeshStandardMaterial)
-      : null;
-    const rasterMaterial = rasterOverlayRef.current
-      ? (rasterOverlayRef.current.material as THREE.MeshStandardMaterial)
-      : null;
+    const materials = [
+      baseMaterialRef.current,
+      meshMaterialRef.current,
+      rasterMaterialRef.current,
+      boundaryMaterialRef.current,
+    ].filter(Boolean) as THREE.ShaderMaterial[];
     if (normalMapTextureRef.current) {
       normalMapTextureRef.current.dispose();
       normalMapTextureRef.current = null;
     }
 
     if (normalMapMode === "none") {
-      baseMaterial.normalMap = null;
-      baseMaterial.needsUpdate = true;
-      if (meshMaterial) {
-        meshMaterial.normalMap = null;
-        meshMaterial.needsUpdate = true;
-      }
-      if (rasterMaterial) {
-        rasterMaterial.normalMap = null;
-        rasterMaterial.needsUpdate = true;
-      }
+      materials.forEach((material) => {
+        material.uniforms.normalMap.value = DEFAULT_NORMAL_TEXTURE;
+        material.uniforms.lightingEnabled.value = false;
+      });
       requestRender();
       return;
     }
@@ -920,20 +1078,10 @@ const OrthoGlobe: React.FC<Props> = ({
         texture.generateMipmaps = false;
         texture.wrapS = THREE.RepeatWrapping;
         texture.wrapT = THREE.ClampToEdgeWrapping;
-        baseMaterial.normalMap = texture;
-        // Increased from 0.6 to match legacy full-strength normals.
-        baseMaterial.normalScale = new THREE.Vector2(2.0, 2.0);
-        baseMaterial.needsUpdate = true;
-        if (meshMaterial) {
-          meshMaterial.normalMap = texture;
-          meshMaterial.normalScale = new THREE.Vector2(2.0, 2.0);
-          meshMaterial.needsUpdate = true;
-        }
-        if (rasterMaterial) {
-          rasterMaterial.normalMap = texture;
-          rasterMaterial.normalScale = new THREE.Vector2(2.0, 2.0);
-          rasterMaterial.needsUpdate = true;
-        }
+        materials.forEach((material) => {
+          material.uniforms.normalMap.value = texture;
+          material.uniforms.lightingEnabled.value = true;
+        });
         normalMapTextureRef.current = texture;
         requestRender();
       },

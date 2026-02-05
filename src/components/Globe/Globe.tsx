@@ -2810,6 +2810,14 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
               );
             boundaryEntitiesRef.current = boundaryEntities;
             geographicLineEntitiesRef.current = geographicLineEntities;
+            const showBoundaries = boundaryLinesVisible;
+            const showGeographic = geographicLinesVisible;
+            boundaryEntitiesRef.current.forEach((entity) => {
+              entity.show = showBoundaries;
+            });
+            geographicLineEntitiesRef.current.forEach((entity) => {
+              entity.show = showGeographic;
+            });
           })
           .catch((err) => {
             console.warn("Failed to restore geographic boundaries", err);
