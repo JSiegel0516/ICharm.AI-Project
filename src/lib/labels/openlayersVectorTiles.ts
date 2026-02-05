@@ -4,6 +4,7 @@ import Pbf from "pbf";
 export type LabelKind =
   | "continent"
   | "country"
+  | "state"
   | "cityLarge"
   | "cityMedium"
   | "citySmall"
@@ -30,6 +31,58 @@ const midpoint = (coords: number[][]) => {
   return { lon: mid[0], lat: mid[1] };
 };
 
+const ringCentroid = (ring: number[][]) => {
+  if (ring.length < 3) return midpoint(ring);
+  let area = 0;
+  let cx = 0;
+  let cy = 0;
+  const count = ring.length;
+  for (let i = 0; i < count; i += 1) {
+    const [x1, y1] = ring[i] ?? [];
+    const [x2, y2] = ring[(i + 1) % count] ?? [];
+    if (x1 === undefined || y1 === undefined) continue;
+    if (x2 === undefined || y2 === undefined) continue;
+    const cross = x1 * y2 - x2 * y1;
+    area += cross;
+    cx += (x1 + x2) * cross;
+    cy += (y1 + y2) * cross;
+  }
+  if (Math.abs(area) < 1e-7) return midpoint(ring);
+  const scale = 1 / (3 * area);
+  return { lon: cx * scale, lat: cy * scale };
+};
+
+const polygonCentroid = (coords: number[][][]) => {
+  if (!coords.length) return null;
+  const outer = coords[0] ?? [];
+  return ringCentroid(outer);
+};
+
+const multiPolygonCentroid = (coords: number[][][][]) => {
+  if (!coords.length) return null;
+  let best: { area: number; point: { lon: number; lat: number } | null } = {
+    area: 0,
+    point: null,
+  };
+  coords.forEach((polygon) => {
+    const outer = polygon?.[0];
+    if (!outer?.length) return;
+    let area = 0;
+    const count = outer.length;
+    for (let i = 0; i < count; i += 1) {
+      const [x1, y1] = outer[i] ?? [];
+      const [x2, y2] = outer[(i + 1) % count] ?? [];
+      if (x1 === undefined || y1 === undefined) continue;
+      if (x2 === undefined || y2 === undefined) continue;
+      area += x1 * y2 - x2 * y1;
+    }
+    const absArea = Math.abs(area);
+    if (absArea <= best.area) return;
+    best = { area: absArea, point: ringCentroid(outer) };
+  });
+  return best.point;
+};
+
 const coordsFromGeometry = (geometry: any) => {
   if (!geometry) return null;
   if (geometry.type === "Point") {
@@ -44,6 +97,12 @@ const coordsFromGeometry = (geometry: any) => {
       const point = midpoint(line);
       if (point) return point;
     }
+  }
+  if (geometry.type === "Polygon") {
+    return polygonCentroid(geometry.coordinates as number[][][]);
+  }
+  if (geometry.type === "MultiPolygon") {
+    return multiPolygonCentroid(geometry.coordinates as number[][][][]);
   }
   return null;
 };
@@ -79,6 +138,12 @@ export const parseOpenLayersTile = (
       } else if (className === "country") {
         kind = "country";
       } else if (
+        className === "state" ||
+        className === "province" ||
+        className === "region"
+      ) {
+        kind = "state";
+      } else if (
         className === "city" ||
         className === "town" ||
         className === "village" ||
@@ -99,11 +164,25 @@ export const parseOpenLayersTile = (
       } else {
         continue;
       }
-      const name = pickName(props);
+      let name = pickName(props);
       if (!name) continue;
+      if (kind === "continent" && name === "America") {
+        continue;
+      }
+      if (kind === "continent" && name === "Australia") {
+        name = "Oceania";
+      }
       const geojson = feature.toGeoJSON(x, y, z);
       const point = coordsFromGeometry(geojson.geometry);
       if (!point) continue;
+      if (kind === "continent" && name === "Oceania") {
+        const alreadyHasOceania = results.some(
+          (entry) => entry.kind === "continent" && entry.name === "Oceania",
+        );
+        if (alreadyHasOceania) continue;
+        point.lon = 150;
+        point.lat = -15;
+      }
       results.push({
         kind,
         name,
