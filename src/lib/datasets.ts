@@ -271,14 +271,6 @@ export function generateColorScale(
 
   const SST_COLORS = getColorMapColors("Matlab|Jet");
   const AIR_COLORS = AIR_TEMPERATURE_BASE;
-  const NOAA_GLOBALTEMP_COLORS = [
-    "#6a00ff",
-    "#0066ff",
-    "#00d084",
-    "#ffe600",
-    "#ff9a00",
-    "#ff3b30",
-  ];
   const PRECIP_COLORS = getColorMapColors(
     "Color Brewer 2.0|Sequential|Multi-hue|9-class YlGnBu",
   );
@@ -312,7 +304,7 @@ export function generateColorScale(
     name.includes("noaa global temperature")
   ) {
     return buildScale(
-      NOAA_GLOBALTEMP_COLORS,
+      AIR_COLORS,
       ["-40°C", "-20°C", "0°C", "20°C", "40°C"],
       -40,
       40,

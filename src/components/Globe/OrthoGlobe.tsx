@@ -190,9 +190,8 @@ type BoundaryVector = {
 };
 
 const boundaryFiles = [
+  { name: "ne_110m_admin_0_countries.json", kind: "boundary" as const },
   { name: "ne_110m_coastline.json", kind: "boundary" as const },
-  { name: "ne_110m_lakes.json", kind: "boundary" as const },
-  { name: "ne_110m_rivers_lake_centerlines.json", kind: "boundary" as const },
 ];
 
 const latLonToCartesian = (lat: number, lon: number, radius: number) => {
@@ -241,6 +240,7 @@ const splitAtDateline = (coords: GeoPoint[]) => {
 
 const fetchBoundaries = async (): Promise<BoundaryVector[]> => {
   const results: BoundaryVector[] = [];
+  let loadedCountryLines = false;
 
   for (const file of boundaryFiles) {
     try {
@@ -305,7 +305,13 @@ const fetchBoundaries = async (): Promise<BoundaryVector[]> => {
             coordinates: coords,
             kind: file.kind,
           });
+          if (file.name.includes("admin_0_countries")) {
+            loadedCountryLines = true;
+          }
         }
+      }
+      if (loadedCountryLines) {
+        return results;
       }
     } catch {
       // ignore boundary load errors
