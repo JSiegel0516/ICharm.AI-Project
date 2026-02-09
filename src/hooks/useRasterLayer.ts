@@ -32,6 +32,7 @@ type UseRasterLayerOptions = {
   date?: Date;
   level?: number | null;
   maskZeroValues?: boolean;
+  smoothGridBoxValues?: boolean;
   colorbarRange?: {
     enabled?: boolean;
     min?: number | null;
@@ -60,6 +61,7 @@ export const buildRasterRequestKey = (args: {
   level?: number | null;
   cssColors?: string[];
   maskZeroValues?: boolean;
+  smoothGridBoxValues?: boolean;
   colorbarRange?: {
     enabled?: boolean;
     min?: number | null;
@@ -77,11 +79,12 @@ export const buildRasterRequestKey = (args: {
       ? args.cssColors.join("|")
       : "default";
   const maskKey = args.maskZeroValues ? "mask" : "nomask";
+  const smoothKey = args.smoothGridBoxValues === false ? "blocky" : "smooth";
   const customRangeKey = args.colorbarRange?.enabled
     ? `range-${Number.isFinite(args.colorbarRange?.min as number) ? args.colorbarRange?.min : "auto"}-${Number.isFinite(args.colorbarRange?.max as number) ? args.colorbarRange?.max : "auto"}`
     : "norange";
 
-  return `${datasetId}::${dateKey}::${args.level ?? "surface"}::${colorKey}::${maskKey}::${customRangeKey}`;
+  return `${datasetId}::${dateKey}::${args.level ?? "surface"}::${colorKey}::${maskKey}::${smoothKey}::${customRangeKey}`;
 };
 
 // ============================================================================
@@ -95,6 +98,7 @@ export async function fetchRasterVisualization(options: {
   level?: number | null;
   cssColors?: string[];
   maskZeroValues?: boolean;
+  smoothGridBoxValues?: boolean;
   colorbarRange?: {
     enabled?: boolean;
     min?: number | null;
@@ -109,6 +113,7 @@ export async function fetchRasterVisualization(options: {
     level,
     cssColors,
     maskZeroValues,
+    smoothGridBoxValues,
     colorbarRange,
     signal,
   } = options;
@@ -136,6 +141,7 @@ export async function fetchRasterVisualization(options: {
       level: level ?? undefined,
       cssColors,
       maskZeroValues: maskZeroValues || undefined,
+      smoothGridBoxValues: smoothGridBoxValues ?? undefined,
       minValue: customRange?.min ?? null,
       maxValue: customRange?.max ?? null,
       min: customRange?.min ?? null,
@@ -203,6 +209,7 @@ export const useRasterLayer = ({
   date,
   level,
   maskZeroValues = false,
+  smoothGridBoxValues,
   colorbarRange,
   prefetchedData,
 }: UseRasterLayerOptions): UseRasterLayerResult => {
@@ -239,6 +246,7 @@ export const useRasterLayer = ({
         level,
         cssColors,
         maskZeroValues,
+        smoothGridBoxValues,
         colorbarRange: effectiveColorbarRange,
       }),
     [
@@ -248,6 +256,7 @@ export const useRasterLayer = ({
       level,
       cssColors,
       maskZeroValues,
+      smoothGridBoxValues,
       effectiveColorbarRange,
     ],
   );
@@ -335,6 +344,7 @@ export const useRasterLayer = ({
           level,
           cssColors,
           maskZeroValues,
+          smoothGridBoxValues,
           colorbarRange: effectiveColorbarRange,
           signal: controller.signal,
         });
@@ -372,6 +382,7 @@ export const useRasterLayer = ({
     level,
     cssColors,
     maskZeroValues,
+    smoothGridBoxValues,
     waitingForLevel,
     effectiveColorbarRange,
     requestKey,

@@ -327,7 +327,7 @@ const OrthoGlobe: React.FC<Props> = ({
   rasterBlurEnabled,
   useLegacyRendering = false,
   normalMapMode = DEFAULT_NORMAL_MAP_MODE,
-  smoothGridBoxValues = true,
+  smoothGridBoxValues = rasterBlurEnabled,
   hideZeroValues = false,
   minZoom = DEFAULT_MIN_ZOOM,
   maxZoom = DEFAULT_MAX_ZOOM,
@@ -366,8 +366,9 @@ const OrthoGlobe: React.FC<Props> = ({
   const [useMeshRasterActive, setUseMeshRasterActive] = useState(useMeshRaster);
   const [vectors, setVectors] = useState<BoundaryVector[]>([]);
 
+  const useGridTexture = useLegacyRendering || !smoothGridBoxValues;
   const useVertexColorsActive =
-    !useLegacyRendering &&
+    !useGridTexture &&
     useMeshRasterActive &&
     Boolean(rasterGridData && currentDataset?.colorScale?.colors?.length);
 
@@ -414,32 +415,27 @@ const OrthoGlobe: React.FC<Props> = ({
 
   const updateMeshVisibility = useCallback(() => {
     if (meshOverlayRef.current) {
-      if (useLegacyRendering) {
-        meshOverlayRef.current.visible =
-          useMeshRasterActiveRef.current && Boolean(gridTextureRef.current);
-      } else {
-        meshOverlayRef.current.visible = useVertexColorsActive;
-      }
+      meshOverlayRef.current.visible = useGridTexture
+        ? useMeshRasterActiveRef.current && Boolean(gridTextureRef.current)
+        : useVertexColorsActive;
     }
     if (rasterOverlayRef.current) {
-      if (useLegacyRendering) {
-        rasterOverlayRef.current.visible =
-          !useMeshRasterActiveRef.current && Boolean(rasterTextureRef.current);
-      } else {
-        rasterOverlayRef.current.visible =
-          !useVertexColorsActive && Boolean(rasterTextureRef.current);
-      }
+      rasterOverlayRef.current.visible = useGridTexture
+        ? !useMeshRasterActiveRef.current && Boolean(rasterTextureRef.current)
+        : !useVertexColorsActive && Boolean(rasterTextureRef.current);
     }
     requestRender();
-  }, [requestRender, useLegacyRendering, useVertexColorsActive]);
+  }, [requestRender, useGridTexture, useVertexColorsActive]);
 
   const updateRasterOpacity = useCallback(() => {
     const opacity = clamp(rasterOpacity, 0, 1);
     if (meshMaterialRef.current) {
       meshMaterialRef.current.uniforms.opacity.value = opacity;
+      meshMaterialRef.current.needsUpdate = true;
     }
     if (rasterMaterialRef.current) {
       rasterMaterialRef.current.uniforms.opacity.value = opacity;
+      rasterMaterialRef.current.needsUpdate = true;
     }
     requestRender();
   }, [rasterOpacity, requestRender]);
@@ -509,22 +505,52 @@ const OrthoGlobe: React.FC<Props> = ({
       const cols = lonValues.length;
       if (!rows || !cols) return;
 
-      const findNearestIndex = (values: number[], target: number) => {
-        let best = 0;
-        let bestDist = Infinity;
-        for (let i = 0; i < values.length; i += 1) {
-          const dist = Math.abs(values[i] - target);
-          if (dist < bestDist) {
-            bestDist = dist;
-            best = i;
-          }
+      const buildCellIndexFinder = (values: ArrayLike<number>) => {
+        const count = values.length;
+        if (!count) {
+          return () => 0;
         }
-        return best;
+        const ascending = values[0] < values[count - 1];
+        const normalized = ascending
+          ? Array.from(values)
+          : Array.from(values, (v) => -v);
+        const edges = new Array(count + 1);
+        if (count === 1) {
+          edges[0] = normalized[0] - 0.5;
+          edges[1] = normalized[0] + 0.5;
+        } else {
+          edges[0] = normalized[0] - (normalized[1] - normalized[0]) * 0.5;
+          for (let i = 1; i < count; i += 1) {
+            edges[i] = (normalized[i - 1] + normalized[i]) * 0.5;
+          }
+          edges[count] =
+            normalized[count - 1] +
+            (normalized[count - 1] - normalized[count - 2]) * 0.5;
+        }
+
+        return (target: number) => {
+          const value = ascending ? target : -target;
+          let low = 0;
+          let high = edges.length - 1;
+          while (low < high - 1) {
+            const mid = Math.floor((low + high) / 2);
+            if (value < edges[mid]) {
+              high = mid;
+            } else {
+              low = mid;
+            }
+          }
+          if (low < 0) return 0;
+          if (low >= count) return count - 1;
+          return low;
+        };
       };
 
       const colors = new Float32Array(position.count * 3);
       const values = rasterGridData.values;
       const mask = rasterGridData.mask;
+      const findLatCell = buildCellIndexFinder(latValues);
+      const findLonCell = buildCellIndexFinder(lonValues);
 
       for (let i = 0; i < position.count; i += 1) {
         const x = position.getX(i);
@@ -538,8 +564,8 @@ const OrthoGlobe: React.FC<Props> = ({
         if (smoothGridBoxValues && rasterGridData.sampleValue) {
           value = rasterGridData.sampleValue(lat, lon);
         } else {
-          const latIdx = findNearestIndex(latValues, lat);
-          const lonIdx = findNearestIndex(lonValues, lon);
+          const latIdx = findLatCell(lat);
+          const lonIdx = findLonCell(lon);
           const idx = latIdx * cols + lonIdx;
           if (!mask || mask[idx] !== 0) {
             value = values[idx];
@@ -604,6 +630,7 @@ const OrthoGlobe: React.FC<Props> = ({
     canvas.height = rows;
     const context = canvas.getContext("2d");
     if (!context) return null;
+    context.imageSmoothingEnabled = smoothGridBoxValues;
     const imageData = context.createImageData(cols, rows);
     const latAscending = rasterGridData.lat[0] < rasterGridData.lat[rows - 1];
     const values = rasterGridData.values;
@@ -626,44 +653,64 @@ const OrthoGlobe: React.FC<Props> = ({
           value == null || Number.isNaN(value)
             ? [0, 0, 0, 0]
             : mapValueToRgba(value, min, max, stops);
-        imageData.data[destIdx] = rgba[0];
-        imageData.data[destIdx + 1] = rgba[1];
-        imageData.data[destIdx + 2] = rgba[2];
+        imageData.data[destIdx] = Math.min(
+          255,
+          Math.round(rgba[0] * VERTEX_COLOR_GAIN),
+        );
+        imageData.data[destIdx + 1] = Math.min(
+          255,
+          Math.round(rgba[1] * VERTEX_COLOR_GAIN),
+        );
+        imageData.data[destIdx + 2] = Math.min(
+          255,
+          Math.round(rgba[2] * VERTEX_COLOR_GAIN),
+        );
         imageData.data[destIdx + 3] = rgba[3];
       }
     }
     context.putImageData(imageData, 0, 0);
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
-    texture.minFilter = THREE.LinearFilter;
-    texture.magFilter = rasterBlurEnabled
+    texture.minFilter = smoothGridBoxValues
       ? THREE.LinearFilter
       : THREE.NearestFilter;
+    texture.magFilter = smoothGridBoxValues
+      ? THREE.LinearFilter
+      : THREE.NearestFilter;
+    texture.generateMipmaps = smoothGridBoxValues;
     texture.needsUpdate = true;
     return texture;
   }, [
     currentDataset?.colorScale?.colors,
     hideZeroValues,
-    rasterBlurEnabled,
+    smoothGridBoxValues,
     rasterGridData,
   ]);
 
-  const loadRasterTexture = useCallback((url: string) => {
-    const loader = new THREE.TextureLoader();
-    return new Promise<THREE.Texture>((resolve, reject) => {
-      loader.load(
-        url,
-        (texture) => {
-          texture.colorSpace = THREE.SRGBColorSpace;
-          texture.minFilter = THREE.LinearMipMapLinearFilter;
-          texture.magFilter = THREE.LinearFilter;
-          resolve(texture);
-        },
-        undefined,
-        reject,
-      );
-    });
-  }, []);
+  const loadRasterTexture = useCallback(
+    (url: string) => {
+      const loader = new THREE.TextureLoader();
+      return new Promise<THREE.Texture>((resolve, reject) => {
+        loader.load(
+          url,
+          (texture) => {
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.minFilter = smoothGridBoxValues
+              ? THREE.LinearMipMapLinearFilter
+              : THREE.NearestFilter;
+            texture.magFilter = smoothGridBoxValues
+              ? THREE.LinearFilter
+              : THREE.NearestFilter;
+            texture.generateMipmaps = smoothGridBoxValues;
+            resolve(texture);
+          },
+          undefined,
+          reject,
+        );
+      });
+    },
+    [smoothGridBoxValues],
+  );
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -830,7 +877,7 @@ const OrthoGlobe: React.FC<Props> = ({
       sunlightRef.current = null;
       markerRef.current = null;
     };
-  }, [rasterOpacity, requestRender, satelliteLayerVisible, updateCamera]);
+  }, [requestRender, updateCamera]);
 
   useEffect(() => {
     updateSatelliteVisibility();
@@ -944,7 +991,7 @@ const OrthoGlobe: React.FC<Props> = ({
 
   useEffect(() => {
     if (!meshOverlayRef.current) return;
-    if (useLegacyRendering) {
+    if (useGridTexture) {
       const texture = buildGridTexture();
       if (!texture) {
         if (gridTextureRef.current) {
@@ -986,7 +1033,7 @@ const OrthoGlobe: React.FC<Props> = ({
     buildGridTexture,
     buildVertexColorsFromGrid,
     updateMeshVisibility,
-    useLegacyRendering,
+    useGridTexture,
   ]);
 
   useEffect(() => {

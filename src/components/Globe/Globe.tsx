@@ -355,6 +355,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       date: selectedDate,
       level: selectedLevel ?? null,
       maskZeroValues: shouldHideZero,
+      smoothGridBoxValues: rasterBlurEnabled,
       colorbarRange,
       prefetchedData: prefetchedRasters,
     });

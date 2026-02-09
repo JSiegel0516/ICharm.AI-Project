@@ -400,6 +400,7 @@ def _generate_textures(
     min_value: Optional[float],
     max_value: Optional[float],
     color_map_name: Optional[str],
+    smooth_gridboxes: bool = True,
     css_colors: Optional[List[str]] = None,
 ) -> Tuple[List[Dict[str, Any]], float]:
     """
@@ -433,9 +434,21 @@ def _generate_textures(
     # Optional upsampling for smoother visualization
     upscale_factor = 2
     if upscale_factor > 1:
-        upsampled = zoom(data, zoom=upscale_factor, order=1)
-        mask_upscaled = zoom(mask.astype(np.float32), zoom=upscale_factor, order=1)
-        mask_result = mask_upscaled > 0.5
+        if smooth_gridboxes:
+            upsampled = zoom(data, zoom=upscale_factor, order=1)
+            mask_upscaled = zoom(mask.astype(np.float32), zoom=upscale_factor, order=1)
+            mask_result = mask_upscaled > 0.5
+        else:
+            upsampled = np.repeat(
+                np.repeat(data, upscale_factor, axis=0),
+                upscale_factor,
+                axis=1,
+            )
+            mask_result = np.repeat(
+                np.repeat(mask.astype(np.uint8), upscale_factor, axis=0),
+                upscale_factor,
+                axis=1,
+            ).astype(bool)
     else:
         upsampled = data
         mask_result = mask
@@ -701,6 +714,7 @@ def serialize_raster_array(
     css_colors: Optional[List[str]] = None,
     value_min_override: Optional[float] = None,
     value_max_override: Optional[float] = None,
+    smooth_gridboxes: bool = True,
 ) -> Dict[str, Any]:
     """
     Serialize raster array with custom min/max overrides (zero-centered overrides already handled upstream).
@@ -816,6 +830,7 @@ def serialize_raster_array(
         meta_min if meta_min is not None else data_min,  # Use overridden min
         meta_max if meta_max is not None else data_max,  # Use overridden max
         _stringify_palette_name(row.get("colorMap")),
+        smooth_gridboxes=smooth_gridboxes,
         css_colors=css_colors,
     )
 

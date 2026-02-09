@@ -300,6 +300,7 @@ export default function HomePage() {
     colorbarRange: ReturnType<typeof resolveEffectiveColorbarRange>;
     level: number | null;
     hideZero: boolean;
+    smoothGridBoxValues: boolean;
     keyDatasetId: string;
   } | null>(null);
 
@@ -720,6 +721,7 @@ export default function HomePage() {
           level: config.level ?? undefined,
           cssColors: config.cssColors,
           maskZeroValues: config.hideZero,
+          smoothGridBoxValues: config.smoothGridBoxValues,
           colorbarRange: config.colorbarRange,
           signal: controller.signal,
         });
@@ -741,6 +743,7 @@ export default function HomePage() {
           level: config.level ?? undefined,
           cssColors: config.cssColors,
           maskZeroValues: config.hideZero,
+          smoothGridBoxValues: config.smoothGridBoxValues,
           colorbarRange: config.colorbarRange,
         });
 
@@ -853,6 +856,7 @@ export default function HomePage() {
       colorbarRange: colorRangeForRequests,
       level: selectedLevelValue ?? null,
       hideZero: globeSettings.hideZeroPrecipitation,
+      smoothGridBoxValues: globeSettings.rasterBlurEnabled,
       keyDatasetId,
     };
     visualizationPrefetchIndexRef.current = 0;
@@ -869,6 +873,7 @@ export default function HomePage() {
     datasetEndDate,
     datasetStartDate,
     globeSettings.hideZeroPrecipitation,
+    globeSettings.rasterBlurEnabled,
     runVisualizationPrefetch,
     selectedLevelValue,
     visualizationEnd,
@@ -1214,6 +1219,7 @@ export default function HomePage() {
     date: selectedDate,
     level: selectedLevelValue ?? null,
     maskZeroValues: globeSettings.hideZeroPrecipitation,
+    smoothGridBoxValues: globeSettings.rasterBlurEnabled,
     colorbarRange,
     prefetchedData: prefetchedRasters,
   });
