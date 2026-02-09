@@ -5,9 +5,9 @@ NOW WITH RASTER VISUALIZATION SUPPORT
 """
 
 import orjson
-from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi import FastAPI, APIRouter, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, RedirectResponse
 from typing import Optional, Any, Literal
 from datetime import datetime
 import pandas as pd
@@ -173,10 +173,43 @@ async def raster_grid(request: RasterRequest):
     return await VisualizeRaster.visualize_raster_grid(request)
 
 
-@router.get(path="/datasets")
-async def get_datasets():
-    data = await DatabaseQueries.get_all_metadata()
+@router.get(path="/datasets", response_class=CustomJSONResponse)
+async def get_datasets(
+    stored: Optional[Literal["local", "cloud", "all"]] = "all",
+    source: Optional[str] = None,
+    search: Optional[str] = None,
+):
+    logger.info("Using /datasets")
+    data = await DatabaseQueries.get_all_metadata(
+        stored=stored,
+        source=source,
+        search=search,
+    )
     return data
+
+
+@router.get(
+    path="/timeseries/datasets", response_class=CustomJSONResponse, deprecated=True
+)
+async def list_available_datasets(
+    request: Request,
+    stored: Optional[Literal["local", "cloud", "all"]] = "all",
+    source: Optional[str] = None,
+    search: Optional[str] = None,
+):
+    """
+    List all available datasets with filtering options
+    """
+    # Rebuild query string
+    logger.info("Using deprecated dataset gathering")
+    params = request.query_params
+    url = request.url_for("get_datasets")
+
+    if params:
+        url = f"{url}?{params}"
+
+    # Redirect response to new method
+    return RedirectResponse(url=url, status_code=307)
 
 
 @router.get(path="/timestamps")
@@ -217,26 +250,6 @@ async def get_timeseries_data(request: TimeseriesDataRequest):
     data = await DatabaseQueries.get_timeseries_data(request)
     payload = orjson.dumps(data)
     return Response(content=payload, media_type="application/json")
-
-
-@router.get("/timeseries/datasets", response_class=CustomJSONResponse)
-async def list_available_datasets(
-    stored: Optional[Literal["local", "cloud", "all"]] = "all",
-    source: Optional[str] = None,
-    search: Optional[str] = None,
-):
-    """
-    List all available datasets with filtering options
-    """
-    try:
-        datasets = DatabaseQueries.get_datasets(stored, source, search)
-
-    except Exception as e:
-        logger.error(f"Error listing datasets: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to list datasets: {str(e)}"
-        )
-    return datasets
 
 
 @router.get("/health")

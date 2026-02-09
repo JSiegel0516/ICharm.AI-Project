@@ -3,12 +3,14 @@ import os
 import subprocess
 from pathlib import Path
 
+from tqdm import tqdm
+
 logger = logging.getLogger(__name__)
 
 
 class Downloaders:
     @staticmethod
-    def wget_download(
+    def wget_download_files(
         urls: list[str], dest: str | Path, *, quiet: bool = False
     ) -> None:
         """
@@ -21,8 +23,8 @@ class Downloaders:
 
         is_debug = os.getenv("IS_DEBUG", "FALSE").upper() == "TRUE"
 
-        for idx, u in enumerate(urls):
-            logger.info(f"Downloading {u} -> {dest_path}")
+        for idx, u in tqdm(enumerate(urls)):
+            # logger.info(f"Downloading {u} -> {dest_path}")
             cmd = ["wget", "-c", "-P", str(dest_path), u]
             if quiet:
                 cmd.insert(1, "-q")
@@ -31,6 +33,46 @@ class Downloaders:
             if is_debug and idx > 4:  # If Debug, don't download everything!
                 logger.info("IS_DEBUG = TRUE, download breaking early")
                 break
+
+    @staticmethod
+    def wget_download_file(
+        url: str,
+        output_file: str | Path,
+        *,
+        quiet: bool = False,
+        resume: bool = True,
+        overwrite: bool = True,
+    ) -> Path:
+        """
+        Download a single URL to an exact output filename.
+
+        Notes:
+        - Uses `-O` to force the output filename.
+        - Uses `-c` if `resume=True` (continue partial downloads).
+        - If `overwrite=False` and the file exists, it will skip downloading.
+        """
+        out_path = Path(output_file)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if out_path.exists() and not overwrite:
+            logger.info(f"File exists, skipping download: {out_path}")
+            return out_path
+
+        logger.info(f"Downloading {url} -> {out_path}")
+
+        cmd: list[str] = ["wget"]
+
+        if quiet:
+            cmd.append("-q")
+
+        if resume:
+            cmd.append("-c")
+
+        # Force output filename
+        cmd += ["-O", str(out_path), url]
+
+        subprocess.run(cmd, check=True)
+        return out_path
 
     @staticmethod
     def s3_download(url: str, dest: str):

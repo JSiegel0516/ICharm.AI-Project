@@ -765,13 +765,13 @@ export function useTimeSeries(baseURL: string = ""): UseTimeSeriesAPI {
 
               // Get display unit (converted unit)
               const displayUnit = (meta as any).displayUnit || meta.units;
-              
+
               // Build header with dataset name and unit
               let header = meta.name || meta.slug || datasetId;
-              
+
               // Add unit in parentheses
               header = `${header} (${displayUnit})`;
-              
+
               return header;
             }),
           ];
@@ -785,7 +785,7 @@ export function useTimeSeries(baseURL: string = ""): UseTimeSeriesAPI {
               ...datasetIds.map((datasetId) => {
                 const value = point[datasetId];
                 if (value == null) return "";
-                
+
                 // Format the value appropriately
                 if (Math.abs(value) < 0.01) {
                   return value.toFixed(4);
@@ -801,7 +801,11 @@ export function useTimeSeries(baseURL: string = ""): UseTimeSeriesAPI {
           // Helper function to escape CSV values
           const escapeCSV = (value: string) => {
             // If value contains comma, quote, or newline, wrap in quotes and escape quotes
-            if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+            if (
+              value.includes(",") ||
+              value.includes('"') ||
+              value.includes("\n")
+            ) {
               return `"${value.replace(/"/g, '""')}"`;
             }
             return value;
@@ -898,7 +902,6 @@ export function useTimeSeries(baseURL: string = ""): UseTimeSeriesAPI {
       }
     },
     [data, rawData, metadata, statistics, processingInfo],
-  
   );
 
   // Cancel pending request

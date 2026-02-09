@@ -398,8 +398,9 @@ class NetCDFtoDbYearlyFiles(NetCDFtoDbBase):
             cadence = infer_cadence(files)
 
             if cadence.cadence == "single_file":
-                self.process_year()
-            if cadence.cadence == "year":
+                self.logger.info("Single file cadence discovered")
+                self.process_single_file(cur, all_dates)
+            elif cadence.cadence == "year":
                 self.logger.info("Yearly cadence discovered")
                 self.process_year(cur, all_dates)
             elif cadence.cadence == "year_month":
@@ -412,6 +413,72 @@ class NetCDFtoDbYearlyFiles(NetCDFtoDbBase):
                 raise ValueError(f"Unknown cadence: {cadence.cadence}")
         return
 
+    def process_single_file(self, cur, all_dates):
+        single_files = sorted(self.folder_path.rglob("*.nc"))
+
+        self.logger.info("Processing single NetCDF File:")
+        single_file = single_files[0]
+        fill_value = None
+
+        with Dataset(single_file, "r") as nc:
+            # Identify all the month-day-etc that match each year
+            # Get the specific date we want to process
+            time_variable = nc.variables[self.time_variable_name]
+            times_dt = num2date(
+                times=time_variable[:],
+                units=time_variable.units,
+                calendar=getattr(time_variable, "calendar", "standard"),
+            )
+
+            for db_time_value, db_time_index in tqdm(all_dates.items()):
+                data_slices = []
+                # Identify all the year related to this time value in the dataset
+                for year in self.levels:
+                    for time_idx, time_dt in enumerate(times_dt):
+                        iso_formatted_time = time_dt.isoformat()
+                        # Grab the year and time
+                        year_from_iso_formatted_time = iso_formatted_time[:4]
+                        iso_formatted_time = iso_formatted_time[5:]
+                        if (
+                            year_from_iso_formatted_time == year
+                            and iso_formatted_time == db_time_value
+                        ):
+                            found_timestamp = True
+                            break
+
+                    if found_timestamp:
+                        # Get the specific variables at given date
+                        data = nc[self.variable_of_interest_name][time_idx]
+
+                        full_dims = ["year"] + list(
+                            nc[self.variable_of_interest_name].dimensions
+                        )
+                        spatial_dims = [
+                            d for d in full_dims if d != self.time_variable_name
+                        ]
+
+                        if hasattr(data, "_FillValue"):
+                            fill_value = float(data._FillValue)
+                        elif hasattr(data, "missing_value"):
+                            fill_value = float(data.missing_value)
+                    else:
+                        data = numpy.full(
+                            (len(self.latitudes), len(self.longitudes)), numpy.nan
+                        )
+                    data_slices.append(data)
+
+                # Stack into (n_years_for_this_md, n_lat, n_lon)
+                data_year_lat_lon = numpy.stack(data_slices, axis=0)
+
+                self._process_multi_level_gridbox_data(
+                    data=data_year_lat_lon,
+                    dim_names=spatial_dims,
+                    fill_value=fill_value,
+                    time_id=db_time_index,
+                    cur=cur,
+                )
+        return
+
     def process_year(self, cur, all_dates):
         yearly_files = sorted(self.folder_path.rglob("*.nc"))
         total_files = len(yearly_files)
@@ -420,7 +487,7 @@ class NetCDFtoDbYearlyFiles(NetCDFtoDbBase):
 
         for db_time_value, db_time_index in tqdm(all_dates.items()):
             data_slices = []
-            for file_idx, yearly_file in enumerate(tqdm(yearly_files)):
+            for file_idx, yearly_file in enumerate(yearly_files):
                 fill_value = None
                 with Dataset(yearly_file, "r") as nc:
                     # Get all dates in the current file (there can be more than 1)

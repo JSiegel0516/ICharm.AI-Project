@@ -193,21 +193,35 @@ class NetCDFtoDbSimple(NetCDFtoDbBase):
             ###############################
             # Function used by the front-end to get list of all valid dates
             cur.execute("DROP FUNCTION IF EXISTS get_levels();")
-            get_levels_sql = """
-                CREATE FUNCTION get_levels()
-                RETURNS TABLE (
-                    level_id  INT
-                    , name VARCHAR(255)
-                )
-                LANGUAGE sql
-                AS $$
+            if len(self.levels.keys()) == 0:
+                get_levels_sql = f"""
+                    CREATE FUNCTION get_levels()
+                        RETURNS TABLE (
+                            level_id INT,
+                            name     VARCHAR(255)
+                        )
+                        LANGUAGE sql AS $$
                     SELECT
-                        level_id
-                        , "name"
-                    FROM level
-                    ORDER BY level_id ASC
-                $$;
-            """
+                            0 AS level_id
+                            , '{self.variable_of_interest_name}' AS "name"
+                         $$;
+                     """
+            else:
+                get_levels_sql = """
+                    CREATE FUNCTION get_levels()
+                    RETURNS TABLE (
+                        level_id  INT
+                        , name VARCHAR(255)
+                    )
+                    LANGUAGE sql
+                    AS $$
+                        SELECT
+                            level_id
+                            , "name"
+                        FROM level
+                        ORDER BY level_id ASC
+                    $$;
+                """
             cur.execute(get_levels_sql)
 
             ###############################
@@ -253,7 +267,7 @@ class NetCDFtoDbSimple(NetCDFtoDbBase):
             """)
             get_gridbox_data_sql = """
                 CREATE FUNCTION get_gridbox_data(
-                    in_timestaamp_id    INTEGER
+                    in_timestamp_id    INTEGER
                     , in_level_id INTEGER
                 )
                 RETURNS TABLE (
@@ -268,6 +282,8 @@ class NetCDFtoDbSimple(NetCDFtoDbBase):
                         gd.gridbox_id
                         , lat.lat
                         , lon.lon
+                        -- TODO: Change this to the same trick we did in "by_year" to not use tq_jsonb.
+                        --       It should speed up processing.
                         , (to_jsonb(gd) ->> ('value_' || in_level_id))::double precision AS value
                     FROM grid_data gd
                     JOIN gridbox gb ON
@@ -306,6 +322,8 @@ class NetCDFtoDbSimple(NetCDFtoDbBase):
                 AS $$
                     SELECT
                         timestamp_val
+                        -- TODO: Change this to the same trick we did in "by_year" to not use tq_jsonb.
+                        --       It should speed up processing.
                         -- Convert the row to a json to grab the column name dynamically
                         , (to_jsonb(gd) ->> ('value_' || in_level_id))::double precision AS value
                     FROM timestamp_dim AS d

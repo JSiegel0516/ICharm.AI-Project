@@ -4,7 +4,6 @@ import pandas
 import logging
 import xarray as xr
 from pathlib import Path
-import requests
 import shutil
 from typing import Any, Dict
 
@@ -40,15 +39,20 @@ class DownloadAndProcess:
         """
         # Read the CSV
         df = pandas.read_csv(metadata_file)
+        df = df.where(pandas.notna(df), None)
+        df = df.astype("object").where(pandas.notna(df), None)
 
         for _, row in df.iterrows():
             dataset_details = row.to_dict()
+
+            # Levels can sometimes come out as float.nan change it to None
+            dataset_details.get("levelVariable")
 
             to_process = bool(dataset_details.get("toProcess", False))
             if not to_process:
                 continue
 
-            storage_type = dataset_details.get("StorageType").lower()
+            storage_type = dataset_details.get("storageType").lower()
             # Find out how we want to process the dataset
 
             if storage_type == "local_zarr":
@@ -87,9 +91,14 @@ class DownloadAndProcess:
                     encoding.pop(key, None)
         return ds
 
-    def _open_dataset(self, path: Path, decode_times: bool) -> xr.Dataset:
+    def _open_dataset(
+        self,
+        path: Path,
+        decode_times: bool,
+        engine: str = "h5netcdf",
+    ) -> xr.Dataset:
         open_kwargs: Dict[str, Any] = {
-            "engine": "h5netcdf",
+            "engine": engine,
             "decode_times": decode_times,
         }
         if decode_times:
@@ -100,10 +109,11 @@ class DownloadAndProcess:
                 self.logger.info("cftime is not installed; continuing without it.")
             else:
                 open_kwargs["use_cftime"] = True
-        return xr.open_dataset(path, **open_kwargs)
+        result = xr.open_dataset(path, **open_kwargs)
+        return result
 
     def _process_zarr(self, row):
-        if row["Stored"] != "local":
+        if row["stored"] != "local":
             self.logger.info("Incorrect Storage Type")
             return
 
@@ -127,39 +137,32 @@ class DownloadAndProcess:
         # Download NetCDF file to temporary location
         temp_nc_file = local_zarr_path.with_suffix(".nc")
         self.logger.info(f"Downloading to temporary file: {temp_nc_file}")
-
-        try:
-            with requests.get(source_url, stream=True, timeout=60) as r:
-                r.raise_for_status()
-                with open(temp_nc_file, "wb") as f:
-                    shutil.copyfileobj(r.raw, f)
-        except Exception as e:
-            self.logger.info(f"Failed to download {source_url}: {e}")
-            return
+        Downloaders.wget_download_file(url=source_url, output_file=temp_nc_file)
 
         # Open NetCDF and convert to consolidated Zarr
         self.logger.info("Opening NetCDF and converting to Zarr...")
-        try:
-            with self._open_dataset(temp_nc_file, decode_times=True) as ds:
-                self._prepare_for_zarr(ds)
-                ds.to_zarr(local_zarr_path, mode="w", consolidated=True)
-            self.logger.info(f"Zarr store created: {local_zarr_path}")
-        except Exception as e:
-            self.logger.info(f"Failed to convert {temp_nc_file} to Zarr: {e}")
-            # Fallback: try decode_times=False
+
+        # Need to try a bunch of different combinations to decode the file (order matters)
+        successfully_decoded = False
+        engines = ["h5netcdf", "netcdf4", "h5netcdf", "netcdf4"]
+        decode_times = [True, True, False, False]
+        for engine, decode_time in zip(engines, decode_times):
+            if successfully_decoded:
+                break
             try:
-                with self._open_dataset(temp_nc_file, decode_times=False) as ds:
+                with self._open_dataset(
+                    temp_nc_file, engine=engine, decode_times=decode_time
+                ) as ds:
                     self._prepare_for_zarr(ds)
                     ds.to_zarr(local_zarr_path, mode="w", consolidated=True)
                 self.logger.info(
-                    f"Zarr store created with decode_times=False: {local_zarr_path}"
+                    f"Zarr store created with engine={engine} decode_times={decode_time}: {local_zarr_path}"
                 )
-            except Exception as e2:
-                self.logger.info(f"Failed again: {e2}")
-                return
-        finally:
-            if temp_nc_file.exists():
-                temp_nc_file.unlink()  # remove temporary NetCDF
+                successfully_decoded = True
+            except Exception as e:
+                self.logger.info(f"Failed to convert {temp_nc_file} to Zarr: {e}")
+                if local_zarr_path.exists():
+                    shutil.rmtree(local_zarr_path)
         return
 
     def _process_netcdf_to_db(
@@ -190,10 +193,12 @@ class DownloadAndProcess:
             if len(urls) > 0:
                 # Download the dataset
                 self.logger.info(f"Downloading all FTP files: {len(urls)} files")
-                Downloaders.wget_download(urls, dataset_download_location, quiet=True)
+                Downloaders.wget_download_files(
+                    urls, dataset_download_location, quiet=True
+                )
 
         # Insert into DB
-        postgres_processor = dataset_details.get("PostgresProcessor", "simple")
+        postgres_processor = dataset_details.get("postgresProcessor", "simple")
         if postgres_processor == "simple":
             netcdf_to_db = NetCDFtoDbSimple(
                 folder_root=dataset_download_location,

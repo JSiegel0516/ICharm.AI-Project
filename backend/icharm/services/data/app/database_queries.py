@@ -57,22 +57,55 @@ class DatabaseQueries:
         return db_engine
 
     @staticmethod
-    async def get_all_metadata() -> list[Metadata]:
+    async def get_all_metadata(
+        stored: Optional[Literal["local", "cloud", "all"]] = "all",
+        source: Optional[str] = None,
+        search: Optional[str] = None,
+    ) -> dict[str, Any]:
         """Fetch metadata from database for specified dataset IDs (UUIDs)"""
         try:
             with engine.connect() as conn:
+                query = """
+                    SELECT
+                            *
+                        FROM metadata
+                        WHERE 1 = 1
+                """
+                parameters = {}
+                if stored != "all" and stored is not None:
+                    query += "AND LOWER(stored) = :stored\n"
+                    parameters["stored"] = stored.lower()
+
+                if source:
+                    query += "AND LOWER(sourceName) ILIKE :source\n"
+                    parameters["source"] = source.lower()
+
+                if search:
+                    query += """AND (
+                        LOWER(datasetName) ILIKE :search" OR
+                        LOWER(layerParameter) ILIKE :search" OR
+                        LOWER(slug) ILIKE :search"
+                        )
+                    """
+                    parameters["search"] = f"%{search.lower()}%"
+
+                # Add ORDER BY to the query
+                query += "ORDER BY datasetName ASC"
+
                 # Query by UUID id column instead of datasetName
                 results = conn.execute(
-                    statement=text("""
-                        SELECT * FROM metadata
-                    """),
+                    statement=text(query),
+                    parameters=parameters,
                 ).fetchall()
                 metadata = [Metadata(**r._mapping) for r in results]
 
-                if not metadata:
-                    raise HTTPException(status_code=404, detail="No Datasets found")
+                if metadata is None:
+                    raise Exception("Query failed")
+                elif len(metadata) == 0:
+                    return {"total": 0, "datasets": []}
+                else:
+                    return {"total": len(metadata), "datasets": metadata}
 
-                return metadata
         except Exception as e:
             logger.error(f"Database query failed: {e}")
             raise HTTPException(
