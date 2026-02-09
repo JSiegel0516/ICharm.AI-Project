@@ -233,7 +233,7 @@ export function GlobeSettingsPanel({
                 )}
 
                 {/* Place Names Toggle */}
-                {baseMapMode !== "street" && viewMode !== "ortho" && (
+                {baseMapMode !== "street" && (
                   <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
                     <div className="space-y-0.5">
                       <Label

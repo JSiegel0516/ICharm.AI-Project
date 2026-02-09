@@ -433,6 +433,20 @@ export default function HomePage() {
   });
   const lastSatelliteLabelsVisibleRef = useRef(true);
 
+  const lastViewModeRef = useRef<GlobeViewMode | null>(null);
+
+  useEffect(() => {
+    const lastMode = lastViewModeRef.current;
+    lastViewModeRef.current = globeSettings.viewMode ?? "3d";
+    if (
+      globeSettings.viewMode === "ortho" &&
+      lastMode !== "ortho" &&
+      globeSettings.labelsVisible
+    ) {
+      setGlobeSettings((prev) => ({ ...prev, labelsVisible: false }));
+    }
+  }, [globeSettings.viewMode, globeSettings.labelsVisible]);
+
   const colorbarRange = useMemo(
     () => ({
       enabled:

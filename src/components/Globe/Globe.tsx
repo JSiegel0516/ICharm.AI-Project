@@ -12,7 +12,6 @@ import type { Dataset, RegionData, GlobeProps, GlobeRef } from "@/types";
 import { useRasterLayer } from "@/hooks/useRasterLayer";
 import { useRasterGrid, RasterGridData } from "@/hooks/useRasterGrid";
 import { buildRasterMesh } from "@/lib/mesh/rasterMesh";
-import { buildColorStops, mapValueToRgba } from "@/lib/mesh/colorMapping";
 import {
   fetchOpenLayersTile,
   type LabelFeature,
@@ -469,28 +468,18 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
       if (smoothGridBoxValues) {
         setMeshRasterActive(true);
-        const layers = rasterLayerRef.current;
-        if (layers.length) {
-          layers.forEach((layer) => {
-            layer.show = false;
-            layer.alpha = 0;
-          });
-          if (viewerRef.current.scene.globe.material) {
-            viewerRef.current.scene.globe.material = undefined;
-          }
-          viewerRef.current.scene.requestRender();
-        }
-        return;
       }
 
       const viewer = viewerRef.current;
       const height = viewer.camera.positionCartographic.height;
       const usingMesh = useMeshRasterActiveRef.current;
 
-      if (usingMesh && height < MESH_TO_IMAGERY_HEIGHT) {
-        setMeshRasterActive(false);
-      } else if (!usingMesh && height > IMAGERY_TO_MESH_HEIGHT) {
-        setMeshRasterActive(true);
+      if (!smoothGridBoxValues) {
+        if (usingMesh && height < MESH_TO_IMAGERY_HEIGHT) {
+          setMeshRasterActive(false);
+        } else if (!usingMesh && height > IMAGERY_TO_MESH_HEIGHT) {
+          setMeshRasterActive(true);
+        }
       }
 
       // Keep imagery in sync with zoom even if mesh state lags.
@@ -2127,95 +2116,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       [],
     );
 
-    const buildCesiumGridTexture = useCallback(
-      (grid: RasterGridData) => {
-        if (!currentDataset?.colorScale?.colors?.length) {
-          return null;
-        }
-        const rows = grid.lat.length;
-        const cols = grid.lon.length;
-        if (!rows || !cols || grid.values.length < rows * cols) {
-          return null;
-        }
-
-        const min = grid.min ?? 0;
-        const max = grid.max ?? 1;
-        const stops = buildColorStops(currentDataset.colorScale.colors);
-
-        const canvas = document.createElement("canvas");
-        canvas.width = cols;
-        canvas.height = rows;
-        const context = canvas.getContext("2d");
-        if (!context) return null;
-        context.imageSmoothingEnabled = smoothGridBoxValues;
-        const imageData = context.createImageData(cols, rows);
-        const latAscending = grid.lat[0] < grid.lat[rows - 1];
-        const values = grid.values;
-        const mask = grid.mask;
-
-        for (let row = 0; row < rows; row += 1) {
-          const srcRow = latAscending ? rows - 1 - row : row;
-          for (let col = 0; col < cols; col += 1) {
-            const srcIdx = srcRow * cols + col;
-            const destIdx = (row * cols + col) * 4;
-            if (mask && mask[srcIdx] === 0) {
-              imageData.data[destIdx + 3] = 0;
-              continue;
-            }
-            const value = values[srcIdx];
-            if (shouldHideZero && value === 0) {
-              imageData.data[destIdx + 3] = 0;
-              continue;
-            }
-            const rgba =
-              value == null || Number.isNaN(value)
-                ? [0, 0, 0, 0]
-                : mapValueToRgba(value, min, max, stops);
-            imageData.data[destIdx] = Math.min(
-              255,
-              Math.round(rgba[0] * VERTEX_COLOR_GAIN),
-            );
-            imageData.data[destIdx + 1] = Math.min(
-              255,
-              Math.round(rgba[1] * VERTEX_COLOR_GAIN),
-            );
-            imageData.data[destIdx + 2] = Math.min(
-              255,
-              Math.round(rgba[2] * VERTEX_COLOR_GAIN),
-            );
-            imageData.data[destIdx + 3] = rgba[3];
-          }
-        }
-
-        context.putImageData(imageData, 0, 0);
-        const imageUrl = canvas.toDataURL("image/png");
-
-        let latMin = Number.POSITIVE_INFINITY;
-        let latMax = Number.NEGATIVE_INFINITY;
-        for (const value of grid.lat) {
-          if (value < latMin) latMin = value;
-          if (value > latMax) latMax = value;
-        }
-        let lonMin = Number.POSITIVE_INFINITY;
-        let lonMax = Number.NEGATIVE_INFINITY;
-        for (const value of grid.lon) {
-          if (value < lonMin) lonMin = value;
-          if (value > lonMax) lonMax = value;
-        }
-
-        return {
-          imageUrl,
-          rectangle: {
-            west: lonMin,
-            south: latMin,
-            east: lonMax,
-            north: latMax,
-          },
-        };
-      },
-      [currentDataset?.colorScale?.colors, smoothGridBoxValues, shouldHideZero],
-    );
-
     const applyMeshColorGain = useCallback(
       (mesh?: ReturnType<typeof buildRasterMesh>) => {
         if (!mesh) return mesh;
@@ -2247,182 +2147,202 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       [],
     );
 
-    const applyRasterLayers = useCallback(() => {
-      const viewer = viewerRef.current;
-      if (!viewer || !cesiumInstance) {
-        return;
-      }
-
-      const previousLayers = [...rasterLayerRef.current];
-
-      if (viewMode === "ortho") {
-        rasterLayerRef.current = [];
-        setIsRasterImageryLoading(false);
-        if (previousLayers.length) {
-          previousLayers.forEach((layer) => {
-            try {
-              viewer.scene.imageryLayers.remove(layer, true);
-            } catch (err) {
-              console.warn(
-                "Failed to remove raster layer while in ortho view",
-                err,
-              );
-            }
-          });
+    const applyRasterLayers = useCallback(
+      (layerData?: RasterLayerData) => {
+        const viewer = viewerRef.current;
+        if (!viewer || !cesiumInstance) {
+          return;
         }
-        viewer.scene.requestRender();
-        return;
-      }
 
-      if (smoothGridBoxValues) {
-        rasterLayerRef.current = [];
-        setIsRasterImageryLoading(false);
-        if (previousLayers.length) {
-          previousLayers.forEach((layer) => {
-            try {
-              viewer.scene.imageryLayers.remove(layer, true);
-            } catch (err) {
-              console.warn(
-                "Failed to remove raster layer while smoothing",
-                err,
-              );
-            }
-          });
-        }
-        viewer.scene.requestRender();
-        return;
-      }
-      const startAlpha =
-        previousLayers[0]?.alpha !== undefined
-          ? previousLayers[0].alpha
-          : rasterOpacity;
+        const previousLayers = [...rasterLayerRef.current];
 
-      const grid = rasterGridState.data;
-      const hasMatchingGrid =
-        grid && rasterGridState.dataKey === rasterGridState.requestKey;
-      const gridTexture = hasMatchingGrid ? buildCesiumGridTexture(grid) : null;
-
-      if (!gridTexture) {
-        rasterLayerRef.current = [];
-        // FIXED: Clear loading state when no data
-        setIsRasterImageryLoading(false);
-        if (previousLayers.length) {
-          animateLayerAlpha(previousLayers, startAlpha, 0, 200, () => {
+        if (viewMode === "ortho") {
+          rasterLayerRef.current = [];
+          setIsRasterImageryLoading(false);
+          if (previousLayers.length) {
             previousLayers.forEach((layer) => {
               try {
                 viewer.scene.imageryLayers.remove(layer, true);
               } catch (err) {
                 console.warn(
-                  "Failed to remove raster layer during fade-out",
+                  "Failed to remove raster layer while in ortho view",
                   err,
                 );
               }
             });
-            viewer.scene.requestRender();
-          });
-        } else {
+          }
           viewer.scene.requestRender();
+          return;
         }
-        return;
-      }
 
-      const loadId = textureLoadIdRef.current + 1;
-      textureLoadIdRef.current = loadId;
-      setIsRasterImageryLoading(true);
+        const startAlpha =
+          previousLayers[0]?.alpha !== undefined
+            ? previousLayers[0].alpha
+            : rasterOpacity;
 
-      // OPTIMIZED: Skip texture preloading for faster rendering
-      setTimeout(() => {
         if (
-          textureLoadIdRef.current === loadId &&
-          !isComponentUnmountedRef.current
+          !layerData ||
+          !layerData.textures ||
+          layerData.textures.length === 0
         ) {
+          rasterLayerRef.current = [];
+          // FIXED: Clear loading state when no data
+          setIsRasterImageryLoading(false);
+          if (previousLayers.length) {
+            animateLayerAlpha(previousLayers, startAlpha, 0, 200, () => {
+              previousLayers.forEach((layer) => {
+                try {
+                  viewer.scene.imageryLayers.remove(layer, true);
+                } catch (err) {
+                  console.warn(
+                    "Failed to remove raster layer during fade-out",
+                    err,
+                  );
+                }
+              });
+              viewer.scene.requestRender();
+            });
+          } else {
+            viewer.scene.requestRender();
+          }
+          return;
+        }
+
+        const validTextures = layerData.textures.filter((texture) => {
+          if (!texture || typeof texture.imageUrl !== "string") {
+            return false;
+          }
+          const trimmed = texture.imageUrl.trim();
+          if (!trimmed) {
+            return false;
+          }
+          const rect = texture.rectangle;
+          if (!rect) {
+            return false;
+          }
+          return (
+            Number.isFinite(rect.west) &&
+            Number.isFinite(rect.south) &&
+            Number.isFinite(rect.east) &&
+            Number.isFinite(rect.north)
+          );
+        });
+
+        if (validTextures.length === 0) {
+          console.warn(
+            "Raster layer textures missing imageUrl/rectangle; skipping imagery layer.",
+            layerData.textures,
+          );
+          rasterLayerRef.current = [];
+          // FIXED: Clear loading state when invalid textures
+          setIsRasterImageryLoading(false);
+          if (previousLayers.length) {
+            animateLayerAlpha(previousLayers, startAlpha, 0, 200, () => {
+              previousLayers.forEach((layer) => {
+                try {
+                  viewer.scene.imageryLayers.remove(layer, true);
+                } catch (err) {
+                  console.warn(
+                    "Failed to remove raster layer during fade-out",
+                    err,
+                  );
+                }
+              });
+              viewer.scene.requestRender();
+            });
+          } else {
+            viewer.scene.requestRender();
+          }
+          return;
+        }
+
+        const loadId = textureLoadIdRef.current + 1;
+        textureLoadIdRef.current = loadId;
+        setIsRasterImageryLoading(true);
+
+        // OPTIMIZED: Skip texture preloading for faster rendering
+        setTimeout(() => {
+          if (
+            textureLoadIdRef.current === loadId &&
+            !isComponentUnmountedRef.current
+          ) {
+            setIsRasterImageryLoading(false);
+          }
+        }, 100);
+
+        const newLayers: any[] = [];
+        const height = viewer.camera?.positionCartographic?.height;
+        const shouldPreload =
+          Number.isFinite(height) && height < IMAGERY_PRELOAD_HEIGHT;
+        const visible = true;
+
+        validTextures.forEach((texture, index) => {
+          try {
+            const provider = new cesiumInstance.SingleTileImageryProvider({
+              url: texture.imageUrl,
+              rectangle: cesiumInstance.Rectangle.fromDegrees(
+                texture.rectangle.west,
+                texture.rectangle.south,
+                texture.rectangle.east,
+                texture.rectangle.north,
+              ),
+            });
+
+            const layer =
+              viewer.scene.imageryLayers.addImageryProvider(provider);
+            layer.alpha = 0;
+            layer.brightness = 1.0;
+            layer.contrast = 1.0;
+            layer.hue = 0.0;
+            layer.saturation = 1.0;
+            layer.gamma = 1.0;
+
+            layer.minificationFilter =
+              cesiumInstance.TextureMinificationFilter.LINEAR;
+            layer.magnificationFilter =
+              cesiumInstance.TextureMagnificationFilter.LINEAR;
+
+            viewer.scene.imageryLayers.raiseToTop(layer);
+            newLayers.push(layer);
+          } catch (err) {
+            console.error(`Failed to add texture ${index}:`, err);
+          }
+        });
+
+        rasterLayerRef.current = newLayers;
+        const fadeDuration = 100; // Reduced from 220ms
+
+        const targetOpacity = visible ? rasterOpacity : 0;
+        const shouldShow = visible || shouldPreload;
+
+        // OPTIMIZED: Direct assignment for faster rendering
+        newLayers.forEach((layer) => {
+          layer.alpha = targetOpacity;
+          layer.show = shouldShow;
+        });
+
+        // OPTIMIZED: Quick cleanup of previous layers
+        if (previousLayers.length) {
+          setTimeout(() => {
+            previousLayers.forEach((layer) => {
+              try {
+                viewer.scene.imageryLayers.remove(layer, true);
+              } catch (err) {
+                console.warn("Failed to remove raster layer", err);
+              }
+            });
+          }, 50);
+        }
+
+        // FIXED: Ensure loading state is cleared
+        if (loadId === textureLoadIdRef.current) {
           setIsRasterImageryLoading(false);
         }
-      }, 100);
 
-      const newLayers: any[] = [];
-      const height = viewer.camera?.positionCartographic?.height;
-      const shouldPreload =
-        Number.isFinite(height) && height < IMAGERY_PRELOAD_HEIGHT;
-      const visible = !useMeshRasterActiveRef.current;
-
-      [gridTexture].forEach((texture, index) => {
-        try {
-          const provider = new cesiumInstance.SingleTileImageryProvider({
-            url: texture.imageUrl,
-            rectangle: cesiumInstance.Rectangle.fromDegrees(
-              texture.rectangle.west,
-              texture.rectangle.south,
-              texture.rectangle.east,
-              texture.rectangle.north,
-            ),
-          });
-
-          const layer = viewer.scene.imageryLayers.addImageryProvider(provider);
-          layer.alpha = 0;
-          layer.brightness = 1.0;
-          layer.contrast = 1.0;
-          layer.hue = 0.0;
-          layer.saturation = 1.0;
-          layer.gamma = 1.0;
-
-          layer.minificationFilter = smoothGridBoxValues
-            ? cesiumInstance.TextureMinificationFilter.LINEAR
-            : cesiumInstance.TextureMinificationFilter.NEAREST;
-          layer.magnificationFilter = smoothGridBoxValues
-            ? cesiumInstance.TextureMagnificationFilter.LINEAR
-            : cesiumInstance.TextureMagnificationFilter.NEAREST;
-
-          viewer.scene.imageryLayers.raiseToTop(layer);
-          newLayers.push(layer);
-        } catch (err) {
-          console.error(`Failed to add texture ${index}:`, err);
-        }
-      });
-
-      rasterLayerRef.current = newLayers;
-      const fadeDuration = 100; // Reduced from 220ms
-
-      const targetOpacity = visible ? rasterOpacity : 0;
-      const shouldShow = visible || shouldPreload;
-
-      // OPTIMIZED: Direct assignment for faster rendering
-      newLayers.forEach((layer) => {
-        layer.alpha = targetOpacity;
-        layer.show = shouldShow;
-      });
-
-      // OPTIMIZED: Quick cleanup of previous layers
-      if (previousLayers.length) {
-        setTimeout(() => {
-          previousLayers.forEach((layer) => {
-            try {
-              viewer.scene.imageryLayers.remove(layer, true);
-            } catch (err) {
-              console.warn("Failed to remove raster layer", err);
-            }
-          });
-        }, 50);
-      }
-
-      // FIXED: Ensure loading state is cleared
-      if (loadId === textureLoadIdRef.current) {
-        setIsRasterImageryLoading(false);
-      }
-
-      viewer.scene.requestRender();
-    }, [
-      animateLayerAlpha,
-      buildCesiumGridTexture,
-      cesiumInstance,
-      rasterGridState.data,
-      rasterGridState.dataKey,
-      rasterGridState.requestKey,
-      rasterOpacity,
-      smoothGridBoxValues,
-      viewerReady,
-      viewMode,
-    ]);
+        viewer.scene.requestRender();
+      },
+      [animateLayerAlpha, cesiumInstance, rasterOpacity, viewerReady, viewMode],
+    );
 
     const removeMeshPrimitives = useCallback(
       (viewer: any, target: any | any[] | null) => {
@@ -2969,34 +2889,26 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
 
-      const hasGrid =
-        rasterGridState.data &&
-        rasterGridState.dataKey === rasterGridState.requestKey;
-      if (!hasGrid) {
+      const textureCount = rasterState.data?.textures?.length ?? 0;
+      if (textureCount === 0) {
         viewerRef.current?.scene?.requestRender();
         return;
       }
 
-      applyRasterLayers();
+      applyRasterLayers(rasterState.data);
     }, [
       applyRasterLayers,
-      rasterGridState.data,
-      rasterGridState.dataKey,
-      rasterGridState.requestKey,
+      rasterState.data,
+      rasterState.requestKey,
       viewerReady,
     ]);
 
     useEffect(() => {
       if (!viewerReady || !viewerRef.current) return;
       const viewer = viewerRef.current;
-      const hasRasterTextures =
-        Boolean(rasterGridState.data) &&
-        rasterGridState.dataKey === rasterGridState.requestKey;
+      const hasRasterTextures = Boolean(rasterState.data?.textures?.length);
       const shouldShowImagery =
-        hasRasterTextures &&
-        !useMeshRasterActive &&
-        viewMode !== "winkel" &&
-        viewMode !== "ortho";
+        hasRasterTextures && viewMode !== "winkel" && viewMode !== "ortho";
       const rasterOverlayActive =
         viewMode !== "winkel" &&
         viewMode !== "ortho" &&
@@ -3021,9 +2933,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       }
     }, [
       viewerReady,
-      rasterGridState.data,
-      rasterGridState.dataKey,
-      rasterGridState.requestKey,
+      rasterState.data,
+      rasterState.requestKey,
       useMeshRasterActive,
       viewMode,
     ]);
@@ -3041,7 +2952,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       const layers = rasterLayerRef.current;
       if (!layers.length) return;
 
-      const visible = !useMeshRasterActive;
+      const visible = true;
       const targetOpacity = visible ? rasterOpacity : 0;
       const startOpacity =
         layers[0]?.alpha !== undefined ? layers[0].alpha : targetOpacity;
@@ -3298,6 +3209,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             satelliteLayerVisible={satelliteLayerVisible}
             boundaryLinesVisible={boundaryLinesVisible}
             geographicLinesVisible={geographicLinesVisible}
+            labelsVisible={labelsVisible}
             currentDataset={currentDataset}
             onRegionClick={onRegionClick}
             useMeshRaster={useMeshRasterEffective}
