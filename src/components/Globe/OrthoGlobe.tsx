@@ -1020,6 +1020,13 @@ const OrthoGlobe: React.FC<Props> = ({
 
   const updateMeshRasterActive = useCallback((zoom: number) => {
     if (!useMeshRasterRef.current) return;
+    if (rasterGridData && currentDataset?.colorScale?.colors?.length) {
+      if (!useMeshRasterActiveRef.current) {
+        useMeshRasterActiveRef.current = true;
+        setUseMeshRasterActive(true);
+      }
+      return;
+    }
     const current = useMeshRasterActiveRef.current;
     if (current && zoom > MESH_TO_RASTER_ZOOM) {
       useMeshRasterActiveRef.current = false;

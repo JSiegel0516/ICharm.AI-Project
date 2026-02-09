@@ -348,9 +348,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const meshOpacityKey = rasterOpacity.toFixed(3);
     const isOrtho = viewMode === "ortho";
     const smoothGridBoxValues = rasterBlurEnabled;
-    const useMeshRasterEffective = isOrtho
-      ? useMeshRaster
-      : useMeshRaster && smoothGridBoxValues;
+    const useMeshRasterEffective = useMeshRaster;
     const effectiveSatelliteVisible = !isOrtho && satelliteLayerVisible;
     const effectiveLabelsVisible = !isOrtho && labelsVisible;
     const effectiveBaseMapMode = isOrtho ? "satellite" : baseMapMode;
@@ -466,21 +464,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
 
-      if (smoothGridBoxValues) {
-        setMeshRasterActive(true);
-      }
+      setMeshRasterActive(true);
 
       const viewer = viewerRef.current;
       const height = viewer.camera.positionCartographic.height;
-      const usingMesh = useMeshRasterActiveRef.current;
-
-      if (!smoothGridBoxValues) {
-        if (usingMesh && height < MESH_TO_IMAGERY_HEIGHT) {
-          setMeshRasterActive(false);
-        } else if (!usingMesh && height > IMAGERY_TO_MESH_HEIGHT) {
-          setMeshRasterActive(true);
-        }
-      }
 
       // Keep imagery in sync with zoom even if mesh state lags.
       const layers = rasterLayerRef.current;
