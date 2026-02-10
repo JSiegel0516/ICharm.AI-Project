@@ -1,7 +1,11 @@
 import type { ColorScale } from "@/types";
 import type { ClimateDatasetRecord, Dataset } from "@/types";
 import { getColorMapColors } from "@/utils/colorMaps";
-import { AIR_TEMPERATURE_BASE, SHARP_BANDS } from "@/utils/colorScales";
+import {
+  AIR_TEMPERATURE_BASE,
+  SHARP_BANDS,
+  resolveColorMapColors,
+} from "@/utils/colorScales";
 
 const reducePalette = (colors: string[], count: number): string[] => {
   if (!colors.length) return [];
@@ -271,6 +275,7 @@ export function generateColorScale(
 
   const SST_COLORS = getColorMapColors("Matlab|Jet");
   const AIR_COLORS = AIR_TEMPERATURE_BASE;
+  const ANOMALY_COLORS = resolveColorMapColors("Anomaly|Blue Yellow Red");
   const PRECIP_COLORS = getColorMapColors(
     "Color Brewer 2.0|Sequential|Multi-hue|9-class YlGnBu",
   );
@@ -293,6 +298,42 @@ export function generateColorScale(
       ["-2°C", "5°C", "12°C", "18°C", "25°C", "32°C"],
       -2,
       35,
+    );
+  }
+
+  // Anomaly datasets
+  if (
+    name.includes("anomal") ||
+    param.includes("anomaly") ||
+    param.includes("t_an") ||
+    unitsLower.includes("anomaly")
+  ) {
+    return buildScale(ANOMALY_COLORS, ["-2", "-1", "0", "1", "2"], -2, 2);
+  }
+
+  // GODAS vertical velocity
+  if (
+    name.includes("godas") ||
+    name.includes("global ocean data assimilation system") ||
+    name.includes("ncep global ocean data assimilation") ||
+    param.includes("dzdt")
+  ) {
+    const GODAS_COLORS = [
+      "#6b00b5",
+      "#8a4bcc",
+      "#a777dd",
+      "#c8b6ea",
+      "#e7e7ee",
+      "#b8e2e6",
+      "#7dc9cc",
+      "#3ea3a8",
+      "#137b80",
+    ];
+    return buildScale(
+      GODAS_COLORS,
+      ["-0.000005", "0", "0.000005"],
+      -0.000005,
+      0.000005,
     );
   }
 
@@ -324,32 +365,6 @@ export function generateColorScale(
       ["-40°C", "-20°C", "0°C", "20°C", "40°C"],
       -40,
       40,
-    );
-  }
-
-  // GODAS vertical velocity
-  if (
-    name.includes("godas") ||
-    name.includes("global ocean data assimilation system") ||
-    name.includes("ncep global ocean data assimilation") ||
-    param.includes("dzdt")
-  ) {
-    const GODAS_COLORS = [
-      "#6b00b5",
-      "#8a4bcc",
-      "#a777dd",
-      "#c8b6ea",
-      "#e7e7ee",
-      "#b8e2e6",
-      "#7dc9cc",
-      "#3ea3a8",
-      "#137b80",
-    ];
-    return buildScale(
-      GODAS_COLORS,
-      ["-0.000005", "0", "0.000005"],
-      -0.000005,
-      0.000005,
     );
   }
 
