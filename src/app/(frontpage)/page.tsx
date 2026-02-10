@@ -432,20 +432,42 @@ export default function HomePage() {
     viewMode: "3d",
   });
   const lastSatelliteLabelsVisibleRef = useRef(true);
+  const lastCesiumLabelsVisibleRef = useRef(true);
 
   const lastViewModeRef = useRef<GlobeViewMode | null>(null);
 
   useEffect(() => {
     const lastMode = lastViewModeRef.current;
-    lastViewModeRef.current = globeSettings.viewMode ?? "3d";
+    const nextMode = globeSettings.viewMode ?? "3d";
+    lastViewModeRef.current = nextMode;
+
+    const wasCesium = lastMode === "3d" || lastMode === "2d";
+    const isCesium = nextMode === "3d" || nextMode === "2d";
+
+    if (wasCesium && !isCesium) {
+      lastCesiumLabelsVisibleRef.current = globeSettings.labelsVisible;
+    }
+
     if (
-      globeSettings.viewMode === "ortho" &&
+      nextMode === "ortho" &&
       lastMode !== "ortho" &&
       globeSettings.labelsVisible
     ) {
       setGlobeSettings((prev) => ({ ...prev, labelsVisible: false }));
+      return;
     }
-  }, [globeSettings.viewMode, globeSettings.labelsVisible]);
+
+    if (!wasCesium && isCesium && globeSettings.baseMapMode !== "street") {
+      const restore = lastCesiumLabelsVisibleRef.current;
+      if (restore !== globeSettings.labelsVisible) {
+        setGlobeSettings((prev) => ({ ...prev, labelsVisible: restore }));
+      }
+    }
+  }, [
+    globeSettings.baseMapMode,
+    globeSettings.labelsVisible,
+    globeSettings.viewMode,
+  ]);
 
   const colorbarRange = useMemo(
     () => ({
