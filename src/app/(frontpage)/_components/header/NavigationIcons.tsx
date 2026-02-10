@@ -147,43 +147,59 @@ export default function NavigationIcons() {
     { value: "ar", label: "العربية" },
   ];
 
-  const colorMapCategories = [
-    {
-      id: "cb-non",
-      label: "Color Brewer 2.0 | Non-Centered",
-      match: (id: string) =>
-        id.includes("Color Brewer 2.0|Diverging|Non Centered"),
-    },
-    {
-      id: "cb-zero",
-      label: "Color Brewer 2.0 | Zero-Centered",
-      match: (id: string) =>
-        id.includes("Color Brewer 2.0|Diverging|Zero Centered"),
-    },
-    {
-      id: "cb-multi",
-      label: "Color Brewer 2.0 | Multi-hue",
-      match: (id: string) =>
-        id.includes("Color Brewer 2.0|Sequential|Multi-hue"),
-    },
-    {
-      id: "cb-single",
-      label: "Color Brewer 2.0 | Single-hue",
-      match: (id: string) =>
-        id.includes("Color Brewer 2.0|Sequential|Single-hue"),
-    },
-    {
-      id: "matlab",
-      label: "Matlab",
-      match: (id: string) => id.startsWith("Matlab|"),
-    },
-    {
-      id: "other",
-      label: "Other",
-      match: (id: string) =>
-        id.startsWith("Other|") || id === "dataset-default",
-    },
-  ];
+  const colorMapCategories = React.useMemo(
+    () => [
+      {
+        id: "anomaly",
+        label: "Anomaly",
+        match: (id: string) => id.startsWith("Anomaly|"),
+      },
+      {
+        id: "cb-non",
+        label: "Color Brewer 2.0 | Non-Centered",
+        match: (id: string) =>
+          id.includes("Color Brewer 2.0|Diverging|Non Centered"),
+      },
+      {
+        id: "cb-zero",
+        label: "Color Brewer 2.0 | Zero-Centered",
+        match: (id: string) =>
+          id.includes("Color Brewer 2.0|Diverging|Zero Centered"),
+      },
+      {
+        id: "cb-multi",
+        label: "Color Brewer 2.0 | Multi-hue",
+        match: (id: string) =>
+          id.includes("Color Brewer 2.0|Sequential|Multi-hue"),
+      },
+      {
+        id: "cb-single",
+        label: "Color Brewer 2.0 | Single-hue",
+        match: (id: string) =>
+          id.includes("Color Brewer 2.0|Sequential|Single-hue"),
+      },
+      {
+        id: "matlab",
+        label: "Matlab",
+        match: (id: string) => id.startsWith("Matlab|"),
+      },
+      {
+        id: "other",
+        label: "Other",
+        match: (id: string) =>
+          id.startsWith("Other|") || id === "dataset-default",
+      },
+    ],
+    [],
+  );
+
+  const visibleColorMapCategories = React.useMemo(
+    () =>
+      colorMapCategories.filter((cat) =>
+        COLOR_MAP_PRESETS.some((preset) => cat.match(preset.id)),
+      ),
+    [colorMapCategories],
+  );
 
   const buildLinearGradient = (colors: string[]) =>
     colors
@@ -196,12 +212,25 @@ export default function NavigationIcons() {
       })
       .join(", ");
 
+  React.useEffect(() => {
+    if (
+      visibleColorMapCategories.length &&
+      !visibleColorMapCategories.some(
+        (cat) => cat.id === activeColorMapCategory,
+      )
+    ) {
+      setActiveColorMapCategory(visibleColorMapCategories[0].id);
+    }
+  }, [activeColorMapCategory, visibleColorMapCategories]);
+
   const filteredPresets = React.useMemo(() => {
     const category =
-      colorMapCategories.find((cat) => cat.id === activeColorMapCategory) ??
-      colorMapCategories[0];
+      visibleColorMapCategories.find(
+        (cat) => cat.id === activeColorMapCategory,
+      ) ?? visibleColorMapCategories[0];
+    if (!category) return [];
     return COLOR_MAP_PRESETS.filter((preset) => category.match(preset.id));
-  }, [activeColorMapCategory]);
+  }, [activeColorMapCategory, visibleColorMapCategories]);
 
   return (
     <ButtonGroup>
@@ -398,7 +427,7 @@ export default function NavigationIcons() {
                             }
                             className="rounded-lg bg-gray-700 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
                           >
-                            {colorMapCategories.map((cat) => (
+                            {visibleColorMapCategories.map((cat) => (
                               <option key={cat.id} value={cat.id}>
                                 {cat.label}
                               </option>
@@ -423,7 +452,7 @@ export default function NavigationIcons() {
                         </div>
 
                         <div className="flex flex-wrap gap-2">
-                          {colorMapCategories.map((cat) => (
+                          {visibleColorMapCategories.map((cat) => (
                             <button
                               key={cat.id}
                               type="button"

@@ -2284,10 +2284,13 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             layer.saturation = 1.0;
             layer.gamma = 1.0;
 
-            layer.minificationFilter =
-              cesiumInstance.TextureMinificationFilter.LINEAR;
-            layer.magnificationFilter =
-              cesiumInstance.TextureMagnificationFilter.LINEAR;
+            const filter = rasterBlurEnabled
+              ? cesiumInstance.TextureMinificationFilter.NEAREST
+              : cesiumInstance.TextureMinificationFilter.LINEAR;
+            layer.minificationFilter = filter;
+            layer.magnificationFilter = rasterBlurEnabled
+              ? cesiumInstance.TextureMagnificationFilter.NEAREST
+              : cesiumInstance.TextureMagnificationFilter.LINEAR;
 
             viewer.scene.imageryLayers.raiseToTop(layer);
             newLayers.push(layer);
@@ -2328,7 +2331,14 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
         viewer.scene.requestRender();
       },
-      [animateLayerAlpha, cesiumInstance, rasterOpacity, viewerReady, viewMode],
+      [
+        animateLayerAlpha,
+        cesiumInstance,
+        rasterBlurEnabled,
+        rasterOpacity,
+        viewerReady,
+        viewMode,
+      ],
     );
 
     const removeMeshPrimitives = useCallback(
