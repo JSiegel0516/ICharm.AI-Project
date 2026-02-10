@@ -3277,6 +3277,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             geographicLinesVisible={geographicLinesVisible}
             currentDataset={currentDataset}
             useMeshRaster={useMeshRasterEffective}
+            labelsVisible={labelsVisible}
             rasterBlurEnabled={rasterBlurEnabled}
             smoothGridBoxValues={rasterBlurEnabled}
             hideZeroValues={shouldHideZero}

@@ -47,9 +47,10 @@ const BASE_FILL_COLOR_SRGB = BASE_FILL_COLOR.clone().convertLinearToSRGB();
 const DEFAULT_GLOBE_ROTATION = new THREE.Euler(0, -Math.PI / 2, 0, "XYZ");
 const DEFAULT_LIGHT_DIRECTION = new THREE.Vector3(3, 2, 4).normalize();
 const LABEL_TILE_URL = "/tiles/labels/{z}/{x}/{y}.pbf";
-const LABEL_MIN_VISIBLE = 4;
+const LABEL_MIN_VISIBLE = 3;
+const LABEL_MAX_VISIBLE = 50;
 const LABEL_FADE_MS = 160;
-const LABEL_VISIBILITY_THROTTLE_MS = 60;
+const LABEL_VISIBILITY_THROTTLE_MS = 33;
 
 const GLOBE_VERTEX_SHADER = `
   varying vec2 vUv;
@@ -256,40 +257,51 @@ const splitAtDateline = (coords: GeoPoint[]) => {
   return parts.length ? parts : [coords];
 };
 
-const getLabelTier = (zoom: number) => {
-  if (zoom <= 4) {
+type LabelTier = {
+  display: LabelKind[];
+  eligible: LabelKind[];
+  fadeRange?: [number, number];
+};
+
+const getLabelTier = (tileZoom: number): LabelTier => {
+  if (tileZoom <= 3.5) {
     return {
-      display: ["continent"] as LabelKind[],
-      eligible: ["continent", "country"] as LabelKind[],
+      display: ["continent"],
+      eligible: ["continent", "country"],
+      fadeRange: [3.0, 3.5],
     };
   }
-  if (zoom <= 5.5) {
+  if (tileZoom <= 5.5) {
     return {
-      display: ["continent", "country"] as LabelKind[],
-      eligible: ["continent", "country", "state"] as LabelKind[],
+      display: ["continent", "country"],
+      eligible: ["continent", "country", "state"],
+      fadeRange: [5.0, 5.5],
     };
   }
-  if (zoom <= 7) {
+  if (tileZoom <= 7.5) {
     return {
-      display: ["country", "state"] as LabelKind[],
-      eligible: ["country", "state", "cityLarge"] as LabelKind[],
+      display: ["country", "state"],
+      eligible: ["country", "state", "cityLarge"],
+      fadeRange: [7.0, 7.5],
     };
   }
-  if (zoom <= 8) {
+  if (tileZoom <= 9) {
     return {
-      display: ["state", "cityLarge"] as LabelKind[],
-      eligible: ["state", "cityLarge", "cityMedium"] as LabelKind[],
+      display: ["state", "cityLarge"],
+      eligible: ["state", "cityLarge", "cityMedium"],
+      fadeRange: [8.5, 9.0],
     };
   }
-  if (zoom <= 9.5) {
+  if (tileZoom <= 10.5) {
     return {
-      display: ["cityLarge", "cityMedium"] as LabelKind[],
-      eligible: ["cityLarge", "cityMedium", "citySmall"] as LabelKind[],
+      display: ["cityLarge", "cityMedium"],
+      eligible: ["cityLarge", "cityMedium", "citySmall"],
+      fadeRange: [10.0, 10.5],
     };
   }
   return {
-    display: ["cityMedium", "citySmall"] as LabelKind[],
-    eligible: ["cityMedium", "citySmall"] as LabelKind[],
+    display: ["cityMedium", "citySmall"],
+    eligible: ["cityMedium", "citySmall"],
   };
 };
 
@@ -369,11 +381,39 @@ const tileCenter = (x: number, y: number, zoom: number) => {
   return { lon, lat };
 };
 
-const clampZoom = (zoom: number) => {
-  if (!Number.isFinite(zoom)) return 4;
-  const clamped = Math.max(0.25, Math.min(12, zoom));
-  const zoomFloat = 4 + Math.log2(clamped) * 2.2;
-  return Math.max(2, Math.min(9.5, zoomFloat));
+const cameraZoomToTileZoom = (cameraZoom: number) => {
+  const minCameraZoom = 1.0;
+  const maxCameraZoom = 50.0;
+  const minTileZoom = 2;
+  const maxTileZoom = 15;
+  const clamped = Math.max(minCameraZoom, Math.min(maxCameraZoom, cameraZoom));
+  const normalized =
+    (clamped - minCameraZoom) / (maxCameraZoom - minCameraZoom);
+  return minTileZoom + normalized * (maxTileZoom - minTileZoom);
+};
+
+const calculateLabelOpacity = (
+  kind: LabelKind,
+  tileZoom: number,
+  tier: LabelTier,
+) => {
+  const baseOpacity = 1;
+  if (!tier.fadeRange) return baseOpacity;
+  const [fadeStart, fadeEnd] = tier.fadeRange;
+  if (tileZoom < fadeStart) return baseOpacity;
+  const fadeProgress = Math.max(
+    0,
+    Math.min(1, (tileZoom - fadeStart) / (fadeEnd - fadeStart || 1)),
+  );
+  const inDisplay = tier.display.includes(kind);
+  const inEligible = tier.eligible.includes(kind);
+  if (inDisplay && !inEligible) {
+    return baseOpacity * (1 - fadeProgress);
+  }
+  if (!inDisplay && inEligible) {
+    return baseOpacity * fadeProgress;
+  }
+  return baseOpacity;
 };
 
 const fetchBoundaries = async (): Promise<BoundaryVector[]> => {
@@ -516,7 +556,10 @@ const OrthoGlobe: React.FC<Props> = ({
   const labelTileAbortRef = useRef<AbortController | null>(null);
   const labelUpdateTimeoutRef = useRef<number | null>(null);
   const labelTileZoomRef = useRef<number | null>(null);
+  const labelUpdateInFlightRef = useRef(false);
+  const labelUpdateRequestedRef = useRef(false);
   const labelRafRef = useRef<number | null>(null);
+  const labelZoomRef = useRef<number | null>(null);
   const labelLastFrameRef = useRef<number>(0);
   const labelFadeLastRef = useRef<number>(0);
 
@@ -552,8 +595,12 @@ const OrthoGlobe: React.FC<Props> = ({
     const layer = document.createElement("div");
     layer.style.position = "absolute";
     layer.style.inset = "0";
+    layer.style.zIndex = "2";
     layer.style.pointerEvents = "none";
     layer.style.userSelect = "none";
+    if (typeof globalThis !== "undefined") {
+      (globalThis as any).__orthoLabelLayer = layer;
+    }
     containerRef.current.appendChild(layer);
     labelLayerRef.current = layer;
     return () => {
@@ -594,6 +641,7 @@ const OrthoGlobe: React.FC<Props> = ({
     el.style.color = spec.color;
     el.style.whiteSpace = "nowrap";
     el.style.textShadow = `0 1px 2px ${spec.outline}`;
+    el.style.transition = "opacity 200ms ease-in-out";
     el.style.opacity = "0";
     el.style.pointerEvents = "none";
     layer.appendChild(el);
@@ -621,9 +669,10 @@ const OrthoGlobe: React.FC<Props> = ({
   );
 
   const setLabelTarget = useCallback(
-    (entry: OrthoLabelEntry, shouldShow: boolean) => {
-      entry.targetOpacity = shouldShow ? 1 : 0;
-      if (shouldShow) {
+    (entry: OrthoLabelEntry, opacity: number) => {
+      const clamped = Math.max(0, Math.min(1, opacity));
+      entry.targetOpacity = clamped;
+      if (clamped > 0) {
         entry.el.style.display = "block";
       }
     },
@@ -643,12 +692,20 @@ const OrthoGlobe: React.FC<Props> = ({
     if (!cameraRef.current || !globeGroupRef.current || !containerRef.current) {
       return null;
     }
+    cameraRef.current.updateMatrixWorld(true);
+    globeGroupRef.current.updateMatrixWorld(true);
     const local = latLonToCartesian(
       feature.lat,
       feature.lon,
       OVERLAY_RADIUS + 0.003,
     );
     const world = globeGroupRef.current.localToWorld(local.clone());
+    const cameraDirection = new THREE.Vector3();
+    cameraRef.current.getWorldDirection(cameraDirection);
+    const worldNormal = world.clone().normalize();
+    if (worldNormal.dot(cameraDirection) > 0) {
+      return null;
+    }
     const cameraSpace = world
       .clone()
       .applyMatrix4(cameraRef.current.matrixWorldInverse);
@@ -673,10 +730,14 @@ const OrthoGlobe: React.FC<Props> = ({
     const corners: Array<{ lon: number; lat: number }> = [];
     const raycaster = new THREE.Raycaster();
     const targetMesh =
-      useMeshRasterActiveRef.current && meshOverlayRef.current
+      baseMeshRef.current ??
+      (useMeshRasterActiveRef.current && meshOverlayRef.current
         ? meshOverlayRef.current
-        : rasterOverlayRef.current;
+        : rasterOverlayRef.current);
     if (!targetMesh) return null;
+    cameraRef.current.updateMatrixWorld(true);
+    globeGroupRef.current.updateMatrixWorld(true);
+    targetMesh.updateMatrixWorld(true);
 
     const sampleCorner = (x: number, y: number) => {
       raycaster.setFromCamera(new THREE.Vector2(x, y), cameraRef.current!);
@@ -693,10 +754,12 @@ const OrthoGlobe: React.FC<Props> = ({
       corners.push({ lon, lat });
     };
 
-    sampleCorner(-1, -1);
-    sampleCorner(-1, 1);
-    sampleCorner(1, -1);
-    sampleCorner(1, 1);
+    const samples = [-1, -0.5, 0, 0.5, 1];
+    samples.forEach((x) => {
+      samples.forEach((y) => {
+        sampleCorner(x, y);
+      });
+    });
     if (!corners.length) return null;
 
     const lats = corners.map((p) => p.lat);
@@ -747,17 +810,17 @@ const OrthoGlobe: React.FC<Props> = ({
     if (!labelsVisible) {
       labelTileCacheRef.current.forEach((entries) => {
         entries.forEach((entry) => {
-          setLabelTarget(entry, false);
+          setLabelTarget(entry, 0);
           setLabelOpacity(entry, 0);
         });
       });
       return;
     }
 
-    const zoomFloat = clampZoom(cameraRef.current?.zoom ?? 1);
-    const tier = getLabelTier(zoomFloat);
+    const tileZoomFloat = cameraZoomToTileZoom(cameraRef.current?.zoom ?? 1);
+    const tier = getLabelTier(tileZoomFloat);
     const activeKinds = new Set<LabelKind>(tier.eligible);
-    const tileInfo = getTileKeysForView(Math.round(zoomFloat));
+    const tileInfo = getTileKeysForView(Math.round(tileZoomFloat));
     if (!tileInfo) return;
 
     const centerLon = tileInfo.centerLon;
@@ -817,50 +880,68 @@ const OrthoGlobe: React.FC<Props> = ({
       return 6;
     };
 
-    const candidates: Array<OrthoLabelEntry & { x: number; y: number }> = [];
+    const candidates: Array<{
+      entry: OrthoLabelEntry;
+      x: number;
+      y: number;
+    }> = [];
+    let totalEntries = 0;
+    let positionedEntries = 0;
+    let targetCount = 0;
+    const visibleEntries = new Set<OrthoLabelEntry>();
     labelTileCacheRef.current.forEach((entries) => {
       entries.forEach((entry) => {
+        totalEntries += 1;
         if (!activeKinds.has(entry.kind)) {
-          setLabelTarget(entry, false);
+          setLabelTarget(entry, 0);
           return;
         }
         const pos = getLabelScreenPosition(entry.feature);
         if (!pos) {
-          setLabelTarget(entry, false);
+          setLabelTarget(entry, 0);
           return;
         }
+        positionedEntries += 1;
         entry.el.style.left = `${pos.x}px`;
         entry.el.style.top = `${pos.y}px`;
-        candidates.push({ ...entry, x: pos.x, y: pos.y });
+        candidates.push({ entry, x: pos.x, y: pos.y });
       });
     });
-
     candidates.sort((a, b) => {
-      const pa = priority(a.kind);
-      const pb = priority(b.kind);
+      const pa = priority(a.entry.kind);
+      const pb = priority(b.entry.kind);
       if (pa !== pb) return pa - pb;
-      const dLonA = a.feature.lon - centerLon;
-      const dLonB = b.feature.lon - centerLon;
-      const dLatA = a.feature.lat - centerLat;
-      const dLatB = b.feature.lat - centerLat;
+      const dLonA = a.entry.feature.lon - centerLon;
+      const dLonB = b.entry.feature.lon - centerLon;
+      const dLatA = a.entry.feature.lat - centerLat;
+      const dLatB = b.entry.feature.lat - centerLat;
       return dLonA * dLonA + dLatA * dLatA - (dLonB * dLonB + dLatB * dLatB);
     });
 
     let shownCount = 0;
     const placeCandidates = (kinds: LabelKind[]) => {
       const allowed = new Set(kinds);
-      candidates.forEach((entry) => {
+      candidates.forEach((candidate) => {
+        if (shownCount >= LABEL_MAX_VISIBLE) return;
+        const entry = candidate.entry;
         if (!allowed.has(entry.kind)) return;
         const size = estimateLabelSize(entry);
         const box = {
-          x: entry.x - size.width / 2,
-          y: entry.y - size.height,
+          x: candidate.x - size.width / 2,
+          y: candidate.y - size.height,
           w: size.width,
           h: size.height,
         };
         if (collides(box)) return;
+        const opacity = calculateLabelOpacity(entry.kind, tileZoomFloat, tier);
+        if (opacity <= 0) {
+          setLabelTarget(entry, 0);
+          return;
+        }
         addBox(box);
-        setLabelTarget(entry, true);
+        setLabelTarget(entry, opacity);
+        targetCount += 1;
+        visibleEntries.add(entry);
         shownCount += 1;
       });
     };
@@ -868,6 +949,20 @@ const OrthoGlobe: React.FC<Props> = ({
     placeCandidates(tier.display);
     if (shownCount < LABEL_MIN_VISIBLE) {
       placeCandidates(tier.eligible);
+    }
+    candidates.forEach((candidate) => {
+      if (!visibleEntries.has(candidate.entry)) {
+        setLabelTarget(candidate.entry, 0);
+      }
+    });
+    if (typeof globalThis !== "undefined") {
+      (globalThis as any).__orthoLabelDebugVisibility = {
+        zoomFloat: tileZoomFloat,
+        totalEntries,
+        positionedEntries,
+        candidates: candidates.length,
+        targetCount,
+      };
     }
   }, [
     estimateLabelSize,
@@ -882,15 +977,29 @@ const OrthoGlobe: React.FC<Props> = ({
     (now: number) => {
       const last = labelFadeLastRef.current || now;
       const dt = Math.min(1, (now - last) / LABEL_FADE_MS);
+      let maxOpacity = 0;
+      let visibleCount = 0;
       labelTileCacheRef.current.forEach((entries) => {
         entries.forEach((entry) => {
           const target = entry.targetOpacity ?? 0;
           const current = entry.opacity ?? 0;
           const next = current + (target - current) * dt;
           setLabelOpacity(entry, next);
+          if (next > maxOpacity) {
+            maxOpacity = next;
+          }
+          if (next > 0.05) {
+            visibleCount += 1;
+          }
         });
       });
       labelFadeLastRef.current = now;
+      if (typeof globalThis !== "undefined") {
+        (globalThis as any).__orthoLabelDebugFade = {
+          maxOpacity,
+          visibleCount,
+        };
+      }
     },
     [setLabelOpacity],
   );
@@ -900,12 +1009,58 @@ const OrthoGlobe: React.FC<Props> = ({
       clearLabelTiles();
       return;
     }
-    const zoomFloat = clampZoom(cameraRef.current?.zoom ?? 1);
-    const zoom = Math.round(zoomFloat);
-    const tileInfo = getTileKeysForView(zoom);
-    if (!tileInfo || !tileInfo.keys.length) {
+    if (labelUpdateInFlightRef.current) {
+      labelUpdateRequestedRef.current = true;
       return;
     }
+    labelUpdateInFlightRef.current = true;
+    const tileZoomFloat = cameraZoomToTileZoom(cameraRef.current?.zoom ?? 1);
+    const zoom = Math.min(10, Math.round(tileZoomFloat));
+    const tier = getLabelTier(tileZoomFloat);
+    const activeKinds = new Set<LabelKind>(tier.eligible);
+    const tileInfo = getTileKeysForView(zoom);
+    if (!tileInfo || !tileInfo.keys.length) {
+      if (typeof globalThis !== "undefined") {
+        (globalThis as any).__orthoLabelDebug = {
+          reason: "no-tile-keys",
+          zoom,
+          zoomFloat: tileZoomFloat,
+        };
+      }
+      labelUpdateInFlightRef.current = false;
+      return;
+    }
+    if (typeof globalThis !== "undefined") {
+      (globalThis as any).__orthoLabelDebug = {
+        zoom,
+        zoomFloat: tileZoomFloat,
+        tileCount: tileInfo.keys.length,
+        sampleKey: tileInfo.keys[0],
+        cachedTiles: labelTileCacheRef.current.size,
+        pendingTiles: labelTilePendingRef.current.size,
+      };
+      (globalThis as any).__orthoLabelTileStats = {
+        cached: labelTileCacheRef.current.size,
+        pending: labelTilePendingRef.current.size,
+        lastFetch: null,
+      };
+    }
+    const { keys: tileKeys, centerLon, centerLat } = tileInfo;
+    tileKeys.sort((a, b) => {
+      const [za, xa, ya] = a.split("/").map((value) => Number(value));
+      const [zb, xb, yb] = b.split("/").map((value) => Number(value));
+      if (za !== zb) return za - zb;
+      const ca = tileCenter(xa, ya, za);
+      const cb = tileCenter(xb, yb, zb);
+      let dLonA = Math.abs(ca.lon - centerLon);
+      if (dLonA > 180) dLonA = 360 - dLonA;
+      let dLonB = Math.abs(cb.lon - centerLon);
+      if (dLonB > 180) dLonB = 360 - dLonB;
+      const dLatA = ca.lat - centerLat;
+      const dLatB = cb.lat - centerLat;
+      return dLonA * dLonA + dLatA * dLatA - (dLonB * dLonB + dLatB * dLatB);
+    });
+
     if (labelTileZoomRef.current !== zoom) {
       clearLabelTiles();
       labelTileZoomRef.current = zoom;
@@ -915,28 +1070,71 @@ const OrthoGlobe: React.FC<Props> = ({
     }
     const { signal } = labelTileAbortRef.current;
 
-    tileInfo.keys.forEach((key) => {
-      if (labelTileCacheRef.current.has(key)) return;
-      if (labelTilePendingRef.current.has(key)) return;
-      labelTilePendingRef.current.add(key);
-      const [z, x, y] = key.split("/").map((value) => Number(value));
-      const url = LABEL_TILE_URL.replace("{z}", `${z}`)
-        .replace("{x}", `${x}`)
-        .replace("{y}", `${y}`);
-      fetchOpenLayersTile(url, z, x, y, signal)
-        .then((features) => {
-          const entries = features
-            .filter((feature) => feature.kind !== "street")
-            .map((feature) => createLabelEntry(feature))
-            .filter(Boolean) as OrthoLabelEntry[];
-          labelTileCacheRef.current.set(key, entries);
-        })
-        .catch(() => {})
-        .finally(() => {
-          labelTilePendingRef.current.delete(key);
-          updateLabelVisibility();
-        });
-    });
+    const maxTiles = 24;
+    if (tileKeys.length > maxTiles) {
+      tileKeys.length = maxTiles;
+    }
+
+    let addedTiles = false;
+    const maxConcurrent = 6;
+    for (let i = 0; i < tileKeys.length; i += maxConcurrent) {
+      const chunk = tileKeys.slice(i, i + maxConcurrent);
+      await Promise.all(
+        chunk.map(async (key) => {
+          if (labelTileCacheRef.current.has(key)) return;
+          if (labelTilePendingRef.current.has(key)) return;
+          labelTilePendingRef.current.add(key);
+          const [z, x, y] = key.split("/").map((value) => Number(value));
+          const url = LABEL_TILE_URL.replace("{z}", `${z}`)
+            .replace("{x}", `${x}`)
+            .replace("{y}", `${y}`);
+          try {
+            const features = await fetchOpenLayersTile(url, z, x, y, signal);
+            const filtered = features
+              .filter((feature) => feature.kind !== "street")
+              .filter((feature) => activeKinds.has(feature.kind));
+            const entries = filtered
+              .map((feature) => createLabelEntry(feature))
+              .filter(Boolean) as OrthoLabelEntry[];
+            labelTileCacheRef.current.set(key, entries);
+            if (entries.length) {
+              addedTiles = true;
+            }
+            if (typeof globalThis !== "undefined") {
+              (globalThis as any).__orthoLabelTileStats = {
+                cached: labelTileCacheRef.current.size,
+                pending: labelTilePendingRef.current.size,
+                lastFetch: {
+                  key,
+                  url,
+                  featureCount: features.length,
+                  entryCount: entries.length,
+                },
+              };
+            }
+          } catch (error) {
+            if (typeof globalThis !== "undefined") {
+              (globalThis as any).__orthoLabelDebug = {
+                error: (error as Error)?.message ?? "tile-fetch-failed",
+                url,
+                zoom,
+              };
+            }
+          } finally {
+            labelTilePendingRef.current.delete(key);
+          }
+        }),
+      );
+    }
+
+    if (addedTiles) {
+      updateLabelVisibility();
+    }
+    labelUpdateInFlightRef.current = false;
+    if (labelUpdateRequestedRef.current) {
+      labelUpdateRequestedRef.current = false;
+      updateLabelTiles();
+    }
   }, [
     clearLabelTiles,
     createLabelEntry,
@@ -951,9 +1149,8 @@ const OrthoGlobe: React.FC<Props> = ({
     }
     labelUpdateTimeoutRef.current = window.setTimeout(() => {
       updateLabelTiles();
-      updateLabelVisibility();
     }, 80);
-  }, [updateLabelTiles, updateLabelVisibility]);
+  }, [updateLabelTiles]);
 
   useEffect(() => {
     if (!markerRef.current) return;
@@ -1292,6 +1489,9 @@ const OrthoGlobe: React.FC<Props> = ({
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setClearColor(0x000000, 1);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.domElement.style.position = "absolute";
+    renderer.domElement.style.inset = "0";
+    renderer.domElement.style.zIndex = "1";
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
@@ -1559,12 +1759,29 @@ const OrthoGlobe: React.FC<Props> = ({
   }, [updateRasterOpacity]);
 
   useEffect(() => {
-    if (labelsVisible) {
-      scheduleLabelUpdate();
-    } else {
-      clearLabelTiles();
+    if (labelLayerRef.current) {
+      labelLayerRef.current.style.display = labelsVisible ? "block" : "none";
     }
-  }, [clearLabelTiles, labelsVisible, scheduleLabelUpdate]);
+    if (labelsVisible) {
+      labelZoomRef.current = cameraRef.current?.zoom ?? null;
+      scheduleLabelUpdate();
+      const timeout = window.setTimeout(() => {
+        updateLabelTiles();
+        updateLabelVisibility();
+      }, 100);
+      return () => {
+        window.clearTimeout(timeout);
+      };
+    }
+    clearLabelTiles();
+    return undefined;
+  }, [
+    clearLabelTiles,
+    labelsVisible,
+    scheduleLabelUpdate,
+    updateLabelTiles,
+    updateLabelVisibility,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -1581,6 +1798,15 @@ const OrthoGlobe: React.FC<Props> = ({
       return;
     }
     const tick = (time: number) => {
+      const currentZoom = cameraRef.current?.zoom;
+      if (typeof currentZoom === "number") {
+        if (labelZoomRef.current === null) {
+          labelZoomRef.current = currentZoom;
+        } else if (Math.abs(currentZoom - labelZoomRef.current) > 0.01) {
+          labelZoomRef.current = currentZoom;
+          scheduleLabelUpdate();
+        }
+      }
       if (time - labelLastFrameRef.current > LABEL_VISIBILITY_THROTTLE_MS) {
         updateLabelVisibility();
         labelLastFrameRef.current = time;
@@ -1595,7 +1821,12 @@ const OrthoGlobe: React.FC<Props> = ({
         labelRafRef.current = null;
       }
     };
-  }, [labelsVisible, updateLabelFades, updateLabelVisibility]);
+  }, [
+    labelsVisible,
+    scheduleLabelUpdate,
+    updateLabelFades,
+    updateLabelVisibility,
+  ]);
 
   useEffect(() => {
     if (!meshOverlayRef.current) return;
