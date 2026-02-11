@@ -3467,6 +3467,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         {isWinkel && (
           <WinkelGlobe
             rasterGridData={rasterGridState.data}
+            rasterGridKey={rasterGridState.requestKey}
+            rasterGridDataKey={rasterGridState.dataKey}
             currentDataset={currentDataset}
             rasterOpacity={rasterOpacity}
             hideZeroValues={shouldHideZero}

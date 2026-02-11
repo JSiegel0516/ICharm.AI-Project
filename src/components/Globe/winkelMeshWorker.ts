@@ -92,6 +92,15 @@ const mapValueToRgba = (
   return interpolateColor(stops, t);
 };
 
+const normalizeLon = (lon: number, center: number) => {
+  let value = lon;
+  while (value - center > 180) value -= 360;
+  while (value - center < -180) value += 360;
+  return value;
+};
+
+const clampLat = (value: number) => Math.max(-90, Math.min(90, value));
+
 const handleInit = (canvas: OffscreenCanvas) => {
   state.canvas = canvas;
   state.ctx = canvas.getContext("2d");
@@ -101,6 +110,11 @@ const handleResize = (width: number, height: number) => {
   if (!state.canvas) return;
   state.canvas.width = width;
   state.canvas.height = height;
+};
+
+const handleClear = () => {
+  if (!state.canvas || !state.ctx) return;
+  state.ctx.clearRect(0, 0, state.canvas.width, state.canvas.height);
 };
 
 const handleRender = (payload: RenderPayload) => {
@@ -148,25 +162,70 @@ const handleRender = (payload: RenderPayload) => {
 
   const rows = lat.length;
   const cols = lon.length;
+  const lonCenter = -rotate[0];
+  const lonNorm = new Array<number>(cols);
+  for (let i = 0; i < cols; i += 1) {
+    lonNorm[i] = normalizeLon(lon[i], lonCenter);
+  }
+  const lonEdges = new Array<number>(cols + 1);
+  for (let i = 1; i < cols; i += 1) {
+    lonEdges[i] = (lonNorm[i - 1] + lonNorm[i]) * 0.5;
+  }
+  if (cols > 1) {
+    lonEdges[0] = lonNorm[0] - (lonEdges[1] - lonNorm[0]);
+    lonEdges[cols] =
+      lonNorm[cols - 1] + (lonNorm[cols - 1] - lonEdges[cols - 1]);
+  } else {
+    lonEdges[0] = lonNorm[0] - 0.5;
+    lonEdges[1] = lonNorm[0] + 0.5;
+  }
+  const latEdges = new Array<number>(rows + 1);
+  for (let i = 1; i < rows; i += 1) {
+    latEdges[i] = clampLat((lat[i - 1] + lat[i]) * 0.5);
+  }
+  if (rows > 1) {
+    latEdges[0] = clampLat(lat[0] - (latEdges[1] - lat[0]));
+    latEdges[rows] = clampLat(
+      lat[rows - 1] + (lat[rows - 1] - latEdges[rows - 1]),
+    );
+  } else {
+    latEdges[0] = clampLat(lat[0] - 0.5);
+    latEdges[1] = clampLat(lat[0] + 0.5);
+  }
   const stops = buildColorStops(colors);
   const alphaScale = clamp01(opacity);
 
   let plotted = 0;
   for (let row = 0; row < rows - 1; row += 1) {
-    const latValue = lat[row];
-    const latNext = lat[row + 1];
+    const latValue = latEdges[row];
+    const latNext = latEdges[row + 1];
     for (let col = 0; col < cols - 1; col += 1) {
       const idx = row * cols + col;
       if (mask && mask[idx] === 0) continue;
       const value = values[idx];
       if (hideZeroValues && value === 0) continue;
-      const lonValue = lon[col];
-      const lonNext = lon[col + 1];
+      const lonValue = lonEdges[col];
+      const lonNext = lonEdges[col + 1];
+      const lonDelta = Math.abs(lonNext - lonValue);
+      if (lonDelta > 180) continue;
       const p00 = projection([lonValue, latValue]);
       const p10 = projection([lonNext, latValue]);
       const p11 = projection([lonNext, latNext]);
       const p01 = projection([lonValue, latNext]);
       if (!p00 || !p10 || !p11 || !p01) continue;
+      const maxDx = Math.max(
+        Math.abs(p00[0] - p10[0]),
+        Math.abs(p10[0] - p11[0]),
+        Math.abs(p11[0] - p01[0]),
+        Math.abs(p01[0] - p00[0]),
+      );
+      const maxDy = Math.max(
+        Math.abs(p00[1] - p10[1]),
+        Math.abs(p10[1] - p11[1]),
+        Math.abs(p11[1] - p01[1]),
+        Math.abs(p01[1] - p00[1]),
+      );
+      if (maxDx > width * 0.75 || maxDy > height * 0.75) continue;
       const rgba =
         value == null || Number.isNaN(value)
           ? [0, 0, 0, 0]
@@ -185,12 +244,22 @@ const handleRender = (payload: RenderPayload) => {
     }
   }
 
+  const latMin = Math.min(...lat);
+  const latMax = Math.max(...lat);
+  const lonMin = Math.min(...lon);
+  const lonMax = Math.max(...lon);
   self.postMessage({
     type: "debug",
     stage: "render-complete",
     plotted,
     width,
     height,
+    rows,
+    cols,
+    latMin,
+    latMax,
+    lonMin,
+    lonMax,
   });
   self.postMessage({ type: "rendered" });
 };
@@ -220,6 +289,11 @@ self.onmessage = (event: MessageEvent) => {
   if (message.type === "render") {
     self.postMessage({ type: "debug", stage: "render" });
     handleRender(message.payload as RenderPayload);
+    return;
+  }
+  if (message.type === "clear") {
+    self.postMessage({ type: "debug", stage: "clear" });
+    handleClear();
     return;
   }
   self.postMessage({ type: "debug", stage: "unknown", message });
