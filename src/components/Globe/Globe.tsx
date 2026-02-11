@@ -19,8 +19,8 @@ import {
 } from "@/lib/labels/openlayersVectorTiles";
 import type { RasterLayerData } from "@/hooks/useRasterLayer";
 import GlobeLoading from "./GlobeLoading";
-import WinkelMap from "./WinkelMap";
 import OrthoGlobe from "./OrthoGlobe";
+import WinkelGlobe from "./WinkelGlobe";
 import { Button } from "@/components/ui/button";
 
 const loadCesiumFromCDN = async () => {
@@ -354,6 +354,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       bumpMapMode = "none",
       useMeshRaster = false,
       lineColors,
+      winkelOrientation,
+      onWinkelOrientationChange,
       onRasterMetadataChange,
       isPlaying = false,
       prefetchedRasters,
@@ -416,7 +418,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const rasterDataRef = useRef<RasterLayerData | RasterGridData | undefined>(
       undefined,
     );
-    const [winkelClearMarkerTick, setWinkelClearMarkerTick] = useState(0);
     const [orthoClearMarkerTick, setOrthoClearMarkerTick] = useState(0);
     const datasetName = (currentDataset?.name ?? "").toLowerCase();
     const datasetSupportsZeroMask =
@@ -429,7 +430,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const rasterLayerDataset = currentDataset;
     const meshSamplingStep = 1;
     const meshOpacityKey = rasterOpacity.toFixed(3);
-    const isOrtho = viewMode === "ortho";
+    const effectiveViewMode = viewMode;
+    const isOrtho = effectiveViewMode === "ortho";
+    const isWinkel = effectiveViewMode === "winkel";
     const smoothGridBoxValues = rasterBlurEnabled;
     const useMeshRasterEffective = useMeshRaster;
     const effectiveSatelliteVisible = !isOrtho && satelliteLayerVisible;
@@ -451,7 +454,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       level: selectedLevel ?? null,
       maskZeroValues: shouldHideZero,
       colorbarRange,
-      enabled: viewMode !== "ortho" || useMeshRasterEffective,
+      enabled: effectiveViewMode !== "ortho" || useMeshRasterEffective,
       prefetchedData: prefetchedRasterGrids,
     });
     const [useMeshRasterActive, setUseMeshRasterActive] = useState(
@@ -505,7 +508,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
     const updateOrthoFrustum = useCallback(() => {
       if (!viewerRef.current || !cesiumInstance) return;
-      if (viewMode !== "ortho") return;
+      if (effectiveViewMode !== "ortho") return;
       const viewer = viewerRef.current;
       const Cesium = cesiumInstance;
       const camera = viewer.scene.camera;
@@ -528,7 +531,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       frustum.width = width;
       camera.frustum = frustum;
       viewer.scene.requestRender();
-    }, [cesiumInstance, viewMode]);
+    }, [cesiumInstance, effectiveViewMode]);
 
     const updateRasterLod = useCallback(() => {
       if (!viewerRef.current || !viewerReady) return;
@@ -538,11 +541,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
 
-      if (
-        !useMeshRasterEffective ||
-        viewMode === "winkel" ||
-        viewMode === "ortho"
-      ) {
+      if (!useMeshRasterEffective || effectiveViewMode === "ortho") {
         setMeshRasterActive(false);
         return;
       }
@@ -575,7 +574,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       setMeshRasterActive,
       useMeshRasterEffective,
       viewerReady,
-      viewMode,
+      effectiveViewMode,
       rasterOpacity,
       smoothGridBoxValues,
     ]);
@@ -893,7 +892,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         viewerRef.current.scene?.requestRender();
         return;
       }
-      if (viewMode === "ortho" || viewMode === "winkel") {
+      if (effectiveViewMode === "ortho") {
         clearLabelTiles();
         return;
       }
@@ -1152,7 +1151,12 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       }
 
       viewer.scene.requestRender();
-    }, [cesiumInstance, clearLabelTiles, viewMode, effectiveLabelsVisible]);
+    }, [
+      cesiumInstance,
+      clearLabelTiles,
+      effectiveViewMode,
+      effectiveLabelsVisible,
+    ]);
 
     const updateLabelFades = useCallback(
       (now: number) => {
@@ -1206,11 +1210,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
       labelUpdateInFlightRef.current = true;
-      if (
-        !effectiveLabelsVisible ||
-        viewMode === "ortho" ||
-        viewMode === "winkel"
-      ) {
+      if (!effectiveLabelsVisible || effectiveViewMode === "ortho") {
         clearLabelTiles();
         labelUpdateInFlightRef.current = false;
         return;
@@ -1313,7 +1313,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       cesiumInstance,
       clearLabelTiles,
       createLabelEntity,
-      viewMode,
+      effectiveViewMode,
       effectiveLabelsVisible,
     ]);
 
@@ -1363,8 +1363,6 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         currentMarkerRef.current = null;
       }
 
-      // Also clear Winkel Tripel marker via signal.
-      setWinkelClearMarkerTick((tick) => tick + 1);
       setOrthoClearMarkerTick((tick) => tick + 1);
     }, []);
 
@@ -1541,9 +1539,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
           const useMeshMarker =
             useMeshRasterActiveRef.current &&
-            viewMode !== "2d" &&
-            viewMode !== "winkel" &&
-            viewMode !== "ortho";
+            effectiveViewMode !== "2d" &&
+            effectiveViewMode !== "ortho";
 
           if (useMeshMarker) {
             const entity = viewerRef.current.entities.add({
@@ -1595,7 +1592,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           isUpdatingMarkerRef.current = false;
         }
       },
-      [clearMarker, viewMode],
+      [clearMarker, effectiveViewMode],
     );
 
     useImperativeHandle(
@@ -1782,7 +1779,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         !containerRef.current ||
         viewerRef.current ||
         initializingViewerRef.current ||
-        viewMode === "winkel"
+        isWinkel
       )
         return;
 
@@ -1968,7 +1965,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             includeBoundaries: boundaryLinesVisible,
           });
 
-          if (viewMode !== "ortho") {
+          if (effectiveViewMode !== "ortho") {
             const {
               boundaryEntities,
               geographicLineEntities,
@@ -2158,7 +2155,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       geographicLinesVisible,
       updateMarkerVisibility,
       addClickMarker,
-      viewMode, // Include viewMode in dependency array
+      effectiveViewMode, // Include effectiveViewMode in dependency array
     ]);
 
     const animateLayerAlpha = useCallback(
@@ -2245,7 +2242,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
         const previousLayers = [...rasterLayerRef.current];
 
-        if (viewMode === "ortho") {
+        if (effectiveViewMode === "ortho") {
           rasterLayerRef.current = [];
           setIsRasterImageryLoading(false);
           if (previousLayers.length) {
@@ -2439,7 +2436,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         rasterBlurEnabled,
         rasterOpacity,
         viewerReady,
-        viewMode,
+        effectiveViewMode,
       ],
     );
 
@@ -2748,51 +2745,35 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       },
       [activateMeshPrimitives, clearRasterMesh, createMeshPrimitives],
     );
-    useEffect(() => {
-      if (viewMode === "winkel" && viewerRef.current) {
-        try {
-          viewerRef.current.destroy();
-        } catch (err) {
-          console.warn("Failed to destroy Cesium viewer", err);
-        }
-        viewerRef.current = null;
-        setViewerReady(false);
-        initializingViewerRef.current = false;
-      }
-    }, [viewMode]);
 
-    useEffect(() => {
-      return () => {
-        if (viewerRef.current && !viewerRef.current.isDestroyed()) {
-          if (rasterLayerRef.current.length) {
-            rasterLayerRef.current.forEach((layer) => {
-              try {
-                viewerRef.current.scene.imageryLayers.remove(layer, true);
-              } catch (err) {
-                console.warn(
-                  "Failed to remove raster layer during cleanup",
-                  err,
-                );
-              }
-            });
-            rasterLayerRef.current = [];
+    const destroyViewer = useCallback(() => {
+      if (!viewerRef.current || viewerRef.current.isDestroyed()) {
+        return;
+      }
+      if (rasterLayerRef.current.length) {
+        rasterLayerRef.current.forEach((layer) => {
+          try {
+            viewerRef.current.scene.imageryLayers.remove(layer, true);
+          } catch (err) {
+            console.warn("Failed to remove raster layer during cleanup", err);
           }
-          if (rasterMeshRef.current) {
-            cancelMeshFade();
-            setMeshVisibility(rasterMeshRef.current, false);
-          }
-          clearMeshCache();
-          clearMarker();
-          clearSearchMarker();
-          boundaryEntitiesRef.current = [];
-          geographicLineEntitiesRef.current = [];
-          naturalEarthLineEntitiesRef.current = [];
-          viewerRef.current.destroy();
-          viewerRef.current = null;
-          setViewerReady(false);
-          initializingViewerRef.current = false;
-        }
-      };
+        });
+        rasterLayerRef.current = [];
+      }
+      if (rasterMeshRef.current) {
+        cancelMeshFade();
+        setMeshVisibility(rasterMeshRef.current, false);
+      }
+      clearMeshCache();
+      clearMarker();
+      clearSearchMarker();
+      boundaryEntitiesRef.current = [];
+      geographicLineEntitiesRef.current = [];
+      naturalEarthLineEntitiesRef.current = [];
+      viewerRef.current.destroy();
+      viewerRef.current = null;
+      setViewerReady(false);
+      initializingViewerRef.current = false;
     }, [
       cancelMeshFade,
       clearMarker,
@@ -2800,6 +2781,18 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       clearSearchMarker,
       setMeshVisibility,
     ]);
+
+    useEffect(() => {
+      if (!isWinkel) return;
+      destroyViewer();
+      setIsLoading(false);
+      setIsRasterImageryLoading(false);
+    }, [destroyViewer, isWinkel]);
+    useEffect(() => {
+      return () => {
+        destroyViewer();
+      };
+    }, [destroyViewer]);
 
     useEffect(() => {
       if (rasterState.error) {
@@ -2818,7 +2811,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       const viewer = viewerRef.current;
       const Cesium = cesiumInstance;
 
-      const is2D = viewMode === "2d" || viewMode === "winkel";
+      const is2D = effectiveViewMode === "2d";
 
       if (is2D) {
         viewer.resolutionScale = 0.8;
@@ -2836,9 +2829,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
       viewer.resolutionScale = 1.0;
       viewer.scene.morphTo3D(0.0);
-      viewer.scene.globe.show = viewMode !== "ortho";
+      viewer.scene.globe.show = effectiveViewMode !== "ortho";
 
-      if (viewMode === "ortho") {
+      if (effectiveViewMode === "ortho") {
         viewer.scene.morphTo3D(0.0);
         updateOrthoFrustum();
         try {
@@ -2872,14 +2865,15 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
       viewer.scene.requestRender();
     }, [
-      viewMode,
+      effectiveViewMode,
       cesiumInstance,
       enforceInfiniteScrollDisabled,
       updateOrthoFrustum,
     ]);
 
     useEffect(() => {
-      if (!viewerReady || viewMode !== "ortho" || !viewerRef.current) return;
+      if (!viewerReady || effectiveViewMode !== "ortho" || !viewerRef.current)
+        return;
       const viewer = viewerRef.current;
       const handleOrtho = () => updateOrthoFrustum();
       viewer.camera.changed.addEventListener(handleOrtho);
@@ -2890,11 +2884,11 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         viewer.camera.changed.removeEventListener(handleOrtho);
         viewer.scene.preRender.removeEventListener(handleOrtho);
       };
-    }, [updateOrthoFrustum, viewerReady, viewMode]);
+    }, [updateOrthoFrustum, viewerReady, effectiveViewMode]);
 
     // Add an effect to periodically enforce infinite scroll disabled in 2D mode
     useEffect(() => {
-      const is2D = viewMode === "2d" || viewMode === "winkel";
+      const is2D = effectiveViewMode === "2d";
       if (!is2D || !viewerRef.current) return;
 
       // Set up an interval to periodically check and enforce the setting
@@ -2903,7 +2897,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       }, 1000); // Check every second
 
       return () => clearInterval(intervalId);
-    }, [viewMode, enforceInfiniteScrollDisabled]);
+    }, [effectiveViewMode, enforceInfiniteScrollDisabled]);
 
     useEffect(() => {
       if (!satelliteLayerRef.current) return;
@@ -2928,30 +2922,34 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       if (boundaryEntitiesRef.current.length === 0) return;
 
       boundaryEntitiesRef.current.forEach((entity) => {
-        entity.show = viewMode === "ortho" ? false : boundaryLinesVisible;
+        entity.show =
+          effectiveViewMode === "ortho" ? false : boundaryLinesVisible;
       });
-    }, [boundaryLinesVisible, viewMode]);
+    }, [boundaryLinesVisible, effectiveViewMode]);
 
     useEffect(() => {
       if (geographicLineEntitiesRef.current.length === 0) return;
 
       geographicLineEntitiesRef.current.forEach((entity) => {
-        entity.show = viewMode === "ortho" ? false : geographicLinesVisible;
+        entity.show =
+          effectiveViewMode === "ortho" ? false : geographicLinesVisible;
       });
-    }, [geographicLinesVisible, viewMode]);
+    }, [geographicLinesVisible, effectiveViewMode]);
 
     useEffect(() => {
       if (naturalEarthLineEntitiesRef.current.length === 0) return;
 
       naturalEarthLineEntitiesRef.current.forEach((entity) => {
         entity.show =
-          viewMode === "ortho" ? false : naturalEarthGeographicLinesVisible;
+          effectiveViewMode === "ortho"
+            ? false
+            : naturalEarthGeographicLinesVisible;
       });
-    }, [naturalEarthGeographicLinesVisible, viewMode]);
+    }, [naturalEarthGeographicLinesVisible, effectiveViewMode]);
 
     useEffect(() => {
       if (!viewerRef.current || !cesiumInstance) return;
-      if (viewMode === "ortho") return;
+      if (effectiveViewMode === "ortho") return;
 
       const viewer = viewerRef.current;
       const configKey = JSON.stringify({
@@ -3044,7 +3042,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       boundaryLinesVisible,
       geographicLinesVisible,
       naturalEarthGeographicLinesVisible,
-      viewMode,
+      effectiveViewMode,
       cesiumInstance,
       coastlineResolution,
       riverResolution,
@@ -3076,10 +3074,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       const viewer = viewerRef.current;
       const hasRasterTextures = Boolean(rasterState.data?.textures?.length);
       const shouldShowImagery =
-        hasRasterTextures && viewMode !== "winkel" && viewMode !== "ortho";
+        hasRasterTextures && effectiveViewMode !== "ortho";
       const rasterOverlayActive =
-        viewMode !== "winkel" &&
-        viewMode !== "ortho" &&
+        effectiveViewMode !== "ortho" &&
         (useMeshRasterActive || shouldShowImagery);
 
       // Cesium globe materials override imagery layers, so clear when showing rasters.
@@ -3104,15 +3101,15 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       rasterState.data,
       rasterState.requestKey,
       useMeshRasterActive,
-      viewMode,
+      effectiveViewMode,
     ]);
 
     useEffect(() => {
-      if (viewMode !== "ortho") return;
+      if (effectiveViewMode !== "ortho") return;
       if (rasterMeshRef.current) {
         setMeshVisibility(rasterMeshRef.current, false);
       }
-    }, [setMeshVisibility, viewMode]);
+    }, [setMeshVisibility, effectiveViewMode]);
 
     useEffect(() => {
       if (!viewerReady || !viewerRef.current) return;
@@ -3142,6 +3139,32 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     }, [viewerReady, applyViewMode]);
 
     useEffect(() => {
+      if (isWinkel) {
+        if (
+          rasterGridState.data &&
+          rasterGridState.dataKey === rasterGridState.requestKey
+        ) {
+          rasterDataRef.current = rasterGridState.data;
+        } else {
+          rasterDataRef.current = undefined;
+        }
+        if (onRasterMetadataChange) {
+          if (
+            rasterGridState.data &&
+            rasterGridState.dataKey === rasterGridState.requestKey
+          ) {
+            onRasterMetadataChange({
+              units: rasterGridState.data.units ?? null,
+              min: rasterGridState.data.min ?? null,
+              max: rasterGridState.data.max ?? null,
+            });
+          } else {
+            onRasterMetadataChange(null);
+          }
+        }
+        return;
+      }
+
       if (useMeshRasterEffective && useMeshRasterActive) {
         if (
           rasterGridState.data &&
@@ -3181,6 +3204,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         }
       }
     }, [
+      isWinkel,
       onRasterMetadataChange,
       rasterGridState.data,
       rasterGridState.dataKey,
@@ -3339,9 +3363,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     useEffect(() => {
       clearMeshCache();
     }, [clearMeshCache, currentDataset?.id, selectedLevel]);
-    const isWinkel = viewMode === "winkel";
     const showInitialLoading = !isWinkel && isLoading && !viewerReady;
     const showRasterLoading =
+      !isWinkel &&
       !isPlaying &&
       !isLoading &&
       viewerReady &&
@@ -3349,44 +3373,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       ((useMeshRasterActive
         ? rasterGridState.isLoading && !rasterGridState.data
         : rasterState.isLoading && !rasterState.data) ||
-        (!isWinkel && isRasterImageryLoading));
-
-    if (isWinkel) {
-      return (
-        <div
-          className="absolute inset-0 z-0 h-full w-full"
-          style={{
-            background:
-              "radial-gradient(ellipse at center, #1e3a8a 0%, #0f172a 50%, #000000 100%)",
-            minHeight: "100vh",
-            minWidth: "100vw",
-          }}
-        >
-          {(rasterState.isLoading || !rasterState.data) && (
-            <GlobeLoading
-              message="Rendering Winkel Tripel…"
-              subtitle="Projecting climate data to 2D"
-            />
-          )}
-          <WinkelMap
-            rasterData={rasterState.data}
-            rasterGridData={
-              useMeshRasterEffective ? rasterGridState.data : undefined
-            }
-            rasterOpacity={rasterOpacity}
-            satelliteLayerVisible={satelliteLayerVisible}
-            boundaryLinesVisible={boundaryLinesVisible}
-            geographicLinesVisible={geographicLinesVisible}
-            labelsVisible={labelsVisible}
-            currentDataset={currentDataset}
-            onRegionClick={onRegionClick}
-            useMeshRaster={useMeshRasterEffective}
-            clearMarkerSignal={winkelClearMarkerTick}
-            lineColors={lineColors}
-          />
-        </div>
-      );
-    }
+        isRasterImageryLoading);
 
     if (error) {
       return (
@@ -3444,6 +3431,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             minHeight: "100vh",
             minWidth: "100vw",
             overflow: "hidden",
+            display: isWinkel ? "none" : "block",
           }}
         />
 
@@ -3473,6 +3461,27 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             normalMapMode={bumpMapMode}
             onRegionClick={onRegionClick}
             clearMarkerSignal={orthoClearMarkerTick}
+          />
+        )}
+
+        {isWinkel && (
+          <WinkelGlobe
+            rasterGridData={rasterGridState.data}
+            currentDataset={currentDataset}
+            rasterOpacity={rasterOpacity}
+            hideZeroValues={shouldHideZero}
+            smoothGridBoxValues={rasterBlurEnabled}
+            boundaryLinesVisible={boundaryLinesVisible}
+            geographicLinesVisible={geographicLinesVisible}
+            coastlineResolution={coastlineResolution}
+            riverResolution={riverResolution}
+            lakeResolution={lakeResolution}
+            naturalEarthGeographicLinesVisible={
+              naturalEarthGeographicLinesVisible
+            }
+            lineColors={lineColors}
+            orientation={winkelOrientation}
+            onOrientationChange={onWinkelOrientationChange}
           />
         )}
       </div>

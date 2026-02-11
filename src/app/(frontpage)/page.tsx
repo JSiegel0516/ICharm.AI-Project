@@ -436,6 +436,7 @@ export default function HomePage() {
     colorbarCustomMin: null,
     colorbarCustomMax: null,
     viewMode: "3d",
+    winkelOrientation: undefined,
   });
   const lastSatelliteLabelsVisibleRef = useRef(true);
   const lastCesiumLabelsVisibleRef = useRef(true);
@@ -1228,6 +1229,17 @@ export default function HomePage() {
     [],
   );
 
+  const handleWinkelOrientationChange = useCallback(
+    (orientation: GlobeSettings["winkelOrientation"]) => {
+      if (!orientation) return;
+      setGlobeSettings((prev) => ({
+        ...prev,
+        winkelOrientation: orientation,
+      }));
+    },
+    [],
+  );
+
   useEffect(() => {
     setRasterMeta(null);
   }, [currentDataset]);
@@ -1431,6 +1443,8 @@ export default function HomePage() {
         rasterBlurEnabled={globeSettings.rasterBlurEnabled}
         bumpMapMode={globeSettings.bumpMapMode}
         lineColors={lineColors}
+        winkelOrientation={globeSettings.winkelOrientation}
+        onWinkelOrientationChange={handleWinkelOrientationChange}
         useMeshRaster={useMeshRaster}
         viewMode={globeSettings.viewMode ?? "3d"}
         onRasterMetadataChange={setRasterMeta}

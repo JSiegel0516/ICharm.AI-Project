@@ -192,6 +192,7 @@ export interface GlobeSettings {
   colorbarCustomMin?: number | null;
   colorbarCustomMax?: number | null;
   viewMode?: GlobeViewMode;
+  winkelOrientation?: WinkelOrientation;
 }
 
 export interface AppState {
@@ -309,6 +310,8 @@ export interface GlobeProps {
   bumpMapMode?: "none" | "land" | "landBathymetry";
   useMeshRaster?: boolean;
   lineColors?: LineColorSettings;
+  winkelOrientation?: WinkelOrientation;
+  onWinkelOrientationChange?: (orientation: WinkelOrientation) => void;
   rasterState: UseRasterLayerResult;
   rasterGridState: UseRasterGridResult;
   // Disable loading overlays during timeline playback
@@ -330,6 +333,10 @@ export interface GlobeProps {
 }
 
 export type GlobeViewMode = "3d" | "ortho" | "2d" | "winkel";
+export type WinkelOrientation = {
+  rotate: [number, number, number];
+  scale: number;
+};
 export type GlobeLineResolution = "none" | "low" | "medium" | "high";
 export type LineColorOption = string;
 
