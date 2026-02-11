@@ -112,22 +112,27 @@ export const climateDataset = pgTable("metadata", {
   slug: text("slug").notNull().unique(),
   sourceName: text("sourceName").notNull(),
   datasetName: text("datasetName").notNull(),
+  datasetShortName: text("datasetShortName"),
+  description: text("description"),
   layerParameter: text("layerParameter").notNull(),
   statistic: text("statistic").notNull(),
   datasetType: text("datasetType").notNull(),
   levels: text("levels").notNull(),
   levelValues: text("levelValues"), // nullable - can be "None"
   levelUnits: text("levelUnits"), // nullable - can be "None"
-  Stored: text("Stored").notNull(), // "local" or "cloud" (capital S to match CSV)
-  inputFile: text("inputFile").notNull(),
+  stored: text("stored").notNull(), // "local" or "cloud" (capital S to match CSV)
+  storageType: text("storageType").notNull(),
+  postgresProcessor: text("postgresProcessor"),
+  inputFile: text("inputFile"),
   keyVariable: text("keyVariable").notNull(),
   units: text("units").notNull(),
   spatialResolution: text("spatialResolution").notNull(),
   engine: text("engine").notNull(),
   kerchunkPath: text("kerchunkPath"), // nullable - can be "None"
+  infoLocation: text("infoLocation"),
   origLocation: text("origLocation").notNull(),
-  startDate: text("startDate").notNull(), // stored as text: "1854/1/1"
-  endDate: text("endDate").notNull(), // stored as text: "9/1/2025" or "present"
+  startDate: text("startDate").notNull(), // stored as text: "1854-12-31"
+  endDate: text("endDate").notNull(), // stored as text: "2025-08-25" or "present"
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   description: text("description"),
   updatedAt: timestamp("updatedAt")

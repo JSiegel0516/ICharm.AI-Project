@@ -56,7 +56,7 @@ def main():
     df = pandas.read_csv(csv_file)
 
     for _, row in df.iterrows():
-        if row["Stored"] != "local":
+        if row["stored"] != "local":
             continue  # skip non-local datasets for now
 
         local_zarr_path = Path(

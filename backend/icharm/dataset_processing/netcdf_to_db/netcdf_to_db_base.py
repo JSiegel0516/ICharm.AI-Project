@@ -1,5 +1,8 @@
 import io
+import logging
 import os
+
+import numpy
 import pandas
 import itertools
 
@@ -48,6 +51,9 @@ class NetCDFtoDbBase:
         self.latitude_variable_name = latitude_variable_name
         self.level_variable_name = level_variable_name
         self.variable_of_interest_name = variable_of_interest_name
+
+        # Setup logging
+        self.logger = logging.getLogger(self.__class__.__name__)
         return
 
     def _guess_variable_name(
@@ -181,6 +187,7 @@ class NetCDFtoDbBase:
         return
 
     def _generate_postgres_tables(self, conn):
+        self.logger.info("Generating Postgres tables")
         with conn.cursor() as cur:
             # Latitude table creation
             cur.execute("DROP TABLE IF EXISTS lat")
@@ -295,6 +302,7 @@ class NetCDFtoDbBase:
         Returns:
 
         """
+        self.logger.info("Updating grid box table for usage: Adding Indexes, etc...")
         with conn.cursor() as cur:
             statements = [
                 "ALTER TABLE grid_data ADD PRIMARY KEY (gridbox_id, timestamp_id);",
@@ -334,6 +342,7 @@ class NetCDFtoDbBase:
         Returns:
 
         """
+        self.logger.info("Populating postgres common tables")
         with conn.cursor() as cur:
             # Insert latitudes
             with io.StringIO() as csv_buffer_latitudes:
@@ -400,7 +409,67 @@ class NetCDFtoDbBase:
     def _process_multi_level_gridbox_data(
         self, data, dim_names, fill_value, time_id, cur
     ):
-        raise NotImplementedError
+        n_lat = len(self.latitudes.keys())
+        n_lon = len(self.longitudes.keys())
+        n_levels = len(self.levels.keys())
+
+        # If it's a masked array, fill masked with NaN
+        if numpy.ma.isMaskedArray(data):
+            data = data.filled(numpy.nan)
+
+        # Replace values with fill_value with numpy.nan
+        if fill_value is not None:
+            data = numpy.where(data == fill_value, numpy.nan, data)
+
+        # Map dim names -> axis indices in `data`
+        name_to_axis = {name: i for i, name in enumerate(dim_names)}
+
+        # Find lat & lon axes
+        try:
+            lat_axis = name_to_axis[self.latitude_variable_name]  # e.g. 'lat'
+            lon_axis = name_to_axis[self.longitude_variable_name]  # e.g. 'lon'
+        except KeyError as e:
+            raise ValueError(
+                f"Could not find lat/lon dims in {dim_names}. "
+                f"lat name={self.latitude_variable_name}, lon name={self.longitude_variable_name}"
+            ) from e
+
+        # Does this dataset have levels?
+        level_axis = (
+            name_to_axis.get(self.level_variable_name) if n_levels > 0 else None
+        )
+
+        if level_axis is None:
+            data_lat_lon = numpy.transpose(data, (lat_axis, lon_axis))
+            assert data_lat_lon.shape == (n_lat, n_lon)
+
+            flat_values = data_lat_lon.reshape(-1)
+            value_cols = ["value_0"]
+
+        else:
+            data_lat_lon_level = numpy.transpose(data, (lat_axis, lon_axis, level_axis))
+            assert data_lat_lon_level.shape == (n_lat, n_lon, n_levels)
+
+            flat_values = data_lat_lon_level.reshape(-1, n_levels)
+            value_cols = [f"value_{k}" for k in list(self.levels.keys())]
+
+        df_griddata = pandas.DataFrame(flat_values, columns=value_cols)
+        df_griddata.insert(0, "gridbox_id", self.gridbox_ids)
+        df_griddata.insert(1, "timestamp_id", time_id)
+
+        # Reshape data to gridbox_id, timestamp_id, value
+        with io.StringIO() as csv_buffer_grid_date:
+            df_griddata.to_csv(csv_buffer_grid_date, index=False)
+            csv_buffer_grid_date.seek(0)
+            values_str = ",".join(value_cols)
+            cur.copy_expert(
+                f"""
+                COPY grid_data (gridbox_id, timestamp_id, {values_str})
+                FROM STDIN WITH (FORMAT csv, HEADER true, NULL '')
+                """,
+                csv_buffer_grid_date,
+            )
+        return
 
     def export_data_to_postgres(
         self,

@@ -1,6 +1,6 @@
 {
-  "id": "d9da614a-f797-4386-84c9-4125a7295cac",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "95aa63ff-d992-46a4-8471-a0f211899034",
+  "prevId": "9b81bd66-75d8-4e0a-8d8a-132542836709",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -250,6 +250,18 @@
           "primaryKey": false,
           "notNull": true
         },
+        "datasetShortName": {
+          "name": "datasetShortName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "layerParameter": {
           "name": "layerParameter",
           "type": "text",
@@ -286,11 +298,23 @@
           "primaryKey": false,
           "notNull": false
         },
-        "Stored": {
-          "name": "Stored",
+        "stored": {
+          "name": "stored",
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "storageType": {
+          "name": "storageType",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "postgresProcessor": {
+          "name": "postgresProcessor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "inputFile": {
           "name": "inputFile",
@@ -328,6 +352,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "infoLocation": {
+          "name": "infoLocation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "origLocation": {
           "name": "origLocation",
           "type": "text",
@@ -352,12 +382,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "updatedAt": {
           "name": "updatedAt",
