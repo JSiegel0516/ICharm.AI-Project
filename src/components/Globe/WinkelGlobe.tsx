@@ -22,7 +22,7 @@ import { WinkelOverlay } from "./WinkelOverlay";
 
 const MIN_SCALE = 100;
 const MAX_SCALE = 2000;
-const MIN_SCALE_FOR_OVERLAY = 200;
+const MIN_SCALE_FOR_OVERLAY = 350;
 
 type Props = {
   rasterGridData?: RasterGridData;
@@ -79,16 +79,29 @@ const WinkelGlobe: React.FC<Props> = ({
   const [size, setSize] = useState({ width: 0, height: 0 });
   const draggingRef = useRef(false);
   const dragStartRef = useRef<[number, number] | null>(null);
-  const dragManipulatorRef = useRef<ReturnType<
-    WinkelProjection["createManipulator"]
-  > | null>(null);
+  const lastPointerRef = useRef<[number, number] | null>(null);
+  const lastMoveTimeRef = useRef<number | null>(null);
+  const velocityRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const inertiaFrameRef = useRef<number | null>(null);
   const scaleRef = useRef<number>(0);
   const hasInteractedRef = useRef(false);
   const rafRef = useRef<number | null>(null);
+  const interactionRafRef = useRef<number | null>(null);
   const orientationTimeoutRef = useRef<number | null>(null);
   const lastAppliedOrientationRef = useRef<WinkelOrientation | null>(null);
 
   const [boundaryData, setBoundaryData] = useState<BoundaryDataset[]>([]);
+  const effectiveOrientation = useMemo(() => {
+    if (!orientation) return undefined;
+    if (
+      typeof orientation.baseScale !== "number" ||
+      !Number.isFinite(orientation.baseScale) ||
+      orientation.baseScale <= 0
+    ) {
+      return undefined;
+    }
+    return orientation;
+  }, [orientation]);
 
   const boundaryConfigKey = useMemo(
     () =>
@@ -148,19 +161,26 @@ const WinkelGlobe: React.FC<Props> = ({
     if (!canvasRef.current) return;
     const ctx = canvasRef.current.getContext("2d");
     if (!ctx) return;
-    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    const isInteracting =
+      draggingRef.current || inertiaFrameRef.current !== null;
+    if (isInteracting) {
+      return;
+    }
     if (
       !rasterGridData ||
       !currentDataset?.colorScale?.colors?.length ||
       !overlayRef.current ||
       !projectionRef.current
     ) {
+      ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
       return;
     }
     const scale = projectionRef.current.projection.scale();
     if (scale < MIN_SCALE_FOR_OVERLAY) {
+      ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
       return;
     }
+    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
     overlayRef.current.render({
       gridData: rasterGridData,
       colors: currentDataset.colorScale.colors,
@@ -190,6 +210,18 @@ const WinkelGlobe: React.FC<Props> = ({
     });
   }, [renderOverlay, updatePaths]);
 
+  const scheduleInteractionRender = useCallback(() => {
+    if (interactionRafRef.current) return;
+    interactionRafRef.current = window.requestAnimationFrame(() => {
+      interactionRafRef.current = null;
+      updatePaths();
+      renderOverlay();
+      if (draggingRef.current || inertiaFrameRef.current !== null) {
+        scheduleInteractionRender();
+      }
+    });
+  }, [renderOverlay, updatePaths]);
+
   const renderBoundaries = useCallback(() => {
     if (!svgRef.current || !boundariesRef.current) return;
     boundariesRef.current.renderToSVG(svgRef.current, boundaryData, {
@@ -199,8 +231,9 @@ const WinkelGlobe: React.FC<Props> = ({
   }, [boundaryData, geographicLinesVisible, lineColors]);
 
   const applySize = useCallback(
-    (width: number, height: number) => {
+    (width: number, height: number, force = false) => {
       if (
+        !force &&
         width === sizeRef.current.width &&
         height === sizeRef.current.height
       ) {
@@ -216,7 +249,7 @@ const WinkelGlobe: React.FC<Props> = ({
         projectionRef.current = new WinkelProjection(width, height);
         scaleRef.current = projectionRef.current.projection.scale();
       } else {
-        const resetScale = !orientation && !hasInteractedRef.current;
+        const resetScale = !effectiveOrientation && !hasInteractedRef.current;
         projectionRef.current.setSize(width, height, resetScale);
         if (resetScale) {
           scaleRef.current = projectionRef.current.projection.scale();
@@ -237,16 +270,16 @@ const WinkelGlobe: React.FC<Props> = ({
         overlayRef.current?.setSize(width, height);
       }
 
-      if (orientation && projectionRef.current) {
-        projectionRef.current.setOrientation(orientation);
+      if (effectiveOrientation && projectionRef.current) {
+        projectionRef.current.setOrientation(effectiveOrientation);
         scaleRef.current = projectionRef.current.projection.scale();
-        lastAppliedOrientationRef.current = orientation;
+        lastAppliedOrientationRef.current = effectiveOrientation;
       }
 
       renderBoundaries();
       requestRender();
     },
-    [orientation, renderBoundaries, requestRender],
+    [effectiveOrientation, renderBoundaries, requestRender],
   );
 
   useEffect(() => {
@@ -263,9 +296,35 @@ const WinkelGlobe: React.FC<Props> = ({
     const rect = container.getBoundingClientRect();
     const initialWidth = Math.max(1, Math.round(rect.width));
     const initialHeight = Math.max(1, Math.round(rect.height));
-    applySize(initialWidth, initialHeight);
+    applySize(initialWidth, initialHeight, true);
     return () => observer.disconnect();
   }, [applySize]);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    if (hasInteractedRef.current || effectiveOrientation) return;
+    let frame2: number | null = null;
+    const frame1 = window.requestAnimationFrame(() => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const width = Math.max(1, Math.round(rect.width));
+      const height = Math.max(1, Math.round(rect.height));
+      applySize(width, height, true);
+      frame2 = window.requestAnimationFrame(() => {
+        if (!containerRef.current) return;
+        const rect2 = containerRef.current.getBoundingClientRect();
+        const width2 = Math.max(1, Math.round(rect2.width));
+        const height2 = Math.max(1, Math.round(rect2.height));
+        applySize(width2, height2, true);
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(frame1);
+      if (frame2) {
+        window.cancelAnimationFrame(frame2);
+      }
+    };
+  }, [applySize, effectiveOrientation]);
 
   useEffect(() => {
     renderBoundaries();
@@ -273,20 +332,20 @@ const WinkelGlobe: React.FC<Props> = ({
   }, [renderBoundaries, requestRender]);
 
   useEffect(() => {
-    if (!projectionRef.current || !orientation) return;
+    if (!projectionRef.current || !effectiveOrientation) return;
     if (
       orientationsEqual(
         lastAppliedOrientationRef.current ?? undefined,
-        orientation,
+        effectiveOrientation,
       )
     ) {
       return;
     }
-    projectionRef.current.setOrientation(orientation);
+    projectionRef.current.setOrientation(effectiveOrientation);
     scaleRef.current = projectionRef.current.projection.scale();
-    lastAppliedOrientationRef.current = orientation;
+    lastAppliedOrientationRef.current = effectiveOrientation;
     requestRender();
-  }, [orientation, requestRender]);
+  }, [effectiveOrientation, requestRender]);
 
   useEffect(() => {
     requestRender();
@@ -313,28 +372,53 @@ const WinkelGlobe: React.FC<Props> = ({
       if (!projectionRef.current || !svgRef.current) return;
       event.preventDefault();
       hasInteractedRef.current = true;
+      if (inertiaFrameRef.current) {
+        window.cancelAnimationFrame(inertiaFrameRef.current);
+        inertiaFrameRef.current = null;
+      }
       svgRef.current.setPointerCapture(event.pointerId);
       draggingRef.current = true;
       const start = getLocalPointer(event);
       dragStartRef.current = start;
-      dragManipulatorRef.current = projectionRef.current.createManipulator(
-        start,
-        projectionRef.current.projection.scale(),
-      );
+      lastPointerRef.current = start;
+      lastMoveTimeRef.current = performance.now();
+      velocityRef.current = { x: 0, y: 0 };
     },
     [getLocalPointer],
   );
 
   const handlePointerMove = useCallback(
     (event: React.PointerEvent) => {
-      if (!draggingRef.current || !dragManipulatorRef.current) return;
+      if (!draggingRef.current || !projectionRef.current) return;
       const start = dragStartRef.current;
-      if (!start || !projectionRef.current) return;
+      if (!start) return;
       const current = getLocalPointer(event);
-      dragManipulatorRef.current.move(current);
-      requestRender();
+      const last = lastPointerRef.current ?? current;
+      const now = performance.now();
+      const lastTime = lastMoveTimeRef.current ?? now;
+      const dt = Math.max(1, now - lastTime);
+      const dx = current[0] - last[0];
+      const dy = current[1] - last[1];
+      const sensitivity = 0.25;
+      const rotate = projectionRef.current.projection.rotate() as [
+        number,
+        number,
+        number,
+      ];
+      projectionRef.current.projection.rotate([
+        rotate[0] + dx * sensitivity,
+        rotate[1] - dy * sensitivity,
+        rotate[2],
+      ]);
+      velocityRef.current = {
+        x: (dx * sensitivity) / dt,
+        y: (-dy * sensitivity) / dt,
+      };
+      lastPointerRef.current = current;
+      lastMoveTimeRef.current = now;
+      scheduleInteractionRender();
     },
-    [getLocalPointer, requestRender],
+    [getLocalPointer, scheduleInteractionRender],
   );
 
   const handlePointerUp = useCallback(
@@ -342,15 +426,51 @@ const WinkelGlobe: React.FC<Props> = ({
       if (!draggingRef.current) return;
       draggingRef.current = false;
       dragStartRef.current = null;
-      dragManipulatorRef.current = null;
+      lastPointerRef.current = null;
       try {
         svgRef.current?.releasePointerCapture(event.pointerId);
       } catch {
         // noop
       }
-      scheduleOrientationCommit();
+      const velocity = velocityRef.current;
+      const speed = Math.hypot(velocity.x, velocity.y);
+      if (speed > 0.01 && projectionRef.current) {
+        let lastFrame = performance.now();
+        const friction = 0.92;
+        const tick = () => {
+          if (!projectionRef.current) return;
+          const now = performance.now();
+          const dt = Math.max(1, now - lastFrame);
+          lastFrame = now;
+          velocityRef.current = {
+            x: velocityRef.current.x * friction,
+            y: velocityRef.current.y * friction,
+          };
+          const v = velocityRef.current;
+          if (Math.hypot(v.x, v.y) < 0.005) {
+            inertiaFrameRef.current = null;
+            scheduleOrientationCommit();
+            return;
+          }
+          const rotate = projectionRef.current.projection.rotate() as [
+            number,
+            number,
+            number,
+          ];
+          projectionRef.current.projection.rotate([
+            rotate[0] + v.x * dt,
+            rotate[1] + v.y * dt,
+            rotate[2],
+          ]);
+          scheduleInteractionRender();
+          inertiaFrameRef.current = window.requestAnimationFrame(tick);
+        };
+        inertiaFrameRef.current = window.requestAnimationFrame(tick);
+      } else {
+        scheduleOrientationCommit();
+      }
     },
-    [scheduleOrientationCommit],
+    [scheduleInteractionRender, scheduleOrientationCommit],
   );
 
   const handleWheel = useCallback(
@@ -374,6 +494,12 @@ const WinkelGlobe: React.FC<Props> = ({
     return () => {
       if (rafRef.current) {
         window.cancelAnimationFrame(rafRef.current);
+      }
+      if (interactionRafRef.current) {
+        window.cancelAnimationFrame(interactionRafRef.current);
+      }
+      if (inertiaFrameRef.current) {
+        window.cancelAnimationFrame(inertiaFrameRef.current);
       }
       if (orientationTimeoutRef.current) {
         window.clearTimeout(orientationTimeoutRef.current);

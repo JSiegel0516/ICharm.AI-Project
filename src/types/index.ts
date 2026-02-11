@@ -336,6 +336,7 @@ export type GlobeViewMode = "3d" | "ortho" | "2d" | "winkel";
 export type WinkelOrientation = {
   rotate: [number, number, number];
   scale: number;
+  baseScale?: number;
 };
 export type GlobeLineResolution = "none" | "low" | "medium" | "high";
 export type LineColorOption = string;

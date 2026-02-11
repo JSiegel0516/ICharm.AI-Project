@@ -3,8 +3,8 @@ import type { GeoProjection } from "d3-geo";
 import type { WinkelOrientation } from "@/types";
 
 const DEFAULT_PRECISION = 0.1;
-const DEFAULT_SCALE_FACTOR = 0.45;
 const DEFAULT_ROTATE: [number, number, number] = [0, 0, 0];
+const SPHERE = { type: "Sphere" } as const;
 
 export class WinkelProjection {
   projection: GeoProjection;
@@ -15,27 +15,26 @@ export class WinkelProjection {
   constructor(width: number, height: number) {
     this.width = width;
     this.height = height;
-    this.baseScale = Math.max(
-      1,
-      Math.min(width, height) * DEFAULT_SCALE_FACTOR,
-    );
+    this.baseScale = 1;
     this.projection = geoWinkel3()
-      .scale(this.baseScale)
-      .translate([width / 2, height / 2])
       .precision(DEFAULT_PRECISION)
       .rotate(DEFAULT_ROTATE);
+    this.projection.fitSize([width, height], SPHERE);
+    this.baseScale = this.projection.scale();
   }
 
   setSize(width: number, height: number, resetScale = false) {
     this.width = width;
     this.height = height;
-    this.baseScale = Math.max(
-      1,
-      Math.min(width, height) * DEFAULT_SCALE_FACTOR,
-    );
-    this.projection.translate([width / 2, height / 2]);
-    if (resetScale) {
-      this.projection.scale(this.baseScale);
+    const prevBaseScale = this.baseScale;
+    const prevScale = this.projection.scale();
+    this.projection.fitSize([width, height], SPHERE);
+    this.baseScale = this.projection.scale();
+    if (!resetScale && prevBaseScale > 0 && Number.isFinite(prevScale)) {
+      const factor = prevScale / prevBaseScale;
+      if (Number.isFinite(factor) && factor > 0) {
+        this.projection.scale(this.baseScale * factor);
+      }
     }
   }
 
@@ -60,12 +59,24 @@ export class WinkelProjection {
     return {
       rotate: this.projection.rotate() as [number, number, number],
       scale: this.projection.scale(),
+      baseScale: this.baseScale,
     };
   }
 
   setOrientation(orientation: WinkelOrientation) {
-    this.projection
-      .rotate(orientation.rotate)
-      .scale(orientation.scale ?? this.baseScale);
+    const targetScale = (() => {
+      if (
+        orientation.baseScale &&
+        Number.isFinite(orientation.baseScale) &&
+        orientation.baseScale > 0
+      ) {
+        const factor = orientation.scale / orientation.baseScale;
+        if (Number.isFinite(factor) && factor > 0) {
+          return this.baseScale * factor;
+        }
+      }
+      return orientation.scale ?? this.baseScale;
+    })();
+    this.projection.rotate(orientation.rotate).scale(targetScale);
   }
 }
