@@ -218,6 +218,7 @@ export interface AppState {
   isLoading: boolean;
   error: string | null;
   globeSettings?: GlobeSettings; // NEW
+  lineColors?: LineColorSettings;
   colorBarOrientation: ColorBarOrientation;
   selectedColorMap?: string | null;
   colorScaleBaselines?: Record<string, ColorScale>;
@@ -307,6 +308,7 @@ export interface GlobeProps {
   rasterBlurEnabled?: boolean;
   bumpMapMode?: "none" | "land" | "landBathymetry";
   useMeshRaster?: boolean;
+  lineColors?: LineColorSettings;
   rasterState: UseRasterLayerResult;
   rasterGridState: UseRasterGridResult;
   // Disable loading overlays during timeline playback
@@ -329,6 +331,16 @@ export interface GlobeProps {
 
 export type GlobeViewMode = "3d" | "ortho" | "2d" | "winkel";
 export type GlobeLineResolution = "none" | "low" | "medium" | "high";
+export type LineColorOption = string;
+
+export interface LineColorSettings {
+  boundaryLines: LineColorOption;
+  coastlines: LineColorOption;
+  rivers: LineColorOption;
+  lakes: LineColorOption;
+  geographicLines: LineColorOption;
+  geographicGrid: LineColorOption;
+}
 
 export interface RegionData {
   name: string;

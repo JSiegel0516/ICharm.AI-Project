@@ -6,11 +6,11 @@ export interface LineSegment {
   color: THREE.Color;
 }
 
-const COLORS: Record<NEDataType, THREE.Color> = {
-  coastlines: new THREE.Color(0.35, 0.35, 0.35),
-  rivers: new THREE.Color(0.45, 0.45, 0.45),
-  lakes: new THREE.Color(0.45, 0.45, 0.45),
-  geographic: new THREE.Color(0x9ca3af),
+const DEFAULT_COLORS: Record<NEDataType, string> = {
+  coastlines: "#9ca3af",
+  rivers: "#9ca3af",
+  lakes: "#9ca3af",
+  geographic: "#9ca3af",
 };
 
 const latLonToCartesian = (lat: number, lon: number, radius: number) => {
@@ -29,10 +29,11 @@ export class LineGeometryProcessor {
     data: NELineData,
     type: NEDataType,
     radius: number,
+    colorOverride?: string,
   ): LineSegment[] {
     const segments: LineSegment[] = [];
     const { Lon, Lat } = data;
-    const color = COLORS[type];
+    const color = new THREE.Color(colorOverride ?? DEFAULT_COLORS[type]);
 
     let currentSegment: THREE.Vector3[] = [];
 

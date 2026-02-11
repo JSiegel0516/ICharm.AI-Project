@@ -131,10 +131,27 @@ const addGeographicBoundaries = (
   Cesium: any,
   viewer: any,
   boundaryData: BoundaryDataset[],
+  lineColors?: {
+    boundaryLines?: string;
+    coastlines?: string;
+    rivers?: string;
+    lakes?: string;
+    geographicLines?: string;
+    geographicGrid?: string;
+  },
 ) => {
   const boundaryEntities: any[] = [];
   const geographicLineEntities: any[] = [];
   const naturalEarthLineEntities: any[] = [];
+  const coastlineColorCss =
+    lineColors?.coastlines ?? lineColors?.boundaryLines ?? "#e2e8f0";
+  const riversColorCss =
+    lineColors?.rivers ?? lineColors?.boundaryLines ?? "#9ca3af";
+  const lakesColorCss =
+    lineColors?.lakes ?? lineColors?.boundaryLines ?? "#cbd5f5";
+  const geographicLineColorCss =
+    lineColors?.geographicLines ?? lineColors?.geographicGrid ?? "#64748b";
+  const geographicGridColorCss = lineColors?.geographicGrid ?? "#64748b";
   const addWrappedPolyline = (
     positions: any[],
     width: number,
@@ -177,16 +194,19 @@ const addGeographicBoundaries = (
 
       if (name.includes("coastline")) {
         width = 3;
-        color = Cesium.Color.fromCssColorString("#e2e8f0").withAlpha(0.85);
+        color =
+          Cesium.Color.fromCssColorString(coastlineColorCss).withAlpha(0.85);
       } else if (isGeographicLines) {
         width = 1.2;
-        color = Cesium.Color.fromCssColorString("#64748b").withAlpha(0.35);
+        color = Cesium.Color.fromCssColorString(
+          geographicLineColorCss,
+        ).withAlpha(0.35);
       } else if (name.includes("lakes")) {
         width = 2;
-        color = Cesium.Color.fromCssColorString("#cbd5f5").withAlpha(0.7);
+        color = Cesium.Color.fromCssColorString(lakesColorCss).withAlpha(0.7);
       } else if (name.includes("rivers")) {
         width = 2;
-        color = Cesium.Color.fromCssColorString("#9ca3af").withAlpha(0.55);
+        color = Cesium.Color.fromCssColorString(riversColorCss).withAlpha(0.55);
       }
 
       data.features.forEach((feature: any) => {
@@ -227,19 +247,22 @@ const addGeographicBoundaries = (
       let width = 1.5;
 
       if (name.includes("coastline")) {
-        color = Cesium.Color.WHITE.withAlpha(0.6);
+        color =
+          Cesium.Color.fromCssColorString(coastlineColorCss).withAlpha(0.6);
         width = 2;
       }
       if (name.includes("geographic_lines")) {
-        color = Cesium.Color.fromCssColorString("#64748b").withAlpha(0.35);
+        color = Cesium.Color.fromCssColorString(
+          geographicLineColorCss,
+        ).withAlpha(0.35);
         width = 1.2;
       }
       if (name.includes("lakes")) {
-        color = Cesium.Color.WHITE.withAlpha(0.3);
+        color = Cesium.Color.fromCssColorString(lakesColorCss).withAlpha(0.3);
         width = 2;
       }
       if (name.includes("rivers")) {
-        color = Cesium.Color.fromCssColorString("#9ca3af").withAlpha(0.5);
+        color = Cesium.Color.fromCssColorString(riversColorCss).withAlpha(0.5);
         width = 2;
       }
 
@@ -269,7 +292,9 @@ const addGeographicBoundaries = (
       polyline: {
         positions,
         width: 1.2,
-        material: Cesium.Color.fromCssColorString("#64748b").withAlpha(0.35),
+        material: Cesium.Color.fromCssColorString(
+          geographicGridColorCss,
+        ).withAlpha(0.35),
         clampToGround: false,
       },
     });
@@ -285,7 +310,9 @@ const addGeographicBoundaries = (
       polyline: {
         positions,
         width: 1.2,
-        material: Cesium.Color.fromCssColorString("#64748b").withAlpha(0.35),
+        material: Cesium.Color.fromCssColorString(
+          geographicGridColorCss,
+        ).withAlpha(0.35),
         clampToGround: false,
       },
     });
@@ -326,6 +353,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       hideZeroPrecipitation = false,
       bumpMapMode = "none",
       useMeshRaster = false,
+      lineColors,
       onRasterMetadataChange,
       isPlaying = false,
       prefetchedRasters,
@@ -1945,7 +1973,12 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
               boundaryEntities,
               geographicLineEntities,
               naturalEarthLineEntities,
-            } = addGeographicBoundaries(Cesium, viewer, boundaryData);
+            } = addGeographicBoundaries(
+              Cesium,
+              viewer,
+              boundaryData,
+              lineColors,
+            );
             boundaryEntitiesRef.current = boundaryEntities;
             geographicLineEntitiesRef.current = geographicLineEntities;
             naturalEarthLineEntitiesRef.current = naturalEarthLineEntities;
@@ -2926,6 +2959,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         riverResolution,
         lakeResolution,
         includeGeographic: naturalEarthGeographicLinesVisible,
+        lineColors: lineColors ?? null,
       });
       const configChanged = boundaryConfigRef.current !== configKey;
       if (configChanged) {
@@ -2973,6 +3007,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
               cesiumInstance,
               viewerRef.current,
               boundaryData,
+              lineColors,
             );
             boundaryEntitiesRef.current = boundaryEntities;
             geographicLineEntitiesRef.current = geographicLineEntities;
@@ -3014,6 +3049,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       coastlineResolution,
       riverResolution,
       lakeResolution,
+      lineColors,
     ]);
 
     useEffect(() => {
@@ -3346,6 +3382,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             onRegionClick={onRegionClick}
             useMeshRaster={useMeshRasterEffective}
             clearMarkerSignal={winkelClearMarkerTick}
+            lineColors={lineColors}
           />
         </div>
       );
@@ -3426,6 +3463,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             naturalEarthGeographicLinesVisible={
               naturalEarthGeographicLinesVisible
             }
+            lineColors={lineColors}
             currentDataset={currentDataset}
             useMeshRaster={useMeshRasterEffective}
             labelsVisible={labelsVisible}

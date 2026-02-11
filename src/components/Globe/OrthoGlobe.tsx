@@ -1,6 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import type { Dataset, GlobeLineResolution, RegionData } from "@/types";
+import type {
+  Dataset,
+  GlobeLineResolution,
+  LineColorSettings,
+  RegionData,
+} from "@/types";
 import type { RasterLayerData } from "@/hooks/useRasterLayer";
 import type { RasterGridData } from "@/hooks/useRasterGrid";
 import { buildColorStops, mapValueToRgba } from "@/lib/mesh/colorMapping";
@@ -22,6 +27,7 @@ type Props = {
   riverResolution?: GlobeLineResolution;
   lakeResolution?: GlobeLineResolution;
   naturalEarthGeographicLinesVisible?: boolean;
+  lineColors?: LineColorSettings;
   labelsVisible?: boolean;
   currentDataset?: Dataset;
   useMeshRaster: boolean;
@@ -386,6 +392,7 @@ const OrthoGlobe: React.FC<Props> = ({
   riverResolution = "none",
   lakeResolution = "none",
   naturalEarthGeographicLinesVisible = false,
+  lineColors,
   labelsVisible = false,
   currentDataset,
   useMeshRaster,
@@ -475,6 +482,16 @@ const OrthoGlobe: React.FC<Props> = ({
       lakes: lakeResolution,
       geographic: naturalEarthGeographicLinesVisible,
       radius: OVERLAY_RADIUS + 0.001,
+      colors: {
+        coastlines:
+          lineColors?.coastlines ?? lineColors?.boundaryLines ?? "#9ca3af",
+        rivers: lineColors?.rivers ?? lineColors?.boundaryLines ?? "#9ca3af",
+        lakes: lineColors?.lakes ?? lineColors?.boundaryLines ?? "#9ca3af",
+        geographic:
+          lineColors?.geographicLines ??
+          lineColors?.geographicGrid ??
+          "#9ca3af",
+      },
     },
     requestRender,
   );
@@ -1814,7 +1831,7 @@ const OrthoGlobe: React.FC<Props> = ({
       new THREE.Float32BufferAttribute(segments, 3),
     );
     const material = new THREE.LineBasicMaterial({
-      color: 0x9ca3af,
+      color: new THREE.Color(lineColors?.geographicGrid ?? "#9ca3af"),
       transparent: true,
       opacity: 0.35,
     });
@@ -1824,7 +1841,7 @@ const OrthoGlobe: React.FC<Props> = ({
     geographicLineGroupRef.current = group;
     globeGroupRef.current.add(group);
     requestRender();
-  }, [geographicLinesVisible, requestRender]);
+  }, [geographicLinesVisible, requestRender, lineColors?.geographicGrid]);
 
   useEffect(() => {
     if (!containerRef.current) return;

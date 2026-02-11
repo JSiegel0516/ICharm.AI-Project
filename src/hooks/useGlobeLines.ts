@@ -11,6 +11,7 @@ type LineSettings = {
   lakes: NEResolution;
   geographic: boolean;
   radius: number;
+  colors?: Partial<Record<NEDataType, string>>;
 };
 
 const debounceDelayMs = 200;
@@ -55,6 +56,7 @@ export const useGlobeLines = (
         data,
         type,
         settings.radius,
+        settings.colors?.[type],
       );
       if (!segments.length) return;
 
@@ -65,7 +67,14 @@ export const useGlobeLines = (
       lineGroupsRef.current.set(type, lineGeometry);
       onUpdate?.();
     },
-    [clearLine, onUpdate, root, settings.radius, settings.visible],
+    [
+      clearLine,
+      onUpdate,
+      root,
+      settings.radius,
+      settings.visible,
+      settings.colors,
+    ],
   );
 
   const scheduleUpdate = useCallback(
@@ -90,7 +99,13 @@ export const useGlobeLines = (
     return () => {
       clearLine("coastlines");
     };
-  }, [root, settings.coastline, scheduleUpdate, clearLine]);
+  }, [
+    root,
+    settings.coastline,
+    settings.colors?.coastlines,
+    scheduleUpdate,
+    clearLine,
+  ]);
 
   useEffect(() => {
     if (!root) return;
@@ -98,7 +113,13 @@ export const useGlobeLines = (
     return () => {
       clearLine("rivers");
     };
-  }, [root, settings.rivers, scheduleUpdate, clearLine]);
+  }, [
+    root,
+    settings.rivers,
+    settings.colors?.rivers,
+    scheduleUpdate,
+    clearLine,
+  ]);
 
   useEffect(() => {
     if (!root) return;
@@ -106,7 +127,7 @@ export const useGlobeLines = (
     return () => {
       clearLine("lakes");
     };
-  }, [root, settings.lakes, scheduleUpdate, clearLine]);
+  }, [root, settings.lakes, settings.colors?.lakes, scheduleUpdate, clearLine]);
 
   useEffect(() => {
     if (!root) return;
@@ -115,7 +136,13 @@ export const useGlobeLines = (
     return () => {
       clearLine("geographic");
     };
-  }, [root, settings.geographic, scheduleUpdate, clearLine]);
+  }, [
+    root,
+    settings.geographic,
+    settings.colors?.geographic,
+    scheduleUpdate,
+    clearLine,
+  ]);
 
   useEffect(() => {
     return () => {

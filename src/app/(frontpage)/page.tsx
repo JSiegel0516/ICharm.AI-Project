@@ -247,6 +247,7 @@ export default function HomePage() {
     setTemperatureUnit,
     isLoading,
     error,
+    lineColors,
   } = useAppState();
   const globeRef = useRef<GlobeRef>(null);
   const lastDatasetIdRef = useRef<string | null>(null);
@@ -1429,6 +1430,7 @@ export default function HomePage() {
         rasterOpacity={globeSettings.rasterOpacity}
         rasterBlurEnabled={globeSettings.rasterBlurEnabled}
         bumpMapMode={globeSettings.bumpMapMode}
+        lineColors={lineColors}
         useMeshRaster={useMeshRaster}
         viewMode={globeSettings.viewMode ?? "3d"}
         onRasterMetadataChange={setRasterMeta}

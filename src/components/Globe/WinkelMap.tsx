@@ -42,6 +42,14 @@ type Props = {
   onRegionClick?: (lat: number, lon: number, data: RegionData) => void;
   useMeshRaster?: boolean;
   clearMarkerSignal?: number;
+  lineColors?: {
+    boundaryLines: string;
+    coastlines: string;
+    rivers: string;
+    lakes: string;
+    geographicLines: string;
+    geographicGrid: string;
+  };
 };
 
 type SampleableImage = {
@@ -339,6 +347,7 @@ export const WinkelMap: React.FC<Props> = ({
   onRegionClick = () => {},
   useMeshRaster = false,
   clearMarkerSignal = 0,
+  lineColors,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const { width, height } = useWindowSize();
@@ -1289,6 +1298,10 @@ export const WinkelMap: React.FC<Props> = ({
 
   const boundaryStrokeWidth = 1.4;
   const geographicStrokeWidth = 1.1;
+  const boundaryStroke =
+    lineColors?.boundaryLines ?? lineColors?.coastlines ?? "#e5e7eb";
+  const geographicStroke =
+    lineColors?.geographicLines ?? lineColors?.geographicGrid ?? "#9ca3af";
 
   return (
     <div className="absolute inset-0 h-full w-full">
@@ -1310,7 +1323,7 @@ export const WinkelMap: React.FC<Props> = ({
               key={`boundary-${idx}`}
               d={d}
               fill="none"
-              stroke="#e5e7eb"
+              stroke={boundaryStroke}
               strokeWidth={boundaryStrokeWidth}
               vectorEffect="non-scaling-stroke"
               shapeRendering="geometricPrecision"
@@ -1322,7 +1335,7 @@ export const WinkelMap: React.FC<Props> = ({
               key={`geographic-${idx}`}
               d={d}
               fill="none"
-              stroke="#9ca3af"
+              stroke={geographicStroke}
               strokeWidth={geographicStrokeWidth}
               vectorEffect="non-scaling-stroke"
               shapeRendering="geometricPrecision"

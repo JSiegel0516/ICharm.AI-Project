@@ -159,6 +159,14 @@ const useAppStateInternal = () => {
       rasterBlurEnabled: true,
       bumpMapMode: "none",
     },
+    lineColors: {
+      boundaryLines: "#9ca3af",
+      coastlines: "#9ca3af",
+      rivers: "#9ca3af",
+      lakes: "#9ca3af",
+      geographicLines: "#9ca3af",
+      geographicGrid: "#9ca3af",
+    },
     selectedColorMap: "dataset-default",
     selectedColorMapInverse: DEFAULT_COLOR_MAP_INVERSE,
     colorScaleBaselines: {},
@@ -232,6 +240,16 @@ const useAppStateInternal = () => {
 
   const setShowSettings = useCallback((show: boolean) => {
     setState((prev) => ({ ...prev, showSettings: show }));
+  }, []);
+
+  const setLineColors = useCallback((next: Partial<AppState["lineColors"]>) => {
+    setState((prev) => ({
+      ...prev,
+      lineColors: {
+        ...prev.lineColors,
+        ...next,
+      },
+    }));
   }, []);
 
   const setShowAbout = useCallback((show: boolean) => {
@@ -477,6 +495,8 @@ const useAppStateInternal = () => {
     refreshDatasets,
     currentLocationMarker: state.currentLocationMarker,
     setCurrentLocationMarker,
+    lineColors: state.lineColors,
+    setLineColors,
     requestLocationFocus,
     requestLocationMarkerClear,
     clearLocationFocusRequest,
