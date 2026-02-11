@@ -27,7 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { GlobeSettingsPanel } from "@/app/(frontpage)/_components/GlobeSettingsPanel";
 import { useAppState } from "@/context/HeaderContext";
-import type { Dataset, GlobeSettings } from "@/types";
+import type { Dataset, GlobeSettings, GlobeLineResolution } from "@/types";
 import { Database, Cloud, Server, Globe } from "lucide-react";
 
 interface SideButtonsProps {
@@ -40,6 +40,10 @@ interface SideButtonsProps {
   onSatelliteToggle: (visible: boolean) => void;
   onBoundaryToggle: (visible: boolean) => void;
   onGeographicLinesToggle: (visible: boolean) => void;
+  onCoastlineResolutionChange: (resolution: GlobeLineResolution) => void;
+  onRiverResolutionChange: (resolution: GlobeLineResolution) => void;
+  onLakeResolutionChange: (resolution: GlobeLineResolution) => void;
+  onNaturalEarthGeographicLinesToggle: (visible: boolean) => void;
   onLabelsToggle: (visible: boolean) => void;
   onRasterOpacityChange: (opacity: number) => void;
   onHideZeroPrecipToggle: (enabled: boolean) => void;
@@ -78,6 +82,10 @@ export function SideButtons({
   onSatelliteToggle,
   onBoundaryToggle,
   onGeographicLinesToggle,
+  onCoastlineResolutionChange,
+  onRiverResolutionChange,
+  onLakeResolutionChange,
+  onNaturalEarthGeographicLinesToggle,
   onLabelsToggle,
   onRasterOpacityChange,
   onHideZeroPrecipToggle,
@@ -735,6 +743,18 @@ export function SideButtons({
         onBoundaryLinesToggle={onBoundaryToggle}
         geographicLinesVisible={globeSettings.geographicLinesVisible}
         onGeographicLinesToggle={onGeographicLinesToggle}
+        coastlineResolution={globeSettings.coastlineResolution}
+        onCoastlineResolutionChange={onCoastlineResolutionChange}
+        riverResolution={globeSettings.riverResolution}
+        onRiverResolutionChange={onRiverResolutionChange}
+        lakeResolution={globeSettings.lakeResolution}
+        onLakeResolutionChange={onLakeResolutionChange}
+        naturalEarthGeographicLinesVisible={
+          globeSettings.naturalEarthGeographicLinesVisible
+        }
+        onNaturalEarthGeographicLinesToggle={
+          onNaturalEarthGeographicLinesToggle
+        }
         labelsVisible={globeSettings.labelsVisible}
         onLabelsToggle={onLabelsToggle}
         rasterOpacity={globeSettings.rasterOpacity}

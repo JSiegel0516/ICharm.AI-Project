@@ -29,6 +29,7 @@ import {
   RegionData,
   PressureLevel,
   GlobeSettings,
+  GlobeLineResolution,
   type Dataset,
 } from "@/types";
 import { pressureLevels } from "@/utils/constants";
@@ -422,6 +423,10 @@ export default function HomePage() {
     satelliteLayerVisible: true,
     boundaryLinesVisible: true,
     geographicLinesVisible: false,
+    coastlineResolution: "low",
+    riverResolution: "none",
+    lakeResolution: "none",
+    naturalEarthGeographicLinesVisible: false,
     labelsVisible: true,
     rasterOpacity: 0.9,
     hideZeroPrecipitation: false,
@@ -1110,6 +1115,46 @@ export default function HomePage() {
     setGlobeSettings((prev) => ({ ...prev, geographicLinesVisible: visible }));
   }, []);
 
+  const handleCoastlineResolutionChange = useCallback(
+    (resolution: GlobeLineResolution) => {
+      setGlobeSettings((prev) => ({
+        ...prev,
+        coastlineResolution: resolution,
+      }));
+    },
+    [],
+  );
+
+  const handleRiverResolutionChange = useCallback(
+    (resolution: GlobeLineResolution) => {
+      setGlobeSettings((prev) => ({
+        ...prev,
+        riverResolution: resolution,
+      }));
+    },
+    [],
+  );
+
+  const handleLakeResolutionChange = useCallback(
+    (resolution: GlobeLineResolution) => {
+      setGlobeSettings((prev) => ({
+        ...prev,
+        lakeResolution: resolution,
+      }));
+    },
+    [],
+  );
+
+  const handleNaturalEarthGeographicLinesToggle = useCallback(
+    (visible: boolean) => {
+      setGlobeSettings((prev) => ({
+        ...prev,
+        naturalEarthGeographicLinesVisible: visible,
+      }));
+    },
+    [],
+  );
+
   const handleBaseMapModeChange = useCallback(
     (mode: "satellite" | "street") => {
       setGlobeSettings((prev) => ({
@@ -1374,6 +1419,12 @@ export default function HomePage() {
         satelliteLayerVisible={globeSettings.satelliteLayerVisible}
         boundaryLinesVisible={globeSettings.boundaryLinesVisible}
         geographicLinesVisible={globeSettings.geographicLinesVisible}
+        coastlineResolution={globeSettings.coastlineResolution}
+        riverResolution={globeSettings.riverResolution}
+        lakeResolution={globeSettings.lakeResolution}
+        naturalEarthGeographicLinesVisible={
+          globeSettings.naturalEarthGeographicLinesVisible
+        }
         labelsVisible={globeSettings.labelsVisible}
         rasterOpacity={globeSettings.rasterOpacity}
         rasterBlurEnabled={globeSettings.rasterBlurEnabled}
@@ -1402,6 +1453,12 @@ export default function HomePage() {
             onSatelliteToggle={handleSatelliteToggle}
             onBoundaryToggle={handleBoundaryToggle}
             onGeographicLinesToggle={handleGeographicLinesToggle}
+            onCoastlineResolutionChange={handleCoastlineResolutionChange}
+            onRiverResolutionChange={handleRiverResolutionChange}
+            onLakeResolutionChange={handleLakeResolutionChange}
+            onNaturalEarthGeographicLinesToggle={
+              handleNaturalEarthGeographicLinesToggle
+            }
             onBaseMapModeChange={handleBaseMapModeChange}
             onLabelsToggle={handleLabelsToggle}
             onRasterOpacityChange={handleRasterOpacityChange}

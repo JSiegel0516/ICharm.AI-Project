@@ -59,18 +59,62 @@ type BoundaryDataset = {
   data: any;
 };
 
-const loadGeographicBoundaries = async (): Promise<BoundaryDataset[]> => {
-  const files: Array<{ name: string; kind: BoundaryDataset["kind"] }> = [
-    { name: "ne_110m_coastline.json", kind: "boundary" },
-    { name: "ne_110m_lakes.json", kind: "boundary" },
-    { name: "ne_110m_rivers_lake_centerlines.json", kind: "boundary" },
-  ];
+const RESOLUTION_MAP = {
+  low: "110m",
+  medium: "50m",
+  high: "10m",
+} as const;
+
+const loadGeographicBoundaries = async (options: {
+  coastlineResolution: "none" | "low" | "medium" | "high";
+  riverResolution: "none" | "low" | "medium" | "high";
+  lakeResolution: "none" | "low" | "medium" | "high";
+  includeGeographicLines: boolean;
+  includeBoundaries: boolean;
+}): Promise<BoundaryDataset[]> => {
+  const files: Array<{
+    name: string;
+    kind: BoundaryDataset["kind"];
+    path: string;
+  }> = [];
+
+  if (options.includeBoundaries && options.coastlineResolution !== "none") {
+    const res = RESOLUTION_MAP[options.coastlineResolution];
+    files.push({
+      name: `ne_${res}_coastline.json`,
+      kind: "boundary",
+      path: `/assets/naturalearth/coastlines/ne_${res}_coastline.json`,
+    });
+  }
+  if (options.includeBoundaries && options.lakeResolution !== "none") {
+    const res = RESOLUTION_MAP[options.lakeResolution];
+    files.push({
+      name: `ne_${res}_lakes.json`,
+      kind: "boundary",
+      path: `/assets/naturalearth/lakes/ne_${res}_lakes.json`,
+    });
+  }
+  if (options.includeBoundaries && options.riverResolution !== "none") {
+    const res = RESOLUTION_MAP[options.riverResolution];
+    files.push({
+      name: `ne_${res}_rivers_lake_centerlines.json`,
+      kind: "boundary",
+      path: `/assets/naturalearth/rivers/ne_${res}_rivers_lake_centerlines.json`,
+    });
+  }
+  if (options.includeGeographicLines) {
+    files.push({
+      name: "ne_110m_geographic_lines.json",
+      kind: "geographicLines",
+      path: "/assets/naturalearth/geographic/ne_110m_geographic_lines.json",
+    });
+  }
 
   const boundaryData: BoundaryDataset[] = [];
 
   for (const file of files) {
     try {
-      const response = await fetch(`/_countries/${file.name}`);
+      const response = await fetch(file.path);
       if (response.ok) {
         const data = await response.json();
         boundaryData.push({ name: file.name, kind: file.kind, data });
@@ -90,6 +134,7 @@ const addGeographicBoundaries = (
 ) => {
   const boundaryEntities: any[] = [];
   const geographicLineEntities: any[] = [];
+  const naturalEarthLineEntities: any[] = [];
   const addWrappedPolyline = (
     positions: any[],
     width: number,
@@ -123,7 +168,7 @@ const addGeographicBoundaries = (
       kind === "geographicLines" || name.includes("geographic_lines");
 
     const targetCollection = isGeographicLines
-      ? geographicLineEntities
+      ? naturalEarthLineEntities
       : boundaryEntities;
 
     if (data.type === "FeatureCollection" && data.features) {
@@ -134,8 +179,8 @@ const addGeographicBoundaries = (
         width = 3;
         color = Cesium.Color.fromCssColorString("#e2e8f0").withAlpha(0.85);
       } else if (isGeographicLines) {
-        width = 1.5;
-        color = Cesium.Color.fromCssColorString("#64748b").withAlpha(0.45);
+        width = 1.2;
+        color = Cesium.Color.fromCssColorString("#64748b").withAlpha(0.35);
       } else if (name.includes("lakes")) {
         width = 2;
         color = Cesium.Color.fromCssColorString("#cbd5f5").withAlpha(0.7);
@@ -184,6 +229,10 @@ const addGeographicBoundaries = (
       if (name.includes("coastline")) {
         color = Cesium.Color.WHITE.withAlpha(0.6);
         width = 2;
+      }
+      if (name.includes("geographic_lines")) {
+        color = Cesium.Color.fromCssColorString("#64748b").withAlpha(0.35);
+        width = 1.2;
       }
       if (name.includes("lakes")) {
         color = Cesium.Color.WHITE.withAlpha(0.3);
@@ -251,7 +300,7 @@ const addGeographicBoundaries = (
     addLonLine(lon);
   }
 
-  return { boundaryEntities, geographicLineEntities };
+  return { boundaryEntities, geographicLineEntities, naturalEarthLineEntities };
 };
 
 const Globe = forwardRef<GlobeRef, GlobeProps>(
@@ -267,6 +316,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       satelliteLayerVisible = true,
       boundaryLinesVisible = true,
       geographicLinesVisible = false,
+      coastlineResolution = "low",
+      riverResolution = "none",
+      lakeResolution = "none",
+      naturalEarthGeographicLinesVisible = false,
       labelsVisible = true,
       rasterOpacity = 1.0,
       rasterBlurEnabled = false,
@@ -305,6 +358,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const streetOverlayLayerRef = useRef<any>(null);
     const boundaryEntitiesRef = useRef<any[]>([]);
     const geographicLineEntitiesRef = useRef<any[]>([]);
+    const naturalEarthLineEntitiesRef = useRef<any[]>([]);
     const rasterLayerRef = useRef<any[]>([]);
     const textureLoadIdRef = useRef(0);
     const isComponentUnmountedRef = useRef(false);
@@ -329,6 +383,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const labelRafRef = useRef<number | null>(null);
     const labelLastFrameRef = useRef<number>(0);
     const labelFadeLastRef = useRef<number>(0);
+    const boundaryConfigRef = useRef<string>("");
 
     const rasterDataRef = useRef<RasterLayerData | RasterGridData | undefined>(
       undefined,
@@ -1877,13 +1932,23 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             destination: Cesium.Cartesian3.fromDegrees(0, 20, 25000000),
           });
 
-          const boundaryData = await loadGeographicBoundaries();
+          const boundaryData = await loadGeographicBoundaries({
+            coastlineResolution,
+            riverResolution,
+            lakeResolution,
+            includeGeographicLines: naturalEarthGeographicLinesVisible,
+            includeBoundaries: boundaryLinesVisible,
+          });
 
           if (viewMode !== "ortho") {
-            const { boundaryEntities, geographicLineEntities } =
-              addGeographicBoundaries(Cesium, viewer, boundaryData);
+            const {
+              boundaryEntities,
+              geographicLineEntities,
+              naturalEarthLineEntities,
+            } = addGeographicBoundaries(Cesium, viewer, boundaryData);
             boundaryEntitiesRef.current = boundaryEntities;
             geographicLineEntitiesRef.current = geographicLineEntities;
+            naturalEarthLineEntitiesRef.current = naturalEarthLineEntities;
 
             const showBoundaries = boundaryLinesVisible;
             const showGeographic = geographicLinesVisible;
@@ -1893,9 +1958,13 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             geographicLineEntitiesRef.current.forEach((entity) => {
               entity.show = showGeographic;
             });
+            naturalEarthLineEntitiesRef.current.forEach((entity) => {
+              entity.show = naturalEarthGeographicLinesVisible;
+            });
           } else {
             boundaryEntitiesRef.current = [];
             geographicLineEntitiesRef.current = [];
+            naturalEarthLineEntitiesRef.current = [];
           }
 
           viewer.cesiumWidget.screenSpaceEventHandler.setInputAction(
@@ -2684,6 +2753,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           clearSearchMarker();
           boundaryEntitiesRef.current = [];
           geographicLineEntitiesRef.current = [];
+          naturalEarthLineEntitiesRef.current = [];
           viewerRef.current.destroy();
           viewerRef.current = null;
           setViewerReady(false);
@@ -2745,6 +2815,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         }
         boundaryEntitiesRef.current = [];
         geographicLineEntitiesRef.current = [];
+        naturalEarthLineEntitiesRef.current = [];
         return;
       }
 
@@ -2837,21 +2908,75 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     }, [geographicLinesVisible, viewMode]);
 
     useEffect(() => {
+      if (naturalEarthLineEntitiesRef.current.length === 0) return;
+
+      naturalEarthLineEntitiesRef.current.forEach((entity) => {
+        entity.show =
+          viewMode === "ortho" ? false : naturalEarthGeographicLinesVisible;
+      });
+    }, [naturalEarthGeographicLinesVisible, viewMode]);
+
+    useEffect(() => {
       if (!viewerRef.current || !cesiumInstance) return;
       if (viewMode === "ortho") return;
 
-      if (boundaryEntitiesRef.current.length === 0) {
-        loadGeographicBoundaries()
+      const viewer = viewerRef.current;
+      const configKey = JSON.stringify({
+        coastlineResolution,
+        riverResolution,
+        lakeResolution,
+        includeGeographic: naturalEarthGeographicLinesVisible,
+      });
+      const configChanged = boundaryConfigRef.current !== configKey;
+      if (configChanged) {
+        boundaryConfigRef.current = configKey;
+        boundaryEntitiesRef.current.forEach((entity) => {
+          viewer.entities.remove(entity);
+        });
+        naturalEarthLineEntitiesRef.current.forEach((entity) => {
+          viewer.entities.remove(entity);
+        });
+        geographicLineEntitiesRef.current.forEach((entity) => {
+          viewer.entities.remove(entity);
+        });
+        boundaryEntitiesRef.current = [];
+        naturalEarthLineEntitiesRef.current = [];
+        geographicLineEntitiesRef.current = [];
+      }
+
+      const shouldLoad =
+        boundaryLinesVisible ||
+        naturalEarthGeographicLinesVisible ||
+        geographicLinesVisible;
+
+      const needsReload =
+        configChanged ||
+        (boundaryEntitiesRef.current.length === 0 &&
+          geographicLineEntitiesRef.current.length === 0 &&
+          naturalEarthLineEntitiesRef.current.length === 0);
+
+      if (needsReload && shouldLoad) {
+        loadGeographicBoundaries({
+          coastlineResolution,
+          riverResolution,
+          lakeResolution,
+          includeGeographicLines: naturalEarthGeographicLinesVisible,
+          includeBoundaries: boundaryLinesVisible,
+        })
           .then((boundaryData) => {
             if (!viewerRef.current || !cesiumInstance) return;
-            const { boundaryEntities, geographicLineEntities } =
-              addGeographicBoundaries(
-                cesiumInstance,
-                viewerRef.current,
-                boundaryData,
-              );
+            const {
+              boundaryEntities,
+              geographicLineEntities,
+              naturalEarthLineEntities,
+            } = addGeographicBoundaries(
+              cesiumInstance,
+              viewerRef.current,
+              boundaryData,
+            );
             boundaryEntitiesRef.current = boundaryEntities;
             geographicLineEntitiesRef.current = geographicLineEntities;
+            naturalEarthLineEntitiesRef.current = naturalEarthLineEntities;
             const showBoundaries = boundaryLinesVisible;
             const showGeographic = geographicLinesVisible;
             boundaryEntitiesRef.current.forEach((entity) => {
@@ -2859,6 +2984,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             });
             geographicLineEntitiesRef.current.forEach((entity) => {
               entity.show = showGeographic;
+            });
+            naturalEarthLineEntitiesRef.current.forEach((entity) => {
+              entity.show = naturalEarthGeographicLinesVisible;
             });
           })
           .catch((err) => {
@@ -2874,11 +3002,18 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       geographicLineEntitiesRef.current.forEach((entity) => {
         entity.show = showGeographic;
       });
+      naturalEarthLineEntitiesRef.current.forEach((entity) => {
+        entity.show = naturalEarthGeographicLinesVisible;
+      });
     }, [
       boundaryLinesVisible,
       geographicLinesVisible,
+      naturalEarthGeographicLinesVisible,
       viewMode,
       cesiumInstance,
+      coastlineResolution,
+      riverResolution,
+      lakeResolution,
     ]);
 
     useEffect(() => {
@@ -3285,6 +3420,12 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             satelliteLayerVisible={effectiveSatelliteVisible}
             boundaryLinesVisible={boundaryLinesVisible}
             geographicLinesVisible={geographicLinesVisible}
+            coastlineResolution={coastlineResolution}
+            riverResolution={riverResolution}
+            lakeResolution={lakeResolution}
+            naturalEarthGeographicLinesVisible={
+              naturalEarthGeographicLinesVisible
+            }
             currentDataset={currentDataset}
             useMeshRaster={useMeshRasterEffective}
             labelsVisible={labelsVisible}

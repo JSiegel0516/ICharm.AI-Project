@@ -180,6 +180,10 @@ export interface GlobeSettings {
   satelliteLayerVisible: boolean;
   boundaryLinesVisible: boolean;
   geographicLinesVisible: boolean;
+  coastlineResolution?: GlobeLineResolution;
+  riverResolution?: GlobeLineResolution;
+  lakeResolution?: GlobeLineResolution;
+  naturalEarthGeographicLinesVisible?: boolean;
   labelsVisible: boolean;
   rasterOpacity: number;
   hideZeroPrecipitation: boolean;
@@ -293,6 +297,10 @@ export interface GlobeProps {
   satelliteLayerVisible?: boolean;
   boundaryLinesVisible?: boolean;
   geographicLinesVisible?: boolean;
+  coastlineResolution?: GlobeLineResolution;
+  riverResolution?: GlobeLineResolution;
+  lakeResolution?: GlobeLineResolution;
+  naturalEarthGeographicLinesVisible?: boolean;
   labelsVisible?: boolean;
   rasterOpacity?: number;
   hideZeroPrecipitation?: boolean;
@@ -320,6 +328,7 @@ export interface GlobeProps {
 }
 
 export type GlobeViewMode = "3d" | "ortho" | "2d" | "winkel";
+export type GlobeLineResolution = "none" | "low" | "medium" | "high";
 
 export interface RegionData {
   name: string;
@@ -435,6 +444,14 @@ export interface GlobeSettingsPanelProps {
   onBoundaryLinesToggle: (visible: boolean) => void;
   geographicLinesVisible: boolean;
   onGeographicLinesToggle: (visible: boolean) => void;
+  coastlineResolution?: GlobeLineResolution;
+  onCoastlineResolutionChange?: (resolution: GlobeLineResolution) => void;
+  riverResolution?: GlobeLineResolution;
+  onRiverResolutionChange?: (resolution: GlobeLineResolution) => void;
+  lakeResolution?: GlobeLineResolution;
+  onLakeResolutionChange?: (resolution: GlobeLineResolution) => void;
+  naturalEarthGeographicLinesVisible?: boolean;
+  onNaturalEarthGeographicLinesToggle?: (visible: boolean) => void;
   labelsVisible: boolean;
   onLabelsToggle: (visible: boolean) => void;
   rasterOpacity: number;

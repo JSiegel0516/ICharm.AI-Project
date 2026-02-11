@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import type { Dataset, RegionData } from "@/types";
+import type { Dataset, GlobeLineResolution, RegionData } from "@/types";
 import type { RasterLayerData } from "@/hooks/useRasterLayer";
 import type { RasterGridData } from "@/hooks/useRasterGrid";
 import { buildColorStops, mapValueToRgba } from "@/lib/mesh/colorMapping";
@@ -9,6 +9,7 @@ import {
   type LabelFeature,
   type LabelKind,
 } from "@/lib/labels/openlayersVectorTiles";
+import { useGlobeLines } from "@/hooks/useGlobeLines";
 
 type Props = {
   rasterData?: RasterLayerData;
@@ -17,6 +18,10 @@ type Props = {
   satelliteLayerVisible: boolean;
   boundaryLinesVisible: boolean;
   geographicLinesVisible: boolean;
+  coastlineResolution?: GlobeLineResolution;
+  riverResolution?: GlobeLineResolution;
+  lakeResolution?: GlobeLineResolution;
+  naturalEarthGeographicLinesVisible?: boolean;
   labelsVisible?: boolean;
   currentDataset?: Dataset;
   useMeshRaster: boolean;
@@ -192,14 +197,6 @@ const createGlobeMaterial = (options: {
   });
 };
 
-type GeoPoint = { lon: number; lat: number };
-type BoundaryVector = {
-  id: string;
-  layer: string;
-  coordinates: GeoPoint[];
-  kind: "boundary";
-};
-
 type OrthoLabelEntry = {
   feature: LabelFeature;
   el: HTMLDivElement;
@@ -207,11 +204,6 @@ type OrthoLabelEntry = {
   opacity: number;
   targetOpacity: number;
 };
-
-const boundaryFiles = [
-  { name: "ne_110m_admin_0_countries.json", kind: "boundary" as const },
-  { name: "ne_110m_coastline.json", kind: "boundary" as const },
-];
 
 const latLonToCartesian = (lat: number, lon: number, radius: number) => {
   const latRad = THREE.MathUtils.degToRad(lat);
@@ -222,39 +214,6 @@ const latLonToCartesian = (lat: number, lon: number, radius: number) => {
     radius * Math.sin(latRad),
     -radius * cosLat * Math.sin(lonRad),
   );
-};
-
-const splitAtDateline = (coords: GeoPoint[]) => {
-  const parts: GeoPoint[][] = [];
-  let current: GeoPoint[] = [];
-  const maxGeoJumpLon = 30;
-  const maxGeoJumpLat = 20;
-  for (let i = 0; i < coords.length; i += 1) {
-    const pt = coords[i];
-    const prev = coords[i - 1];
-    if (prev) {
-      const lonJump = Math.abs(pt.lon - prev.lon);
-      const latJump = Math.abs(pt.lat - prev.lat);
-      const crossesDateline =
-        lonJump > 180 ||
-        (prev.lon > 170 && pt.lon < -170) ||
-        (prev.lon < -170 && pt.lon > 170);
-      if (
-        (crossesDateline ||
-          lonJump > maxGeoJumpLon ||
-          latJump > maxGeoJumpLat) &&
-        current.length >= 2
-      ) {
-        parts.push([...current]);
-        current = [];
-      }
-    }
-    current.push(pt);
-  }
-  if (current.length >= 2) {
-    parts.push(current);
-  }
-  return parts.length ? parts : [coords];
 };
 
 type LabelTier = {
@@ -416,89 +375,6 @@ const calculateLabelOpacity = (
   return baseOpacity;
 };
 
-const fetchBoundaries = async (): Promise<BoundaryVector[]> => {
-  const results: BoundaryVector[] = [];
-  let loadedCountryLines = false;
-
-  for (const file of boundaryFiles) {
-    try {
-      const res = await fetch(`/_countries/${file.name}`);
-      if (!res.ok) continue;
-      const data = await res.json();
-
-      const pushFeature = (coords: any) => {
-        if (!Array.isArray(coords)) return;
-        const segments: GeoPoint[][] = [];
-        let current: GeoPoint[] = [];
-        coords.forEach((pair: any) => {
-          if (Array.isArray(pair) && pair.length >= 2) {
-            current.push({ lon: pair[0], lat: pair[1] });
-          } else if (current.length) {
-            segments.push(current);
-            current = [];
-          }
-        });
-        if (current.length) segments.push(current);
-
-        segments.forEach((segment) => {
-          if (segment.length >= 2) {
-            results.push({
-              id: `${file.name}-${results.length}`,
-              layer: file.name,
-              coordinates: segment,
-              kind: file.kind,
-            });
-          }
-        });
-      };
-
-      if (data.type === "FeatureCollection" && Array.isArray(data.features)) {
-        data.features.forEach((feature: any) => {
-          const geom = feature?.geometry;
-          if (!geom) return;
-          if (geom.type === "LineString") pushFeature(geom.coordinates);
-          if (geom.type === "MultiLineString") {
-            geom.coordinates.forEach((line: any) => pushFeature(line));
-          }
-          if (geom.type === "Polygon") {
-            geom.coordinates.forEach((ring: any) => pushFeature(ring));
-          }
-          if (geom.type === "MultiPolygon") {
-            geom.coordinates.forEach((poly: any) =>
-              poly.forEach((ring: any) => pushFeature(ring)),
-            );
-          }
-        });
-      } else if (Array.isArray(data?.Lon) && Array.isArray(data?.Lat)) {
-        const coords: GeoPoint[] = [];
-        for (let i = 0; i < data.Lon.length; i += 1) {
-          if (data.Lon[i] !== null && data.Lat[i] !== null) {
-            coords.push({ lon: data.Lon[i], lat: data.Lat[i] });
-          }
-        }
-        if (coords.length >= 2) {
-          results.push({
-            id: `${file.name}-series`,
-            layer: file.name,
-            coordinates: coords,
-            kind: file.kind,
-          });
-          if (file.name.includes("admin_0_countries")) {
-            loadedCountryLines = true;
-          }
-        }
-      }
-      if (loadedCountryLines) {
-        return results;
-      }
-    } catch {
-      // ignore boundary load errors
-    }
-  }
-
-  return results;
-};
-
 const OrthoGlobe: React.FC<Props> = ({
   rasterData,
   rasterGridData,
@@ -506,6 +382,10 @@ const OrthoGlobe: React.FC<Props> = ({
   satelliteLayerVisible,
   boundaryLinesVisible,
   geographicLinesVisible,
+  coastlineResolution = "low",
+  riverResolution = "none",
+  lakeResolution = "none",
+  naturalEarthGeographicLinesVisible = false,
   labelsVisible = false,
   currentDataset,
   useMeshRaster,
@@ -530,15 +410,11 @@ const OrthoGlobe: React.FC<Props> = ({
   const meshMaterialRef = useRef<THREE.ShaderMaterial | null>(null);
   const rasterOverlayRef = useRef<THREE.Mesh | null>(null);
   const rasterMaterialRef = useRef<THREE.ShaderMaterial | null>(null);
-  const boundaryOverlayRef = useRef<THREE.Mesh | null>(null);
-  const boundaryMaterialRef = useRef<THREE.ShaderMaterial | null>(null);
-  const boundaryLineGroupRef = useRef<THREE.Group | null>(null);
   const geographicLineGroupRef = useRef<THREE.Group | null>(null);
   const markerRef = useRef<THREE.Mesh | null>(null);
   const skyboxTextureRef = useRef<THREE.CubeTexture | null>(null);
   const gridTextureRef = useRef<THREE.Texture | null>(null);
   const rasterTextureRef = useRef<THREE.Texture | null>(null);
-  const boundaryTextureRef = useRef<THREE.Texture | null>(null);
   const labelLayerRef = useRef<HTMLDivElement | null>(null);
   const normalMapTextureRef = useRef<THREE.Texture | null>(null);
   const baseTextureRef = useRef<THREE.Texture | null>(null);
@@ -550,7 +426,7 @@ const OrthoGlobe: React.FC<Props> = ({
   const useMeshRasterRef = useRef(useMeshRaster);
   const useMeshRasterActiveRef = useRef(useMeshRaster);
   const [useMeshRasterActive, setUseMeshRasterActive] = useState(useMeshRaster);
-  const [vectors, setVectors] = useState<BoundaryVector[]>([]);
+  const [linesRoot, setLinesRoot] = useState<THREE.Object3D | null>(null);
   const labelTileCacheRef = useRef<Map<string, OrthoLabelEntry[]>>(new Map());
   const labelTilePendingRef = useRef<Set<string>>(new Set());
   const labelTileAbortRef = useRef<AbortController | null>(null);
@@ -564,11 +440,6 @@ const OrthoGlobe: React.FC<Props> = ({
   const labelFadeLastRef = useRef<number>(0);
 
   const useGridTexture = useLegacyRendering || !smoothGridBoxValues;
-  const useVertexColorsActive =
-    !useGridTexture &&
-    useMeshRasterActive &&
-    Boolean(rasterGridData && currentDataset?.colorScale?.colors?.length);
-
   useEffect(() => {
     useMeshRasterRef.current = useMeshRaster;
     useMeshRasterActiveRef.current = useMeshRaster;
@@ -589,6 +460,24 @@ const OrthoGlobe: React.FC<Props> = ({
       rendererRef.current.render(sceneRef.current, cameraRef.current);
     });
   }, []);
+
+  const useVertexColorsActive =
+    !useGridTexture &&
+    useMeshRasterActive &&
+    Boolean(rasterGridData && currentDataset?.colorScale?.colors?.length);
+
+  useGlobeLines(
+    linesRoot,
+    {
+      visible: boundaryLinesVisible,
+      coastline: coastlineResolution,
+      rivers: riverResolution,
+      lakes: lakeResolution,
+      geographic: naturalEarthGeographicLinesVisible,
+      radius: OVERLAY_RADIUS + 0.001,
+    },
+    requestRender,
+  );
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -1508,6 +1397,7 @@ const OrthoGlobe: React.FC<Props> = ({
     globeGroupRef.current = group;
     group.rotation.copy(DEFAULT_GLOBE_ROTATION);
     scene.add(group);
+    setLinesRoot(group);
 
     const geometry = new THREE.SphereGeometry(BASE_RADIUS, 96, 64);
     setSolidVertexColor(geometry, BASE_FILL_COLOR_SRGB);
@@ -1556,20 +1446,6 @@ const OrthoGlobe: React.FC<Props> = ({
     rasterOverlayRef.current = rasterOverlay;
     rasterMaterialRef.current = rasterMaterial;
     group.add(rasterOverlay);
-
-    const boundaryMaterial = createGlobeMaterial({
-      transparent: true,
-      depthWrite: false,
-      opacity: 0.9,
-      useTexture: false,
-      useVertexColor: false,
-      baseColor: BASE_FILL_COLOR_SRGB,
-      lightingEnabled: false,
-    });
-    const boundaryOverlay = new THREE.Mesh(overlayGeometry, boundaryMaterial);
-    boundaryOverlayRef.current = boundaryOverlay;
-    boundaryMaterialRef.current = boundaryMaterial;
-    group.add(boundaryOverlay);
 
     const loader = new THREE.TextureLoader();
     loader.load(BASE_TEXTURE_URL, (texture) => {
@@ -1621,14 +1497,12 @@ const OrthoGlobe: React.FC<Props> = ({
       }
       if (gridTextureRef.current) gridTextureRef.current.dispose();
       if (rasterTextureRef.current) rasterTextureRef.current.dispose();
-      if (boundaryTextureRef.current) boundaryTextureRef.current.dispose();
       if (normalMapTextureRef.current) normalMapTextureRef.current.dispose();
       if (baseTextureRef.current) baseTextureRef.current.dispose();
       if (skyboxTextureRef.current) skyboxTextureRef.current.dispose();
       if (baseMaterialRef.current) baseMaterialRef.current.dispose();
       if (meshMaterialRef.current) meshMaterialRef.current.dispose();
       if (rasterMaterialRef.current) rasterMaterialRef.current.dispose();
-      if (boundaryMaterialRef.current) boundaryMaterialRef.current.dispose();
       rendererRef.current = null;
       sceneRef.current = null;
       cameraRef.current = null;
@@ -1639,9 +1513,6 @@ const OrthoGlobe: React.FC<Props> = ({
       meshMaterialRef.current = null;
       rasterOverlayRef.current = null;
       rasterMaterialRef.current = null;
-      boundaryOverlayRef.current = null;
-      boundaryMaterialRef.current = null;
-      boundaryLineGroupRef.current = null;
       geographicLineGroupRef.current = null;
       sunlightRef.current = null;
       markerRef.current = null;
@@ -1651,108 +1522,6 @@ const OrthoGlobe: React.FC<Props> = ({
   useEffect(() => {
     updateSatelliteVisibility();
   }, [updateSatelliteVisibility, useMeshRasterActive]);
-
-  useEffect(() => {
-    let mounted = true;
-    fetchBoundaries().then((res) => {
-      if (mounted) setVectors(res);
-    });
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!boundaryOverlayRef.current) return;
-    if (!useLegacyRendering) {
-      boundaryOverlayRef.current.visible = false;
-      if (boundaryMaterialRef.current) {
-        boundaryMaterialRef.current.uniforms.useTexture.value = false;
-        boundaryMaterialRef.current.uniforms.colorMap.value =
-          DEFAULT_COLOR_TEXTURE;
-        boundaryMaterialRef.current.uniforms.useVertexColor.value = false;
-      }
-      requestRender();
-      return;
-    }
-    if (!vectors.length || !boundaryLinesVisible) {
-      boundaryOverlayRef.current.visible = false;
-      if (boundaryMaterialRef.current) {
-        boundaryMaterialRef.current.uniforms.useTexture.value = false;
-        boundaryMaterialRef.current.uniforms.colorMap.value =
-          DEFAULT_COLOR_TEXTURE;
-        boundaryMaterialRef.current.uniforms.useVertexColor.value = false;
-      }
-      requestRender();
-      return;
-    }
-
-    const width = 2048;
-    const height = 1024;
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    ctx.clearRect(0, 0, width, height);
-    ctx.strokeStyle = "#e5e7eb";
-    ctx.lineWidth = 2.0;
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-    ctx.globalAlpha = 0.9;
-
-    const toPixel = (lon: number, lat: number) => ({
-      x: ((lon + 180) / 360) * width,
-      y: ((90 - lat) / 180) * height,
-    });
-
-    const drawPath = (segment: GeoPoint[]) => {
-      if (segment.length < 2) return;
-      ctx.beginPath();
-      segment.forEach((point, index) => {
-        const px = toPixel(point.lon, point.lat);
-        if (index === 0) {
-          ctx.moveTo(px.x, px.y);
-        } else {
-          ctx.lineTo(px.x, px.y);
-        }
-      });
-      ctx.stroke();
-    };
-
-    vectors.forEach((vec) => {
-      splitAtDateline(vec.coordinates).forEach((segment) => {
-        drawPath(segment);
-      });
-    });
-
-    // Fill tiny gaps by tracing again with a softer pass.
-    ctx.globalAlpha = 0.45;
-    ctx.lineWidth = 2.8;
-    vectors.forEach((vec) => {
-      splitAtDateline(vec.coordinates).forEach((segment) => {
-        drawPath(segment);
-      });
-    });
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.minFilter = THREE.LinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-    texture.needsUpdate = true;
-
-    if (boundaryTextureRef.current) boundaryTextureRef.current.dispose();
-    boundaryTextureRef.current = texture;
-
-    boundaryOverlayRef.current.visible = true;
-    if (boundaryMaterialRef.current) {
-      boundaryMaterialRef.current.uniforms.useTexture.value = true;
-      boundaryMaterialRef.current.uniforms.colorMap.value = texture;
-      boundaryMaterialRef.current.uniforms.useVertexColor.value = false;
-    }
-    requestRender();
-  }, [boundaryLinesVisible, requestRender, useLegacyRendering, vectors]);
 
   useEffect(() => {
     updateRasterOpacity();
@@ -1934,7 +1703,6 @@ const OrthoGlobe: React.FC<Props> = ({
       baseMaterialRef.current,
       meshMaterialRef.current,
       rasterMaterialRef.current,
-      boundaryMaterialRef.current,
     ].filter(Boolean) as THREE.ShaderMaterial[];
     if (normalMapTextureRef.current) {
       normalMapTextureRef.current.dispose();
@@ -1975,85 +1743,6 @@ const OrthoGlobe: React.FC<Props> = ({
       () => {},
     );
   }, [normalMapMode, requestRender]);
-
-  useEffect(() => {
-    if (!sceneRef.current || !globeGroupRef.current) return;
-    if (!boundaryLinesVisible || !vectors.length || useLegacyRendering) {
-      if (boundaryLineGroupRef.current) {
-        boundaryLineGroupRef.current.traverse((child) => {
-          if (child instanceof THREE.LineSegments) {
-            child.geometry.dispose();
-            if (Array.isArray(child.material)) {
-              child.material.forEach((material) => material.dispose());
-            } else {
-              child.material.dispose();
-            }
-          }
-        });
-        boundaryLineGroupRef.current.removeFromParent();
-        boundaryLineGroupRef.current = null;
-      }
-      requestRender();
-      return;
-    }
-
-    if (boundaryLineGroupRef.current) {
-      boundaryLineGroupRef.current.traverse((child) => {
-        if (child instanceof THREE.LineSegments) {
-          child.geometry.dispose();
-          if (Array.isArray(child.material)) {
-            child.material.forEach((material) => material.dispose());
-          } else {
-            child.material.dispose();
-          }
-        }
-      });
-      boundaryLineGroupRef.current.removeFromParent();
-      boundaryLineGroupRef.current = null;
-    }
-
-    const lineGroup = new THREE.Group();
-    const segmentsByLayer = new Map<string, number[]>();
-    vectors.forEach((vec) => {
-      const bucket = segmentsByLayer.get(vec.layer) ?? [];
-      splitAtDateline(vec.coordinates).forEach((segment) => {
-        for (let i = 1; i < segment.length; i += 1) {
-          const start = latLonToCartesian(
-            segment[i - 1].lat,
-            segment[i - 1].lon,
-            OVERLAY_RADIUS + 0.001,
-          );
-          const end = latLonToCartesian(
-            segment[i].lat,
-            segment[i].lon,
-            OVERLAY_RADIUS + 0.001,
-          );
-          bucket.push(start.x, start.y, start.z, end.x, end.y, end.z);
-        }
-      });
-      segmentsByLayer.set(vec.layer, bucket);
-    });
-
-    segmentsByLayer.forEach((segments) => {
-      if (!segments.length) return;
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute(
-        "position",
-        new THREE.Float32BufferAttribute(segments, 3),
-      );
-      const material = new THREE.LineBasicMaterial({
-        color: 0xe5e7eb,
-        transparent: true,
-        opacity: 0.85,
-      });
-      const lines = new THREE.LineSegments(geometry, material);
-      lineGroup.add(lines);
-    });
-
-    boundaryLineGroupRef.current = lineGroup;
-    globeGroupRef.current.add(lineGroup);
-    requestRender();
-  }, [boundaryLinesVisible, requestRender, useLegacyRendering, vectors]);
 
   useEffect(() => {
     if (!sceneRef.current || !globeGroupRef.current) return;

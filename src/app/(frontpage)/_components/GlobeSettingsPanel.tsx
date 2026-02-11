@@ -20,6 +20,20 @@ interface GlobeSettingsPanelProps {
   onBoundaryLinesToggle: (visible: boolean) => void;
   geographicLinesVisible: boolean;
   onGeographicLinesToggle: (visible: boolean) => void;
+  coastlineResolution?: "none" | "low" | "medium" | "high";
+  onCoastlineResolutionChange?: (
+    resolution: "none" | "low" | "medium" | "high",
+  ) => void;
+  riverResolution?: "none" | "low" | "medium" | "high";
+  onRiverResolutionChange?: (
+    resolution: "none" | "low" | "medium" | "high",
+  ) => void;
+  lakeResolution?: "none" | "low" | "medium" | "high";
+  onLakeResolutionChange?: (
+    resolution: "none" | "low" | "medium" | "high",
+  ) => void;
+  naturalEarthGeographicLinesVisible?: boolean;
+  onNaturalEarthGeographicLinesToggle?: (visible: boolean) => void;
   labelsVisible: boolean;
   onLabelsToggle: (visible: boolean) => void;
   // Raster opacity control
@@ -54,6 +68,14 @@ export function GlobeSettingsPanel({
   onBoundaryLinesToggle,
   geographicLinesVisible,
   onGeographicLinesToggle,
+  coastlineResolution = "low",
+  onCoastlineResolutionChange,
+  riverResolution = "none",
+  onRiverResolutionChange,
+  lakeResolution = "none",
+  onLakeResolutionChange,
+  naturalEarthGeographicLinesVisible = false,
+  onNaturalEarthGeographicLinesToggle,
   labelsVisible,
   onLabelsToggle,
   rasterOpacity,
@@ -73,6 +95,12 @@ export function GlobeSettingsPanel({
   onShowVisualizationModal,
 }: GlobeSettingsPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const resolutionOptions = [
+    { value: "none", label: "None" },
+    { value: "low", label: "Low (110m)" },
+    { value: "medium", label: "Medium (50m)" },
+    { value: "high", label: "High (10m)" },
+  ] as const;
 
   // Click-outside handler
   useEffect(() => {
@@ -112,95 +140,214 @@ export function GlobeSettingsPanel({
                   Layer Visibility
                 </h3>
 
-                {/* Satellite Layer Toggle */}
                 {viewMode !== "ortho" && (
+                  <div className="space-y-2 rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
+                    <div className="space-y-0.5">
+                      <Label className="text-sm font-medium text-white">
+                        Basemap & Labels
+                      </Label>
+                      <p className="text-xs text-slate-400">
+                        Control imagery, street view, and place names
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2">
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <Label
+                            htmlFor="satellite-toggle"
+                            className="cursor-pointer text-sm font-medium text-white"
+                          >
+                            Satellite Imagery
+                          </Label>
+                          <p className="text-xs text-slate-400">
+                            Show/hide satellite base layer
+                          </p>
+                        </div>
+                        <Switch
+                          id="satellite-toggle"
+                          checked={satelliteLayerVisible}
+                          onCheckedChange={onSatelliteLayerToggle}
+                          className="data-[state=checked]:bg-rose-500"
+                        />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <Label
+                            htmlFor="basemap-toggle"
+                            className="cursor-pointer text-sm font-medium text-white"
+                          >
+                            Street View
+                          </Label>
+                          <p className="text-xs text-slate-400">
+                            Switch between satellite imagery and street maps
+                          </p>
+                        </div>
+                        <Switch
+                          id="basemap-toggle"
+                          checked={baseMapMode === "street"}
+                          onCheckedChange={(checked) =>
+                            onBaseMapModeChange?.(
+                              checked ? "street" : "satellite",
+                            )
+                          }
+                          className="data-[state=checked]:bg-rose-500"
+                        />
+                      </div>
+                      {baseMapMode !== "street" && (
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label
+                              htmlFor="labels-toggle"
+                              className="cursor-pointer text-sm font-medium text-white"
+                            >
+                              Place Names
+                            </Label>
+                            <p className="text-xs text-slate-400">
+                              Show/hide continent, country, and city labels
+                            </p>
+                          </div>
+                          <Switch
+                            id="labels-toggle"
+                            checked={labelsVisible}
+                            onCheckedChange={onLabelsToggle}
+                            className="data-[state=checked]:bg-rose-500"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {viewMode === "ortho" && (
                   <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
                     <div className="space-y-0.5">
                       <Label
-                        htmlFor="satellite-toggle"
+                        htmlFor="labels-toggle-ortho"
                         className="cursor-pointer text-sm font-medium text-white"
                       >
-                        Satellite Imagery
+                        Place Names
                       </Label>
                       <p className="text-xs text-slate-400">
-                        Show/hide satellite base layer
+                        Show/hide continent, country, and city labels
                       </p>
                     </div>
                     <Switch
-                      id="satellite-toggle"
-                      checked={satelliteLayerVisible}
-                      onCheckedChange={onSatelliteLayerToggle}
+                      id="labels-toggle-ortho"
+                      checked={labelsVisible}
+                      onCheckedChange={onLabelsToggle}
                       className="data-[state=checked]:bg-rose-500"
                     />
                   </div>
                 )}
 
-                {/* Base Map Style Toggle */}
-                {viewMode !== "ortho" && (
-                  <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
+                {viewMode !== "winkel" && (
+                  <div className="space-y-2 rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
                     <div className="space-y-0.5">
-                      <Label
-                        htmlFor="basemap-toggle"
-                        className="cursor-pointer text-sm font-medium text-white"
-                      >
-                        Street View
+                      <Label className="text-sm font-medium text-white">
+                        Natural Earth Detail
                       </Label>
                       <p className="text-xs text-slate-400">
-                        Switch between satellite imagery and street maps
+                        Adjust boundary and line detail
                       </p>
                     </div>
-                    <Switch
-                      id="basemap-toggle"
-                      checked={baseMapMode === "street"}
-                      onCheckedChange={(checked) =>
-                        onBaseMapModeChange?.(checked ? "street" : "satellite")
-                      }
-                      className="data-[state=checked]:bg-rose-500"
-                    />
+                    <div className="grid grid-cols-1 gap-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <Label className="text-xs text-slate-300">
+                          Boundary Lines
+                        </Label>
+                        <Switch
+                          id="boundary-toggle"
+                          checked={boundaryLinesVisible}
+                          onCheckedChange={onBoundaryLinesToggle}
+                          className="data-[state=checked]:bg-rose-500"
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <Label className="text-xs text-slate-300">
+                          Coastlines
+                        </Label>
+                        <select
+                          className="rounded-md border border-slate-600 bg-neutral-800 px-2 py-1 text-xs text-white"
+                          value={coastlineResolution}
+                          onChange={(e) =>
+                            onCoastlineResolutionChange?.(
+                              e.target.value as typeof coastlineResolution,
+                            )
+                          }
+                          disabled={!boundaryLinesVisible}
+                        >
+                          {resolutionOptions.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <Label className="text-xs text-slate-300">Rivers</Label>
+                        <select
+                          className="rounded-md border border-slate-600 bg-neutral-800 px-2 py-1 text-xs text-white"
+                          value={riverResolution}
+                          onChange={(e) =>
+                            onRiverResolutionChange?.(
+                              e.target.value as typeof riverResolution,
+                            )
+                          }
+                          disabled={!boundaryLinesVisible}
+                        >
+                          {resolutionOptions.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <Label className="text-xs text-slate-300">Lakes</Label>
+                        <select
+                          className="rounded-md border border-slate-600 bg-neutral-800 px-2 py-1 text-xs text-white"
+                          value={lakeResolution}
+                          onChange={(e) =>
+                            onLakeResolutionChange?.(
+                              e.target.value as typeof lakeResolution,
+                            )
+                          }
+                          disabled={!boundaryLinesVisible}
+                        >
+                          {resolutionOptions.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <Label className="text-xs text-slate-300">
+                          Geographic Lines
+                        </Label>
+                        <Switch
+                          checked={naturalEarthGeographicLinesVisible}
+                          onCheckedChange={(checked) =>
+                            onNaturalEarthGeographicLinesToggle?.(checked)
+                          }
+                          className="data-[state=checked]:bg-rose-500"
+                          disabled={!boundaryLinesVisible}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <Label className="text-xs text-slate-300">
+                          Geographic Grid
+                        </Label>
+                        <Switch
+                          id="geographic-lines-toggle"
+                          checked={geographicLinesVisible}
+                          onCheckedChange={onGeographicLinesToggle}
+                          className="data-[state=checked]:bg-rose-500"
+                        />
+                      </div>
+                    </div>
                   </div>
                 )}
-
-                {/* Boundary Lines Toggle */}
-                <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
-                  <div className="space-y-0.5">
-                    <Label
-                      htmlFor="boundary-toggle"
-                      className="cursor-pointer text-sm font-medium text-white"
-                    >
-                      Boundary Lines
-                    </Label>
-                    <p className="text-xs text-slate-400">
-                      Show/hide coastlines, rivers, and lakes
-                    </p>
-                  </div>
-                  <Switch
-                    id="boundary-toggle"
-                    checked={boundaryLinesVisible}
-                    onCheckedChange={onBoundaryLinesToggle}
-                    className="data-[state=checked]:bg-rose-500"
-                  />
-                </div>
-
-                {/* Geographic Grid Lines Toggle */}
-                <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
-                  <div className="space-y-0.5">
-                    <Label
-                      htmlFor="geographic-lines-toggle"
-                      className="cursor-pointer text-sm font-medium text-white"
-                    >
-                      Geographic Grid
-                    </Label>
-                    <p className="text-xs text-slate-400">
-                      Show/hide latitude & longitude reference lines
-                    </p>
-                  </div>
-                  <Switch
-                    id="geographic-lines-toggle"
-                    checked={geographicLinesVisible}
-                    onCheckedChange={onGeographicLinesToggle}
-                    className="data-[state=checked]:bg-rose-500"
-                  />
-                </div>
 
                 {viewMode === "ortho" && (
                   <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
@@ -229,29 +376,6 @@ export function GlobeSettingsPanel({
                       <option value="land">Land</option>
                       <option value="landBathymetry">Land + Bathymetry</option>
                     </select>
-                  </div>
-                )}
-
-                {/* Place Names Toggle */}
-                {baseMapMode !== "street" && (
-                  <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
-                    <div className="space-y-0.5">
-                      <Label
-                        htmlFor="labels-toggle"
-                        className="cursor-pointer text-sm font-medium text-white"
-                      >
-                        Place Names
-                      </Label>
-                      <p className="text-xs text-slate-400">
-                        Show/hide continent, country, and city labels
-                      </p>
-                    </div>
-                    <Switch
-                      id="labels-toggle"
-                      checked={labelsVisible}
-                      onCheckedChange={onLabelsToggle}
-                      className="data-[state=checked]:bg-rose-500"
-                    />
                   </div>
                 )}
               </div>
