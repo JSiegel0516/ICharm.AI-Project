@@ -22,7 +22,8 @@ import { WinkelOverlay } from "./WinkelOverlay";
 
 const MIN_SCALE = 100;
 const MAX_SCALE = 2000;
-const MIN_SCALE_FOR_OVERLAY = 350;
+const MIN_SCALE_FOR_OVERLAY = 250;
+const MIN_SCALE_FOR_MESH = 200;
 
 type Props = {
   rasterGridData?: RasterGridData;
@@ -71,7 +72,15 @@ const WinkelGlobe: React.FC<Props> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const meshCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const meshWorkerRef = useRef<Worker | null>(null);
+  const hasTransferredMeshCanvasRef = useRef(false);
+  const meshVisibleRef = useRef(false);
+  const [meshVisible, setMeshVisible] = useState(false);
+  const meshRenderTimeoutRef = useRef<number | null>(null);
+  const meshReadyRef = useRef(false);
+  const meshWorkerReadyRef = useRef(false);
   const projectionRef = useRef<WinkelProjection | null>(null);
   const boundariesRef = useRef<WinkelBoundaries | null>(null);
   const overlayRef = useRef<WinkelOverlay | null>(null);
@@ -158,8 +167,11 @@ const WinkelGlobe: React.FC<Props> = ({
   }, [onOrientationChange]);
 
   const renderOverlay = useCallback(() => {
-    if (!canvasRef.current) return;
-    const ctx = canvasRef.current.getContext("2d");
+    if (!overlayCanvasRef.current) return;
+    if (meshWorkerRef.current) {
+      return;
+    }
+    const ctx = overlayCanvasRef.current.getContext("2d");
     if (!ctx) return;
     const isInteracting =
       draggingRef.current || inertiaFrameRef.current !== null;
@@ -172,15 +184,30 @@ const WinkelGlobe: React.FC<Props> = ({
       !overlayRef.current ||
       !projectionRef.current
     ) {
-      ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+      ctx.clearRect(
+        0,
+        0,
+        overlayCanvasRef.current.width,
+        overlayCanvasRef.current.height,
+      );
       return;
     }
     const scale = projectionRef.current.projection.scale();
     if (scale < MIN_SCALE_FOR_OVERLAY) {
-      ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+      ctx.clearRect(
+        0,
+        0,
+        overlayCanvasRef.current.width,
+        overlayCanvasRef.current.height,
+      );
       return;
     }
-    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    ctx.clearRect(
+      0,
+      0,
+      overlayCanvasRef.current.width,
+      overlayCanvasRef.current.height,
+    );
     overlayRef.current.render({
       gridData: rasterGridData,
       colors: currentDataset.colorScale.colors,
@@ -222,6 +249,156 @@ const WinkelGlobe: React.FC<Props> = ({
     });
   }, [renderOverlay, updatePaths]);
 
+  const markInteracting = useCallback(() => {
+    meshVisibleRef.current = false;
+    setMeshVisible(false);
+    if (meshRenderTimeoutRef.current) {
+      window.clearTimeout(meshRenderTimeoutRef.current);
+      meshRenderTimeoutRef.current = null;
+    }
+  }, []);
+
+  const renderMesh = useCallback(() => {
+    if (
+      !meshWorkerRef.current ||
+      !meshCanvasRef.current ||
+      !projectionRef.current
+    ) {
+      console.log("[WinkelMeshWorker] renderMesh skipped", {
+        hasWorker: Boolean(meshWorkerRef.current),
+        hasCanvas: Boolean(meshCanvasRef.current),
+        hasProjection: Boolean(projectionRef.current),
+      });
+      return;
+    }
+    if (!rasterGridData || !currentDataset?.colorScale?.colors?.length) {
+      meshVisibleRef.current = false;
+      setMeshVisible(false);
+      console.log("[WinkelMeshWorker] renderMesh missing raster/color");
+      return;
+    }
+    const scale = projectionRef.current.projection.scale();
+    if (scale < MIN_SCALE_FOR_MESH) {
+      meshVisibleRef.current = false;
+      setMeshVisible(false);
+      console.log("[WinkelMeshWorker] renderMesh below scale", scale, {
+        minMeshScale: MIN_SCALE_FOR_MESH,
+      });
+      return;
+    }
+    const rotate = projectionRef.current.projection.rotate() as [
+      number,
+      number,
+      number,
+    ];
+    const translate = projectionRef.current.projection.translate() as [
+      number,
+      number,
+    ];
+    const payload = {
+      width: size.width,
+      height: size.height,
+      lat: rasterGridData.lat,
+      lon: rasterGridData.lon,
+      values: rasterGridData.values,
+      mask: rasterGridData.mask,
+      min: rasterGridData.min ?? 0,
+      max: rasterGridData.max ?? 1,
+      colors: currentDataset.colorScale.colors,
+      hideZeroValues,
+      opacity: clamp(rasterOpacity, 0, 1),
+      rotate,
+      scale,
+      translate,
+    };
+    console.log("[WinkelMeshWorker] renderMesh post", {
+      width: payload.width,
+      height: payload.height,
+      lat: payload.lat.length,
+      lon: payload.lon.length,
+      values: payload.values.length,
+      hasMask: Boolean(payload.mask),
+    });
+    meshWorkerRef.current.postMessage({ type: "render", payload });
+  }, [
+    currentDataset?.colorScale?.colors,
+    hideZeroValues,
+    rasterGridData,
+    rasterOpacity,
+    size.height,
+    size.width,
+  ]);
+
+  const scheduleMeshRender = useCallback(() => {
+    if (!meshWorkerRef.current) return;
+    if (meshRenderTimeoutRef.current) {
+      window.clearTimeout(meshRenderTimeoutRef.current);
+    }
+    console.log("[WinkelMeshWorker] scheduleMeshRender");
+    meshRenderTimeoutRef.current = window.setTimeout(() => {
+      meshRenderTimeoutRef.current = null;
+      const isInteracting =
+        draggingRef.current || inertiaFrameRef.current !== null;
+      if (isInteracting) return;
+      renderMesh();
+    }, 240);
+  }, [renderMesh]);
+
+  useEffect(() => {
+    if (!meshCanvasRef.current) return;
+    if (
+      meshWorkerRef.current ||
+      hasTransferredMeshCanvasRef.current ||
+      !("OffscreenCanvas" in window)
+    ) {
+      return;
+    }
+    const worker = new Worker(
+      new URL("./winkelMeshWorker.ts", import.meta.url),
+      { type: "module" },
+    );
+    console.log("[WinkelMeshWorker] created");
+    worker.onmessage = (event: MessageEvent) => {
+      if (event.data?.type === "debug") {
+        console.log("[WinkelMeshWorker]", event.data);
+        if (event.data?.stage === "pong" && !meshWorkerReadyRef.current) {
+          if (!meshCanvasRef.current) return;
+          const offscreen = meshCanvasRef.current.transferControlToOffscreen();
+          hasTransferredMeshCanvasRef.current = true;
+          meshWorkerReadyRef.current = true;
+          console.log("[WinkelMeshWorker] init posted");
+          worker.postMessage({ type: "init", canvas: offscreen }, [offscreen]);
+          scheduleMeshRender();
+        }
+        return;
+      }
+      if (event.data?.type === "rendered") {
+        meshReadyRef.current = true;
+        meshVisibleRef.current = true;
+        setMeshVisible(true);
+      }
+    };
+    worker.onmessageerror = (event) => {
+      console.error("[WinkelMeshWorker] message error", event);
+    };
+    worker.onerror = (error) => {
+      console.error("[WinkelMeshWorker] error", error);
+    };
+    meshWorkerRef.current = worker;
+    worker.postMessage({ type: "ping" });
+    return () => {
+      worker.terminate();
+      meshWorkerRef.current = null;
+      meshReadyRef.current = false;
+      meshVisibleRef.current = false;
+      meshWorkerReadyRef.current = false;
+      if (meshRenderTimeoutRef.current) {
+        window.clearTimeout(meshRenderTimeoutRef.current);
+        meshRenderTimeoutRef.current = null;
+      }
+    };
+  }, [scheduleMeshRender]);
+
   const renderBoundaries = useCallback(() => {
     if (!svgRef.current || !boundariesRef.current) return;
     boundariesRef.current.renderToSVG(svgRef.current, boundaryData, {
@@ -241,9 +418,24 @@ const WinkelGlobe: React.FC<Props> = ({
       }
       sizeRef.current = { width, height };
       setSize({ width, height });
-      if (canvasRef.current) {
-        canvasRef.current.width = width;
-        canvasRef.current.height = height;
+      if (overlayCanvasRef.current) {
+        overlayCanvasRef.current.width = width;
+        overlayCanvasRef.current.height = height;
+      }
+      if (
+        meshCanvasRef.current &&
+        !meshWorkerRef.current &&
+        !hasTransferredMeshCanvasRef.current
+      ) {
+        meshCanvasRef.current.width = width;
+        meshCanvasRef.current.height = height;
+      }
+      if (meshWorkerRef.current) {
+        meshWorkerRef.current.postMessage({
+          type: "resize",
+          width,
+          height,
+        });
       }
       if (!projectionRef.current) {
         projectionRef.current = new WinkelProjection(width, height);
@@ -278,8 +470,9 @@ const WinkelGlobe: React.FC<Props> = ({
 
       renderBoundaries();
       requestRender();
+      scheduleMeshRender();
     },
-    [effectiveOrientation, renderBoundaries, requestRender],
+    [effectiveOrientation, renderBoundaries, requestRender, scheduleMeshRender],
   );
 
   useEffect(() => {
@@ -349,6 +542,7 @@ const WinkelGlobe: React.FC<Props> = ({
 
   useEffect(() => {
     requestRender();
+    scheduleMeshRender();
   }, [
     rasterGridData,
     currentDataset?.colorScale?.colors,
@@ -356,6 +550,7 @@ const WinkelGlobe: React.FC<Props> = ({
     smoothGridBoxValues,
     rasterOpacity,
     requestRender,
+    scheduleMeshRender,
   ]);
 
   const getLocalPointer = useCallback((event: React.PointerEvent) => {
@@ -372,6 +567,7 @@ const WinkelGlobe: React.FC<Props> = ({
       if (!projectionRef.current || !svgRef.current) return;
       event.preventDefault();
       hasInteractedRef.current = true;
+      markInteracting();
       if (inertiaFrameRef.current) {
         window.cancelAnimationFrame(inertiaFrameRef.current);
         inertiaFrameRef.current = null;
@@ -384,7 +580,7 @@ const WinkelGlobe: React.FC<Props> = ({
       lastMoveTimeRef.current = performance.now();
       velocityRef.current = { x: 0, y: 0 };
     },
-    [getLocalPointer],
+    [getLocalPointer, markInteracting],
   );
 
   const handlePointerMove = useCallback(
@@ -450,6 +646,7 @@ const WinkelGlobe: React.FC<Props> = ({
           if (Math.hypot(v.x, v.y) < 0.005) {
             inertiaFrameRef.current = null;
             scheduleOrientationCommit();
+            scheduleMeshRender();
             return;
           }
           const rotate = projectionRef.current.projection.rotate() as [
@@ -468,9 +665,10 @@ const WinkelGlobe: React.FC<Props> = ({
         inertiaFrameRef.current = window.requestAnimationFrame(tick);
       } else {
         scheduleOrientationCommit();
+        scheduleMeshRender();
       }
     },
-    [scheduleInteractionRender, scheduleOrientationCommit],
+    [scheduleInteractionRender, scheduleMeshRender, scheduleOrientationCommit],
   );
 
   const handleWheel = useCallback(
@@ -478,6 +676,7 @@ const WinkelGlobe: React.FC<Props> = ({
       if (!projectionRef.current) return;
       event.preventDefault();
       hasInteractedRef.current = true;
+      markInteracting();
       const currentScale = projectionRef.current.projection.scale();
       const delta = -event.deltaY;
       const zoomFactor = 1 + delta * 0.0015;
@@ -486,8 +685,14 @@ const WinkelGlobe: React.FC<Props> = ({
       scaleRef.current = nextScale;
       requestRender();
       scheduleOrientationCommit();
+      scheduleMeshRender();
     },
-    [requestRender, scheduleOrientationCommit],
+    [
+      markInteracting,
+      requestRender,
+      scheduleMeshRender,
+      scheduleOrientationCommit,
+    ],
   );
 
   useEffect(() => {
@@ -503,6 +708,9 @@ const WinkelGlobe: React.FC<Props> = ({
       }
       if (orientationTimeoutRef.current) {
         window.clearTimeout(orientationTimeoutRef.current);
+      }
+      if (meshRenderTimeoutRef.current) {
+        window.clearTimeout(meshRenderTimeoutRef.current);
       }
     };
   }, []);
@@ -522,10 +730,18 @@ const WinkelGlobe: React.FC<Props> = ({
         onWheel={handleWheel}
       />
       <canvas
-        ref={canvasRef}
+        ref={overlayCanvasRef}
         width={size.width}
         height={size.height}
         className="pointer-events-none absolute inset-0 h-full w-full"
+        style={{ opacity: meshVisible ? 0 : 1 }}
+      />
+      <canvas
+        ref={meshCanvasRef}
+        width={size.width}
+        height={size.height}
+        className="pointer-events-none absolute inset-0 h-full w-full"
+        style={{ opacity: meshVisible ? 1 : 0, transition: "opacity 200ms" }}
       />
     </div>
   );
