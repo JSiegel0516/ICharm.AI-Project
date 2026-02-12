@@ -71,12 +71,12 @@ export default function NavigationIcons() {
     colorMapInverse: selectedColorMapInverse ?? false,
     lineThickness: lineThickness ?? 1,
     lineColors: lineColors ?? {
-      boundaryLines: "#9ca3af",
-      coastlines: "#9ca3af",
-      rivers: "#9ca3af",
-      lakes: "#9ca3af",
-      geographicLines: "#9ca3af",
-      geographicGrid: "#9ca3af",
+      boundaryLines: "#000000",
+      coastlines: "#000000",
+      rivers: "#000000",
+      lakes: "#000000",
+      geographicLines: "#000000",
+      geographicGrid: "#000000",
     },
   }));
 
@@ -167,12 +167,12 @@ export default function NavigationIcons() {
       colorMapInverse: false,
       lineThickness: 1,
       lineColors: {
-        boundaryLines: "#9ca3af",
-        coastlines: "#9ca3af",
-        rivers: "#9ca3af",
-        lakes: "#9ca3af",
-        geographicLines: "#9ca3af",
-        geographicGrid: "#9ca3af",
+        boundaryLines: "#000000",
+        coastlines: "#000000",
+        rivers: "#000000",
+        lakes: "#000000",
+        geographicLines: "#000000",
+        geographicGrid: "#000000",
       },
     });
     setColorBarOrientation("horizontal");
@@ -181,12 +181,12 @@ export default function NavigationIcons() {
     setLineThickness(1);
     setActiveColorMapCategory(DEFAULT_COLOR_MAP_CATEGORY);
     setLineColors({
-      boundaryLines: "#9ca3af",
-      coastlines: "#9ca3af",
-      rivers: "#9ca3af",
-      lakes: "#9ca3af",
-      geographicLines: "#9ca3af",
-      geographicGrid: "#9ca3af",
+      boundaryLines: "#000000",
+      coastlines: "#000000",
+      rivers: "#000000",
+      lakes: "#000000",
+      geographicLines: "#000000",
+      geographicGrid: "#000000",
     });
     setLineColorSelection({
       boundaryLines: false,
@@ -231,12 +231,12 @@ export default function NavigationIcons() {
 
   const resetLineColors = () => {
     const defaults = {
-      boundaryLines: "#9ca3af",
-      coastlines: "#9ca3af",
-      rivers: "#9ca3af",
-      lakes: "#9ca3af",
-      geographicLines: "#9ca3af",
-      geographicGrid: "#9ca3af",
+      boundaryLines: "#000000",
+      coastlines: "#000000",
+      rivers: "#000000",
+      lakes: "#000000",
+      geographicLines: "#000000",
+      geographicGrid: "#000000",
     };
     setSettings((prev) => ({
       ...prev,
@@ -812,7 +812,7 @@ export default function NavigationIcons() {
                       onClick={resetLineColors}
                       className="rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-sm text-gray-200 hover:bg-gray-600"
                     >
-                      Reset to Gray
+                      Reset to Black
                     </button>
                   </div>
 
@@ -880,7 +880,7 @@ export default function NavigationIcons() {
                               backgroundColor:
                                 settings.lineColors?.[
                                   item.key as keyof typeof settings.lineColors
-                                ] ?? "#9ca3af",
+                                ] ?? "#000000",
                             }}
                           />
                           <span className="text-sm font-medium">
@@ -891,7 +891,7 @@ export default function NavigationIcons() {
                           value={
                             settings.lineColors?.[
                               item.key as keyof typeof settings.lineColors
-                            ] ?? "#9ca3af"
+                            ] ?? "#000000"
                           }
                           onChange={(e) =>
                             applyLineColor(item.key, e.target.value)

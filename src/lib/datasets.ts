@@ -318,17 +318,7 @@ export function generateColorScale(
     name.includes("ncep global ocean data assimilation") ||
     param.includes("dzdt")
   ) {
-    const GODAS_COLORS = [
-      "#6b00b5",
-      "#8a4bcc",
-      "#a777dd",
-      "#c8b6ea",
-      "#e7e7ee",
-      "#b8e2e6",
-      "#7dc9cc",
-      "#3ea3a8",
-      "#137b80",
-    ];
+    const GODAS_COLORS = resolveColorMapColors("Anomaly|Blue Yellow Red");
     return buildScale(
       GODAS_COLORS,
       ["-0.000005", "0", "0.000005"],
@@ -344,12 +334,7 @@ export function generateColorScale(
     name.includes("noaa global temp") ||
     name.includes("noaa global temperature")
   ) {
-    return buildScale(
-      AIR_COLORS,
-      ["-40°C", "-20°C", "0°C", "20°C", "40°C"],
-      -40,
-      40,
-    );
+    return buildScale(ANOMALY_COLORS, ["-2", "-1", "0", "1", "2"], -2, 2);
   }
 
   if (

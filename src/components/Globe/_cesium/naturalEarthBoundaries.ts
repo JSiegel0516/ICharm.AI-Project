@@ -114,14 +114,14 @@ export const addGeographicBoundaries = (
   const geographicLineEntities: any[] = [];
   const naturalEarthLineEntities: any[] = [];
   const coastlineColorCss =
-    lineColors?.coastlines ?? lineColors?.boundaryLines ?? "#e2e8f0";
+    lineColors?.coastlines ?? lineColors?.boundaryLines ?? "#000000";
   const riversColorCss =
-    lineColors?.rivers ?? lineColors?.boundaryLines ?? "#9ca3af";
+    lineColors?.rivers ?? lineColors?.boundaryLines ?? "#000000";
   const lakesColorCss =
-    lineColors?.lakes ?? lineColors?.boundaryLines ?? "#cbd5f5";
+    lineColors?.lakes ?? lineColors?.boundaryLines ?? "#000000";
   const geographicLineColorCss =
-    lineColors?.geographicLines ?? lineColors?.geographicGrid ?? "#64748b";
-  const geographicGridColorCss = lineColors?.geographicGrid ?? "#64748b";
+    lineColors?.geographicLines ?? lineColors?.geographicGrid ?? "#000000";
+  const geographicGridColorCss = lineColors?.geographicGrid ?? "#000000";
   const surfaceOffset = 50;
   const toCartesian = (lon: number, lat: number) =>
     Cesium.Cartesian3.fromDegrees(lon, lat, surfaceOffset);

@@ -143,16 +143,16 @@ export class WinkelBoundaries {
     const coastlineColor =
       this.lineColors?.coastlines ??
       this.lineColors?.boundaryLines ??
-      "#e2e8f0";
+      "#000000";
     const riverColor =
-      this.lineColors?.rivers ?? this.lineColors?.boundaryLines ?? "#9ca3af";
+      this.lineColors?.rivers ?? this.lineColors?.boundaryLines ?? "#000000";
     const lakeColor =
-      this.lineColors?.lakes ?? this.lineColors?.boundaryLines ?? "#cbd5f5";
-    const geographicLineColor = this.lineColors?.geographicLines ?? "#94a3b8";
+      this.lineColors?.lakes ?? this.lineColors?.boundaryLines ?? "#000000";
+    const geographicLineColor = this.lineColors?.geographicLines ?? "#000000";
     const graticuleColor =
       this.lineColors?.geographicGrid ??
       this.lineColors?.geographicLines ??
-      "#64748b";
+      "#000000";
 
     const defs = this.svg.append("defs");
     defs

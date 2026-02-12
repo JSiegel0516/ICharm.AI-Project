@@ -65,7 +65,6 @@ type Props = {
   lakeResolution?: GlobeLineResolution;
   naturalEarthGeographicLinesVisible?: boolean;
   lineColors?: LineColorSettings;
-  lineThickness?: number;
   labelsVisible?: boolean;
   currentDataset?: Dataset;
   useMeshRaster: boolean;
@@ -100,7 +99,6 @@ const OrthoGlobe: React.FC<Props> = ({
   lakeResolution = "none",
   naturalEarthGeographicLinesVisible = false,
   lineColors,
-  lineThickness = 1,
   labelsVisible = false,
   currentDataset,
   useMeshRaster,
@@ -190,7 +188,6 @@ const OrthoGlobe: React.FC<Props> = ({
       lakes: lakeResolution,
       geographic: naturalEarthGeographicLinesVisible,
       radius: OVERLAY_RADIUS + 0.001,
-      lineWidth: lineThickness,
       colors: {
         coastlines:
           lineColors?.coastlines ?? lineColors?.boundaryLines ?? "#9ca3af",
@@ -1541,7 +1538,6 @@ const OrthoGlobe: React.FC<Props> = ({
     );
     const material = new THREE.LineBasicMaterial({
       color: new THREE.Color(lineColors?.geographicGrid ?? "#9ca3af"),
-      linewidth: lineThickness,
       transparent: true,
       opacity: 0.35,
     });
@@ -1551,12 +1547,7 @@ const OrthoGlobe: React.FC<Props> = ({
     geographicLineGroupRef.current = group;
     globeGroupRef.current.add(group);
     requestRender();
-  }, [
-    geographicLinesVisible,
-    requestRender,
-    lineColors?.geographicGrid,
-    lineThickness,
-  ]);
+  }, [geographicLinesVisible, requestRender, lineColors?.geographicGrid]);
 
   useEffect(() => {
     if (!containerRef.current) return;

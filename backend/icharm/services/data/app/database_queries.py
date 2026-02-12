@@ -7,12 +7,19 @@ import pandas
 import xarray as xr
 
 from fastapi import HTTPException
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Any
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 
 
 import logging
+
+from icharm.services.data.app.models import (
+    DatasetRequest,
+    Metadata,
+    GridboxDataRequest,
+    TimeseriesDataRequest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +43,192 @@ engine = create_engine(POSTRGRES_URL, poolclass=NullPool)
 
 
 class DatabaseQueries:
+    ##############################
+    # Helper methods
+    ##############################
+    @staticmethod
+    def get_engine(database_name: str):
+        base_url = POSTRGRES_URL.rsplit("/", 1)[0] if POSTRGRES_URL else None
+        if not base_url:
+            raise ValueError("Cannot construct database URL")
+        db_url = f"{base_url}/{database_name}"
+        logger.info(f"Database connection: {database_name}")
+        db_engine = create_engine(db_url, poolclass=NullPool)
+        return db_engine
+
+    @staticmethod
+    async def get_all_metadata(
+        stored: Optional[Literal["local", "cloud", "all"]] = "all",
+        source: Optional[str] = None,
+        search: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Fetch metadata from database for specified dataset IDs (UUIDs)"""
+        try:
+            with engine.connect() as conn:
+                query = """
+                    SELECT
+                            *
+                        FROM metadata
+                        WHERE 1 = 1
+                """
+                parameters = {}
+                if stored != "all" and stored is not None:
+                    query += "AND LOWER(stored) = :stored\n"
+                    parameters["stored"] = stored.lower()
+
+                if source:
+                    query += "AND LOWER(sourceName) ILIKE :source\n"
+                    parameters["source"] = source.lower()
+
+                if search:
+                    query += """AND (
+                        LOWER(datasetName) ILIKE :search" OR
+                        LOWER(layerParameter) ILIKE :search" OR
+                        LOWER(slug) ILIKE :search"
+                        )
+                    """
+                    parameters["search"] = f"%{search.lower()}%"
+
+                # Add ORDER BY to the query
+                query += "ORDER BY datasetName ASC"
+
+                # Query by UUID id column instead of datasetName
+                results = conn.execute(
+                    statement=text(query),
+                    parameters=parameters,
+                ).fetchall()
+                metadata = [Metadata(**r._mapping) for r in results]
+
+                if metadata is None:
+                    raise Exception("Query failed")
+                elif len(metadata) == 0:
+                    return {"total": 0, "datasets": []}
+                else:
+                    return {"total": len(metadata), "datasets": metadata}
+
+        except Exception as e:
+            logger.error(f"Database query failed: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to fetch metadata from database: {str(e)}",
+            )
+
+    @staticmethod
+    def get_metadata(
+        request: DatasetRequest | GridboxDataRequest | TimeseriesDataRequest,
+    ) -> Metadata:
+        """Fetch metadata from database for specified dataset IDs (UUIDs)"""
+        dataset_id = request.dataset_id
+        try:
+            with engine.connect() as conn:
+                # Query by UUID id column instead of datasetName
+                results = conn.execute(
+                    statement=text("""
+                        SELECT * FROM metadata
+                        WHERE id = :dataset_id
+                    """),
+                    parameters={"dataset_id": dataset_id},
+                ).fetchone()
+                metadata = Metadata(**results._mapping)
+
+                if not metadata:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Dataset not found: {request.datasetId}",
+                    )
+
+                return metadata
+        except Exception as e:
+            logger.error(f"Database query failed: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to fetch metadata from database: {str(e)}",
+            )
+
+    ##############################
+    # Dataset specific methods
+    ##############################
+    @staticmethod
+    async def get_timestamps(request: DatasetRequest) -> dict[str, Any]:
+        metadata = DatabaseQueries.get_metadata(request)
+        with DatabaseQueries.get_engine(metadata.dataset_short_name).connect() as conn:
+            query = text("SELECT * FROM get_timestamps()")
+            rows = conn.execute(query).fetchall()
+            results = {
+                "timestamp_id": [r[0] for r in rows],
+                "timestamp_value": [r[1] for r in rows],
+            }
+            return results
+
+    @staticmethod
+    async def get_levels(request: DatasetRequest) -> dict[str, Any]:
+        metadata = DatabaseQueries.get_metadata(request)
+        with DatabaseQueries.get_engine(metadata.dataset_short_name).connect() as conn:
+            query = text("SELECT * FROM get_levels()")
+            rows = conn.execute(query).fetchall()
+            results = {
+                "level_id": [r[0] for r in rows],
+                "name": [r[1] for r in rows],
+            }
+            return results
+
+    @staticmethod
+    async def get_gridboxes(request: DatasetRequest) -> dict[str, Any]:
+        metadata = DatabaseQueries.get_metadata(request)
+        with DatabaseQueries.get_engine(metadata.dataset_short_name).connect() as conn:
+            query = text("SELECT * FROM get_gridboxes()")
+            rows = conn.execute(query).fetchall()
+            results = {
+                "gridbox_id": [r[0] for r in rows],
+                "lat_id": [r[1] for r in rows],
+                "lon_id": [r[2] for r in rows],
+                "lat": [r[3] for r in rows],
+                "lon": [r[4] for r in rows],
+            }
+            return results
+
+    @staticmethod
+    async def get_gridbox_data(request: GridboxDataRequest) -> dict[str, Any]:
+        metadata = DatabaseQueries.get_metadata(request)
+        with DatabaseQueries.get_engine(metadata.dataset_short_name).connect() as conn:
+            rows = conn.execute(
+                statement=text("""
+                    SELECT * FROM get_gridbox_data(:timestamp_id, :level_id)
+                """),
+                parameters={
+                    "timestamp_id": request.timestamp_id,
+                    "level_id": request.level_id,
+                },
+            ).fetchall()
+            results = {
+                "gridbox_id": [r[0] for r in rows],
+                "lat": [r[1] for r in rows],
+                "lon": [r[2] for r in rows],
+                "value": [r[3] for r in rows],
+            }
+            return results
+
+    @staticmethod
+    async def get_timeseries_data(request: TimeseriesDataRequest) -> dict[str, Any]:
+        metadata = DatabaseQueries.get_metadata(request)
+        with DatabaseQueries.get_engine(metadata.dataset_short_name).connect() as conn:
+            rows = conn.execute(
+                statement=text("""
+                    SELECT * FROM get_timeseries(:gridbox_id, :level_id)
+                """),
+                parameters={
+                    "gridbox_id": request.gridbox_id,
+                    "level_id": request.level_id,
+                },
+            ).fetchall()
+            results = {
+                "timestamp_id": [r[0] for r in rows],
+                "timestamp_value": [r[1] for r in rows],
+                "level_id": [r[2] for r in rows],
+                "value": [r[3] for r in rows],
+            }
+            return results
+
     @staticmethod
     def get_datasets(
         stored: Optional[Literal["local", "cloud", "all"]] = "all",
@@ -53,7 +246,11 @@ class DatabaseQueries:
 
         # Apply filters
         if stored != "all" and stored is not None:
-            df = df[df["Stored"].str.lower() == stored.lower()]
+            stored_series = df.get("stored")
+            if stored_series is None:
+                stored_series = df.get("Stored")
+            if stored_series is not None:
+                df = df[stored_series.str.lower() == stored.lower()]
 
         if source:
             df = df[df["sourceName"].str.contains(source, case=False, na=False)]
@@ -79,7 +276,7 @@ class DatabaseQueries:
                     "sourceName": row["sourceName"],
                     "source": row["sourceName"],
                     "type": row["datasetType"],
-                    "stored": row["Stored"],
+                    "stored": row.get("stored") or row.get("Stored"),
                     "startDate": row["startDate"],
                     "endDate": row["endDate"],
                     "units": row["units"],
@@ -109,7 +306,6 @@ class DatabaseQueries:
                     SELECT * FROM metadata
                     WHERE id IN ({placeholders})
                 """)
-
                 params = {
                     f"id{i}": dataset_id for i, dataset_id in enumerate(dataset_ids)
                 }
@@ -478,6 +674,7 @@ class DatabaseQueries:
 
                 # Use actual date for timestamp/date columns (e.g. ocean_heat_content);
                 # use MMDD string for CHAR(4) (e.g. CMORPH daily)
+                ts_param: Any
                 if timestamp_is_date_type:
                     # Monthly data is typically stored on the 16th of each month
                     ts_param = target_date.replace(day=16)

@@ -121,7 +121,12 @@ class ExtractTimeseries:
 
             for _, meta_row in metadata_df.iterrows():
                 try:
-                    is_local = meta_row["Stored"] == "local"
+                    is_local = (
+                        str(
+                            meta_row.get("stored") or meta_row.get("Stored") or ""
+                        ).lower()
+                        == "local"
+                    )
 
                     # Open dataset
                     if is_local:
@@ -319,7 +324,7 @@ class ExtractTimeseries:
             # Check if any PostgreSQL datasets are requested without coordinates
             if not focus_coords or len(focus_coords) == 0:
                 postgres_datasets = metadata_df[
-                    metadata_df["Stored"].str.lower() == "postgres"
+                    metadata_df["stored"].str.lower() == "postgres"
                 ]
                 if len(postgres_datasets) > 0:
                     dataset_names = postgres_datasets["datasetName"].tolist()
@@ -345,7 +350,12 @@ class ExtractTimeseries:
 
             for _, meta_row in metadata_df.iterrows():
                 try:
-                    is_local = meta_row["Stored"] == "local"
+                    is_local = (
+                        str(
+                            meta_row.get("stored") or meta_row.get("Stored") or ""
+                        ).lower()
+                        == "local"
+                    )
                     dataset_name = str(meta_row.get("datasetName") or "")
 
                     # Clip requested range to dataset coverage when metadata is available
@@ -388,7 +398,8 @@ class ExtractTimeseries:
                     # DETERMINE EXTRACTION METHOD: PostgreSQL vs Xarray
                     # Check metadata: if Stored="postgres", use PostgreSQL extraction
                     use_postgres = (
-                        str(meta_row.get("Stored", "")).lower() == "postgres"
+                        str(meta_row.get("storageType", "")).lower()
+                        == "local_postgres_netcdf"
                         and focus_coords
                         and len(focus_coords) > 0
                     )

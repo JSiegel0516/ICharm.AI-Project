@@ -69,7 +69,7 @@ class VisualizeRaster:
             meta_row = metadata_df.iloc[0]
 
             # Open dataset
-            stored = str(meta_row.get("Stored", "")).lower()
+            stored = str(meta_row.get("stored") or meta_row.get("Stored") or "").lower()
             if stored == "local":
                 ds = await DatasetLocal.open_local_dataset(meta_row)
             elif stored == "postgres":
@@ -232,7 +232,7 @@ class VisualizeRaster:
             metadata_df = metadata_df.reset_index(drop=True)
             meta_row = metadata_df.iloc[0]
 
-            stored = str(meta_row.get("Stored", "")).lower()
+            stored = str(meta_row.get("stored") or meta_row.get("Stored") or "").lower()
             if stored == "local":
                 ds = await DatasetLocal.open_local_dataset(meta_row)
             elif stored == "postgres":
