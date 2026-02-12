@@ -338,9 +338,23 @@ export interface GlobeProps {
 export type MapProjectionId =
   | "winkel"
   | "atlantis"
+  | "armadillo"
+  | "august"
+  | "baker"
+  | "berghaus"
+  | "craig"
+  | "foucaut"
+  | "hammerRetroazimuthal"
+  | "homolosine"
+  | "loximuthal"
+  | "naturalEarth"
+  | "peirceQuincuncial"
+  | "polyconic"
+  | "sinuMollweide"
   | "conicEquidistant"
   | "patterson"
   | "stereographic"
+  | "sinusoidal"
   | "waterman";
 export type GlobeViewMode = "3d" | "ortho" | "2d" | MapProjectionId;
 export type MapOrientation = {

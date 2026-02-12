@@ -1,8 +1,26 @@
-import { geoConicEquidistant, geoPath, geoStereographic } from "d3-geo";
 import {
+  geoConicEquidistant,
+  geoNaturalEarth1,
+  geoPath,
+  geoStereographic,
+} from "d3-geo";
+import {
+  geoArmadillo,
+  geoAugust,
+  geoBaker,
+  geoBerghaus,
+  geoCraig,
+  geoFoucaut,
+  geoHammerRetroazimuthal,
+  geoHomolosine,
+  geoLoximuthal,
   geoMollweide,
   geoPatterson,
+  geoPeirceQuincuncial,
+  geoPolyconic,
   geoPolyhedralWaterman,
+  geoSinuMollweide,
+  geoSinusoidal,
   geoWinkel3,
 } from "d3-geo-projection";
 
@@ -30,23 +48,66 @@ type RenderPayload = {
 type ProjectionId =
   | "winkel"
   | "atlantis"
+  | "armadillo"
+  | "august"
+  | "baker"
+  | "berghaus"
+  | "craig"
+  | "foucaut"
+  | "hammerRetroazimuthal"
+  | "homolosine"
+  | "loximuthal"
+  | "naturalEarth"
+  | "peirceQuincuncial"
+  | "polyconic"
+  | "sinuMollweide"
   | "conicEquidistant"
   | "patterson"
   | "stereographic"
+  | "sinusoidal"
   | "waterman";
 
 const ATLANTIS_ROTATE: [number, number, number] = [30, -30, 0];
+const STEREOGRAPHIC_ROTATE: [number, number, number] = [0, -15, 0];
 
 const createProjection = (id: ProjectionId) => {
   switch (id) {
     case "atlantis":
       return geoMollweide().rotate(ATLANTIS_ROTATE);
+    case "armadillo":
+      return geoArmadillo();
+    case "august":
+      return geoAugust();
+    case "baker":
+      return geoBaker();
+    case "berghaus":
+      return geoBerghaus();
+    case "craig":
+      return geoCraig();
+    case "foucaut":
+      return geoFoucaut();
+    case "hammerRetroazimuthal":
+      return geoHammerRetroazimuthal();
+    case "homolosine":
+      return geoHomolosine();
+    case "loximuthal":
+      return geoLoximuthal();
+    case "naturalEarth":
+      return geoNaturalEarth1();
+    case "peirceQuincuncial":
+      return geoPeirceQuincuncial();
+    case "polyconic":
+      return geoPolyconic();
+    case "sinuMollweide":
+      return geoSinuMollweide();
     case "conicEquidistant":
       return geoConicEquidistant();
     case "patterson":
       return geoPatterson();
     case "stereographic":
-      return geoStereographic();
+      return geoStereographic().rotate(STEREOGRAPHIC_ROTATE).clipAngle(90);
+    case "sinusoidal":
+      return geoSinusoidal();
     case "waterman":
       return geoPolyhedralWaterman();
     case "winkel":

@@ -11,6 +11,7 @@ export class ProjectedProjection {
   width: number;
   height: number;
   baseScale: number;
+  private rotateState: [number, number, number];
 
   constructor(
     width: number,
@@ -21,6 +22,10 @@ export class ProjectedProjection {
     this.height = height;
     this.baseScale = 1;
     this.projection = createProjection().precision(DEFAULT_PRECISION);
+    this.rotateState = [0, 0, 0];
+    if (typeof this.projection.rotate === "function") {
+      this.rotateState = this.projection.rotate() as [number, number, number];
+    }
     this.projection.fitSize([width, height], SPHERE);
     this.baseScale = this.projection.scale();
   }
@@ -42,7 +47,7 @@ export class ProjectedProjection {
 
   getOrientation(): MapOrientation {
     return {
-      rotate: this.projection.rotate() as [number, number, number],
+      rotate: this.getRotate(),
       scale: this.projection.scale(),
       baseScale: this.baseScale,
     };
@@ -62,6 +67,36 @@ export class ProjectedProjection {
       }
       return orientation.scale ?? this.baseScale;
     })();
-    this.projection.rotate(orientation.rotate).scale(targetScale);
+    this.setRotate(orientation.rotate);
+    this.projection.scale(targetScale);
+  }
+
+  getRotate(): [number, number, number] {
+    if (typeof this.projection.rotate === "function") {
+      return this.projection.rotate() as [number, number, number];
+    }
+    return this.rotateState;
+  }
+
+  setRotate(next: [number, number, number]) {
+    this.rotateState = next;
+    if (typeof this.projection.rotate === "function") {
+      this.projection.rotate(next);
+    }
+  }
+
+  getScale() {
+    return this.projection.scale();
+  }
+
+  setScale(next: number) {
+    this.projection.scale(next);
+  }
+
+  getTranslate(): [number, number] {
+    if (typeof this.projection.translate === "function") {
+      return this.projection.translate() as [number, number];
+    }
+    return [0, 0];
   }
 }

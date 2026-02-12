@@ -228,7 +228,7 @@ const ProjectedGlobe: React.FC<Props> = ({
       );
       return;
     }
-    const scale = projectionRef.current.projection.scale();
+    const scale = projectionRef.current.getScale();
     if (scale < MIN_SCALE_FOR_OVERLAY) {
       ctx.clearRect(
         0,
@@ -370,7 +370,7 @@ const ProjectedGlobe: React.FC<Props> = ({
       pendingMeshRenderRef.current = true;
       return;
     }
-    const scale = projectionRef.current.projection.scale();
+    const scale = projectionRef.current.getScale();
     if (scale < MIN_SCALE_FOR_MESH) {
       meshVisibleRef.current = false;
       setMeshVisible(false);
@@ -380,15 +380,8 @@ const ProjectedGlobe: React.FC<Props> = ({
       });
       return;
     }
-    const rotate = projectionRef.current.projection.rotate() as [
-      number,
-      number,
-      number,
-    ];
-    const translate = projectionRef.current.projection.translate() as [
-      number,
-      number,
-    ];
+    const rotate = projectionRef.current.getRotate();
+    const translate = projectionRef.current.getTranslate();
     const payload = {
       projectionId,
       width: size.width,
@@ -598,12 +591,12 @@ const ProjectedGlobe: React.FC<Props> = ({
         projectionRef.current = new ProjectedProjection(width, height, () =>
           createProjection(projectionId),
         );
-        scaleRef.current = projectionRef.current.projection.scale();
+        scaleRef.current = projectionRef.current.getScale();
       } else {
         const resetScale = !effectiveOrientation && !hasInteractedRef.current;
         projectionRef.current.setSize(width, height, resetScale);
         if (resetScale) {
-          scaleRef.current = projectionRef.current.projection.scale();
+          scaleRef.current = projectionRef.current.getScale();
         }
       }
       if (!boundariesRef.current && projectionRef.current) {
@@ -623,7 +616,7 @@ const ProjectedGlobe: React.FC<Props> = ({
 
       if (effectiveOrientation && projectionRef.current) {
         projectionRef.current.setOrientation(effectiveOrientation);
-        scaleRef.current = projectionRef.current.projection.scale();
+        scaleRef.current = projectionRef.current.getScale();
         lastAppliedOrientationRef.current = effectiveOrientation;
       }
 
@@ -700,7 +693,7 @@ const ProjectedGlobe: React.FC<Props> = ({
       return;
     }
     projectionRef.current.setOrientation(effectiveOrientation);
-    scaleRef.current = projectionRef.current.projection.scale();
+    scaleRef.current = projectionRef.current.getScale();
     lastAppliedOrientationRef.current = effectiveOrientation;
     requestRender();
   }, [effectiveOrientation, requestRender]);
@@ -767,12 +760,8 @@ const ProjectedGlobe: React.FC<Props> = ({
         markInteracting();
       }
       const sensitivity = 0.25;
-      const rotate = projectionRef.current.projection.rotate() as [
-        number,
-        number,
-        number,
-      ];
-      projectionRef.current.projection.rotate([
+      const rotate = projectionRef.current.getRotate();
+      projectionRef.current.setRotate([
         rotate[0] + dx * sensitivity,
         rotate[1] - dy * sensitivity,
         rotate[2],
@@ -874,12 +863,8 @@ const ProjectedGlobe: React.FC<Props> = ({
             scheduleMeshRender();
             return;
           }
-          const rotate = projectionRef.current.projection.rotate() as [
-            number,
-            number,
-            number,
-          ];
-          projectionRef.current.projection.rotate([
+          const rotate = projectionRef.current.getRotate();
+          projectionRef.current.setRotate([
             rotate[0] + v.x * dt,
             rotate[1] + v.y * dt,
             rotate[2],
@@ -921,11 +906,11 @@ const ProjectedGlobe: React.FC<Props> = ({
         scheduleMeshRender();
       }, 150);
       scheduleInteractionRender();
-      const currentScale = projectionRef.current.projection.scale();
+      const currentScale = projectionRef.current.getScale();
       const delta = -event.deltaY;
       const zoomFactor = 1 + delta * 0.0015;
       const nextScale = clamp(currentScale * zoomFactor, MIN_SCALE, MAX_SCALE);
-      projectionRef.current.projection.scale(nextScale);
+      projectionRef.current.setScale(nextScale);
       scaleRef.current = nextScale;
       requestRender();
       scheduleOrientationCommit();
