@@ -1,4 +1,5 @@
 import { geoWinkel3 } from "d3-geo-projection";
+import { geoPath } from "d3-geo";
 
 self.postMessage({ type: "debug", stage: "loaded" });
 
@@ -22,11 +23,15 @@ type RenderPayload = {
 type WorkerState = {
   canvas: OffscreenCanvas | null;
   ctx: OffscreenCanvasRenderingContext2D | null;
+  tempCanvas: OffscreenCanvas | null;
+  tempCtx: OffscreenCanvasRenderingContext2D | null;
 };
 
 const state: WorkerState = {
   canvas: null,
   ctx: null,
+  tempCanvas: null,
+  tempCtx: null,
 };
 
 type Rgba = [number, number, number, number];
@@ -101,15 +106,52 @@ const normalizeLon = (lon: number, center: number) => {
 
 const clampLat = (value: number) => Math.max(-90, Math.min(90, value));
 
+const findBracket = (arr: Float64Array, value: number) => {
+  const ascending = arr[0] < arr[arr.length - 1];
+  let lo = 0;
+  let hi = arr.length - 1;
+  if (ascending) {
+    if (value <= arr[0]) return 0;
+    if (value >= arr[hi]) return hi - 1;
+  } else {
+    if (value >= arr[0]) return 0;
+    if (value <= arr[hi]) return hi - 1;
+  }
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2);
+    const v = arr[mid];
+    if (ascending) {
+      if (value >= v) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    } else {
+      if (value <= v) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+  }
+  return lo;
+};
+
 const handleInit = (canvas: OffscreenCanvas) => {
   state.canvas = canvas;
   state.ctx = canvas.getContext("2d");
+  state.tempCanvas = null;
+  state.tempCtx = null;
 };
 
 const handleResize = (width: number, height: number) => {
   if (!state.canvas) return;
   state.canvas.width = width;
   state.canvas.height = height;
+  if (state.tempCanvas) {
+    state.tempCanvas.width = width;
+    state.tempCanvas.height = height;
+  }
 };
 
 const handleClear = () => {
@@ -162,92 +204,105 @@ const handleRender = (payload: RenderPayload) => {
 
   const rows = lat.length;
   const cols = lon.length;
-  const lonCenter = -rotate[0];
-  const lonNorm = new Array<number>(cols);
-  for (let i = 0; i < cols; i += 1) {
-    lonNorm[i] = normalizeLon(lon[i], lonCenter);
-  }
-  const lonEdges = new Array<number>(cols + 1);
-  for (let i = 1; i < cols; i += 1) {
-    lonEdges[i] = (lonNorm[i - 1] + lonNorm[i]) * 0.5;
-  }
-  if (cols > 1) {
-    lonEdges[0] = lonNorm[0] - (lonEdges[1] - lonNorm[0]);
-    lonEdges[cols] =
-      lonNorm[cols - 1] + (lonNorm[cols - 1] - lonEdges[cols - 1]);
-  } else {
-    lonEdges[0] = lonNorm[0] - 0.5;
-    lonEdges[1] = lonNorm[0] + 0.5;
-  }
-  const latEdges = new Array<number>(rows + 1);
-  for (let i = 1; i < rows; i += 1) {
-    latEdges[i] = clampLat((lat[i - 1] + lat[i]) * 0.5);
-  }
-  if (rows > 1) {
-    latEdges[0] = clampLat(lat[0] - (latEdges[1] - lat[0]));
-    latEdges[rows] = clampLat(
-      lat[rows - 1] + (lat[rows - 1] - latEdges[rows - 1]),
-    );
-  } else {
-    latEdges[0] = clampLat(lat[0] - 0.5);
-    latEdges[1] = clampLat(lat[0] + 0.5);
-  }
   const stops = buildColorStops(colors);
   const alphaScale = clamp01(opacity);
+  const lonMin = Math.min(...lon);
+  const lonMax = Math.max(...lon);
+  const latMin = Math.min(...lat);
+  const latMax = Math.max(...lat);
+  const lonCenter = (lonMin + lonMax) * 0.5;
 
+  const renderScale = 0.5;
+  const renderWidth = Math.max(1, Math.round(width * renderScale));
+  const renderHeight = Math.max(1, Math.round(height * renderScale));
+
+  if (!state.tempCanvas || !state.tempCtx) {
+    state.tempCanvas = new OffscreenCanvas(renderWidth, renderHeight);
+    state.tempCtx = state.tempCanvas.getContext("2d");
+  }
+  const tempCanvas = state.tempCanvas!;
+  const tempCtx = state.tempCtx!;
+  if (tempCanvas.width !== renderWidth || tempCanvas.height !== renderHeight) {
+    tempCanvas.width = renderWidth;
+    tempCanvas.height = renderHeight;
+  }
+
+  const imageData = tempCtx.createImageData(renderWidth, renderHeight);
+  const data = imageData.data;
   let plotted = 0;
-  for (let row = 0; row < rows - 1; row += 1) {
-    const latValue = latEdges[row];
-    const latNext = latEdges[row + 1];
-    for (let col = 0; col < cols - 1; col += 1) {
-      const idx = row * cols + col;
-      if (mask && mask[idx] === 0) continue;
-      const value = values[idx];
+
+  for (let y = 0; y < renderHeight; y += 1) {
+    for (let x = 0; x < renderWidth; x += 1) {
+      const px = (x + 0.5) * (width / renderWidth);
+      const py = (y + 0.5) * (height / renderHeight);
+      const inv = projection.invert([px, py]);
+      if (!inv) continue;
+      let lonValue = inv[0];
+      const latValue = clampLat(inv[1]);
+      lonValue = normalizeLon(lonValue, lonCenter);
+      if (lonMax > 180 && lonValue < 0) {
+        lonValue += 360;
+      }
+      if (lonValue < lonMin || lonValue > lonMax) continue;
+      if (latValue < latMin || latValue > latMax) continue;
+
+      const lonIdx = findBracket(lon, lonValue);
+      const latIdx = findBracket(lat, latValue);
+      const lon0 = lon[lonIdx];
+      const lon1 = lon[lonIdx + 1];
+      const lat0 = lat[latIdx];
+      const lat1 = lat[latIdx + 1];
+      const lonT = lon1 === lon0 ? 0 : (lonValue - lon0) / (lon1 - lon0);
+      const latT = lat1 === lat0 ? 0 : (latValue - lat0) / (lat1 - lat0);
+
+      const idx00 = latIdx * cols + lonIdx;
+      const idx10 = latIdx * cols + (lonIdx + 1);
+      const idx01 = (latIdx + 1) * cols + lonIdx;
+      const idx11 = (latIdx + 1) * cols + (lonIdx + 1);
+
+      if (mask) {
+        if (
+          mask[idx00] === 0 &&
+          mask[idx10] === 0 &&
+          mask[idx01] === 0 &&
+          mask[idx11] === 0
+        ) {
+          continue;
+        }
+      }
+
+      const v00 = values[idx00];
+      const v10 = values[idx10];
+      const v01 = values[idx01];
+      const v11 = values[idx11];
+      const v0 = v00 + (v10 - v00) * lonT;
+      const v1 = v01 + (v11 - v01) * lonT;
+      const value = v0 + (v1 - v0) * latT;
       if (hideZeroValues && value === 0) continue;
-      const lonValue = lonEdges[col];
-      const lonNext = lonEdges[col + 1];
-      const lonDelta = Math.abs(lonNext - lonValue);
-      if (lonDelta > 180) continue;
-      const p00 = projection([lonValue, latValue]);
-      const p10 = projection([lonNext, latValue]);
-      const p11 = projection([lonNext, latNext]);
-      const p01 = projection([lonValue, latNext]);
-      if (!p00 || !p10 || !p11 || !p01) continue;
-      const maxDx = Math.max(
-        Math.abs(p00[0] - p10[0]),
-        Math.abs(p10[0] - p11[0]),
-        Math.abs(p11[0] - p01[0]),
-        Math.abs(p01[0] - p00[0]),
-      );
-      const maxDy = Math.max(
-        Math.abs(p00[1] - p10[1]),
-        Math.abs(p10[1] - p11[1]),
-        Math.abs(p11[1] - p01[1]),
-        Math.abs(p01[1] - p00[1]),
-      );
-      if (maxDx > width * 0.75 || maxDy > height * 0.75) continue;
-      const rgba =
-        value == null || Number.isNaN(value)
-          ? [0, 0, 0, 0]
-          : mapValueToRgba(value, min, max, stops);
-      const alpha = (rgba[3] / 255) * alphaScale;
+
+      const rgba = mapValueToRgba(value, min, max, stops);
+      const alpha = Math.round(rgba[3] * alphaScale);
       if (alpha <= 0) continue;
-      ctx.fillStyle = `rgba(${rgba[0]}, ${rgba[1]}, ${rgba[2]}, ${alpha})`;
-      ctx.beginPath();
-      ctx.moveTo(p00[0], p00[1]);
-      ctx.lineTo(p10[0], p10[1]);
-      ctx.lineTo(p11[0], p11[1]);
-      ctx.lineTo(p01[0], p01[1]);
-      ctx.closePath();
-      ctx.fill();
+      const base = (y * renderWidth + x) * 4;
+      data[base] = rgba[0];
+      data[base + 1] = rgba[1];
+      data[base + 2] = rgba[2];
+      data[base + 3] = alpha;
       plotted += 1;
     }
   }
 
-  const latMin = Math.min(...lat);
-  const latMax = Math.max(...lat);
-  const lonMin = Math.min(...lon);
-  const lonMax = Math.max(...lon);
+  tempCtx.putImageData(imageData, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  ctx.imageSmoothingEnabled = true;
+  ctx.save();
+  const path = geoPath(projection).context(ctx);
+  ctx.beginPath();
+  path({ type: "Sphere" } as GeoJSON.Geometry);
+  ctx.clip();
+  ctx.drawImage(tempCanvas, 0, 0, width, height);
+  ctx.restore();
+
   self.postMessage({
     type: "debug",
     stage: "render-complete",

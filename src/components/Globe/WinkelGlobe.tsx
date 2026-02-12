@@ -105,6 +105,9 @@ const WinkelGlobe: React.FC<Props> = ({
   const interactionRafRef = useRef<number | null>(null);
   const orientationTimeoutRef = useRef<number | null>(null);
   const lastAppliedOrientationRef = useRef<WinkelOrientation | null>(null);
+  const scheduleMeshRenderRef = useRef<((force?: boolean) => void) | null>(
+    null,
+  );
 
   const [boundaryData, setBoundaryData] = useState<BoundaryDataset[]>([]);
   const effectiveOrientation = useMemo(() => {
@@ -181,14 +184,10 @@ const WinkelGlobe: React.FC<Props> = ({
     const ctx = overlayCanvasRef.current.getContext("2d");
     if (!ctx) return;
     if (
-      rasterGridKey &&
-      rasterGridDataKey &&
-      rasterGridKey !== rasterGridDataKey
+      !rasterGridData?.lat ||
+      !rasterGridData?.lon ||
+      !rasterGridData?.values
     ) {
-      console.log("[WinkelMeshWorker] overlay skip key mismatch", {
-        rasterGridKey,
-        rasterGridDataKey,
-      });
       ctx.clearRect(
         0,
         0,
@@ -310,14 +309,10 @@ const WinkelGlobe: React.FC<Props> = ({
       return;
     }
     if (
-      rasterGridKey &&
-      rasterGridDataKey &&
-      rasterGridKey !== rasterGridDataKey
+      !rasterGridData?.lat ||
+      !rasterGridData?.lon ||
+      !rasterGridData?.values
     ) {
-      console.log("[WinkelMeshWorker] renderMesh key mismatch", {
-        rasterGridKey,
-        rasterGridDataKey,
-      });
       meshVisibleRef.current = false;
       setMeshVisible(false);
       meshWorkerRef.current?.postMessage({ type: "clear" });
@@ -379,32 +374,34 @@ const WinkelGlobe: React.FC<Props> = ({
     size.width,
   ]);
 
-  const scheduleMeshRender = useCallback(() => {
-    if (!meshWorkerRef.current) {
-      pendingMeshRenderRef.current = true;
-      return;
-    }
-    if (meshRenderTimeoutRef.current) {
-      window.clearTimeout(meshRenderTimeoutRef.current);
-    }
-    console.log("[WinkelMeshWorker] scheduleMeshRender");
-    meshRenderTimeoutRef.current = window.setTimeout(() => {
-      meshRenderTimeoutRef.current = null;
-      const isInteracting =
-        draggingRef.current ||
-        inertiaFrameRef.current !== null ||
-        wheelActiveRef.current;
-      if (isInteracting) return;
-      renderMesh();
-    }, 240);
-  }, [renderMesh]);
+  const scheduleMeshRender = useCallback(
+    (force = false) => {
+      if (!meshWorkerRef.current) {
+        pendingMeshRenderRef.current = true;
+        return;
+      }
+      if (meshRenderTimeoutRef.current) {
+        window.clearTimeout(meshRenderTimeoutRef.current);
+      }
+      console.log("[WinkelMeshWorker] scheduleMeshRender");
+      meshRenderTimeoutRef.current = window.setTimeout(() => {
+        meshRenderTimeoutRef.current = null;
+        const isInteracting =
+          draggingRef.current ||
+          inertiaFrameRef.current !== null ||
+          wheelActiveRef.current;
+        if (!force && isInteracting) return;
+        renderMesh();
+      }, 240);
+    },
+    [renderMesh],
+  );
 
   useEffect(() => {
-    console.log("[WinkelMeshWorker] grid keys changed", {
-      rasterGridKey,
-      rasterGridDataKey,
-      hasData: Boolean(rasterGridData),
-    });
+    scheduleMeshRenderRef.current = scheduleMeshRender;
+  }, [scheduleMeshRender]);
+
+  useEffect(() => {
     meshVisibleRef.current = false;
     setMeshVisible(false);
     if (meshRenderTimeoutRef.current) {
@@ -415,40 +412,26 @@ const WinkelGlobe: React.FC<Props> = ({
       meshWorkerRef.current?.postMessage({ type: "clear" });
       return;
     }
-    scheduleMeshRender();
-  }, [
-    currentDataset?.id,
-    rasterGridData,
-    rasterGridDataKey,
-    rasterGridKey,
-    scheduleMeshRender,
-  ]);
+    scheduleMeshRender(true);
+  }, [currentDataset?.id, rasterGridData, scheduleMeshRender]);
 
   useEffect(() => {
     if (
-      !rasterGridData ||
-      (rasterGridKey &&
-        rasterGridDataKey &&
-        rasterGridKey !== rasterGridDataKey)
+      !rasterGridData?.lat ||
+      !rasterGridData?.lon ||
+      !rasterGridData?.values
     ) {
-      if (
-        rasterGridKey &&
-        rasterGridDataKey &&
-        rasterGridKey !== rasterGridDataKey
-      ) {
-        console.log("[WinkelMeshWorker] direct render skipped; key mismatch", {
-          rasterGridKey,
-          rasterGridDataKey,
-        });
-      }
       return;
     }
-    console.log("[WinkelMeshWorker] direct render schedule", {
-      rasterGridKey,
-      rasterGridDataKey,
-    });
-    scheduleMeshRender();
-  }, [rasterGridData, rasterGridDataKey, rasterGridKey, scheduleMeshRender]);
+    meshWorkerRef.current?.postMessage({ type: "clear" });
+    scheduleMeshRender(true);
+  }, [
+    rasterGridData,
+    currentDataset?.colorScale?.colors,
+    size.width,
+    size.height,
+    scheduleMeshRender,
+  ]);
 
   useEffect(() => {
     if (!meshCanvasRef.current) return;
@@ -474,15 +457,15 @@ const WinkelGlobe: React.FC<Props> = ({
           meshWorkerReadyRef.current = true;
           console.log("[WinkelMeshWorker] init posted");
           worker.postMessage({ type: "init", canvas: offscreen }, [offscreen]);
-          if (size.width > 0 && size.height > 0) {
+          if (sizeRef.current.width > 0 && sizeRef.current.height > 0) {
             worker.postMessage({
               type: "resize",
-              width: size.width,
-              height: size.height,
+              width: sizeRef.current.width,
+              height: sizeRef.current.height,
             });
           }
           if (pendingMeshRenderRef.current) {
-            scheduleMeshRender();
+            scheduleMeshRenderRef.current?.(true);
           }
         }
         return;
@@ -512,7 +495,7 @@ const WinkelGlobe: React.FC<Props> = ({
         meshRenderTimeoutRef.current = null;
       }
     };
-  }, [scheduleMeshRender]);
+  }, []);
 
   const renderBoundaries = useCallback(() => {
     if (!svgRef.current || !boundariesRef.current) return;
