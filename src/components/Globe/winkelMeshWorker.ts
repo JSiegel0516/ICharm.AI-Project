@@ -14,6 +14,7 @@ type RenderPayload = {
   max: number;
   colors: string[];
   hideZeroValues: boolean;
+  smoothGridBoxValues: boolean;
   opacity: number;
   rotate: [number, number, number];
   scale: number;
@@ -175,6 +176,7 @@ const handleRender = (payload: RenderPayload) => {
     max,
     colors,
     hideZeroValues,
+    smoothGridBoxValues,
     opacity,
     rotate,
     scale,
@@ -220,105 +222,250 @@ const handleRender = (payload: RenderPayload) => {
   const wrap180 = (value: number) =>
     ((((value + 180) % 360) + 360) % 360) - 180;
 
-  const renderScale = 0.5;
-  const renderWidth = Math.max(1, Math.round(width * renderScale));
-  const renderHeight = Math.max(1, Math.round(height * renderScale));
-
-  if (!state.tempCanvas || !state.tempCtx) {
-    state.tempCanvas = new OffscreenCanvas(renderWidth, renderHeight);
-    state.tempCtx = state.tempCanvas.getContext("2d");
-  }
-  const tempCanvas = state.tempCanvas!;
-  const tempCtx = state.tempCtx!;
-  if (tempCanvas.width !== renderWidth || tempCanvas.height !== renderHeight) {
-    tempCanvas.width = renderWidth;
-    tempCanvas.height = renderHeight;
-  }
-
-  const imageData = tempCtx.createImageData(renderWidth, renderHeight);
-  const data = imageData.data;
   let plotted = 0;
 
-  for (let y = 0; y < renderHeight; y += 1) {
-    for (let x = 0; x < renderWidth; x += 1) {
-      const px = (x + 0.5) * (width / renderWidth);
-      const py = (y + 0.5) * (height / renderHeight);
-      const inv = projection.invert([px, py]);
-      if (!inv) continue;
-      let lonValue = inv[0];
-      const latValue = clampLat(inv[1]);
-      if (useZero360) {
-        lonValue = wrap360(lonValue);
-      } else if (useNeg180) {
-        lonValue = wrap180(lonValue);
-      } else {
-        lonValue = normalizeLon(lonValue, lonCenter);
-      }
-      if (!useWrap) {
-        if (lonValue < lonMin || lonValue > lonMax) continue;
-      } else if (useZero360) {
-        if (lonValue < 0 || lonValue > 360) continue;
-      } else if (useNeg180) {
-        if (lonValue < -180 || lonValue > 180) continue;
-      }
-      if (latValue < latMin || latValue > latMax) continue;
+  if (smoothGridBoxValues) {
+    const renderScale = 0.5;
+    const renderWidth = Math.max(1, Math.round(width * renderScale));
+    const renderHeight = Math.max(1, Math.round(height * renderScale));
 
-      const lonIdx = findBracket(lon, lonValue);
-      const latIdx = findBracket(lat, latValue);
-      const lon0 = lon[lonIdx];
-      const lon1 = lon[lonIdx + 1];
-      const lat0 = lat[latIdx];
-      const lat1 = lat[latIdx + 1];
-      const lonT = lon1 === lon0 ? 0 : (lonValue - lon0) / (lon1 - lon0);
-      const latT = lat1 === lat0 ? 0 : (latValue - lat0) / (lat1 - lat0);
-
-      const idx00 = latIdx * cols + lonIdx;
-      const idx10 = latIdx * cols + (lonIdx + 1);
-      const idx01 = (latIdx + 1) * cols + lonIdx;
-      const idx11 = (latIdx + 1) * cols + (lonIdx + 1);
-
-      if (mask) {
-        if (
-          mask[idx00] === 0 &&
-          mask[idx10] === 0 &&
-          mask[idx01] === 0 &&
-          mask[idx11] === 0
-        ) {
-          continue;
-        }
-      }
-
-      const v00 = values[idx00];
-      const v10 = values[idx10];
-      const v01 = values[idx01];
-      const v11 = values[idx11];
-      const v0 = v00 + (v10 - v00) * lonT;
-      const v1 = v01 + (v11 - v01) * lonT;
-      const value = v0 + (v1 - v0) * latT;
-      if (hideZeroValues && value === 0) continue;
-
-      const rgba = mapValueToRgba(value, min, max, stops);
-      const alpha = Math.round(rgba[3] * alphaScale);
-      if (alpha <= 0) continue;
-      const base = (y * renderWidth + x) * 4;
-      data[base] = rgba[0];
-      data[base + 1] = rgba[1];
-      data[base + 2] = rgba[2];
-      data[base + 3] = alpha;
-      plotted += 1;
+    if (!state.tempCanvas || !state.tempCtx) {
+      state.tempCanvas = new OffscreenCanvas(renderWidth, renderHeight);
+      state.tempCtx = state.tempCanvas.getContext("2d");
     }
-  }
+    const tempCanvas = state.tempCanvas!;
+    const tempCtx = state.tempCtx!;
+    if (
+      tempCanvas.width !== renderWidth ||
+      tempCanvas.height !== renderHeight
+    ) {
+      tempCanvas.width = renderWidth;
+      tempCanvas.height = renderHeight;
+    }
 
-  tempCtx.putImageData(imageData, 0, 0);
-  ctx.clearRect(0, 0, width, height);
-  ctx.imageSmoothingEnabled = true;
-  ctx.save();
-  const path = geoPath(projection).context(ctx);
-  ctx.beginPath();
-  path({ type: "Sphere" } as GeoJSON.Geometry);
-  ctx.clip();
-  ctx.drawImage(tempCanvas, 0, 0, width, height);
-  ctx.restore();
+    const imageData = tempCtx.createImageData(renderWidth, renderHeight);
+    const data = imageData.data;
+
+    for (let y = 0; y < renderHeight; y += 1) {
+      for (let x = 0; x < renderWidth; x += 1) {
+        const px = (x + 0.5) * (width / renderWidth);
+        const py = (y + 0.5) * (height / renderHeight);
+        const inv = projection.invert([px, py]);
+        if (!inv) continue;
+        let lonValue = inv[0];
+        const latValue = clampLat(inv[1]);
+        if (useZero360) {
+          lonValue = wrap360(lonValue);
+        } else if (useNeg180) {
+          lonValue = wrap180(lonValue);
+        } else {
+          lonValue = normalizeLon(lonValue, lonCenter);
+        }
+        if (!useWrap) {
+          if (lonValue < lonMin || lonValue > lonMax) continue;
+        } else if (useZero360) {
+          if (lonValue < 0 || lonValue > 360) continue;
+        } else if (useNeg180) {
+          if (lonValue < -180 || lonValue > 180) continue;
+        }
+        if (latValue < latMin || latValue > latMax) continue;
+
+        const lonIdx = findBracket(lon, lonValue);
+        const latIdx = findBracket(lat, latValue);
+        const lon0 = lon[lonIdx];
+        const lon1 = lon[lonIdx + 1];
+        const lat0 = lat[latIdx];
+        const lat1 = lat[latIdx + 1];
+        const lonT = lon1 === lon0 ? 0 : (lonValue - lon0) / (lon1 - lon0);
+        const latT = lat1 === lat0 ? 0 : (latValue - lat0) / (lat1 - lat0);
+
+        const idx00 = latIdx * cols + lonIdx;
+        const idx10 = latIdx * cols + (lonIdx + 1);
+        const idx01 = (latIdx + 1) * cols + lonIdx;
+        const idx11 = (latIdx + 1) * cols + (lonIdx + 1);
+
+        if (mask) {
+          if (
+            mask[idx00] === 0 &&
+            mask[idx10] === 0 &&
+            mask[idx01] === 0 &&
+            mask[idx11] === 0
+          ) {
+            continue;
+          }
+        }
+
+        const v00 = values[idx00];
+        const v10 = values[idx10];
+        const v01 = values[idx01];
+        const v11 = values[idx11];
+        const v0 = v00 + (v10 - v00) * lonT;
+        const v1 = v01 + (v11 - v01) * lonT;
+        const value = v0 + (v1 - v0) * latT;
+        if (hideZeroValues && value === 0) continue;
+
+        const rgba = mapValueToRgba(value, min, max, stops);
+        const alpha = Math.round(rgba[3] * alphaScale);
+        if (alpha <= 0) continue;
+        const base = (y * renderWidth + x) * 4;
+        data[base] = rgba[0];
+        data[base + 1] = rgba[1];
+        data[base + 2] = rgba[2];
+        data[base + 3] = alpha;
+        plotted += 1;
+      }
+    }
+
+    tempCtx.putImageData(imageData, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+    ctx.imageSmoothingEnabled = true;
+    ctx.save();
+    const path = geoPath(projection).context(ctx);
+    ctx.beginPath();
+    path({ type: "Sphere" } as GeoJSON.Geometry);
+    ctx.clip();
+    ctx.drawImage(tempCanvas, 0, 0, width, height);
+    ctx.restore();
+  } else {
+    const lonNorm = new Array<number>(cols);
+    let lonOffset = 0;
+    lonNorm[0] = lon[0];
+    for (let i = 1; i < cols; i += 1) {
+      const delta = lon[i] - lon[i - 1];
+      if (delta < -180) {
+        lonOffset += 360;
+      } else if (delta > 180) {
+        lonOffset -= 360;
+      }
+      lonNorm[i] = lon[i] + lonOffset;
+    }
+    const lonEdges = new Array<number>(cols + 1);
+    for (let i = 1; i < cols; i += 1) {
+      lonEdges[i] = (lonNorm[i - 1] + lonNorm[i]) * 0.5;
+    }
+    if (cols > 1) {
+      lonEdges[0] = lonNorm[0] - (lonEdges[1] - lonNorm[0]);
+      lonEdges[cols] =
+        lonNorm[cols - 1] + (lonNorm[cols - 1] - lonEdges[cols - 1]);
+    } else {
+      lonEdges[0] = lonNorm[0] - 0.5;
+      lonEdges[1] = lonNorm[0] + 0.5;
+    }
+
+    const latEdges = new Array<number>(rows + 1);
+    for (let i = 1; i < rows; i += 1) {
+      latEdges[i] = clampLat((lat[i - 1] + lat[i]) * 0.5);
+    }
+    if (rows > 1) {
+      latEdges[0] = clampLat(lat[0] - (latEdges[1] - lat[0]));
+      latEdges[rows] = clampLat(
+        lat[rows - 1] + (lat[rows - 1] - latEdges[rows - 1]),
+      );
+    } else {
+      latEdges[0] = clampLat(lat[0] - 0.5);
+      latEdges[1] = clampLat(lat[0] + 0.5);
+    }
+
+    const stepRow = Math.max(1, Math.round(rows / 60));
+    const stepCol = Math.max(1, Math.round(cols / 120));
+
+    ctx.save();
+    const path = geoPath(projection).context(ctx);
+    ctx.beginPath();
+    path({ type: "Sphere" } as GeoJSON.Geometry);
+    ctx.clip();
+
+    const renderCell = (
+      lonValue: number,
+      lonNext: number,
+      latValue: number,
+      latNext: number,
+      value: number,
+    ) => {
+      const avgLon = (lonValue + lonNext) * 0.5;
+      const centerLon = -rotate[0];
+      const shift = Math.round((centerLon - avgLon) / 360) * 360;
+      lonValue += shift;
+      lonNext += shift;
+      const p00 = projection([lonValue, latValue]);
+      const p10 = projection([lonNext, latValue]);
+      const p11 = projection([lonNext, latNext]);
+      const p01 = projection([lonValue, latNext]);
+      if (!p00 || !p10 || !p11 || !p01) return;
+      const maxDx = Math.max(
+        Math.abs(p00[0] - p10[0]),
+        Math.abs(p10[0] - p11[0]),
+        Math.abs(p11[0] - p01[0]),
+        Math.abs(p01[0] - p00[0]),
+      );
+      const maxDy = Math.max(
+        Math.abs(p00[1] - p10[1]),
+        Math.abs(p10[1] - p11[1]),
+        Math.abs(p11[1] - p01[1]),
+        Math.abs(p01[1] - p00[1]),
+      );
+      if (maxDx > width * 0.75 || maxDy > height * 0.75) return;
+      const rgba =
+        value == null || Number.isNaN(value)
+          ? [0, 0, 0, 0]
+          : mapValueToRgba(value, min, max, stops);
+      const alpha = (rgba[3] / 255) * alphaScale;
+      if (alpha <= 0) return;
+      ctx.fillStyle = `rgba(${rgba[0]}, ${rgba[1]}, ${rgba[2]}, ${alpha})`;
+      const minCellPx = 3;
+      if (maxDx < minCellPx && maxDy < minCellPx) {
+        const cx = (p00[0] + p10[0] + p11[0] + p01[0]) / 4;
+        const cy = (p00[1] + p10[1] + p11[1] + p01[1]) / 4;
+        ctx.fillRect(
+          Math.round(cx - minCellPx / 2),
+          Math.round(cy - minCellPx / 2),
+          minCellPx,
+          minCellPx,
+        );
+        plotted += 1;
+        return;
+      }
+      ctx.beginPath();
+      ctx.moveTo(p00[0], p00[1]);
+      ctx.lineTo(p10[0], p10[1]);
+      ctx.lineTo(p11[0], p11[1]);
+      ctx.lineTo(p01[0], p01[1]);
+      ctx.closePath();
+      ctx.fill();
+      plotted += 1;
+    };
+
+    for (let row = 0; row < rows - 1; row += stepRow) {
+      const rowNext = Math.min(row + stepRow, rows - 1);
+      const latValue = latEdges[row];
+      const latNext = latEdges[rowNext];
+      for (let col = 0; col < cols - 1; col += stepCol) {
+        const colNext = Math.min(col + stepCol, cols - 1);
+        const idx = row * cols + col;
+        if (mask && mask[idx] === 0) continue;
+        const value = values[idx];
+        if (hideZeroValues && value === 0) continue;
+        let lonValue = lonEdges[col];
+        let lonNext = lonEdges[colNext];
+        renderCell(lonValue, lonNext, latValue, latNext, value);
+      }
+
+      if (useWrap) {
+        const idx = row * cols + (cols - 1);
+        if (mask && mask[idx] === 0) continue;
+        const value = values[idx];
+        if (hideZeroValues && value === 0) continue;
+        let lonValue = lonEdges[cols - 1];
+        let lonNext = lonEdges[0] + 360;
+        if (lonNext < lonValue) {
+          lonNext += 360;
+        }
+        renderCell(lonValue, lonNext, latValue, latNext, value);
+      }
+    }
+
+    ctx.restore();
+  }
 
   self.postMessage({
     type: "debug",

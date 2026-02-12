@@ -419,6 +419,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       undefined,
     );
     const [orthoClearMarkerTick, setOrthoClearMarkerTick] = useState(0);
+    const [winkelClearMarkerTick, setWinkelClearMarkerTick] = useState(0);
     const datasetName = (currentDataset?.name ?? "").toLowerCase();
     const datasetSupportsZeroMask =
       currentDataset?.dataType === "precipitation" ||
@@ -1364,6 +1365,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       }
 
       setOrthoClearMarkerTick((tick) => tick + 1);
+      setWinkelClearMarkerTick((tick) => tick + 1);
     }, []);
 
     const clearSearchMarker = useCallback(() => {
@@ -3484,6 +3486,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             lineColors={lineColors}
             orientation={winkelOrientation}
             onOrientationChange={onWinkelOrientationChange}
+            onRegionClick={onRegionClick}
+            clearMarkerSignal={winkelClearMarkerTick}
           />
         )}
       </div>

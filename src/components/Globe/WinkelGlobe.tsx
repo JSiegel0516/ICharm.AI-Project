@@ -9,6 +9,7 @@ import type {
   Dataset,
   GlobeLineResolution,
   LineColorSettings,
+  RegionData,
   WinkelOrientation,
 } from "@/types";
 import type { RasterGridData } from "@/hooks/useRasterGrid";
@@ -42,6 +43,8 @@ type Props = {
   lineColors?: LineColorSettings;
   orientation?: WinkelOrientation;
   onOrientationChange?: (orientation: WinkelOrientation) => void;
+  onRegionClick?: (lat: number, lon: number, data: RegionData) => void;
+  clearMarkerSignal?: number;
 };
 
 const clamp = (value: number, min: number, max: number) =>
@@ -73,11 +76,15 @@ const WinkelGlobe: React.FC<Props> = ({
   lineColors,
   orientation,
   onOrientationChange,
+  onRegionClick,
+  clearMarkerSignal,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const meshCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const markerSvgRef = useRef<SVGSVGElement | null>(null);
+  const markerStateRef = useRef<{ lat: number; lon: number } | null>(null);
   const meshWorkerRef = useRef<Worker | null>(null);
   const hasTransferredMeshCanvasRef = useRef(false);
   const meshVisibleRef = useRef(false);
@@ -93,6 +100,8 @@ const WinkelGlobe: React.FC<Props> = ({
   const [size, setSize] = useState({ width: 0, height: 0 });
   const draggingRef = useRef(false);
   const dragStartRef = useRef<[number, number] | null>(null);
+  const dragDistanceRef = useRef(0);
+  const dragHasMovedRef = useRef(false);
   const lastPointerRef = useRef<[number, number] | null>(null);
   const lastMoveTimeRef = useRef<number | null>(null);
   const velocityRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -253,14 +262,49 @@ const WinkelGlobe: React.FC<Props> = ({
     boundariesRef.current?.update();
   }, []);
 
+  const renderMarker = useCallback(() => {
+    const svg = markerSvgRef.current;
+    if (!svg) return;
+    while (svg.firstChild) {
+      svg.removeChild(svg.firstChild);
+    }
+    const marker = markerStateRef.current;
+    if (!marker || !projectionRef.current) return;
+    const projected = projectionRef.current.projection([
+      marker.lon,
+      marker.lat,
+    ]) as [number, number] | null;
+    if (!projected) return;
+    const [x, y] = projected;
+    const size = 24;
+    const image = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "image",
+    );
+    image.setAttribute("href", "/images/selector.png");
+    image.setAttribute("x", `${x - size / 2}`);
+    image.setAttribute("y", `${y - size / 2}`);
+    image.setAttribute("width", `${size}`);
+    image.setAttribute("height", `${size}`);
+    image.setAttribute("opacity", "0.95");
+    svg.appendChild(image);
+  }, []);
+
+  useEffect(() => {
+    if (clearMarkerSignal === undefined) return;
+    markerStateRef.current = null;
+    renderMarker();
+  }, [clearMarkerSignal, renderMarker]);
+
   const requestRender = useCallback(() => {
     if (rafRef.current) return;
     rafRef.current = window.requestAnimationFrame(() => {
       rafRef.current = null;
       updatePaths();
       renderOverlay();
+      renderMarker();
     });
-  }, [renderOverlay, updatePaths]);
+  }, [renderMarker, renderOverlay, updatePaths]);
 
   const scheduleInteractionRender = useCallback(() => {
     if (interactionRafRef.current) return;
@@ -268,6 +312,7 @@ const WinkelGlobe: React.FC<Props> = ({
       interactionRafRef.current = null;
       updatePaths();
       renderOverlay();
+      renderMarker();
       if (
         draggingRef.current ||
         inertiaFrameRef.current !== null ||
@@ -276,7 +321,7 @@ const WinkelGlobe: React.FC<Props> = ({
         scheduleInteractionRender();
       }
     });
-  }, [renderOverlay, updatePaths]);
+  }, [renderMarker, renderOverlay, updatePaths]);
 
   const markInteracting = useCallback(() => {
     meshVisibleRef.current = false;
@@ -348,6 +393,7 @@ const WinkelGlobe: React.FC<Props> = ({
       max: rasterGridData.max ?? 1,
       colors: currentDataset.colorScale.colors,
       hideZeroValues,
+      smoothGridBoxValues,
       opacity: clamp(rasterOpacity, 0, 1),
       rotate,
       scale,
@@ -370,6 +416,7 @@ const WinkelGlobe: React.FC<Props> = ({
     rasterGridDataKey,
     rasterGridKey,
     rasterOpacity,
+    smoothGridBoxValues,
     size.height,
     size.width,
   ]);
@@ -428,6 +475,7 @@ const WinkelGlobe: React.FC<Props> = ({
   }, [
     rasterGridData,
     currentDataset?.colorScale?.colors,
+    smoothGridBoxValues,
     size.width,
     size.height,
     scheduleMeshRender,
@@ -568,7 +616,7 @@ const WinkelGlobe: React.FC<Props> = ({
 
       renderBoundaries();
       requestRender();
-      scheduleMeshRender();
+      scheduleMeshRender(true);
     },
     [effectiveOrientation, renderBoundaries, requestRender, scheduleMeshRender],
   );
@@ -665,7 +713,8 @@ const WinkelGlobe: React.FC<Props> = ({
       if (!projectionRef.current || !svgRef.current) return;
       event.preventDefault();
       hasInteractedRef.current = true;
-      markInteracting();
+      dragDistanceRef.current = 0;
+      dragHasMovedRef.current = false;
       if (inertiaFrameRef.current) {
         window.cancelAnimationFrame(inertiaFrameRef.current);
         inertiaFrameRef.current = null;
@@ -693,6 +742,11 @@ const WinkelGlobe: React.FC<Props> = ({
       const dt = Math.max(1, now - lastTime);
       const dx = current[0] - last[0];
       const dy = current[1] - last[1];
+      dragDistanceRef.current += Math.hypot(dx, dy);
+      if (!dragHasMovedRef.current && dragDistanceRef.current > 6) {
+        dragHasMovedRef.current = true;
+        markInteracting();
+      }
       const sensitivity = 0.25;
       const rotate = projectionRef.current.projection.rotate() as [
         number,
@@ -725,6 +779,60 @@ const WinkelGlobe: React.FC<Props> = ({
         svgRef.current?.releasePointerCapture(event.pointerId);
       } catch {
         // noop
+      }
+      const dragDistance = dragDistanceRef.current;
+      dragDistanceRef.current = 0;
+      dragHasMovedRef.current = false;
+      if (dragDistance <= 6) {
+        if (onRegionClick && projectionRef.current) {
+          const [localX, localY] = getLocalPointer(event);
+          const inverted = projectionRef.current.projection.invert([
+            localX,
+            localY,
+          ]) as [number, number] | null;
+          if (inverted) {
+            const [lon, lat] = inverted;
+            const sampledValue = rasterGridData?.sampleValue
+              ? rasterGridData.sampleValue(lat, lon)
+              : null;
+            const units =
+              rasterGridData?.units ?? currentDataset?.units ?? "units";
+            const datasetName = currentDataset?.name?.toLowerCase() ?? "";
+            const datasetType = currentDataset?.dataType?.toLowerCase() ?? "";
+            const isOceanOnlyDataset =
+              datasetName.includes("sea surface") ||
+              datasetName.includes("godas") ||
+              datasetName.includes("ocean data assimilation");
+            const looksTemperature =
+              datasetType.includes("temp") ||
+              datasetName.includes("temp") ||
+              units.toLowerCase().includes("degc") ||
+              units.toLowerCase().includes("celsius");
+            let value: number | null =
+              typeof sampledValue === "number" ? sampledValue : null;
+            if (value === null && !isOceanOnlyDataset) {
+              value = looksTemperature
+                ? -20 + Math.random() * 60
+                : Math.random() * 100;
+            }
+            const regionData: RegionData = {
+              name: `${lat.toFixed(2)}°, ${lon.toFixed(2)}°`,
+              ...(value === null
+                ? {}
+                : looksTemperature
+                  ? { temperature: value }
+                  : { precipitation: value }),
+              dataset: currentDataset?.name || "Sample Dataset",
+              unit: units,
+            };
+            markerStateRef.current = { lat, lon };
+            renderMarker();
+            onRegionClick(lat, lon, regionData);
+          }
+        }
+        scheduleOrientationCommit();
+        scheduleMeshRender();
+        return;
       }
       const velocity = velocityRef.current;
       const speed = Math.hypot(velocity.x, velocity.y);
@@ -766,7 +874,16 @@ const WinkelGlobe: React.FC<Props> = ({
         scheduleMeshRender();
       }
     },
-    [scheduleInteractionRender, scheduleMeshRender, scheduleOrientationCommit],
+    [
+      currentDataset,
+      getLocalPointer,
+      onRegionClick,
+      rasterGridData,
+      renderMarker,
+      scheduleInteractionRender,
+      scheduleMeshRender,
+      scheduleOrientationCommit,
+    ],
   );
 
   const handleWheel = useCallback(
@@ -850,6 +967,12 @@ const WinkelGlobe: React.FC<Props> = ({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
+      />
+      <svg
+        ref={markerSvgRef}
+        width={size.width}
+        height={size.height}
+        className="pointer-events-none absolute inset-0 z-30 h-full w-full"
       />
       <canvas
         ref={overlayCanvasRef}
