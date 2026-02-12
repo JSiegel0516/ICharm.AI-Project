@@ -11,6 +11,7 @@ type LineSettings = {
   lakes: NEResolution;
   geographic: boolean;
   radius: number;
+  lineWidth?: number;
   colors?: Partial<Record<NEDataType, string>>;
 };
 
@@ -60,7 +61,10 @@ export const useGlobeLines = (
       );
       if (!segments.length) return;
 
-      const lineGeometry = LineGeometryProcessor.createLineGeometry(segments);
+      const lineGeometry = LineGeometryProcessor.createLineGeometry(
+        segments,
+        settings.lineWidth,
+      );
       lineGeometry.renderOrder = 10;
       lineGeometry.frustumCulled = false;
       root.add(lineGeometry);
@@ -72,6 +76,7 @@ export const useGlobeLines = (
       onUpdate,
       root,
       settings.radius,
+      settings.lineWidth,
       settings.visible,
       settings.colors,
     ],

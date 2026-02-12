@@ -127,12 +127,15 @@ export class WinkelBoundaries {
     options: {
       showGraticule: boolean;
       lineColors?: LineColorSettings;
+      lineThickness?: number;
     },
   ) {
     this.svg = select(svgElement);
     this.svg.selectAll("*").remove();
     this.showGraticule = options.showGraticule;
     this.lineColors = options.lineColors;
+    const lineThickness =
+      typeof options.lineThickness === "number" ? options.lineThickness : 1;
     this.boundaryData = boundaryData;
 
     const clipId = `winkel-clip-${WinkelBoundaries.clipIdCounter++}`;
@@ -165,7 +168,7 @@ export class WinkelBoundaries {
       .attr("class", "winkel-sphere")
       .attr("fill", "none")
       .attr("stroke", coastlineColor)
-      .attr("stroke-width", 0.8)
+      .attr("stroke-width", 0.8 * lineThickness)
       .attr("d", this.pathGenerator);
 
     if (this.showGraticule) {
@@ -176,7 +179,7 @@ export class WinkelBoundaries {
         .attr("class", "winkel-graticule")
         .attr("fill", "none")
         .attr("stroke", graticuleColor)
-        .attr("stroke-width", 0.4)
+        .attr("stroke-width", 0.4 * lineThickness)
         .attr("opacity", 0.7)
         .attr("clip-path", `url(#${clipId})`)
         .attr("d", this.pathGenerator);
@@ -193,7 +196,10 @@ export class WinkelBoundaries {
         .attr("class", "winkel-boundary")
         .attr("fill", "none")
         .attr("stroke", stroke)
-        .attr("stroke-width", dataset.kind === "geographicLines" ? 0.5 : 0.7)
+        .attr(
+          "stroke-width",
+          (dataset.kind === "geographicLines" ? 0.5 : 0.7) * lineThickness,
+        )
         .attr("opacity", dataset.kind === "geographicLines" ? 0.8 : 0.9)
         .attr("clip-path", `url(#${clipId})`)
         .attr("d", this.pathGenerator);

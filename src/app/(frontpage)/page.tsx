@@ -251,6 +251,7 @@ export default function HomePage() {
     isLoading,
     error,
     lineColors,
+    lineThickness,
   } = useAppState();
   const globeRef = useRef<GlobeRef>(null);
   const lastDatasetIdRef = useRef<string | null>(null);
@@ -446,6 +447,9 @@ export default function HomePage() {
   const lastNonProjectionGridVisibleRef = useRef(
     globeSettings.geographicLinesVisible,
   );
+  const lastNonOrthoGridVisibleRef = useRef(
+    globeSettings.geographicLinesVisible,
+  );
 
   const lastViewModeRef = useRef<GlobeViewMode | null>(null);
 
@@ -456,6 +460,8 @@ export default function HomePage() {
 
     const wasCesium = lastMode === "3d" || lastMode === "2d";
     const isCesium = nextMode === "3d" || nextMode === "2d";
+    const wasOrtho = lastMode === "ortho";
+    const isOrtho = nextMode === "ortho";
     const wasProjection = MAP_PROJECTIONS.some(
       (projection) => projection.id === lastMode,
     );
@@ -480,6 +486,24 @@ export default function HomePage() {
       const restore = lastCesiumLabelsVisibleRef.current;
       if (restore !== globeSettings.labelsVisible) {
         setGlobeSettings((prev) => ({ ...prev, labelsVisible: restore }));
+      }
+    }
+
+    if (!wasOrtho && isOrtho) {
+      lastNonOrthoGridVisibleRef.current = globeSettings.geographicLinesVisible;
+      if (!globeSettings.geographicLinesVisible) {
+        setGlobeSettings((prev) => ({ ...prev, geographicLinesVisible: true }));
+      }
+      return;
+    }
+
+    if (wasOrtho && !isOrtho) {
+      const restore = lastNonOrthoGridVisibleRef.current;
+      if (restore !== globeSettings.geographicLinesVisible) {
+        setGlobeSettings((prev) => ({
+          ...prev,
+          geographicLinesVisible: restore,
+        }));
       }
     }
 
@@ -1478,6 +1502,7 @@ export default function HomePage() {
         rasterBlurEnabled={globeSettings.rasterBlurEnabled}
         bumpMapMode={globeSettings.bumpMapMode}
         lineColors={lineColors}
+        lineThickness={lineThickness}
         mapOrientations={globeSettings.mapOrientations}
         onProjectionOrientationChange={handleProjectionOrientationChange}
         useMeshRaster={useMeshRaster}

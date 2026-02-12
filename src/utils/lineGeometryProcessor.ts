@@ -57,7 +57,10 @@ export class LineGeometryProcessor {
     return segments;
   }
 
-  static createLineGeometry(segments: LineSegment[]): THREE.LineSegments {
+  static createLineGeometry(
+    segments: LineSegment[],
+    lineWidth = 1,
+  ): THREE.LineSegments {
     const geometry = new THREE.BufferGeometry();
     const positions: number[] = [];
     const colors: number[] = [];
@@ -80,7 +83,7 @@ export class LineGeometryProcessor {
 
     const material = new THREE.LineBasicMaterial({
       vertexColors: true,
-      linewidth: 1,
+      linewidth: lineWidth,
       transparent: true,
       opacity: 1,
     });

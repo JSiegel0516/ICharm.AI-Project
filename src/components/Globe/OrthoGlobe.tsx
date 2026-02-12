@@ -15,6 +15,43 @@ import {
   type LabelKind,
 } from "@/lib/labels/openlayersVectorTiles";
 import { useGlobeLines } from "@/hooks/useGlobeLines";
+import {
+  BASE_RADIUS,
+  BASE_TEXTURE_URL,
+  BASE_FILL_COLOR_SRGB,
+  DEFAULT_GLOBE_ROTATION,
+  DEFAULT_MAX_ZOOM,
+  DEFAULT_MIN_ZOOM,
+  DEFAULT_NORMAL_MAP_MODE,
+  LABEL_FADE_MS,
+  LABEL_MAX_VISIBLE,
+  LABEL_MIN_VISIBLE,
+  LABEL_TILE_URL,
+  LABEL_VISIBILITY_THROTTLE_MS,
+  MESH_TO_RASTER_ZOOM,
+  NORMAL_MAP_LAND_BATHY_URL,
+  NORMAL_MAP_LAND_URL,
+  OVERLAY_RADIUS,
+  RASTER_TO_MESH_ZOOM,
+  VERTEX_COLOR_GAIN,
+} from "./_ortho/constants";
+import {
+  DEFAULT_COLOR_TEXTURE,
+  DEFAULT_NORMAL_TEXTURE,
+  createGlobeMaterial,
+  ensureTangents,
+  setSolidVertexColor,
+} from "./_ortho/materials";
+import { clamp, latLonToCartesian } from "./_ortho/geo";
+import {
+  calculateLabelOpacity,
+  cameraZoomToTileZoom,
+  getLabelSpec,
+  getLabelTier,
+  latToTileY,
+  lonToTileX,
+  tileCenter,
+} from "./_ortho/labelUtils";
 
 type Props = {
   rasterData?: RasterLayerData;
@@ -28,6 +65,7 @@ type Props = {
   lakeResolution?: GlobeLineResolution;
   naturalEarthGeographicLinesVisible?: boolean;
   lineColors?: LineColorSettings;
+  lineThickness?: number;
   labelsVisible?: boolean;
   currentDataset?: Dataset;
   useMeshRaster: boolean;
@@ -42,343 +80,12 @@ type Props = {
   onRegionClick?: (lat: number, lon: number, data: RegionData) => void;
 };
 
-const BASE_TEXTURE_URL = "/images/world_imagery_arcgis.png";
-const NORMAL_MAP_LAND_URL = "/_land/earth_normalmap_flat_8192x4096.jpg";
-const NORMAL_MAP_LAND_BATHY_URL = "/_land/earth_normalmap_8192x4096.jpg";
-const BASE_RADIUS = 1;
-const OVERLAY_RADIUS = 1.005;
-const DEFAULT_MIN_ZOOM = 0.2;
-const DEFAULT_MAX_ZOOM = 20.0;
-const MESH_TO_RASTER_ZOOM = 1.35;
-const RASTER_TO_MESH_ZOOM = 1.2;
-const DEFAULT_NORMAL_MAP_MODE: Props["normalMapMode"] = "none";
-const VERTEX_COLOR_GAIN = 1.2;
-const BASE_FILL_COLOR = new THREE.Color("#0b1e2f");
-const BASE_FILL_COLOR_SRGB = BASE_FILL_COLOR.clone().convertLinearToSRGB();
-const DEFAULT_GLOBE_ROTATION = new THREE.Euler(0, -Math.PI / 2, 0, "XYZ");
-const DEFAULT_LIGHT_DIRECTION = new THREE.Vector3(3, 2, 4).normalize();
-const LABEL_TILE_URL = "/tiles/labels/{z}/{x}/{y}.pbf";
-const LABEL_MIN_VISIBLE = 3;
-const LABEL_MAX_VISIBLE = 50;
-const LABEL_FADE_MS = 160;
-const LABEL_VISIBILITY_THROTTLE_MS = 33;
-
-const GLOBE_VERTEX_SHADER = `
-  varying vec2 vUv;
-  varying vec3 vColor;
-  varying mat3 vTBN;
-
-  attribute vec3 tangent;
-  attribute vec3 color;
-
-  void main() {
-    vUv = uv;
-    vColor = color;
-
-    vec3 T = normalize(normalMatrix * tangent);
-    vec3 N = normalize(normalMatrix * normal);
-    vec3 B = normalize(cross(N, T));
-    vTBN = mat3(T, B, N);
-
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
-
-const GLOBE_FRAGMENT_SHADER = `
-  uniform sampler2D normalMap;
-  uniform sampler2D colorMap;
-  uniform bool useTexture;
-  uniform bool useVertexColor;
-  uniform bool lightingEnabled;
-  uniform vec3 lightDirection;
-  uniform vec3 baseColor;
-  uniform float opacity;
-  uniform float ambientIntensity;
-
-  varying vec2 vUv;
-  varying vec3 vColor;
-  varying mat3 vTBN;
-
-  void main() {
-    vec4 texColor = texture2D(colorMap, vUv);
-    vec3 base = useTexture
-      ? texColor.rgb
-      : (useVertexColor ? vColor : baseColor);
-    float alpha = useTexture ? texColor.a : 1.0;
-
-    if (lightingEnabled) {
-      vec3 normalRGB = texture2D(normalMap, vUv).rgb;
-      vec3 tangentNormal = normalRGB * 2.0 - 1.0;
-      vec3 normal = normalize(vTBN * tangentNormal);
-      float lighting = max(dot(normal, normalize(lightDirection)), 0.0);
-      lighting = max(lighting, ambientIntensity);
-      base *= lighting;
-    }
-
-    gl_FragColor = vec4(base, alpha * opacity);
-  }
-`;
-
-const clamp = (value: number, min: number, max: number) =>
-  Math.max(min, Math.min(max, value));
-
-const createSolidTexture = (rgba: [number, number, number, number]) => {
-  const data = new Uint8Array(rgba);
-  const texture = new THREE.DataTexture(data, 1, 1);
-  texture.needsUpdate = true;
-  texture.colorSpace = THREE.NoColorSpace;
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.generateMipmaps = false;
-  return texture;
-};
-
-const DEFAULT_NORMAL_TEXTURE = createSolidTexture([128, 128, 255, 255]);
-const DEFAULT_COLOR_TEXTURE = createSolidTexture([255, 255, 255, 255]);
-
-const setSolidVertexColor = (
-  geometry: THREE.BufferGeometry,
-  color: THREE.Color,
-) => {
-  const position = geometry.getAttribute("position");
-  if (!position) return;
-  const colors = new Float32Array(position.count * 3);
-  for (let i = 0; i < position.count; i += 1) {
-    const base = i * 3;
-    colors[base] = color.r;
-    colors[base + 1] = color.g;
-    colors[base + 2] = color.b;
-  }
-  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-};
-
-const ensureTangents = (geometry: THREE.BufferGeometry) => {
-  if (!geometry.index || !geometry.getAttribute("uv")) return;
-  geometry.computeTangents();
-};
-
-const createGlobeMaterial = (options: {
-  transparent?: boolean;
-  depthWrite?: boolean;
-  opacity?: number;
-  useTexture?: boolean;
-  useVertexColor?: boolean;
-  baseColor?: THREE.Color;
-  colorMap?: THREE.Texture;
-  normalMap?: THREE.Texture;
-  lightingEnabled?: boolean;
-  lightDirection?: THREE.Vector3;
-}) => {
-  const {
-    transparent = false,
-    depthWrite = true,
-    opacity = 1,
-    useTexture = false,
-    useVertexColor = true,
-    baseColor = BASE_FILL_COLOR_SRGB,
-    colorMap = DEFAULT_COLOR_TEXTURE,
-    normalMap = DEFAULT_NORMAL_TEXTURE,
-    lightingEnabled = false,
-    lightDirection = DEFAULT_LIGHT_DIRECTION,
-    ambientIntensity = 0.45,
-  } = options;
-
-  return new THREE.ShaderMaterial({
-    vertexShader: GLOBE_VERTEX_SHADER,
-    fragmentShader: GLOBE_FRAGMENT_SHADER,
-    transparent,
-    depthWrite,
-    lights: false,
-    uniforms: {
-      normalMap: { value: normalMap },
-      colorMap: { value: colorMap },
-      useTexture: { value: useTexture },
-      useVertexColor: { value: useVertexColor },
-      lightingEnabled: { value: lightingEnabled },
-      lightDirection: { value: lightDirection.clone() },
-      baseColor: { value: baseColor.clone() },
-      opacity: { value: opacity },
-      ambientIntensity: { value: ambientIntensity },
-    },
-  });
-};
-
 type OrthoLabelEntry = {
   feature: LabelFeature;
   el: HTMLDivElement;
   kind: LabelKind;
   opacity: number;
   targetOpacity: number;
-};
-
-const latLonToCartesian = (lat: number, lon: number, radius: number) => {
-  const latRad = THREE.MathUtils.degToRad(lat);
-  const lonRad = THREE.MathUtils.degToRad(lon);
-  const cosLat = Math.cos(latRad);
-  return new THREE.Vector3(
-    radius * cosLat * Math.cos(lonRad),
-    radius * Math.sin(latRad),
-    -radius * cosLat * Math.sin(lonRad),
-  );
-};
-
-type LabelTier = {
-  display: LabelKind[];
-  eligible: LabelKind[];
-  fadeRange?: [number, number];
-};
-
-const getLabelTier = (tileZoom: number): LabelTier => {
-  if (tileZoom <= 3.5) {
-    return {
-      display: ["continent"],
-      eligible: ["continent", "country"],
-      fadeRange: [3.0, 3.5],
-    };
-  }
-  if (tileZoom <= 5.5) {
-    return {
-      display: ["continent", "country"],
-      eligible: ["continent", "country", "state"],
-      fadeRange: [5.0, 5.5],
-    };
-  }
-  if (tileZoom <= 7.5) {
-    return {
-      display: ["country", "state"],
-      eligible: ["country", "state", "cityLarge"],
-      fadeRange: [7.0, 7.5],
-    };
-  }
-  if (tileZoom <= 9) {
-    return {
-      display: ["state", "cityLarge"],
-      eligible: ["state", "cityLarge", "cityMedium"],
-      fadeRange: [8.5, 9.0],
-    };
-  }
-  if (tileZoom <= 10.5) {
-    return {
-      display: ["cityLarge", "cityMedium"],
-      eligible: ["cityLarge", "cityMedium", "citySmall"],
-      fadeRange: [10.0, 10.5],
-    };
-  }
-  return {
-    display: ["cityMedium", "citySmall"],
-    eligible: ["cityMedium", "citySmall"],
-  };
-};
-
-const getLabelSpec = (kind: LabelKind) => {
-  if (kind === "continent") {
-    return {
-      font: "20px Inter, sans-serif",
-      color: "#f8fafc",
-      outline: "#0f172a",
-    };
-  }
-  if (kind === "country") {
-    return {
-      font: "16px Inter, sans-serif",
-      color: "#e2e8f0",
-      outline: "#0f172a",
-    };
-  }
-  if (kind === "state") {
-    return {
-      font: "14px Inter, sans-serif",
-      color: "#e2e8f0",
-      outline: "#0f172a",
-    };
-  }
-  if (kind === "cityLarge") {
-    return {
-      font: "14px Inter, sans-serif",
-      color: "#e2e8f0",
-      outline: "#0f172a",
-    };
-  }
-  if (kind === "cityMedium") {
-    return {
-      font: "12px Inter, sans-serif",
-      color: "#dbeafe",
-      outline: "#0f172a",
-    };
-  }
-  if (kind === "citySmall") {
-    return {
-      font: "11px Inter, sans-serif",
-      color: "#bfdbfe",
-      outline: "#0f172a",
-    };
-  }
-  return {
-    font: "12px Inter, sans-serif",
-    color: "#cbd5f5",
-    outline: "#0f172a",
-  };
-};
-
-const lonToTileX = (lon: number, zoom: number) => {
-  const tileCount = 2 ** zoom;
-  const x = Math.floor(((lon + 180) / 360) * tileCount);
-  return Math.min(tileCount - 1, Math.max(0, x));
-};
-
-const latToTileY = (lat: number, zoom: number) => {
-  const maxLat = 85.05112878;
-  const clamped = Math.max(-maxLat, Math.min(maxLat, lat));
-  const latRad = (clamped * Math.PI) / 180;
-  const tileCount = 2 ** zoom;
-  const y = Math.floor(
-    ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) *
-      tileCount,
-  );
-  return Math.min(tileCount - 1, Math.max(0, y));
-};
-
-const tileCenter = (x: number, y: number, zoom: number) => {
-  const tileCount = 2 ** zoom;
-  const lon = ((x + 0.5) / tileCount) * 360 - 180;
-  const n = Math.PI - (2 * Math.PI * (y + 0.5)) / tileCount;
-  const lat = (180 / Math.PI) * Math.atan(Math.sinh(n));
-  return { lon, lat };
-};
-
-const cameraZoomToTileZoom = (cameraZoom: number) => {
-  const minCameraZoom = 1.0;
-  const maxCameraZoom = 50.0;
-  const minTileZoom = 2;
-  const maxTileZoom = 15;
-  const clamped = Math.max(minCameraZoom, Math.min(maxCameraZoom, cameraZoom));
-  const normalized =
-    (clamped - minCameraZoom) / (maxCameraZoom - minCameraZoom);
-  return minTileZoom + normalized * (maxTileZoom - minTileZoom);
-};
-
-const calculateLabelOpacity = (
-  kind: LabelKind,
-  tileZoom: number,
-  tier: LabelTier,
-) => {
-  const baseOpacity = 1;
-  if (!tier.fadeRange) return baseOpacity;
-  const [fadeStart, fadeEnd] = tier.fadeRange;
-  if (tileZoom < fadeStart) return baseOpacity;
-  const fadeProgress = Math.max(
-    0,
-    Math.min(1, (tileZoom - fadeStart) / (fadeEnd - fadeStart || 1)),
-  );
-  const inDisplay = tier.display.includes(kind);
-  const inEligible = tier.eligible.includes(kind);
-  if (inDisplay && !inEligible) {
-    return baseOpacity * (1 - fadeProgress);
-  }
-  if (!inDisplay && inEligible) {
-    return baseOpacity * fadeProgress;
-  }
-  return baseOpacity;
 };
 
 const OrthoGlobe: React.FC<Props> = ({
@@ -393,6 +100,7 @@ const OrthoGlobe: React.FC<Props> = ({
   lakeResolution = "none",
   naturalEarthGeographicLinesVisible = false,
   lineColors,
+  lineThickness = 1,
   labelsVisible = false,
   currentDataset,
   useMeshRaster,
@@ -482,6 +190,7 @@ const OrthoGlobe: React.FC<Props> = ({
       lakes: lakeResolution,
       geographic: naturalEarthGeographicLinesVisible,
       radius: OVERLAY_RADIUS + 0.001,
+      lineWidth: lineThickness,
       colors: {
         coastlines:
           lineColors?.coastlines ?? lineColors?.boundaryLines ?? "#9ca3af",
@@ -1832,6 +1541,7 @@ const OrthoGlobe: React.FC<Props> = ({
     );
     const material = new THREE.LineBasicMaterial({
       color: new THREE.Color(lineColors?.geographicGrid ?? "#9ca3af"),
+      linewidth: lineThickness,
       transparent: true,
       opacity: 0.35,
     });
@@ -1841,7 +1551,12 @@ const OrthoGlobe: React.FC<Props> = ({
     geographicLineGroupRef.current = group;
     globeGroupRef.current.add(group);
     requestRender();
-  }, [geographicLinesVisible, requestRender, lineColors?.geographicGrid]);
+  }, [
+    geographicLinesVisible,
+    requestRender,
+    lineColors?.geographicGrid,
+    lineThickness,
+  ]);
 
   useEffect(() => {
     if (!containerRef.current) return;
