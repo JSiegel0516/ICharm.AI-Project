@@ -192,7 +192,7 @@ export interface GlobeSettings {
   colorbarCustomMin?: number | null;
   colorbarCustomMax?: number | null;
   viewMode?: GlobeViewMode;
-  winkelOrientation?: WinkelOrientation;
+  mapOrientations?: Partial<Record<MapProjectionId, MapOrientation>>;
 }
 
 export interface AppState {
@@ -310,8 +310,11 @@ export interface GlobeProps {
   bumpMapMode?: "none" | "land" | "landBathymetry";
   useMeshRaster?: boolean;
   lineColors?: LineColorSettings;
-  winkelOrientation?: WinkelOrientation;
-  onWinkelOrientationChange?: (orientation: WinkelOrientation) => void;
+  mapOrientations?: Partial<Record<MapProjectionId, MapOrientation>>;
+  onProjectionOrientationChange?: (
+    projectionId: MapProjectionId,
+    orientation: MapOrientation,
+  ) => void;
   rasterState: UseRasterLayerResult;
   rasterGridState: UseRasterGridResult;
   // Disable loading overlays during timeline playback
@@ -332,12 +335,20 @@ export interface GlobeProps {
   ) => void;
 }
 
-export type GlobeViewMode = "3d" | "ortho" | "2d" | "winkel";
-export type WinkelOrientation = {
+export type MapProjectionId =
+  | "winkel"
+  | "atlantis"
+  | "conicEquidistant"
+  | "patterson"
+  | "stereographic"
+  | "waterman";
+export type GlobeViewMode = "3d" | "ortho" | "2d" | MapProjectionId;
+export type MapOrientation = {
   rotate: [number, number, number];
   scale: number;
   baseScale?: number;
 };
+export type WinkelOrientation = MapOrientation;
 export type GlobeLineResolution = "none" | "low" | "medium" | "high";
 export type LineColorOption = string;
 

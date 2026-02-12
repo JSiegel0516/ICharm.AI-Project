@@ -18,7 +18,7 @@ export class WinkelOverlay {
     this.canvas.height = height;
     const context = this.canvas.getContext("2d");
     if (!context) {
-      throw new Error("Failed to initialize Winkel overlay canvas");
+      throw new Error("Failed to initialize overlay canvas");
     }
     this.ctx = context;
   }

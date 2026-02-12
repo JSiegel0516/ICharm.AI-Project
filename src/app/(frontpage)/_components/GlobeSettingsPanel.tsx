@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
 import type { GlobeSettings } from "@/types";
+import { MAP_PROJECTIONS } from "@/components/Globe/projectionConfig";
 
 interface GlobeSettingsPanelProps {
   isOpen: boolean;
@@ -575,7 +576,11 @@ export function GlobeSettingsPanel({
                     <option value="3d">3D</option>
                     <option value="ortho">Orthographic (3D)</option>
                     <option value="2d">2D (Equirectangular)</option>
-                    <option value="winkel">Winkel Tripel (2D)</option>
+                    {MAP_PROJECTIONS.map((projection) => (
+                      <option key={projection.id} value={projection.id}>
+                        {projection.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>

@@ -30,6 +30,8 @@ import {
   PressureLevel,
   GlobeSettings,
   GlobeLineResolution,
+  MapOrientation,
+  MapProjectionId,
   type Dataset,
 } from "@/types";
 import { pressureLevels } from "@/utils/constants";
@@ -436,7 +438,7 @@ export default function HomePage() {
     colorbarCustomMin: null,
     colorbarCustomMax: null,
     viewMode: "3d",
-    winkelOrientation: undefined,
+    mapOrientations: {},
   });
   const lastSatelliteLabelsVisibleRef = useRef(true);
   const lastCesiumLabelsVisibleRef = useRef(true);
@@ -1229,12 +1231,15 @@ export default function HomePage() {
     [],
   );
 
-  const handleWinkelOrientationChange = useCallback(
-    (orientation: GlobeSettings["winkelOrientation"]) => {
+  const handleProjectionOrientationChange = useCallback(
+    (projectionId: MapProjectionId, orientation: MapOrientation) => {
       if (!orientation) return;
       setGlobeSettings((prev) => ({
         ...prev,
-        winkelOrientation: orientation,
+        mapOrientations: {
+          ...(prev.mapOrientations ?? {}),
+          [projectionId]: orientation,
+        },
       }));
     },
     [],
@@ -1443,8 +1448,8 @@ export default function HomePage() {
         rasterBlurEnabled={globeSettings.rasterBlurEnabled}
         bumpMapMode={globeSettings.bumpMapMode}
         lineColors={lineColors}
-        winkelOrientation={globeSettings.winkelOrientation}
-        onWinkelOrientationChange={handleWinkelOrientationChange}
+        mapOrientations={globeSettings.mapOrientations}
+        onProjectionOrientationChange={handleProjectionOrientationChange}
         useMeshRaster={useMeshRaster}
         viewMode={globeSettings.viewMode ?? "3d"}
         onRasterMetadataChange={setRasterMeta}

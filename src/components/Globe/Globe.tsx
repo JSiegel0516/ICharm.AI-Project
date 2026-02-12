@@ -8,7 +8,13 @@ import React, {
   useCallback,
   forwardRef,
 } from "react";
-import type { Dataset, RegionData, GlobeProps, GlobeRef } from "@/types";
+import type {
+  Dataset,
+  RegionData,
+  GlobeProps,
+  GlobeRef,
+  MapProjectionId,
+} from "@/types";
 import { useRasterLayer } from "@/hooks/useRasterLayer";
 import { useRasterGrid, RasterGridData } from "@/hooks/useRasterGrid";
 import { buildRasterMesh } from "@/lib/mesh/rasterMesh";
@@ -20,7 +26,8 @@ import {
 import type { RasterLayerData } from "@/hooks/useRasterLayer";
 import GlobeLoading from "./GlobeLoading";
 import OrthoGlobe from "./OrthoGlobe";
-import WinkelGlobe from "./WinkelGlobe";
+import ProjectedGlobe from "./ProjectedGlobe";
+import { MAP_PROJECTIONS } from "./projectionConfig";
 import { Button } from "@/components/ui/button";
 
 const loadCesiumFromCDN = async () => {
@@ -354,8 +361,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       bumpMapMode = "none",
       useMeshRaster = false,
       lineColors,
-      winkelOrientation,
-      onWinkelOrientationChange,
+      mapOrientations,
+      onProjectionOrientationChange,
       onRasterMetadataChange,
       isPlaying = false,
       prefetchedRasters,
@@ -419,7 +426,8 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       undefined,
     );
     const [orthoClearMarkerTick, setOrthoClearMarkerTick] = useState(0);
-    const [winkelClearMarkerTick, setWinkelClearMarkerTick] = useState(0);
+    const [projectionClearMarkerTick, setProjectionClearMarkerTick] =
+      useState(0);
     const datasetName = (currentDataset?.name ?? "").toLowerCase();
     const datasetSupportsZeroMask =
       currentDataset?.dataType === "precipitation" ||
@@ -433,7 +441,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     const meshOpacityKey = rasterOpacity.toFixed(3);
     const effectiveViewMode = viewMode;
     const isOrtho = effectiveViewMode === "ortho";
-    const isWinkel = effectiveViewMode === "winkel";
+    const projectionId = MAP_PROJECTIONS.find(
+      (projection) => projection.id === effectiveViewMode,
+    )?.id as MapProjectionId | undefined;
+    const isProjection = Boolean(projectionId);
     const smoothGridBoxValues = rasterBlurEnabled;
     const useMeshRasterEffective = useMeshRaster;
     const effectiveSatelliteVisible = !isOrtho && satelliteLayerVisible;
@@ -1365,7 +1376,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       }
 
       setOrthoClearMarkerTick((tick) => tick + 1);
-      setWinkelClearMarkerTick((tick) => tick + 1);
+      setProjectionClearMarkerTick((tick) => tick + 1);
     }, []);
 
     const clearSearchMarker = useCallback(() => {
@@ -1781,7 +1792,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         !containerRef.current ||
         viewerRef.current ||
         initializingViewerRef.current ||
-        isWinkel
+        isProjection
       )
         return;
 
@@ -2785,11 +2796,11 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     ]);
 
     useEffect(() => {
-      if (!isWinkel) return;
+      if (!isProjection) return;
       destroyViewer();
       setIsLoading(false);
       setIsRasterImageryLoading(false);
-    }, [destroyViewer, isWinkel]);
+    }, [destroyViewer, isProjection]);
     useEffect(() => {
       return () => {
         destroyViewer();
@@ -3141,7 +3152,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     }, [viewerReady, applyViewMode]);
 
     useEffect(() => {
-      if (isWinkel) {
+      if (isProjection) {
         if (
           rasterGridState.data &&
           rasterGridState.dataKey === rasterGridState.requestKey
@@ -3206,7 +3217,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         }
       }
     }, [
-      isWinkel,
+      isProjection,
       onRasterMetadataChange,
       rasterGridState.data,
       rasterGridState.dataKey,
@@ -3365,9 +3376,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
     useEffect(() => {
       clearMeshCache();
     }, [clearMeshCache, currentDataset?.id, selectedLevel]);
-    const showInitialLoading = !isWinkel && isLoading && !viewerReady;
+    const showInitialLoading = !isProjection && isLoading && !viewerReady;
     const showRasterLoading =
-      !isWinkel &&
+      !isProjection &&
       !isPlaying &&
       !isLoading &&
       viewerReady &&
@@ -3433,7 +3444,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             minHeight: "100vh",
             minWidth: "100vw",
             overflow: "hidden",
-            display: isWinkel ? "none" : "block",
+            display: isProjection ? "none" : "block",
           }}
         />
 
@@ -3466,8 +3477,10 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           />
         )}
 
-        {isWinkel && (
-          <WinkelGlobe
+        {isProjection && projectionId && (
+          <ProjectedGlobe
+            key={projectionId}
+            projectionId={projectionId}
             rasterGridData={rasterGridState.data}
             rasterGridKey={rasterGridState.requestKey}
             rasterGridDataKey={rasterGridState.dataKey}
@@ -3484,10 +3497,13 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
               naturalEarthGeographicLinesVisible
             }
             lineColors={lineColors}
-            orientation={winkelOrientation}
-            onOrientationChange={onWinkelOrientationChange}
+            orientation={mapOrientations?.[projectionId]}
+            onOrientationChange={(orientation) => {
+              if (!onProjectionOrientationChange) return;
+              onProjectionOrientationChange(projectionId, orientation);
+            }}
             onRegionClick={onRegionClick}
-            clearMarkerSignal={winkelClearMarkerTick}
+            clearMarkerSignal={projectionClearMarkerTick}
           />
         )}
       </div>
