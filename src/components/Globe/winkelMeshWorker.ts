@@ -211,6 +211,14 @@ const handleRender = (payload: RenderPayload) => {
   const latMin = Math.min(...lat);
   const latMax = Math.max(...lat);
   const lonCenter = (lonMin + lonMax) * 0.5;
+  const lonSpan = lonMax - lonMin;
+  const useZero360 = lonMin >= 0 && lonMax > 180;
+  const useNeg180 = lonMin < 0 && lonMax <= 180;
+  const useWrap = lonSpan > 300;
+
+  const wrap360 = (value: number) => ((value % 360) + 360) % 360;
+  const wrap180 = (value: number) =>
+    ((((value + 180) % 360) + 360) % 360) - 180;
 
   const renderScale = 0.5;
   const renderWidth = Math.max(1, Math.round(width * renderScale));
@@ -239,11 +247,20 @@ const handleRender = (payload: RenderPayload) => {
       if (!inv) continue;
       let lonValue = inv[0];
       const latValue = clampLat(inv[1]);
-      lonValue = normalizeLon(lonValue, lonCenter);
-      if (lonMax > 180 && lonValue < 0) {
-        lonValue += 360;
+      if (useZero360) {
+        lonValue = wrap360(lonValue);
+      } else if (useNeg180) {
+        lonValue = wrap180(lonValue);
+      } else {
+        lonValue = normalizeLon(lonValue, lonCenter);
       }
-      if (lonValue < lonMin || lonValue > lonMax) continue;
+      if (!useWrap) {
+        if (lonValue < lonMin || lonValue > lonMax) continue;
+      } else if (useZero360) {
+        if (lonValue < 0 || lonValue > 360) continue;
+      } else if (useNeg180) {
+        if (lonValue < -180 || lonValue > 180) continue;
+      }
       if (latValue < latMin || latValue > latMax) continue;
 
       const lonIdx = findBracket(lon, lonValue);
