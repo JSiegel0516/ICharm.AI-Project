@@ -10,6 +10,7 @@ export interface ClimateDatasetRecord {
   slug?: string | null;
   sourceName?: string | null;
   datasetName: string;
+  datasetShortName?: string | null;
   layerParameter?: string | null;
   statistic?: string | null;
   datasetType?: string | null;
@@ -18,6 +19,8 @@ export interface ClimateDatasetRecord {
   levelUnits?: string | null;
   Stored?: string | null; // Note: capital S (database inconsistency)
   stored?: string | null; // lowercase variant
+  storageType?: string | null;
+  postgresProcessor?: string | null;
   inputFile?: string | null;
   keyVariable?: string | null;
   units?: string | null;
@@ -66,6 +69,9 @@ export interface Dataset {
 
   // Storage and processing
   stored?: "local" | "cloud" | "postgres" | null;
+  storageType?: string | null;
+  datasetShortName?: string | null;
+  postgresProcessor?: string | null;
   inputFile?: string | null;
   keyVariable?: string | null;
   spatialResolution?: string | null;

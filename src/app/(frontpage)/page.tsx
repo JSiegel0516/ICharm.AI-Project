@@ -251,6 +251,7 @@ export default function HomePage() {
     isLoading,
     error,
     lineColors,
+    setLineColors,
     lineThickness,
   } = useAppState();
   const globeRef = useRef<GlobeRef>(null);
@@ -447,6 +448,43 @@ export default function HomePage() {
   const lastNonProjectionGridVisibleRef = useRef(
     globeSettings.geographicLinesVisible,
   );
+  const lastCesiumGridVisibleRef = useRef(false);
+
+  const DEFAULT_LINE_COLORS_BLACK = useMemo(
+    () => ({
+      boundaryLines: "#000000",
+      coastlines: "#000000",
+      rivers: "#000000",
+      lakes: "#000000",
+      geographicLines: "#000000",
+      geographicGrid: "#000000",
+    }),
+    [],
+  );
+
+  const DEFAULT_LINE_COLORS_GRAY = useMemo(
+    () => ({
+      boundaryLines: "#9ca3af",
+      coastlines: "#9ca3af",
+      rivers: "#9ca3af",
+      lakes: "#9ca3af",
+      geographicLines: "#9ca3af",
+      geographicGrid: "#9ca3af",
+    }),
+    [],
+  );
+
+  const isLineColorDefault = useCallback(
+    (
+      colors: typeof DEFAULT_LINE_COLORS_BLACK | null | undefined,
+      target: typeof DEFAULT_LINE_COLORS_BLACK,
+    ) => {
+      if (!colors) return true;
+      const keys = Object.keys(target) as Array<keyof typeof target>;
+      return keys.every((key) => colors[key] === target[key]);
+    },
+    [DEFAULT_LINE_COLORS_BLACK],
+  );
   const lastNonOrthoGridVisibleRef = useRef(
     globeSettings.geographicLinesVisible,
   );
@@ -471,6 +509,18 @@ export default function HomePage() {
 
     if (wasCesium && !isCesium) {
       lastCesiumLabelsVisibleRef.current = globeSettings.labelsVisible;
+      lastCesiumGridVisibleRef.current = globeSettings.geographicLinesVisible;
+    }
+
+    if (!wasCesium && isCesium) {
+      const restore = lastCesiumGridVisibleRef.current;
+      if (restore !== globeSettings.geographicLinesVisible) {
+        setGlobeSettings((prev) => ({
+          ...prev,
+          geographicLinesVisible: restore,
+        }));
+      }
+      return;
     }
 
     if (
@@ -530,6 +580,35 @@ export default function HomePage() {
     globeSettings.geographicLinesVisible,
     globeSettings.labelsVisible,
     globeSettings.viewMode,
+    isLineColorDefault,
+    lineColors,
+    setLineColors,
+    DEFAULT_LINE_COLORS_BLACK,
+    DEFAULT_LINE_COLORS_GRAY,
+  ]);
+
+  useEffect(() => {
+    const mode = globeSettings.viewMode ?? "3d";
+    const isCesium = mode === "3d" || mode === "2d";
+    const isOrtho = mode === "ortho";
+    const useBlack = isCesium || isOrtho;
+    const desired = useBlack
+      ? DEFAULT_LINE_COLORS_BLACK
+      : DEFAULT_LINE_COLORS_GRAY;
+    const other = useBlack
+      ? DEFAULT_LINE_COLORS_GRAY
+      : DEFAULT_LINE_COLORS_BLACK;
+
+    if (isLineColorDefault(lineColors, other)) {
+      setLineColors(desired);
+    }
+  }, [
+    DEFAULT_LINE_COLORS_BLACK,
+    DEFAULT_LINE_COLORS_GRAY,
+    globeSettings.viewMode,
+    isLineColorDefault,
+    lineColors,
+    setLineColors,
   ]);
 
   const colorbarRange = useMemo(

@@ -8,6 +8,9 @@ import {
   buildSampler,
   resolveEffectiveColorbarRange,
 } from "@/lib/mesh/rasterUtils";
+import { buildRasterImage } from "@/lib/mesh/rasterImage";
+import { fetchRasterGrid } from "@/hooks/useRasterGrid";
+import { isPostgresDataset } from "@/lib/postgresRaster";
 
 export type RasterLayerTexture = {
   imageUrl: string;
@@ -123,6 +126,52 @@ export async function fetchRasterVisualization(options: {
 
   if (!targetDatasetId || !dateKey) {
     throw new Error("Missing dataset or date for raster request");
+  }
+
+  if (isPostgresDataset(dataset)) {
+    const grid = await fetchRasterGrid({
+      dataset,
+      backendDatasetId: targetDatasetId,
+      date,
+      level,
+      maskZeroValues,
+      colorbarRange,
+      signal,
+    });
+    const colors = cssColors?.length
+      ? cssColors
+      : (dataset?.colorScale?.colors ?? []);
+    const min = grid.min ?? 0;
+    const max = grid.max ?? 1;
+    const gridValues =
+      grid.values instanceof Float32Array
+        ? grid.values
+        : Float32Array.from(grid.values as Float64Array);
+    const image = buildRasterImage({
+      lat: grid.lat,
+      lon: grid.lon,
+      values: gridValues,
+      mask: grid.mask,
+      min,
+      max,
+      colors,
+      opacity: 1,
+    });
+
+    return {
+      textures: image
+        ? [
+            {
+              imageUrl: image.dataUrl,
+              rectangle: image.rectangle,
+            },
+          ]
+        : [],
+      units: grid.units ?? dataset?.units,
+      min,
+      max,
+      sampleValue: grid.sampleValue,
+    };
   }
 
   const effectiveRange = resolveEffectiveColorbarRange(

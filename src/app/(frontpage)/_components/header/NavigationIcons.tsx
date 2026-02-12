@@ -42,8 +42,29 @@ export default function NavigationIcons() {
     setLineColors,
     lineThickness,
     setLineThickness,
+    globeSettings,
   } = useAppState();
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
+
+  const viewMode = globeSettings?.viewMode ?? "3d";
+  const defaultLineColors =
+    viewMode === "3d" || viewMode === "2d" || viewMode === "ortho"
+      ? {
+          boundaryLines: "#000000",
+          coastlines: "#000000",
+          rivers: "#000000",
+          lakes: "#000000",
+          geographicLines: "#000000",
+          geographicGrid: "#000000",
+        }
+      : {
+          boundaryLines: "#9ca3af",
+          coastlines: "#9ca3af",
+          rivers: "#9ca3af",
+          lakes: "#9ca3af",
+          geographicLines: "#9ca3af",
+          geographicGrid: "#9ca3af",
+        };
 
   const [settings, setSettings] = React.useState(() => ({
     // Appearance
@@ -70,14 +91,7 @@ export default function NavigationIcons() {
     colorMapPreset: selectedColorMap ?? "dataset-default",
     colorMapInverse: selectedColorMapInverse ?? false,
     lineThickness: lineThickness ?? 1,
-    lineColors: lineColors ?? {
-      boundaryLines: "#000000",
-      coastlines: "#000000",
-      rivers: "#000000",
-      lakes: "#000000",
-      geographicLines: "#000000",
-      geographicGrid: "#000000",
-    },
+    lineColors: lineColors ?? defaultLineColors,
   }));
 
   const DEFAULT_COLOR_MAP_CATEGORY = "cb-zero";
@@ -166,28 +180,14 @@ export default function NavigationIcons() {
       colorMapPreset: "dataset-default",
       colorMapInverse: false,
       lineThickness: 1,
-      lineColors: {
-        boundaryLines: "#000000",
-        coastlines: "#000000",
-        rivers: "#000000",
-        lakes: "#000000",
-        geographicLines: "#000000",
-        geographicGrid: "#000000",
-      },
+      lineColors: defaultLineColors,
     });
     setColorBarOrientation("horizontal");
     setSelectedColorMap("dataset-default");
     setSelectedColorMapInverse(false);
     setLineThickness(1);
     setActiveColorMapCategory(DEFAULT_COLOR_MAP_CATEGORY);
-    setLineColors({
-      boundaryLines: "#000000",
-      coastlines: "#000000",
-      rivers: "#000000",
-      lakes: "#000000",
-      geographicLines: "#000000",
-      geographicGrid: "#000000",
-    });
+    setLineColors(defaultLineColors);
     setLineColorSelection({
       boundaryLines: false,
       coastlines: false,
@@ -230,14 +230,7 @@ export default function NavigationIcons() {
   };
 
   const resetLineColors = () => {
-    const defaults = {
-      boundaryLines: "#000000",
-      coastlines: "#000000",
-      rivers: "#000000",
-      lakes: "#000000",
-      geographicLines: "#000000",
-      geographicGrid: "#000000",
-    };
+    const defaults = defaultLineColors;
     setSettings((prev) => ({
       ...prev,
       lineColors: defaults,
@@ -812,7 +805,11 @@ export default function NavigationIcons() {
                       onClick={resetLineColors}
                       className="rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-sm text-gray-200 hover:bg-gray-600"
                     >
-                      Reset to Black
+                      {viewMode === "3d" ||
+                      viewMode === "2d" ||
+                      viewMode === "ortho"
+                        ? "Reset to Black"
+                        : "Reset to Gray"}
                     </button>
                   </div>
 

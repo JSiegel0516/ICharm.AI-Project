@@ -7,10 +7,10 @@ export interface LineSegment {
 }
 
 const DEFAULT_COLORS: Record<NEDataType, string> = {
-  coastlines: "#000000",
-  rivers: "#000000",
-  lakes: "#000000",
-  geographic: "#000000",
+  coastlines: "#9ca3af",
+  rivers: "#9ca3af",
+  lakes: "#9ca3af",
+  geographic: "#9ca3af",
 };
 
 const latLonToCartesian = (lat: number, lon: number, radius: number) => {

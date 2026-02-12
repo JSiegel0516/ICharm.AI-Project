@@ -403,8 +403,12 @@ export function generateColorScale(
 
 export function transformBackendDataset(record: ClimateDatasetRecord): Dataset {
   const storedValue = (record.Stored ?? record.stored ?? "").toLowerCase();
-  const stored =
-    storedValue === "local" || storedValue === "cloud" ? storedValue : null;
+  const storageType = (record.storageType ?? "").toLowerCase();
+  const stored = storageType.includes("postgres")
+    ? "postgres"
+    : storedValue === "local" || storedValue === "cloud"
+      ? storedValue
+      : null;
 
   return {
     // Core identifiers
@@ -443,6 +447,9 @@ export function transformBackendDataset(record: ClimateDatasetRecord): Dataset {
 
     // Storage and processing
     stored,
+    storageType: record.storageType ?? null,
+    datasetShortName: record.datasetShortName ?? null,
+    postgresProcessor: record.postgresProcessor ?? null,
     inputFile: record.inputFile ?? null,
     keyVariable: record.keyVariable ?? null,
     spatialResolution: record.spatialResolution ?? null,
