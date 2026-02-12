@@ -382,7 +382,12 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       null,
     );
 
-    const currentMarkerRef = useRef<any>(null);
+    const currentMarkerRef = useRef<{
+      latitude: number;
+      longitude: number;
+      meshEntity?: any;
+      imageryLayer?: any;
+    } | null>(null);
     const searchMarkerRef = useRef<any>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -518,6 +523,40 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       viewerRef.current?.scene?.requestRender();
     }, []);
 
+    const getShowImagery = useCallback(() => {
+      const viewer = viewerRef.current;
+      if (!viewer) return true;
+      if (
+        !useMeshRasterActiveRef.current ||
+        effectiveViewMode === "2d" ||
+        effectiveViewMode === "ortho"
+      ) {
+        return true;
+      }
+      const height = viewer.camera.positionCartographic.height;
+      return height < IMAGERY_HIDE_HEIGHT;
+    }, [effectiveViewMode, IMAGERY_HIDE_HEIGHT]);
+
+    const setMarkerLayerVisibility = useCallback((showImagery: boolean) => {
+      if (!viewerRef.current) return;
+      const marker = currentMarkerRef.current;
+      if (!marker) return;
+      if (marker.meshEntity) {
+        marker.meshEntity.show = !showImagery;
+        if (marker.meshEntity.billboard) {
+          marker.meshEntity.billboard.show = !showImagery;
+        }
+      }
+      if (marker.imageryLayer) {
+        marker.imageryLayer.show = showImagery;
+        marker.imageryLayer.alpha = showImagery ? 1.0 : 0.0;
+        if (showImagery) {
+          viewerRef.current.scene.imageryLayers.raiseToTop(marker.imageryLayer);
+        }
+      }
+      viewerRef.current.scene.requestRender();
+    }, []);
+
     const updateOrthoFrustum = useCallback(() => {
       if (!viewerRef.current || !cesiumInstance) return;
       if (effectiveViewMode !== "ortho") return;
@@ -563,10 +602,12 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       const viewer = viewerRef.current;
       const height = viewer.camera.positionCartographic.height;
 
+      const showImagery = height < IMAGERY_HIDE_HEIGHT;
+      setMarkerLayerVisibility(showImagery);
+
       // Keep imagery in sync with zoom even if mesh state lags.
       const layers = rasterLayerRef.current;
       if (layers.length) {
-        const showImagery = height < IMAGERY_HIDE_HEIGHT;
         layers.forEach((layer) => {
           layer.show = showImagery;
           layer.alpha = showImagery ? rasterOpacity : 0;
@@ -589,6 +630,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       effectiveViewMode,
       rasterOpacity,
       smoothGridBoxValues,
+      setMarkerLayerVisibility,
     ]);
 
     const heightToTileZoom = (height: number) => {
@@ -1345,29 +1387,15 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
         !viewerRef.current.isDestroyed()
       ) {
         try {
-          if (currentMarkerRef.current.primitive) {
-            viewerRef.current.scene.primitives.remove(
-              currentMarkerRef.current.primitive,
-            );
-          } else if (currentMarkerRef.current.layer) {
+          const marker = currentMarkerRef.current;
+          if (marker.meshEntity) {
+            viewerRef.current.entities.remove(marker.meshEntity);
+          }
+          if (marker.imageryLayer) {
             viewerRef.current.scene.imageryLayers.remove(
-              currentMarkerRef.current.layer,
+              marker.imageryLayer,
               true,
             );
-          } else if (
-            currentMarkerRef.current._imageryProvider ||
-            currentMarkerRef.current.alpha !== undefined
-          ) {
-            viewerRef.current.scene.imageryLayers.remove(
-              currentMarkerRef.current,
-              true,
-            );
-          } else if (Array.isArray(currentMarkerRef.current)) {
-            currentMarkerRef.current.forEach((marker) =>
-              viewerRef.current.entities.remove(marker),
-            );
-          } else {
-            viewerRef.current.entities.remove(currentMarkerRef.current);
           }
         } catch (err) {
           console.warn("Failed to remove marker", err);
@@ -1424,7 +1452,9 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
       };
 
       updateEntityVisibility(searchMarkerRef.current);
-      updateEntityVisibility(currentMarkerRef.current);
+      if (currentMarkerRef.current?.meshEntity) {
+        updateEntityVisibility(currentMarkerRef.current.meshEntity);
+      }
 
       scene?.requestRender();
     }, [cesiumInstance]);
@@ -1550,54 +1580,45 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
             return Cesium.Rectangle.fromDegrees(west, south, east, north);
           };
 
-          const useMeshMarker =
-            useMeshRasterActiveRef.current &&
-            effectiveViewMode !== "2d" &&
-            effectiveViewMode !== "ortho";
+          const meshEntity = viewerRef.current.entities.add({
+            position: markerPosition,
+            ellipse: {
+              semiMajorAxis: new Cesium.CallbackProperty(
+                () => computeRadius(),
+                false,
+              ),
+              semiMinorAxis: new Cesium.CallbackProperty(
+                () => computeRadius(),
+                false,
+              ),
+              height: 10000,
+              heightReference: Cesium.HeightReference.NONE,
+              material: new Cesium.ImageMaterialProperty({
+                image: "/images/selector.png",
+                transparent: true,
+              }),
+              disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            },
+          });
 
-          if (useMeshMarker) {
-            const entity = viewerRef.current.entities.add({
-              position: markerPosition,
-              ellipse: {
-                semiMajorAxis: new Cesium.CallbackProperty(
-                  () => computeRadius(),
-                  false,
-                ),
-                semiMinorAxis: new Cesium.CallbackProperty(
-                  () => computeRadius(),
-                  false,
-                ),
-                height: 10000,
-                heightReference: Cesium.HeightReference.NONE,
-                material: new Cesium.ImageMaterialProperty({
-                  image: "/images/selector.png",
-                  transparent: true,
-                }),
-                disableDepthTestDistance: Number.POSITIVE_INFINITY,
-              },
-            });
+          const rectangle = buildMarkerRectangle(computeRadius());
+          const provider = new Cesium.SingleTileImageryProvider({
+            url: "/images/selector.png",
+            rectangle,
+          });
+          const imageryLayer =
+            viewerRef.current.scene.imageryLayers.addImageryProvider(provider);
+          imageryLayer.alpha = 1.0;
+          viewerRef.current.scene.imageryLayers.raiseToTop(imageryLayer);
 
-            entity.latitude = latitude;
-            entity.longitude = longitude;
-            currentMarkerRef.current = entity;
-          } else {
-            const rectangle = buildMarkerRectangle(computeRadius());
-            const provider = new Cesium.SingleTileImageryProvider({
-              url: "/images/selector.png",
-              rectangle,
-            });
-            const layer =
-              viewerRef.current.scene.imageryLayers.addImageryProvider(
-                provider,
-              );
-            layer.alpha = 1.0;
-            viewerRef.current.scene.imageryLayers.raiseToTop(layer);
-            currentMarkerRef.current = {
-              layer,
-              latitude,
-              longitude,
-            };
-          }
+          currentMarkerRef.current = {
+            latitude,
+            longitude,
+            meshEntity,
+            imageryLayer,
+          };
+
+          setMarkerLayerVisibility(getShowImagery());
 
           viewerRef.current.scene.requestRender();
           viewerRef.current.scene?.requestRender();
@@ -1605,7 +1626,7 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
           isUpdatingMarkerRef.current = false;
         }
       },
-      [clearMarker, effectiveViewMode],
+      [clearMarker, getShowImagery, setMarkerLayerVisibility],
     );
 
     useImperativeHandle(
@@ -1746,15 +1767,14 @@ const Globe = forwardRef<GlobeRef, GlobeProps>(
 
     useEffect(() => {
       if (!viewerReady || !viewerRef.current) return;
-      if (!cesiumInstance) return;
       if (!currentMarkerRef.current?.latitude) return;
-
-      addClickMarker(
-        cesiumInstance,
-        currentMarkerRef.current.latitude,
-        currentMarkerRef.current.longitude,
-      );
-    }, [addClickMarker, cesiumInstance, useMeshRasterActive, viewerReady]);
+      setMarkerLayerVisibility(getShowImagery());
+    }, [
+      getShowImagery,
+      setMarkerLayerVisibility,
+      useMeshRasterActive,
+      viewerReady,
+    ]);
 
     useEffect(() => {
       return () => {
