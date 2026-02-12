@@ -122,6 +122,9 @@ export const addGeographicBoundaries = (
   const geographicLineColorCss =
     lineColors?.geographicLines ?? lineColors?.geographicGrid ?? "#64748b";
   const geographicGridColorCss = lineColors?.geographicGrid ?? "#64748b";
+  const surfaceOffset = 50;
+  const toCartesian = (lon: number, lat: number) =>
+    Cesium.Cartesian3.fromDegrees(lon, lat, surfaceOffset);
   const addWrappedPolyline = (
     positions: any[],
     width: number,
@@ -193,7 +196,7 @@ export const addGeographicBoundaries = (
           continue;
         }
         if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
-        positions.push(Cesium.Cartesian3.fromDegrees(lon, lat));
+        positions.push(toCartesian(lon, lat));
       }
       if (positions.length >= 2) {
         addWrappedPolyline(positions, width, color, targetCollection);
@@ -240,7 +243,7 @@ export const addGeographicBoundaries = (
 
         const processCoordinates = (coords: any[]) => {
           const positions = coords.map((coord: number[]) =>
-            Cesium.Cartesian3.fromDegrees(coord[0], coord[1]),
+            toCartesian(coord[0], coord[1]),
           );
           addWrappedPolyline(positions, width, color, targetCollection);
         };
@@ -279,7 +282,7 @@ export const addGeographicBoundaries = (
   const addLatLine = (latitude: number) => {
     const positions: any[] = [];
     for (let lon = -180; lon <= 180; lon += 5) {
-      positions.push(Cesium.Cartesian3.fromDegrees(lon, latitude));
+      positions.push(toCartesian(lon, latitude));
     }
     const entity = viewer.entities.add({
       polyline: {
@@ -296,7 +299,7 @@ export const addGeographicBoundaries = (
   const addLonLine = (longitude: number) => {
     const positions: any[] = [];
     for (let lat = -85; lat <= 85; lat += 5) {
-      positions.push(Cesium.Cartesian3.fromDegrees(longitude, lat));
+      positions.push(toCartesian(longitude, lat));
     }
     const entity = viewer.entities.add({
       polyline: {
