@@ -115,6 +115,7 @@ export class WinkelBoundaries {
   private showGraticule = false;
   private lineColors?: LineColorSettings;
   private boundaryData: BoundaryDataset[] = [];
+  private static clipIdCounter = 0;
 
   constructor(projection: GeoProjection) {
     this.pathGenerator = geoPath(projection);
@@ -134,6 +135,8 @@ export class WinkelBoundaries {
     this.lineColors = options.lineColors;
     this.boundaryData = boundaryData;
 
+    const clipId = `winkel-clip-${WinkelBoundaries.clipIdCounter++}`;
+
     const coastlineColor =
       this.lineColors?.coastlines ??
       this.lineColors?.boundaryLines ??
@@ -147,6 +150,14 @@ export class WinkelBoundaries {
       this.lineColors?.geographicGrid ??
       this.lineColors?.geographicLines ??
       "#64748b";
+
+    const defs = this.svg.append("defs");
+    defs
+      .append("clipPath")
+      .attr("id", clipId)
+      .append("path")
+      .datum({ type: "Sphere" })
+      .attr("d", this.pathGenerator);
 
     this.svg
       .append("path")
@@ -167,6 +178,7 @@ export class WinkelBoundaries {
         .attr("stroke", graticuleColor)
         .attr("stroke-width", 0.4)
         .attr("opacity", 0.7)
+        .attr("clip-path", `url(#${clipId})`)
         .attr("d", this.pathGenerator);
     }
 
@@ -183,6 +195,7 @@ export class WinkelBoundaries {
         .attr("stroke", stroke)
         .attr("stroke-width", dataset.kind === "geographicLines" ? 0.5 : 0.7)
         .attr("opacity", dataset.kind === "geographicLines" ? 0.8 : 0.9)
+        .attr("clip-path", `url(#${clipId})`)
         .attr("d", this.pathGenerator);
     });
   }
