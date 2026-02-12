@@ -96,6 +96,10 @@ export function GlobeSettingsPanel({
   onShowVisualizationModal,
 }: GlobeSettingsPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const isCesiumView = ["3d", "ortho", "2d"].includes(viewMode ?? "3d");
+  const isProjectionView = MAP_PROJECTIONS.some(
+    (projection) => projection.id === viewMode,
+  );
   const resolutionOptions = [
     { value: "none", label: "None" },
     { value: "low", label: "Low (110m)" },
@@ -136,13 +140,13 @@ export function GlobeSettingsPanel({
           <Card className="flex max-h-[600px] flex-col">
             <CardContent className="flex-1 space-y-4 overflow-y-auto py-4">
               {/* Layer Manipulation Section */}
-              {["3d", "ortho", "2d"].includes(viewMode ?? "3d") && (
+              {(isCesiumView || isProjectionView) && (
                 <div className="space-y-3">
                   <h3 className="text-sm font-semibold text-white">
                     Layer Visibility
                   </h3>
 
-                  {viewMode !== "ortho" && (
+                  {isCesiumView && viewMode !== "ortho" && (
                     <div className="space-y-2 rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
                       <div className="space-y-0.5">
                         <Label className="text-sm font-medium text-white">
@@ -220,7 +224,7 @@ export function GlobeSettingsPanel({
                     </div>
                   )}
 
-                  {viewMode === "ortho" && (
+                  {isCesiumView && viewMode === "ortho" && (
                     <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
                       <div className="space-y-0.5">
                         <Label
@@ -349,7 +353,7 @@ export function GlobeSettingsPanel({
                     </div>
                   </div>
 
-                  {viewMode === "ortho" && (
+                  {isCesiumView && viewMode === "ortho" && (
                     <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
                       <div className="space-y-0.5">
                         <Label

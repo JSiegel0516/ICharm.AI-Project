@@ -36,6 +36,7 @@ import {
 } from "@/types";
 import { pressureLevels } from "@/utils/constants";
 import { isSeaSurfaceTemperatureDataset } from "@/utils/datasetGuards";
+import { MAP_PROJECTIONS } from "@/components/Globe/projectionConfig";
 import {
   buildRasterRequestKey,
   fetchRasterVisualization,
@@ -442,6 +443,9 @@ export default function HomePage() {
   });
   const lastSatelliteLabelsVisibleRef = useRef(true);
   const lastCesiumLabelsVisibleRef = useRef(true);
+  const lastNonProjectionGridVisibleRef = useRef(
+    globeSettings.geographicLinesVisible,
+  );
 
   const lastViewModeRef = useRef<GlobeViewMode | null>(null);
 
@@ -452,6 +456,12 @@ export default function HomePage() {
 
     const wasCesium = lastMode === "3d" || lastMode === "2d";
     const isCesium = nextMode === "3d" || nextMode === "2d";
+    const wasProjection = MAP_PROJECTIONS.some(
+      (projection) => projection.id === lastMode,
+    );
+    const isProjection = MAP_PROJECTIONS.some(
+      (projection) => projection.id === nextMode,
+    );
 
     if (wasCesium && !isCesium) {
       lastCesiumLabelsVisibleRef.current = globeSettings.labelsVisible;
@@ -472,8 +482,28 @@ export default function HomePage() {
         setGlobeSettings((prev) => ({ ...prev, labelsVisible: restore }));
       }
     }
+
+    if (!wasProjection && isProjection) {
+      lastNonProjectionGridVisibleRef.current =
+        globeSettings.geographicLinesVisible;
+      if (!globeSettings.geographicLinesVisible) {
+        setGlobeSettings((prev) => ({ ...prev, geographicLinesVisible: true }));
+      }
+      return;
+    }
+
+    if (wasProjection && !isProjection) {
+      const restore = lastNonProjectionGridVisibleRef.current;
+      if (restore !== globeSettings.geographicLinesVisible) {
+        setGlobeSettings((prev) => ({
+          ...prev,
+          geographicLinesVisible: restore,
+        }));
+      }
+    }
   }, [
     globeSettings.baseMapMode,
+    globeSettings.geographicLinesVisible,
     globeSettings.labelsVisible,
     globeSettings.viewMode,
   ]);
