@@ -27,8 +27,8 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { GlobeSettingsPanel } from "@/app/(frontpage)/_components/GlobeSettingsPanel";
 import { useAppState } from "@/context/HeaderContext";
-import type { Dataset, GlobeSettings, GlobeLineResolution } from "@/types";
-import { Database, Cloud, Server, Globe } from "lucide-react";
+import type { Dataset, GlobeSettings } from "@/types";
+import { Database, Cloud, Server, Globe, X } from "lucide-react";
 
 interface SideButtonsProps {
   selectedDate: Date;
@@ -231,49 +231,39 @@ export function SideButtons({
 
   const toggleDatasetSelection = useCallback(
     (datasetId: string) => {
-      setSelectedDatasets((prev) => {
-        if (!datasets.some((dataset) => dataset.id === datasetId)) {
-          return prev;
-        }
+      const dataset = datasets.find((item) => item.id === datasetId);
+      if (!dataset) {
+        console.error("Dataset not found:", datasetId);
+        return;
+      }
 
-        if (prev.has(datasetId)) {
-          return new Set();
-        } else {
-          return new Set([datasetId]);
-        }
+      // Update selected datasets (single selection only)
+      setSelectedDatasets(new Set([datasetId]));
+
+      // Only adjust date if it's outside the new dataset's valid range
+      let newDate = selectedDate;
+      let needsDateChange = false;
+
+      if (selectedDate < dataset.startDate) {
+        newDate = dataset.startDate;
+        needsDateChange = true;
+      } else if (selectedDate > dataset.endDate) {
+        newDate = dataset.endDate;
+        needsDateChange = true;
+      }
+
+      // Only update date if it actually needs to change
+      if (needsDateChange) {
+        onDateChange(newDate);
+      }
+
+      // Set the dataset in a microtask to ensure date state is updated first
+      Promise.resolve().then(() => {
+        setCurrentDataset(dataset);
       });
     },
-    [datasets],
+    [datasets, setCurrentDataset, selectedDate, onDateChange],
   );
-
-  const handleApplyDatasets = useCallback(() => {
-    const [firstSelection] = Array.from(selectedDatasets);
-    if (firstSelection) {
-      const dataset = datasets.find((item) => item.id === firstSelection);
-      if (dataset) {
-        setCurrentDataset(dataset);
-
-        let newDate = selectedDate;
-        if (selectedDate < dataset.startDate) {
-          newDate = dataset.startDate;
-        } else if (selectedDate > dataset.endDate) {
-          newDate = dataset.endDate;
-        }
-
-        if (newDate !== selectedDate) {
-          onDateChange(newDate);
-        }
-      }
-    }
-    closeDatasetCard();
-  }, [
-    selectedDatasets,
-    datasets,
-    setCurrentDataset,
-    closeDatasetCard,
-    selectedDate,
-    onDateChange,
-  ]);
 
   const handleDateSelect = useCallback(
     (date: Date | undefined) => {
@@ -549,10 +539,15 @@ export function SideButtons({
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center justify-between text-lg">
-                  <span>Select Datasets</span>
-                  <Badge variant="secondary">
-                    {selectedDatasets.size} selected
-                  </Badge>
+                  <span>Select Dataset</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={closeDatasetCard}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
                 </CardTitle>
                 <CardDescription>
                   Choose a dataset to visualize on the globe
@@ -593,7 +588,7 @@ export function SideButtons({
                   </Button>
                 </div>
               </CardHeader>
-              <CardContent className="max-h-96 space-y-3 overflow-y-auto">
+              <CardContent className="space-y-3 overflow-y-auto sm:max-h-38 lg:max-h-96">
                 {isLoading && (
                   <div className="rounded border border-neutral-600 bg-neutral-800/50 p-3 text-sm text-slate-300">
                     Loading datasets...
@@ -637,16 +632,6 @@ export function SideButtons({
                             {dataset?.layerParameter} - {dataset?.statistic}
                           </p>
                           <div className="flex flex-wrap items-center gap-3">
-                            {/***
-                            <Badge variant="outline" className="text-xs">
-                              {category}
-                            </Badge>
-                            {resolution && (
-                              <span className="text-xs text-slate-500">
-                                Resolution: {resolution}
-                              </span>
-                            )}
-                            */}
                             <div className="flex items-center gap-3">
                               <Badge
                                 variant="outline"
@@ -666,16 +651,15 @@ export function SideButtons({
                                   : dataset.stored}
                               </Badge>
                               <span className="text-xs text-slate-500">
-                                {currentDataset?.startDate &&
-                                currentDataset?.endDate
+                                {dataset.startDate && dataset.endDate
                                   ? `${new Date(
-                                      currentDataset.startDate,
+                                      dataset.startDate,
                                     ).toLocaleDateString("en-US", {
                                       year: "numeric",
                                       month: "numeric",
                                       day: "numeric",
                                     })} to ${new Date(
-                                      currentDataset.endDate,
+                                      dataset.endDate,
                                     ).toLocaleDateString("en-US", {
                                       year: "numeric",
                                       month: "numeric",
@@ -714,22 +698,6 @@ export function SideButtons({
                   );
                 })}
               </CardContent>
-              <div className="flex gap-2 border-t border-slate-700 p-4">
-                <Button
-                  variant="outline"
-                  onClick={closeDatasetCard}
-                  className="flex-1 border-slate-600 bg-transparent text-slate-300 hover:bg-slate-700"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleApplyDatasets}
-                  disabled={selectedDatasets.size === 0}
-                  className="flex-1 bg-rose-500 text-white hover:bg-rose-600 disabled:bg-slate-700 disabled:text-slate-500"
-                >
-                  Apply Datasets
-                </Button>
-              </div>
             </Card>
           </motion.div>
         )}

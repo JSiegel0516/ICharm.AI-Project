@@ -174,9 +174,11 @@ function TimeSeriesContent() {
     const datasetSlugs = searchParams.get("datasets")?.split(",") || [];
     const startDate = searchParams.get("start");
     const endDate = searchParams.get("end");
+    const coords = searchParams.get("coords");
     const chart = searchParams.get("chart") as ChartType;
     const model = searchParams.get("model") as AnalysisModel;
 
+    if (coords) setFocusCoordinates(coords);
     if (startDate) setDateRange((prev) => ({ ...prev, start: startDate }));
     if (endDate) setDateRange((prev) => ({ ...prev, end: endDate }));
     if (chart && Object.values(ChartType).includes(chart)) setChartType(chart);
@@ -215,6 +217,7 @@ function TimeSeriesContent() {
   const debouncedEndDate = useDebounce(dateRange.end, 800);
   const debouncedChartType = useDebounce(chartType, 500);
   const debouncedAnalysisModel = useDebounce(analysisModel, 500);
+  const debouncedFocusCoordinates = useDebounce(focusCoordinates, 800);
 
   // Update URL when selections change (with debouncing)
   useEffect(() => {
@@ -224,6 +227,8 @@ function TimeSeriesContent() {
     if (debouncedDatasetSlugs) params.set("datasets", debouncedDatasetSlugs);
     if (debouncedStartDate) params.set("start", debouncedStartDate);
     if (debouncedEndDate) params.set("end", debouncedEndDate);
+    if (debouncedFocusCoordinates)
+      params.set("coords", debouncedFocusCoordinates);
     if (debouncedChartType) params.set("chart", debouncedChartType);
     if (debouncedAnalysisModel) params.set("model", debouncedAnalysisModel);
 
@@ -235,6 +240,7 @@ function TimeSeriesContent() {
     debouncedDatasetSlugs,
     debouncedStartDate,
     debouncedEndDate,
+    debouncedFocusCoordinates,
     debouncedChartType,
     debouncedAnalysisModel,
     router,

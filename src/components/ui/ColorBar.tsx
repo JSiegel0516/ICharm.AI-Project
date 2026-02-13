@@ -8,9 +8,8 @@ import React, {
   useState,
   useReducer,
 } from "react";
-import { ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
+import { ChevronDown, ChevronUp, RotateCcw, Move } from "lucide-react";
 import { Button } from "./button";
-import { Slider } from "./slider";
 
 // Types
 type TemperatureUnit = "celsius" | "fahrenheit";
@@ -73,14 +72,12 @@ function uiReducer(state: UIState, action: UIAction): UIState {
 
     case "TOGGLE_COLLAPSE":
       if (state.isCollapsed) {
-        // Expanding
         return {
           ...state,
           isCollapsed: false,
           position: state.previousPosition,
         };
       } else {
-        // Collapsing
         return {
           ...state,
           isCollapsed: true,
@@ -129,12 +126,22 @@ const ColorBar: React.FC<ColorBarProps> = ({
   customRange,
 }) => {
   const colorBarRef = useRef<HTMLDivElement>(null);
+  const gradientRef = useRef<HTMLDivElement>(null);
   const isVertical = orientation === "vertical";
-  const [rangeValue, setRangeValue] = useState<[number, number]>([0, 0]);
-  const [isRangeEditing, setIsRangeEditing] = useState(false);
-  const [isSliderHovering, setIsSliderHovering] = useState(false);
-  const sliderHoverTimeoutRef = useRef<number | null>(null);
-  const [colorBarSize, setColorBarSize] = useState({ width: 0, height: 0 });
+
+  // Range adjustment state
+  const [isGradientHovered, setIsGradientHovered] = useState(false);
+  const pointerInsideGradientRef = useRef(false);
+  const [isColorBarHovered, setIsColorBarHovered] = useState(false);
+  const [isDraggingRange, setIsDraggingRange] = useState<"min" | "max" | null>(
+    null,
+  );
+  const [hoverPosition, setHoverPosition] = useState<number | null>(null);
+  const [tempRange, setTempRange] = useState<{
+    min: number;
+    max: number;
+  } | null>(null);
+  const [hasCustomRange, setHasCustomRange] = useState(false);
 
   const [uiState, dispatch] = useReducer(uiReducer, {
     position: { x: 24, y: 24 },
@@ -202,7 +209,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
       symbol = "°C";
     }
 
-    // Check if dataset has temperature hints
     const parts = [
       dataset?.dataType,
       dataset?.name,
@@ -450,29 +456,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     return min <= max ? { min, max } : { min: max, max: min };
   }, [rangeLimits, toDisplayValue]);
 
-  const sliderStep = useMemo(() => {
-    const span = Math.abs(displayLimits.max - displayLimits.min);
-    if (!Number.isFinite(span) || span <= 0) return 1;
-    const rough = span / 200;
-    const magnitude = Math.pow(10, Math.floor(Math.log10(rough)));
-
-    if (datasetFlags.isGodasDeepLevel) {
-      const powerStep = Math.pow(10, Math.floor(Math.log10(span)) - 1);
-      const safeStep = Number.parseFloat(powerStep.toPrecision(2));
-      return Number.isFinite(safeStep) && safeStep > 0 ? safeStep : rough;
-    }
-
-    const normalized = rough / magnitude;
-    let step = magnitude;
-    if (normalized <= 1) step = 1 * magnitude;
-    else if (normalized <= 2) step = 2 * magnitude;
-    else if (normalized <= 5) step = 5 * magnitude;
-    else step = 10 * magnitude;
-
-    const safeStep = Number.parseFloat(step.toPrecision(2));
-    return Number.isFinite(safeStep) && safeStep > 0 ? safeStep : rough;
-  }, [displayLimits, datasetFlags.isGodasDeepLevel]);
-
   const formatRangeValue = useCallback((value: number) => {
     if (!Number.isFinite(value)) return "–";
     if (value === 0) return "0";
@@ -498,23 +481,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     .join(", ");
 
   const gradientBackground = `linear-gradient(${isVertical ? "to top" : "to right"}, ${gradientStops})`;
-  const sliderOrientation = isVertical ? "horizontal" : "vertical";
-  const sliderContainerClass = isVertical
-    ? "top-full left-1/2 mt-4 w-72 -translate-x-1/2"
-    : "left-full top-1/2 ml-4 w-20 -translate-y-1/2";
-  const sliderClassName = isVertical ? "w-full" : "w-4 flex-col";
-  const sliderLength = useMemo(() => {
-    const clamp = (value: number, min: number, max: number) =>
-      Math.min(max, Math.max(min, value));
-
-    if (isVertical) {
-      const width = colorBarSize.width || 280;
-      return clamp(width - 48, 200, 360);
-    }
-
-    const height = colorBarSize.height || 280;
-    return clamp(height - 48, 180, 360);
-  }, [colorBarSize.height, colorBarSize.width, isVertical]);
 
   // ============================================================================
   // POSITIONING LOGIC
@@ -536,7 +502,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
       return { x, y };
     }
 
-    const actualHeight = colorBarRef.current?.offsetHeight ?? 220;
+    const actualHeight = colorBarRef.current?.offsetHeight ?? 250;
     return { x: margin, y: window.innerHeight - actualHeight - margin };
   }, [isVertical]);
 
@@ -552,6 +518,40 @@ const ColorBar: React.FC<ColorBarProps> = ({
       y: Math.max(0, Math.min(pos.y, maxY)),
     };
   }, []);
+
+  // ============================================================================
+  // RANGE INTERACTION LOGIC
+  // ============================================================================
+
+  const getValueFromPosition = useCallback(
+    (clientX: number, clientY: number): number => {
+      const gradient = gradientRef.current;
+      if (!gradient) return 0;
+
+      const rect = gradient.getBoundingClientRect();
+      let ratio: number;
+
+      if (isVertical) {
+        ratio = Math.max(0, Math.min(1, (rect.bottom - clientY) / rect.height));
+      } else {
+        ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      }
+
+      return (
+        displayLimits.min + (displayLimits.max - displayLimits.min) * ratio
+      );
+    },
+    [isVertical, displayLimits],
+  );
+
+  const getPositionFromValue = useCallback(
+    (value: number): number => {
+      const ratio =
+        (value - displayLimits.min) / (displayLimits.max - displayLimits.min);
+      return Math.max(0, Math.min(1, ratio));
+    },
+    [displayLimits],
+  );
 
   // ============================================================================
   // EVENT HANDLERS
@@ -598,6 +598,24 @@ const ColorBar: React.FC<ColorBarProps> = ({
     [uiState.isCollapsed, uiState.position],
   );
 
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      if (uiState.isCollapsed) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const touch = e.touches[0];
+      dispatch({
+        type: "START_DRAG",
+        payload: {
+          x: touch.clientX - uiState.position.x,
+          y: touch.clientY - uiState.position.y,
+        },
+      });
+    },
+    [uiState.isCollapsed, uiState.position],
+  );
+
   const handleUnitChange = useCallback(
     (newUnit: TemperatureUnit) => {
       if (!unitInfo.allowToggle) return;
@@ -606,86 +624,134 @@ const ColorBar: React.FC<ColorBarProps> = ({
     [unitInfo.allowToggle, onUnitChange],
   );
 
-  const handleRangeValueChange = useCallback((values: number[]) => {
-    if (!Array.isArray(values) || values.length < 2) return;
-    const min = Math.min(values[0], values[1]);
-    const max = Math.max(values[0], values[1]);
-    setIsRangeEditing(true);
-    setRangeValue([min, max]);
-  }, []);
-
-  const handleRangeValueCommit = useCallback(
-    (values: number[]) => {
-      if (!Array.isArray(values) || values.length < 2) return;
-      const min = Math.min(values[0], values[1]);
-      const max = Math.max(values[0], values[1]);
-      const clampedMin = Math.max(displayLimits.min, Math.min(min, max));
-      const clampedMax = Math.min(displayLimits.max, Math.max(min, max));
-      const baseMin = fromDisplayValue(clampedMin);
-      const baseMax = fromDisplayValue(clampedMax);
-
-      setIsRangeEditing(false);
-      setRangeValue([clampedMin, clampedMax]);
-      onRangeChange?.({ min: baseMin, max: baseMax });
-    },
-    [displayLimits, fromDisplayValue, onRangeChange],
-  );
-
   const handleRangeReset = useCallback(() => {
-    setIsRangeEditing(false);
+    setTempRange(null);
+    setHasCustomRange(false);
     onRangeReset?.();
     if (!onRangeReset) {
       onRangeChange?.({ min: null, max: null });
     }
   }, [onRangeChange, onRangeReset]);
 
-  const handleSliderHoverStart = useCallback(() => {
-    if (sliderHoverTimeoutRef.current !== null) {
-      window.clearTimeout(sliderHoverTimeoutRef.current);
-      sliderHoverTimeoutRef.current = null;
-    }
-    setIsSliderHovering(true);
+  // Gradient interaction handlers
+  const handleGradientMouseEnter = useCallback(() => {
+    pointerInsideGradientRef.current = true;
+    setIsGradientHovered(true);
   }, []);
 
-  const handleSliderHoverEnd = useCallback(() => {
-    if (sliderHoverTimeoutRef.current !== null) {
-      window.clearTimeout(sliderHoverTimeoutRef.current);
+  const handleGradientMouseLeave = useCallback(() => {
+    pointerInsideGradientRef.current = false;
+    if (!isDraggingRange) {
+      setIsGradientHovered(false);
+      setHoverPosition(null);
+      setTempRange(null);
     }
-    sliderHoverTimeoutRef.current = window.setTimeout(() => {
-      setIsSliderHovering(false);
-      sliderHoverTimeoutRef.current = null;
-    }, 120);
-  }, []);
+  }, [isDraggingRange]);
+
+  const handleGradientMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (!isGradientHovered && !isDraggingRange) return;
+
+      const value = getValueFromPosition(e.clientX, e.clientY);
+      setHoverPosition(value);
+
+      if (isDraggingRange) {
+        const currentRange = tempRange || displayRange;
+        let newRange: { min: number; max: number };
+
+        if (isDraggingRange === "min") {
+          newRange = {
+            min: Math.min(value, currentRange.max),
+            max: currentRange.max,
+          };
+        } else {
+          newRange = {
+            min: currentRange.min,
+            max: Math.max(value, currentRange.min),
+          };
+        }
+
+        setTempRange(newRange);
+      }
+    },
+    [
+      isGradientHovered,
+      isDraggingRange,
+      getValueFromPosition,
+      tempRange,
+      displayRange,
+    ],
+  );
+
+  const handleGradientMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const value = getValueFromPosition(e.clientX, e.clientY);
+      const currentRange = displayRange;
+
+      const distToMin = Math.abs(value - currentRange.min);
+      const distToMax = Math.abs(value - currentRange.max);
+
+      const adjusting = distToMin < distToMax ? "min" : "max";
+      setIsDraggingRange(adjusting);
+      setTempRange(currentRange);
+    },
+    [getValueFromPosition, displayRange],
+  );
+
+  // Touch equivalents for gradient range interaction
+  const handleGradientTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const touch = e.touches[0];
+      const value = getValueFromPosition(touch.clientX, touch.clientY);
+      const currentRange = displayRange;
+
+      const distToMin = Math.abs(value - currentRange.min);
+      const distToMax = Math.abs(value - currentRange.max);
+
+      const adjusting = distToMin < distToMax ? "min" : "max";
+      setIsDraggingRange(adjusting);
+      setIsGradientHovered(true);
+      setTempRange(currentRange);
+    },
+    [getValueFromPosition, displayRange],
+  );
+
+  const handleGradientMouseUp = useCallback(() => {
+    if (isDraggingRange && tempRange) {
+      const baseMin = fromDisplayValue(tempRange.min);
+      const baseMax = fromDisplayValue(tempRange.max);
+      onRangeChange?.({ min: baseMin, max: baseMax });
+      setHasCustomRange(true);
+    }
+    setIsDraggingRange(null);
+    setTempRange(null);
+    // Keep hovered if pointer is still inside
+    if (!pointerInsideGradientRef.current) {
+      setIsGradientHovered(false);
+    }
+  }, [isDraggingRange, tempRange, fromDisplayValue, onRangeChange]);
 
   // ============================================================================
   // EFFECTS
   // ============================================================================
 
+  // Re-sync hover state after colorbar data updates
   useEffect(() => {
-    const element = colorBarRef.current;
-    if (!element || typeof ResizeObserver === "undefined") {
-      return;
+    if (pointerInsideGradientRef.current) {
+      setIsGradientHovered(true);
     }
+  }, [colorScale, displayRange, rasterMeta]);
 
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-      const { width, height } = entry.contentRect;
-      setColorBarSize({ width, height });
-    });
-
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-
+  // Initialize hasCustomRange based on customRange prop
   useEffect(() => {
-    return () => {
-      if (sliderHoverTimeoutRef.current !== null) {
-        window.clearTimeout(sliderHoverTimeoutRef.current);
-        sliderHoverTimeoutRef.current = null;
-      }
-    };
-  }, []);
+    setHasCustomRange(Boolean(customRange?.enabled));
+  }, [customRange?.enabled]);
 
   // Initialize position on mount
   useEffect(() => {
@@ -719,25 +785,12 @@ const ColorBar: React.FC<ColorBarProps> = ({
     dispatch({ type: "SET_COLLAPSED", payload: collapsed });
   }, [collapsed]);
 
-  useEffect(() => {
-    if (isRangeEditing) return;
-    const clampedMin = Math.max(
-      displayLimits.min,
-      Math.min(displayRange.min, displayLimits.max),
-    );
-    const clampedMax = Math.min(
-      displayLimits.max,
-      Math.max(displayRange.max, displayLimits.min),
-    );
-    setRangeValue([clampedMin, clampedMax]);
-  }, [displayLimits, displayRange, isRangeEditing]);
-
   // Notify parent of position changes
   useEffect(() => {
     onPositionChange?.(uiState.position);
   }, [uiState.position, onPositionChange]);
 
-  // Handle dragging
+  // Handle dragging (mouse + touch)
   useEffect(() => {
     if (!uiState.isDragging || uiState.isCollapsed) return;
 
@@ -749,22 +802,93 @@ const ColorBar: React.FC<ColorBarProps> = ({
       dispatch({ type: "SET_POSITION", payload: clampPosition(newPos) });
     };
 
+    const handleTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      const newPos = {
+        x: touch.clientX - uiState.dragStart.x,
+        y: touch.clientY - uiState.dragStart.y,
+      };
+      dispatch({ type: "SET_POSITION", payload: clampPosition(newPos) });
+    };
+
     const handleMouseUp = () => {
+      dispatch({ type: "STOP_DRAG" });
+    };
+
+    const handleTouchEnd = () => {
       dispatch({ type: "STOP_DRAG" });
     };
 
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
+    document.addEventListener("touchmove", handleTouchMove, { passive: false });
+    document.addEventListener("touchend", handleTouchEnd);
 
     return () => {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
+      document.removeEventListener("touchmove", handleTouchMove);
+      document.removeEventListener("touchend", handleTouchEnd);
     };
   }, [
     uiState.isDragging,
     uiState.isCollapsed,
     uiState.dragStart,
     clampPosition,
+  ]);
+
+  // Handle global mouse/touch up for range dragging
+  useEffect(() => {
+    if (!isDraggingRange) return;
+
+    const handleMouseUp = () => {
+      handleGradientMouseUp();
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      const value = getValueFromPosition(touch.clientX, touch.clientY);
+      setHoverPosition(value);
+
+      const currentRange = tempRange || displayRange;
+      let newRange: { min: number; max: number };
+
+      if (isDraggingRange === "min") {
+        newRange = {
+          min: Math.min(value, currentRange.max),
+          max: currentRange.max,
+        };
+      } else {
+        newRange = {
+          min: currentRange.min,
+          max: Math.max(value, currentRange.min),
+        };
+      }
+
+      setTempRange(newRange);
+    };
+
+    const handleTouchEnd = () => {
+      handleGradientMouseUp();
+    };
+
+    document.addEventListener("mouseup", handleMouseUp);
+    document.addEventListener("touchmove", handleTouchMove, { passive: false });
+    document.addEventListener("touchend", handleTouchEnd);
+
+    return () => {
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.removeEventListener("touchmove", handleTouchMove);
+      document.removeEventListener("touchend", handleTouchEnd);
+    };
+  }, [
+    isDraggingRange,
+    handleGradientMouseUp,
+    getValueFromPosition,
+    tempRange,
+    displayRange,
   ]);
 
   // Handle window resize
@@ -791,6 +915,10 @@ const ColorBar: React.FC<ColorBarProps> = ({
   // RENDER
   // ============================================================================
 
+  const currentRange = tempRange || displayRange;
+  const minPosition = getPositionFromValue(currentRange.min);
+  const maxPosition = getPositionFromValue(currentRange.max);
+
   return (
     <div
       ref={colorBarRef}
@@ -798,113 +926,171 @@ const ColorBar: React.FC<ColorBarProps> = ({
       style={{
         left: `${uiState.position.x}px`,
         top: `${uiState.position.y}px`,
-        zIndex: uiState.isCollapsed ? 1000 : 10,
+        zIndex: uiState.isCollapsed ? 100 : 30,
         opacity: uiState.hasInitialized ? 1 : 0,
       }}
     >
       {uiState.isCollapsed ? (
         <Button
-          className="bg-card/80 border-border text-muted-foreground hover:text-card-foreground pointer-events-auto flex cursor-pointer items-center gap-2 rounded-xl border backdrop-blur-sm transition-all duration-200 hover:scale-105 hover:shadow-lg"
+          className="bg-card/90 border-border text-muted-foreground hover:text-card-foreground pointer-events-auto flex cursor-pointer items-center gap-2 rounded-xl border backdrop-blur-sm transition-all duration-200 hover:scale-105 hover:shadow-lg"
           onClick={handleCollapseToggle}
         >
-          <ChevronUp className="pointer-events-none h-4 w-4" />
-          <span className="pointer-events-none text-sm font-medium select-none">
-            Color Scale
+          <ChevronUp className="pointer-events-none sm:h-2 sm:w-2 lg:h-4 lg:w-4" />
+          <span className="pointer-events-none font-medium select-none sm:text-xs lg:text-sm">
+            Color Bar
           </span>
         </Button>
       ) : (
         <div
-          className="border-border bg-card/80 text-primary group pointer-events-auto relative rounded-xl border px-6 py-6 backdrop-blur-sm transition-opacity duration-200"
-          onMouseEnter={handleSliderHoverStart}
-          onMouseLeave={handleSliderHoverEnd}
-          onFocusCapture={handleSliderHoverStart}
-          onBlurCapture={handleSliderHoverEnd}
+          className="border-border bg-card/90 text-primary group pointer-events-auto relative rounded-2xl border px-6 pt-6 pb-8 shadow-2xl backdrop-blur-md transition-all duration-200"
+          onMouseEnter={() => setIsColorBarHovered(true)}
+          onMouseLeave={() => setIsColorBarHovered(false)}
         >
           {/* Header Controls */}
-          <div className="-mt-2 mb-2 flex w-full items-center justify-between gap-2">
+          <div className="-mt-2 mb-4 flex w-full items-center justify-between gap-2">
             <button
               onClick={handleCollapseToggle}
-              className="text-muted-foreground hover:text-card-foreground -m-1 flex cursor-pointer items-center p-1 focus:outline-none"
+              className="text-muted-foreground hover:text-card-foreground -m-1 flex cursor-pointer items-center rounded-full p-2 transition-all hover:bg-white/10 focus:outline-none"
               title="Collapse"
               type="button"
             >
-              <ChevronDown className="h-3 w-3" />
+              <ChevronDown className="h-4 w-4" />
             </button>
 
             <div
-              className={`mx-2 h-4 flex-1 select-none ${uiState.isDragging ? "cursor-grabbing" : "cursor-grab"}`}
+              className={`mx-2 flex h-6 flex-1 cursor-grab items-center justify-center gap-1 rounded-full px-3 transition-all hover:bg-white/10 ${uiState.isDragging ? "cursor-grabbing bg-white/20" : ""}`}
               onMouseDown={handleMouseDown}
+              onTouchStart={handleTouchStart}
+              style={{ touchAction: "none" }}
               title="Drag to move"
             >
-              <div className="flex h-full items-center justify-center gap-1">
-                <div className="dot"></div>
-                <div className="dot"></div>
-                <div className="dot"></div>
-              </div>
+              <Move className="text-muted-foreground h-3 w-3" />
+              <span className="text-muted-foreground text-xs font-medium select-none">
+                Color Bar
+              </span>
             </div>
 
             <button
               onClick={handleResetPosition}
-              className="text-muted-foreground hover:text-card-foreground -m-1 flex cursor-pointer items-center p-1 transition-colors focus:outline-none"
-              title="Reset to default position"
+              className="text-muted-foreground hover:text-card-foreground -m-1 flex cursor-pointer items-center rounded-full p-2 transition-all hover:bg-white/10 focus:outline-none"
+              title="Reset position"
               type="button"
             >
-              <RotateCcw className="h-3 w-3" />
+              <RotateCcw className="h-4 w-4" />
             </button>
           </div>
 
           {/* Unit Selector */}
-          <div className="relative mt-2 mb-10">
-            <div className="text-muted-foreground flex w-full items-center justify-between gap-2 text-sm font-medium">
-              <span>Unit</span>
+          <div className="mb-3">
+            <div className="text-muted-foreground flex w-full items-center text-sm font-medium">
+              {/* Fixed-width slot for reset button to prevent layout shift */}
+              <div className="w-24">
+                {hasCustomRange && (onRangeReset || onRangeChange) && (
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={handleRangeReset}
+                  >
+                    Reset Range
+                  </Button>
+                )}
+              </div>
 
+              {/* Unit toggle pinned to the right */}
               {unitInfo.allowToggle ? (
-                <div className="inline-flex items-center gap-1 rounded-md border border-white/20 bg-white/5 p-1">
-                  <button
-                    type="button"
-                    onClick={() => handleUnitChange("celsius")}
-                    className={`rounded px-2 py-1 text-xs font-semibold transition-colors focus:outline-none ${
-                      unit === "celsius"
-                        ? "bg-white text-gray-900"
-                        : "text-gray-300 hover:text-white"
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleUnitChange(
+                      unit === "celsius" ? "fahrenheit" : "celsius",
+                    )
+                  }
+                  className="bg-card/80 hover:bg-card relative ml-auto inline-flex h-7 w-14 shrink-0 items-center rounded-lg border border-white/20 transition-colors focus:ring-2 focus:ring-white/50 focus:outline-none"
+                >
+                  <span
+                    className={`inline-block h-7 w-7 transform rounded-lg bg-white/80 shadow-lg transition-transform ${
+                      unit === "fahrenheit" ? "translate-x-7" : "translate-x-0"
+                    }`}
+                  />
+                  <span
+                    className={`absolute left-0 w-7 text-center text-sm font-semibold transition-colors ${
+                      unit === "celsius" ? "text-gray-900" : "text-white"
                     }`}
                   >
-                    °C
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleUnitChange("fahrenheit")}
-                    className={`rounded px-2 py-1 text-xs font-semibold transition-colors focus:outline-none ${
-                      unit === "fahrenheit"
-                        ? "bg-white text-gray-900"
-                        : "text-gray-300 hover:text-white"
+                    C
+                  </span>
+                  <span
+                    className={`absolute right-0 w-7 text-center text-sm font-semibold transition-colors ${
+                      unit === "fahrenheit" ? "text-gray-900" : "text-white"
                     }`}
                   >
-                    °F
-                  </button>
-                </div>
+                    F
+                  </span>
+                </button>
               ) : (
-                <span className="text-card-foreground ml-2 min-w-8 text-right">
+                <span className="text-card-foreground ml-auto min-w-8 shrink-0 text-right font-mono text-sm">
                   {currentUnitSymbol || "–"}
                 </span>
               )}
             </div>
           </div>
 
-          {/* Color Scale */}
+          {/* Color Scale with Interactive Range */}
           <div className="relative">
             {isVertical ? (
               <div className="flex w-full items-center justify-center">
                 <div className="relative flex">
-                  <div className="h-64 w-14 rounded-lg bg-white/10 p-px shadow-inner">
-                    <div
-                      className="h-full w-full overflow-hidden rounded-[10px]"
-                      style={{ background: gradientBackground }}
-                    />
+                  <div
+                    ref={gradientRef}
+                    className="relative h-64 w-16 cursor-crosshair rounded-lg bg-white/10 p-1 shadow-inner"
+                    style={{
+                      background: gradientBackground,
+                      touchAction: "none",
+                    }}
+                    onMouseEnter={handleGradientMouseEnter}
+                    onMouseLeave={handleGradientMouseLeave}
+                    onMouseMove={handleGradientMouseMove}
+                    onMouseDown={handleGradientMouseDown}
+                    onTouchStart={handleGradientTouchStart}
+                  >
+                    {/* Range indicators */}
+                    {(isGradientHovered || isDraggingRange) && (
+                      <>
+                        <div
+                          className="absolute right-0 left-0 h-1 bg-white shadow-lg"
+                          style={{ bottom: `${minPosition * 100}%` }}
+                        />
+                        <div
+                          className="absolute right-0 left-0 h-1 bg-white shadow-lg"
+                          style={{ bottom: `${maxPosition * 100}%` }}
+                        />
+                        <div
+                          className="absolute right-0 left-0 border-y border-white/40 bg-white/20"
+                          style={{
+                            bottom: `${Math.min(minPosition * 100, maxPosition * 100)}%`,
+                            height: `${Math.abs((maxPosition - minPosition) * 100)}%`,
+                          }}
+                        />
+                      </>
+                    )}
                   </div>
+                  {isDraggingRange && tempRange && (
+                    <div className="absolute top-1/2 left-full z-50 ml-2 -translate-y-1/2 rounded-lg bg-black/80 px-3 py-2 font-mono text-xs whitespace-nowrap text-white">
+                      <div className="flex flex-col gap-1">
+                        <div>
+                          Min: {formatRangeValue(tempRange.min)}
+                          {currentUnitSymbol}
+                        </div>
+                        <div>
+                          Max: {formatRangeValue(tempRange.max)}
+                          {currentUnitSymbol}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <div className="text-card-foreground absolute inset-y-4 left-full ml-4 flex flex-col justify-between text-right text-xs">
                     {labels.map((label, index) => (
-                      <span key={index} className="leading-none">
+                      <span key={index} className="font-mono leading-none">
                         {label}
                       </span>
                     ))}
@@ -912,16 +1098,61 @@ const ColorBar: React.FC<ColorBarProps> = ({
                 </div>
               </div>
             ) : (
-              <div className="relative mx-auto w-60">
+              <div className="relative mx-auto w-70">
                 <div
-                  className="h-8 w-full rounded-md"
-                  style={{ background: gradientBackground }}
-                />
-                <div className="absolute -top-4 left-0 flex w-full justify-between text-xs">
+                  ref={gradientRef}
+                  className="relative h-10 w-full cursor-crosshair rounded-xl shadow-inner"
+                  style={{
+                    background: gradientBackground,
+                    touchAction: "none",
+                  }}
+                  onMouseEnter={handleGradientMouseEnter}
+                  onMouseLeave={handleGradientMouseLeave}
+                  onMouseMove={handleGradientMouseMove}
+                  onMouseDown={handleGradientMouseDown}
+                  onTouchStart={handleGradientTouchStart}
+                >
+                  {/* Range indicators */}
+                  {(isGradientHovered || isDraggingRange) && (
+                    <>
+                      <div
+                        className="absolute top-0 bottom-0 w-1 bg-white shadow-lg"
+                        style={{ left: `${minPosition * 100}%` }}
+                      />
+                      <div
+                        className="absolute top-0 bottom-0 w-1 bg-white shadow-lg"
+                        style={{ left: `${maxPosition * 100}%` }}
+                      />
+                      <div
+                        className="absolute top-0 bottom-0 border-x border-white/40 bg-white/20"
+                        style={{
+                          left: `${Math.min(minPosition * 100, maxPosition * 100)}%`,
+                          width: `${Math.abs((maxPosition - minPosition) * 100)}%`,
+                        }}
+                      />
+                    </>
+                  )}
+                </div>
+                {isDraggingRange && tempRange && (
+                  <div className="absolute -bottom-12 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-black/80 px-3 py-2 font-mono text-xs whitespace-nowrap text-white">
+                    <div className="flex gap-3">
+                      <div>
+                        Min: {formatRangeValue(tempRange.min)}
+                        {currentUnitSymbol}
+                      </div>
+                      <div>
+                        Max: {formatRangeValue(tempRange.max)}
+                        {currentUnitSymbol}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {/* Labels below the gradient */}
+                <div className="mt-2 flex w-full justify-between text-xs">
                   {labels.map((label, index) => (
                     <span
                       key={index}
-                      className="text-card-foreground leading-none"
+                      className="text-card-foreground font-mono leading-none"
                     >
                       {label}
                     </span>
@@ -929,61 +1160,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
                 </div>
               </div>
             )}
-          </div>
-
-          <div
-            onMouseEnter={handleSliderHoverStart}
-            onMouseLeave={handleSliderHoverEnd}
-            onFocusCapture={handleSliderHoverStart}
-            onBlurCapture={handleSliderHoverEnd}
-            className={`border-border bg-card/90 absolute z-20 rounded-xl border px-4 py-3 shadow-lg backdrop-blur-md transition-all duration-200 ${sliderContainerClass} ${
-              isRangeEditing || isSliderHovering
-                ? "pointer-events-auto visible opacity-100"
-                : "pointer-events-none invisible opacity-0"
-            }`}
-          >
-            <div className="text-muted-foreground mb-3 flex items-center justify-between text-xs font-medium">
-              <span>Color Range</span>
-            </div>
-            <div className="flex items-center justify-center gap-3">
-              <Slider
-                min={displayLimits.min}
-                max={displayLimits.max}
-                step={sliderStep}
-                value={rangeValue}
-                onValueChange={handleRangeValueChange}
-                onValueCommit={handleRangeValueCommit}
-                onPointerDown={() => setIsRangeEditing(true)}
-                onPointerCancel={() => setIsRangeEditing(false)}
-                orientation={sliderOrientation}
-                className={sliderClassName}
-                style={
-                  sliderOrientation === "vertical"
-                    ? { height: `${sliderLength}px` }
-                    : { width: `${sliderLength}px` }
-                }
-              />
-              {(onRangeReset || onRangeChange) && (
-                <button
-                  type="button"
-                  onClick={handleRangeReset}
-                  className="text-muted-foreground hover:text-card-foreground flex h-6 w-6 items-center justify-center rounded-full transition-colors"
-                  aria-label="Reset color range"
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-            <div className="text-muted-foreground mt-2 flex items-center justify-between text-[11px]">
-              <span>
-                Min {formatRangeValue(rangeValue[0])}
-                {currentUnitSymbol ? ` ${currentUnitSymbol}` : ""}
-              </span>
-              <span>
-                Max {formatRangeValue(rangeValue[1])}
-                {currentUnitSymbol ? ` ${currentUnitSymbol}` : ""}
-              </span>
-            </div>
           </div>
         </div>
       )}
