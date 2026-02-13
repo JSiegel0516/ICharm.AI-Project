@@ -77,20 +77,20 @@ class DatabaseQueries:
                     parameters["stored"] = stored.lower()
 
                 if source:
-                    query += "AND LOWER(sourceName) ILIKE :source\n"
+                    query += 'AND LOWER("sourceName") ILIKE :source\n'
                     parameters["source"] = source.lower()
 
                 if search:
                     query += """AND (
-                        LOWER(datasetName) ILIKE :search" OR
-                        LOWER(layerParameter) ILIKE :search" OR
-                        LOWER(slug) ILIKE :search"
+                        LOWER("datasetName") ILIKE :search OR
+                        LOWER("layerParameter") ILIKE :search OR
+                        LOWER("slug") ILIKE :search
                         )
                     """
                     parameters["search"] = f"%{search.lower()}%"
 
                 # Add ORDER BY to the query
-                query += "ORDER BY datasetName ASC"
+                query += '\nORDER BY "datasetName" ASC'
 
                 # Query by UUID id column instead of datasetName
                 results = conn.execute(
@@ -246,7 +246,11 @@ class DatabaseQueries:
 
         # Apply filters
         if stored != "all" and stored is not None:
-            df = df[df["Stored"].str.lower() == stored.lower()]
+            stored_series = df.get("stored")
+            if stored_series is None:
+                stored_series = df.get("Stored")
+            if stored_series is not None:
+                df = df[stored_series.str.lower() == stored.lower()]
 
         if source:
             df = df[df["sourceName"].str.contains(source, case=False, na=False)]
@@ -272,7 +276,7 @@ class DatabaseQueries:
                     "sourceName": row["sourceName"],
                     "source": row["sourceName"],
                     "type": row["datasetType"],
-                    "stored": row["Stored"],
+                    "stored": row.get("stored") or row.get("Stored"),
                     "startDate": row["startDate"],
                     "endDate": row["endDate"],
                     "units": row["units"],
@@ -670,6 +674,7 @@ class DatabaseQueries:
 
                 # Use actual date for timestamp/date columns (e.g. ocean_heat_content);
                 # use MMDD string for CHAR(4) (e.g. CMORPH daily)
+                ts_param: Any
                 if timestamp_is_date_type:
                     # Monthly data is typically stored on the 16th of each month
                     ts_param = target_date.replace(day=16)

@@ -134,7 +134,6 @@ export const climateDataset = pgTable("metadata", {
   startDate: text("startDate").notNull(), // stored as text: "1854-12-31"
   endDate: text("endDate").notNull(), // stored as text: "2025-08-25" or "present"
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  description: text("description"),
   updatedAt: timestamp("updatedAt")
     .defaultNow()
     .$onUpdate(() => new Date())

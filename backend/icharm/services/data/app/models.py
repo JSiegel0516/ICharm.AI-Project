@@ -127,6 +127,10 @@ class RasterRequest(BaseModel):
         False,
         description="Hide exact zero values (used for CMORPH/local precipitation datasets)",
     )
+    smoothGridBoxValues: Optional[bool] = Field(
+        True,
+        description="Smooth gridbox rendering when generating raster textures",
+    )
     minValue: Optional[float] = Field(
         None, description="Override minimum value for color mapping (zero-centered)"
     )

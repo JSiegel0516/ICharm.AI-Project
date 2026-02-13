@@ -145,12 +145,29 @@ const useAppStateInternal = () => {
     error: null,
     colorBarOrientation: "horizontal",
     globeSettings: {
+      baseMapMode: "satellite",
       satelliteLayerVisible: true,
       boundaryLinesVisible: true,
       geographicLinesVisible: false,
+      timeZoneLinesVisible: false,
+      pacificCentered: false,
+      coastlineResolution: "low",
+      riverResolution: "none",
+      lakeResolution: "none",
+      naturalEarthGeographicLinesVisible: false,
+      labelsVisible: true,
       rasterOpacity: 0.9,
       hideZeroPrecipitation: false,
       rasterBlurEnabled: true,
+      bumpMapMode: "none",
+    },
+    lineColors: {
+      boundaryLines: "#000000",
+      coastlines: "#000000",
+      rivers: "#000000",
+      lakes: "#000000",
+      geographicLines: "#000000",
+      geographicGrid: "#000000",
     },
     selectedColorMap: "dataset-default",
     selectedColorMapInverse: DEFAULT_COLOR_MAP_INVERSE,
@@ -225,6 +242,16 @@ const useAppStateInternal = () => {
 
   const setShowSettings = useCallback((show: boolean) => {
     setState((prev) => ({ ...prev, showSettings: show }));
+  }, []);
+
+  const setLineColors = useCallback((next: Partial<AppState["lineColors"]>) => {
+    setState((prev) => ({
+      ...prev,
+      lineColors: {
+        ...prev.lineColors,
+        ...next,
+      } as AppState["lineColors"],
+    }));
   }, []);
 
   const setShowAbout = useCallback((show: boolean) => {
@@ -470,6 +497,8 @@ const useAppStateInternal = () => {
     refreshDatasets,
     currentLocationMarker: state.currentLocationMarker,
     setCurrentLocationMarker,
+    lineColors: state.lineColors,
+    setLineColors,
     requestLocationFocus,
     requestLocationMarkerClear,
     clearLocationFocusRequest,

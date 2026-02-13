@@ -121,7 +121,12 @@ class ExtractTimeseries:
 
             for _, meta_row in metadata_df.iterrows():
                 try:
-                    is_local = meta_row["Stored"] == "local"
+                    is_local = (
+                        str(
+                            meta_row.get("stored") or meta_row.get("Stored") or ""
+                        ).lower()
+                        == "local"
+                    )
 
                     # Open dataset
                     if is_local:
@@ -345,7 +350,12 @@ class ExtractTimeseries:
 
             for _, meta_row in metadata_df.iterrows():
                 try:
-                    is_local = meta_row["stored"] == "local"
+                    is_local = (
+                        str(
+                            meta_row.get("stored") or meta_row.get("Stored") or ""
+                        ).lower()
+                        == "local"
+                    )
                     dataset_name = str(meta_row.get("datasetName") or "")
 
                     # Clip requested range to dataset coverage when metadata is available

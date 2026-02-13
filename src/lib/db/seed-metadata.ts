@@ -176,7 +176,6 @@ async function seedDatasets() {
       endDate: row.endDate,
       createdAt: new Date(),
       updatedAt: new Date(),
-      description: row.description,
     };
   });
 

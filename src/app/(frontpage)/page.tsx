@@ -29,10 +29,15 @@ import {
   RegionData,
   PressureLevel,
   GlobeSettings,
+  GlobeLineResolution,
+  MapOrientation,
+  MapProjectionId,
+  GlobeViewMode,
   type Dataset,
 } from "@/types";
 import { pressureLevels } from "@/utils/constants";
 import { isSeaSurfaceTemperatureDataset } from "@/utils/datasetGuards";
+import { MAP_PROJECTIONS } from "@/components/Globe/projectionConfig";
 import {
   buildRasterRequestKey,
   fetchRasterVisualization,
@@ -246,6 +251,8 @@ export default function HomePage() {
     setTemperatureUnit,
     isLoading,
     error,
+    lineColors,
+    setLineColors,
   } = useAppState();
   const globeRef = useRef<GlobeRef>(null);
   const lastDatasetIdRef = useRef<string | null>(null);
@@ -300,6 +307,7 @@ export default function HomePage() {
     colorbarRange: ReturnType<typeof resolveEffectiveColorbarRange>;
     level: number | null;
     hideZero: boolean;
+    smoothGridBoxValues: boolean;
     keyDatasetId: string;
   } | null>(null);
 
@@ -417,16 +425,193 @@ export default function HomePage() {
 
   // Globe Settings State
   const [globeSettings, setGlobeSettings] = useState<GlobeSettings>({
+    baseMapMode: "satellite",
     satelliteLayerVisible: true,
     boundaryLinesVisible: true,
     geographicLinesVisible: false,
+    timeZoneLinesVisible: false,
+    pacificCentered: false,
+    coastlineResolution: "low",
+    riverResolution: "none",
+    lakeResolution: "none",
+    naturalEarthGeographicLinesVisible: false,
+    labelsVisible: true,
     rasterOpacity: 0.9,
     hideZeroPrecipitation: false,
     rasterBlurEnabled: true,
+    bumpMapMode: "none",
     colorbarCustomMin: null,
     colorbarCustomMax: null,
     viewMode: "3d",
+    mapOrientations: {},
   });
+  const lastSatelliteLabelsVisibleRef = useRef(true);
+  const lastCesiumLabelsVisibleRef = useRef(true);
+  const lastNonProjectionGridVisibleRef = useRef(
+    globeSettings.geographicLinesVisible,
+  );
+  const lastCesiumGridVisibleRef = useRef(false);
+
+  const DEFAULT_LINE_COLORS_BLACK = useMemo(
+    () => ({
+      boundaryLines: "#000000",
+      coastlines: "#000000",
+      rivers: "#000000",
+      lakes: "#000000",
+      geographicLines: "#000000",
+      geographicGrid: "#000000",
+    }),
+    [],
+  );
+
+  const DEFAULT_LINE_COLORS_GRAY = useMemo(
+    () => ({
+      boundaryLines: "#4b5563",
+      coastlines: "#4b5563",
+      rivers: "#4b5563",
+      lakes: "#4b5563",
+      geographicLines: "#4b5563",
+      geographicGrid: "#4b5563",
+    }),
+    [],
+  );
+
+  const isLineColorDefault = useCallback(
+    (
+      colors: typeof DEFAULT_LINE_COLORS_BLACK | null | undefined,
+      target: typeof DEFAULT_LINE_COLORS_BLACK,
+    ) => {
+      if (!colors) return true;
+      const keys = Object.keys(target) as Array<keyof typeof target>;
+      return keys.every((key) => colors[key] === target[key]);
+    },
+    [DEFAULT_LINE_COLORS_BLACK],
+  );
+  const lastNonOrthoGridVisibleRef = useRef(
+    globeSettings.geographicLinesVisible,
+  );
+
+  const lastViewModeRef = useRef<GlobeViewMode | null>(null);
+
+  useEffect(() => {
+    const lastMode = lastViewModeRef.current;
+    const nextMode = globeSettings.viewMode ?? "3d";
+    lastViewModeRef.current = nextMode;
+
+    const wasCesium = lastMode === "3d" || lastMode === "2d";
+    const isCesium = nextMode === "3d" || nextMode === "2d";
+    const wasOrtho = lastMode === "ortho";
+    const isOrtho = nextMode === "ortho";
+    const wasProjection = MAP_PROJECTIONS.some(
+      (projection) => projection.id === lastMode,
+    );
+    const isProjection = MAP_PROJECTIONS.some(
+      (projection) => projection.id === nextMode,
+    );
+
+    if (wasCesium && !isCesium) {
+      lastCesiumLabelsVisibleRef.current = globeSettings.labelsVisible;
+      lastCesiumGridVisibleRef.current = globeSettings.geographicLinesVisible;
+    }
+
+    if (!wasCesium && isCesium) {
+      const restore = lastCesiumGridVisibleRef.current;
+      if (restore !== globeSettings.geographicLinesVisible) {
+        setGlobeSettings((prev) => ({
+          ...prev,
+          geographicLinesVisible: restore,
+        }));
+      }
+      return;
+    }
+
+    if (
+      nextMode === "ortho" &&
+      lastMode !== "ortho" &&
+      globeSettings.labelsVisible
+    ) {
+      setGlobeSettings((prev) => ({ ...prev, labelsVisible: false }));
+      return;
+    }
+
+    if (!wasCesium && isCesium && globeSettings.baseMapMode !== "street") {
+      const restore = lastCesiumLabelsVisibleRef.current;
+      if (restore !== globeSettings.labelsVisible) {
+        setGlobeSettings((prev) => ({ ...prev, labelsVisible: restore }));
+      }
+    }
+
+    if (!wasOrtho && isOrtho) {
+      lastNonOrthoGridVisibleRef.current = globeSettings.geographicLinesVisible;
+      if (!globeSettings.geographicLinesVisible) {
+        setGlobeSettings((prev) => ({ ...prev, geographicLinesVisible: true }));
+      }
+      return;
+    }
+
+    if (wasOrtho && !isOrtho) {
+      const restore = lastNonOrthoGridVisibleRef.current;
+      if (restore !== globeSettings.geographicLinesVisible) {
+        setGlobeSettings((prev) => ({
+          ...prev,
+          geographicLinesVisible: restore,
+        }));
+      }
+    }
+
+    if (!wasProjection && isProjection) {
+      lastNonProjectionGridVisibleRef.current =
+        globeSettings.geographicLinesVisible;
+      if (!globeSettings.geographicLinesVisible) {
+        setGlobeSettings((prev) => ({ ...prev, geographicLinesVisible: true }));
+      }
+      return;
+    }
+
+    if (wasProjection && !isProjection) {
+      const restore = lastNonProjectionGridVisibleRef.current;
+      if (restore !== globeSettings.geographicLinesVisible) {
+        setGlobeSettings((prev) => ({
+          ...prev,
+          geographicLinesVisible: restore,
+        }));
+      }
+    }
+  }, [
+    globeSettings.baseMapMode,
+    globeSettings.geographicLinesVisible,
+    globeSettings.labelsVisible,
+    globeSettings.viewMode,
+    isLineColorDefault,
+    lineColors,
+    setLineColors,
+    DEFAULT_LINE_COLORS_BLACK,
+    DEFAULT_LINE_COLORS_GRAY,
+  ]);
+
+  useEffect(() => {
+    const mode = globeSettings.viewMode ?? "3d";
+    const isCesium = mode === "3d" || mode === "2d";
+    const isOrtho = mode === "ortho";
+    const useBlack = isCesium || isOrtho;
+    const desired = useBlack
+      ? DEFAULT_LINE_COLORS_BLACK
+      : DEFAULT_LINE_COLORS_GRAY;
+    const other = useBlack
+      ? DEFAULT_LINE_COLORS_GRAY
+      : DEFAULT_LINE_COLORS_BLACK;
+
+    if (isLineColorDefault(lineColors, other)) {
+      setLineColors(desired);
+    }
+  }, [
+    DEFAULT_LINE_COLORS_BLACK,
+    DEFAULT_LINE_COLORS_GRAY,
+    globeSettings.viewMode,
+    isLineColorDefault,
+    lineColors,
+    setLineColors,
+  ]);
 
   const colorbarRange = useMemo(
     () => ({
@@ -716,6 +901,7 @@ export default function HomePage() {
           level: config.level ?? undefined,
           cssColors: config.cssColors,
           maskZeroValues: config.hideZero,
+          smoothGridBoxValues: config.smoothGridBoxValues,
           colorbarRange: config.colorbarRange,
           signal: controller.signal,
         });
@@ -737,6 +923,7 @@ export default function HomePage() {
           level: config.level ?? undefined,
           cssColors: config.cssColors,
           maskZeroValues: config.hideZero,
+          smoothGridBoxValues: config.smoothGridBoxValues,
           colorbarRange: config.colorbarRange,
         });
 
@@ -849,6 +1036,7 @@ export default function HomePage() {
       colorbarRange: colorRangeForRequests,
       level: selectedLevelValue ?? null,
       hideZero: globeSettings.hideZeroPrecipitation,
+      smoothGridBoxValues: globeSettings.rasterBlurEnabled,
       keyDatasetId,
     };
     visualizationPrefetchIndexRef.current = 0;
@@ -865,6 +1053,7 @@ export default function HomePage() {
     datasetEndDate,
     datasetStartDate,
     globeSettings.hideZeroPrecipitation,
+    globeSettings.rasterBlurEnabled,
     runVisualizationPrefetch,
     selectedLevelValue,
     visualizationEnd,
@@ -1065,9 +1254,85 @@ export default function HomePage() {
     setGlobeSettings((prev) => ({ ...prev, geographicLinesVisible: visible }));
   }, []);
 
+  const handleTimeZoneLinesToggle = useCallback((visible: boolean) => {
+    setGlobeSettings((prev) => ({ ...prev, timeZoneLinesVisible: visible }));
+  }, []);
+
+  const handlePacificCenteredToggle = useCallback((enabled: boolean) => {
+    setGlobeSettings((prev) => ({ ...prev, pacificCentered: enabled }));
+  }, []);
+
+  const handleCoastlineResolutionChange = useCallback(
+    (resolution: GlobeLineResolution) => {
+      setGlobeSettings((prev) => ({
+        ...prev,
+        coastlineResolution: resolution,
+      }));
+    },
+    [],
+  );
+
+  const handleRiverResolutionChange = useCallback(
+    (resolution: GlobeLineResolution) => {
+      setGlobeSettings((prev) => ({
+        ...prev,
+        riverResolution: resolution,
+      }));
+    },
+    [],
+  );
+
+  const handleLakeResolutionChange = useCallback(
+    (resolution: GlobeLineResolution) => {
+      setGlobeSettings((prev) => ({
+        ...prev,
+        lakeResolution: resolution,
+      }));
+    },
+    [],
+  );
+
+  const handleNaturalEarthGeographicLinesToggle = useCallback(
+    (visible: boolean) => {
+      setGlobeSettings((prev) => ({
+        ...prev,
+        naturalEarthGeographicLinesVisible: visible,
+      }));
+    },
+    [],
+  );
+
+  const handleBaseMapModeChange = useCallback(
+    (mode: "satellite" | "street") => {
+      setGlobeSettings((prev) => ({
+        ...prev,
+        baseMapMode: mode,
+        labelsVisible:
+          mode === "street" ? false : lastSatelliteLabelsVisibleRef.current,
+      }));
+    },
+    [],
+  );
+
+  const handleLabelsToggle = useCallback((visible: boolean) => {
+    setGlobeSettings((prev) => {
+      if (prev.baseMapMode !== "street") {
+        lastSatelliteLabelsVisibleRef.current = visible;
+      }
+      return { ...prev, labelsVisible: visible };
+    });
+  }, []);
+
   const handleRasterBlurToggle = useCallback((enabled: boolean) => {
     setGlobeSettings((prev) => ({ ...prev, rasterBlurEnabled: enabled }));
   }, []);
+
+  const handleBumpMapModeChange = useCallback(
+    (mode: "none" | "land" | "landBathymetry") => {
+      setGlobeSettings((prev) => ({ ...prev, bumpMapMode: mode }));
+    },
+    [],
+  );
 
   const handleRasterOpacityChange = useCallback((opacity: number) => {
     setGlobeSettings((prev) => ({ ...prev, rasterOpacity: opacity }));
@@ -1104,6 +1369,20 @@ export default function HomePage() {
       setGlobeSettings((prev) => ({
         ...prev,
         viewMode: mode ?? "3d",
+      }));
+    },
+    [],
+  );
+
+  const handleProjectionOrientationChange = useCallback(
+    (projectionId: MapProjectionId, orientation: MapOrientation) => {
+      if (!orientation) return;
+      setGlobeSettings((prev) => ({
+        ...prev,
+        mapOrientations: {
+          ...(prev.mapOrientations ?? {}),
+          [projectionId]: orientation,
+        },
       }));
     },
     [],
@@ -1182,6 +1461,7 @@ export default function HomePage() {
     date: selectedDate,
     level: selectedLevelValue ?? null,
     maskZeroValues: globeSettings.hideZeroPrecipitation,
+    smoothGridBoxValues: globeSettings.rasterBlurEnabled,
     colorbarRange,
     prefetchedData: prefetchedRasters,
   });
@@ -1296,11 +1576,25 @@ export default function HomePage() {
         colorbarRange={colorbarRange}
         hideZeroPrecipitation={globeSettings.hideZeroPrecipitation}
         onRegionClick={handleRegionClick}
+        baseMapMode={globeSettings.baseMapMode}
         satelliteLayerVisible={globeSettings.satelliteLayerVisible}
         boundaryLinesVisible={globeSettings.boundaryLinesVisible}
         geographicLinesVisible={globeSettings.geographicLinesVisible}
+        timeZoneLinesVisible={globeSettings.timeZoneLinesVisible}
+        pacificCentered={globeSettings.pacificCentered}
+        coastlineResolution={globeSettings.coastlineResolution}
+        riverResolution={globeSettings.riverResolution}
+        lakeResolution={globeSettings.lakeResolution}
+        naturalEarthGeographicLinesVisible={
+          globeSettings.naturalEarthGeographicLinesVisible
+        }
+        labelsVisible={globeSettings.labelsVisible}
         rasterOpacity={globeSettings.rasterOpacity}
         rasterBlurEnabled={globeSettings.rasterBlurEnabled}
+        bumpMapMode={globeSettings.bumpMapMode}
+        lineColors={lineColors}
+        mapOrientations={globeSettings.mapOrientations}
+        onProjectionOrientationChange={handleProjectionOrientationChange}
         useMeshRaster={useMeshRaster}
         viewMode={globeSettings.viewMode ?? "3d"}
         onRasterMetadataChange={setRasterMeta}
@@ -1321,12 +1615,23 @@ export default function HomePage() {
             onShowTutorial={() => setTutorialOpen(true)}
             onShowSidebarPanel={setActiveSidebarPanel}
             globeSettings={globeSettings}
+            onBaseMapModeChange={handleBaseMapModeChange}
             onSatelliteToggle={handleSatelliteToggle}
             onBoundaryToggle={handleBoundaryToggle}
             onGeographicLinesToggle={handleGeographicLinesToggle}
+            onTimeZoneLinesToggle={handleTimeZoneLinesToggle}
+            onPacificCenteredToggle={handlePacificCenteredToggle}
+            onCoastlineResolutionChange={handleCoastlineResolutionChange}
+            onRiverResolutionChange={handleRiverResolutionChange}
+            onLakeResolutionChange={handleLakeResolutionChange}
+            onNaturalEarthGeographicLinesToggle={
+              handleNaturalEarthGeographicLinesToggle
+            }
+            onLabelsToggle={handleLabelsToggle}
             onRasterOpacityChange={handleRasterOpacityChange}
             onHideZeroPrecipToggle={handleHideZeroPrecipToggle}
             onRasterBlurToggle={handleRasterBlurToggle}
+            onBumpMapModeChange={handleBumpMapModeChange}
             onColorbarRangeChange={handleColorbarRangeChange}
             onColorbarRangeReset={handleColorbarRangeReset}
             viewMode={globeSettings.viewMode ?? "3d"}

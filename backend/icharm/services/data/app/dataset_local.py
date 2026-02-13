@@ -36,6 +36,7 @@ class DatasetLocal:
             logger.info(f"Using cached dataset: {cache_key}")
             return cached
 
+        path_obj: Path | None = None
         try:
             input_file = metadata["inputFile"]
             if input_file.startswith("datasets/"):
@@ -212,6 +213,12 @@ class DatasetLocal:
         except (ValueError, FileNotFoundError, KeyError) as e:
             # FALLBACK: Try NetCDF file
             logger.warning(f"Primary method failed for {metadata['datasetName']}: {e}")
+
+            if path_obj is None:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to access local dataset: {metadata.get('datasetName', 'unknown')} - {str(e)}",
+                )
 
             # Find corresponding .nc file
             nc_path = path_obj.with_suffix(".nc")

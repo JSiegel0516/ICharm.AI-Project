@@ -254,20 +254,13 @@ const ColorBar: React.FC<ColorBarProps> = ({
       datasetText.includes("godas") ||
       datasetText.includes("global ocean data assimilation system") ||
       datasetText.includes("ncep global ocean data assimilation");
-    const isNoaaGlobalTemp =
-      datasetText.includes("noaaglobaltemp") ||
-      datasetText.includes("noaa global temp") ||
-      datasetText.includes("noaa global surface temperature") ||
-      datasetText.includes("noaa global surface temp") ||
-      datasetText.includes("noaa global temperature");
-
     const isGodasDeepLevel =
       isGodas &&
       typeof selectedLevel === "number" &&
       Number.isFinite(selectedLevel) &&
       Math.abs(selectedLevel - 4736) < 0.5;
 
-    return { isGodas, isNoaaGlobalTemp, isGodasDeepLevel };
+    return { isGodas, isGodasDeepLevel };
   }, [dataset, selectedLevel]);
 
   const colorScale = useMemo(() => {
@@ -276,9 +269,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
     const GODAS_DEFAULT_MAX = 0.0000005;
     const GODAS_DEEP_MIN = -0.0000005;
     const GODAS_DEEP_MAX = 0.0000005;
-    const NOAAGLOBALTEMP_DEFAULT_MIN = -2;
-    const NOAAGLOBALTEMP_DEFAULT_MAX = 2;
-    const { isGodas, isNoaaGlobalTemp, isGodasDeepLevel } = datasetFlags;
+    const { isGodas, isGodasDeepLevel } = datasetFlags;
 
     const preferBaselineRange = false;
 
@@ -305,9 +296,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
         ? GODAS_DEEP_MAX
         : GODAS_DEFAULT_MAX
       : null;
-    const noaaDefaultMin = isNoaaGlobalTemp ? NOAAGLOBALTEMP_DEFAULT_MIN : null;
-    const noaaDefaultMax = isNoaaGlobalTemp ? NOAAGLOBALTEMP_DEFAULT_MAX : null;
-
     const metaMin =
       !preferBaselineRange &&
       typeof rasterMeta?.min === "number" &&
@@ -322,17 +310,9 @@ const ColorBar: React.FC<ColorBarProps> = ({
         : null;
 
     const min =
-      overrideMin ??
-      godasDefaultMin ??
-      noaaDefaultMin ??
-      metaMin ??
-      dataset.colorScale.min;
+      overrideMin ?? godasDefaultMin ?? metaMin ?? dataset.colorScale.min;
     const max =
-      overrideMax ??
-      godasDefaultMax ??
-      noaaDefaultMax ??
-      metaMax ??
-      dataset.colorScale.max;
+      overrideMax ?? godasDefaultMax ?? metaMax ?? dataset.colorScale.max;
     const safeMin = Number.isFinite(min) ? Number(min) : 0;
     const safeMax = Number.isFinite(max) ? Number(max) : safeMin;
 

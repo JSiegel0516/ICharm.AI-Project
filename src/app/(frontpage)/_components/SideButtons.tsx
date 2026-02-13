@@ -27,7 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { GlobeSettingsPanel } from "@/app/(frontpage)/_components/GlobeSettingsPanel";
 import { useAppState } from "@/context/HeaderContext";
-import type { Dataset, GlobeSettings } from "@/types";
+import type { Dataset, GlobeSettings, GlobeLineResolution } from "@/types";
 import { Database, Cloud, Server, Globe } from "lucide-react";
 
 interface SideButtonsProps {
@@ -36,12 +36,21 @@ interface SideButtonsProps {
   onShowTutorial: () => void;
   onShowSidebarPanel: (panel: "datasets" | "history" | "about" | null) => void;
   globeSettings: GlobeSettings;
+  onBaseMapModeChange: (mode: "satellite" | "street") => void;
   onSatelliteToggle: (visible: boolean) => void;
   onBoundaryToggle: (visible: boolean) => void;
   onGeographicLinesToggle: (visible: boolean) => void;
+  onTimeZoneLinesToggle: (visible: boolean) => void;
+  onPacificCenteredToggle: (enabled: boolean) => void;
+  onCoastlineResolutionChange: (resolution: GlobeLineResolution) => void;
+  onRiverResolutionChange: (resolution: GlobeLineResolution) => void;
+  onLakeResolutionChange: (resolution: GlobeLineResolution) => void;
+  onNaturalEarthGeographicLinesToggle: (visible: boolean) => void;
+  onLabelsToggle: (visible: boolean) => void;
   onRasterOpacityChange: (opacity: number) => void;
   onHideZeroPrecipToggle: (enabled: boolean) => void;
   onRasterBlurToggle: (enabled: boolean) => void;
+  onBumpMapModeChange: (mode: "none" | "land" | "landBathymetry") => void;
   onColorbarRangeChange: (payload: {
     min: number | null;
     max: number | null;
@@ -71,12 +80,21 @@ export function SideButtons({
   onShowTutorial,
   onShowSidebarPanel,
   globeSettings,
+  onBaseMapModeChange,
   onSatelliteToggle,
   onBoundaryToggle,
   onGeographicLinesToggle,
+  onTimeZoneLinesToggle,
+  onPacificCenteredToggle,
+  onCoastlineResolutionChange,
+  onRiverResolutionChange,
+  onLakeResolutionChange,
+  onNaturalEarthGeographicLinesToggle,
+  onLabelsToggle,
   onRasterOpacityChange,
   onHideZeroPrecipToggle,
   onRasterBlurToggle,
+  onBumpMapModeChange,
   onColorbarRangeChange,
   onColorbarRangeReset,
   viewMode,
@@ -619,7 +637,7 @@ export function SideButtons({
                             {dataset?.layerParameter} - {dataset?.statistic}
                           </p>
                           <div className="flex flex-wrap items-center gap-3">
-                            {/*** 
+                            {/***
                             <Badge variant="outline" className="text-xs">
                               {category}
                             </Badge>
@@ -721,18 +739,40 @@ export function SideButtons({
       <GlobeSettingsPanel
         isOpen={showGlobeSettings}
         onClose={closeGlobeSettings}
+        baseMapMode={globeSettings.baseMapMode ?? "satellite"}
+        onBaseMapModeChange={onBaseMapModeChange}
         satelliteLayerVisible={globeSettings.satelliteLayerVisible}
         onSatelliteLayerToggle={onSatelliteToggle}
         boundaryLinesVisible={globeSettings.boundaryLinesVisible}
         onBoundaryLinesToggle={onBoundaryToggle}
         geographicLinesVisible={globeSettings.geographicLinesVisible}
         onGeographicLinesToggle={onGeographicLinesToggle}
+        timeZoneLinesVisible={globeSettings.timeZoneLinesVisible}
+        onTimeZoneLinesToggle={onTimeZoneLinesToggle}
+        pacificCentered={globeSettings.pacificCentered}
+        onPacificCenteredToggle={onPacificCenteredToggle}
+        coastlineResolution={globeSettings.coastlineResolution}
+        onCoastlineResolutionChange={onCoastlineResolutionChange}
+        riverResolution={globeSettings.riverResolution}
+        onRiverResolutionChange={onRiverResolutionChange}
+        lakeResolution={globeSettings.lakeResolution}
+        onLakeResolutionChange={onLakeResolutionChange}
+        naturalEarthGeographicLinesVisible={
+          globeSettings.naturalEarthGeographicLinesVisible
+        }
+        onNaturalEarthGeographicLinesToggle={
+          onNaturalEarthGeographicLinesToggle
+        }
+        labelsVisible={globeSettings.labelsVisible}
+        onLabelsToggle={onLabelsToggle}
         rasterOpacity={globeSettings.rasterOpacity}
         onRasterOpacityChange={onRasterOpacityChange}
         hideZeroPrecipitation={globeSettings.hideZeroPrecipitation}
         onHideZeroPrecipitationToggle={onHideZeroPrecipToggle}
         rasterBlurEnabled={globeSettings.rasterBlurEnabled}
         onRasterBlurToggle={onRasterBlurToggle}
+        bumpMapMode={globeSettings.bumpMapMode}
+        onBumpMapModeChange={onBumpMapModeChange}
         colorbarCustomMin={globeSettings.colorbarCustomMin}
         colorbarCustomMax={globeSettings.colorbarCustomMax}
         onColorbarRangeChange={onColorbarRangeChange}

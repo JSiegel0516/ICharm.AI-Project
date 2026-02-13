@@ -32,8 +32,13 @@ services:
       LLAMA_API_KEY: ${LLAMA_API_KEY:-}
       LLAMA_MODEL: ${LLAMA_MODEL:-meta-llama/Llama-3.1-8B-Instruct}
       HF_CHAT_URL: ${HF_CHAT_URL:-https://router.huggingface.co/v1/chat/completions}
+      DATA_API_URL: ${DATA_API_URL:-http://data-api:8000}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     ports:
       - "${LLM_SERVICE_PORT:-8001}:8000"
+    volumes:
+      - ./backend/icharm/services/llm/app/chroma_db:/app/chroma_db
     depends_on:
       db:
         condition: service_started
