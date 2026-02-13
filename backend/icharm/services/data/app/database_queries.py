@@ -77,20 +77,20 @@ class DatabaseQueries:
                     parameters["stored"] = stored.lower()
 
                 if source:
-                    query += "AND LOWER(sourceName) ILIKE :source\n"
+                    query += 'AND LOWER("sourceName") ILIKE :source\n'
                     parameters["source"] = source.lower()
 
                 if search:
                     query += """AND (
-                        LOWER(datasetName) ILIKE :search" OR
-                        LOWER(layerParameter) ILIKE :search" OR
-                        LOWER(slug) ILIKE :search"
+                        LOWER("datasetName") ILIKE :search OR
+                        LOWER("layerParameter") ILIKE :search OR
+                        LOWER("slug") ILIKE :search
                         )
                     """
                     parameters["search"] = f"%{search.lower()}%"
 
                 # Add ORDER BY to the query
-                query += "ORDER BY datasetName ASC"
+                query += '\nORDER BY "datasetName" ASC'
 
                 # Query by UUID id column instead of datasetName
                 results = conn.execute(
