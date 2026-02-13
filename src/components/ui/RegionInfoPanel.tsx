@@ -417,6 +417,23 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     [isCollapsed, position],
   );
 
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      if (isCollapsed) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      const touch = e.touches[0];
+      setIsDragging(true);
+      setDragStart({
+        x: touch.clientX - position.x,
+        y: touch.clientY - position.y,
+      });
+    },
+    [isCollapsed, position],
+  );
+
   const calculateDateRange = useCallback((): { start: Date; end: Date } => {
     let targetDate = selectedDate ?? datasetEnd ?? new Date();
 
@@ -791,13 +808,11 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     }
   }, [isCollapsed, colorBarPosition.x, colorBarCollapsed]);
 
+  // Handle dragging (mouse + touch)
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging || isCollapsed) return;
+    if (!isDragging || isCollapsed) return;
 
-      const newX = e.clientX - dragStart.x;
-      const newY = e.clientY - dragStart.y;
-
+    const clampPosition = (rawX: number, rawY: number) => {
       const panelElement = panelRef.current;
       const panelWidth = panelElement
         ? panelElement.offsetWidth
@@ -809,26 +824,44 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       const maxX = window.innerWidth - panelWidth;
       const maxY = window.innerHeight - panelHeight;
 
-      setPosition({
-        x: Math.min(Math.max(0, newX), maxX),
-        y: Math.min(Math.max(0, newY), maxY),
-      });
+      return {
+        x: Math.min(Math.max(0, rawX), maxX),
+        y: Math.min(Math.max(0, rawY), maxY),
+      };
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const newX = e.clientX - dragStart.x;
+      const newY = e.clientY - dragStart.y;
+      setPosition(clampPosition(newX, newY));
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      e.preventDefault(); // Prevent iOS scroll/bounce
+      const touch = e.touches[0];
+      const newX = touch.clientX - dragStart.x;
+      const newY = touch.clientY - dragStart.y;
+      setPosition(clampPosition(newX, newY));
     };
 
     const handleMouseUp = () => {
-      if (isDragging) {
-        setIsDragging(false);
-      }
+      setIsDragging(false);
     };
 
-    if (isDragging) {
-      document.addEventListener("mousemove", handleMouseMove);
-      document.addEventListener("mouseup", handleMouseUp);
-    }
+    const handleTouchEnd = () => {
+      setIsDragging(false);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    document.addEventListener("touchmove", handleTouchMove, { passive: false });
+    document.addEventListener("touchend", handleTouchEnd);
 
     return () => {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
+      document.removeEventListener("touchmove", handleTouchMove);
+      document.removeEventListener("touchend", handleTouchEnd);
     };
   }, [isDragging, dragStart, isCollapsed]);
 
@@ -874,6 +907,8 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
               <div
                 className={`flex h-3 items-center justify-center gap-0.5 px-2 sm:h-3.5 sm:gap-1 ${isDragging ? "cursor-grabbing" : "cursor-grab"} select-none`}
                 onMouseDown={handleMouseDown}
+                onTouchStart={handleTouchStart}
+                style={{ touchAction: "none" }}
                 title="Drag to move"
               >
                 <div className="dot"></div>

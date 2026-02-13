@@ -7,7 +7,7 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-import { Play, Pause } from "lucide-react";
+import { CalendarIcon } from "lucide-react";
 import { useAppState } from "@/context/HeaderContext";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -15,6 +15,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
+import { Field } from "@/components/ui/field";
 
 interface TimeBarProps {
   selectedDate?: Date;
@@ -26,6 +33,17 @@ interface TimeBarProps {
   disableAutoplay?: boolean;
   disablePlayButton?: boolean;
 }
+
+const formatDateDisplay = (date: Date, includeDay: boolean): string => {
+  const options: Intl.DateTimeFormatOptions = {
+    year: "numeric",
+    month: "long",
+  };
+  if (includeDay) {
+    options.day = "numeric";
+  }
+  return date.toLocaleDateString("en-US", options);
+};
 
 const TimeBar: React.FC<TimeBarProps> = ({
   selectedDate = new Date(),
@@ -44,27 +62,33 @@ const TimeBar: React.FC<TimeBarProps> = ({
   const [showTooltip, setShowTooltip] = useState(false);
   const [tooltipPosition, setTooltipPosition] = useState(0);
   const [previewDate, setPreviewDate] = useState(selectedDate);
-  const [showCalendar, setShowCalendar] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [dateInputValue, setDateInputValue] = useState("");
 
   const sliderRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const playIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const rafRef = useRef<number | null>(null);
 
-  // Get date range from current dataset, fallback to default range
+  // Determine if dataset uses daily granularity
+  const isDailyDataset = useMemo(() => {
+    const name = currentDataset?.name?.toLowerCase() ?? "";
+    return name.includes("cmorph") || name.includes("cdr sst");
+  }, [currentDataset]);
+
+  // Date range from current dataset
   const minDate = useMemo(() => {
-    if (currentDataset?.startDate) {
-      return currentDataset.startDate;
-    }
-    return new Date(1979, 0, 1);
+    return currentDataset?.startDate ?? new Date(1979, 0, 1);
   }, [currentDataset]);
 
   const maxDate = useMemo(() => {
-    if (currentDataset?.endDate) {
-      return currentDataset.endDate;
-    }
-    return new Date();
+    return currentDataset?.endDate ?? new Date();
   }, [currentDataset]);
+
+  // Keep input value in sync with selectedDate when not actively editing
+  useEffect(() => {
+    setDateInputValue(formatDateDisplay(selectedDate, isDailyDataset));
+  }, [selectedDate, isDailyDataset]);
 
   useEffect(() => {
     if (!isDragging) {
@@ -72,6 +96,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
     }
   }, [selectedDate, isDragging]);
 
+  // Slider math
   const minMonthIndex = minDate.getFullYear() * 12 + minDate.getMonth();
   const maxMonthIndex = maxDate.getFullYear() * 12 + maxDate.getMonth();
   const minYear = minDate.getFullYear();
@@ -89,54 +114,55 @@ const TimeBar: React.FC<TimeBarProps> = ({
     [minMonthIndex, monthRange],
   );
 
-  const formatDate = useCallback(
-    (date: Date) => {
-      const name = currentDataset?.name?.toLowerCase() ?? "";
-      const backendName = currentDataset?.name?.toLowerCase() ?? "";
-      const isDaily =
-        name.includes("cmorph") ||
-        backendName.includes("cmorph") ||
-        name.includes("cdr sst") ||
-        backendName.includes("cdr sst");
-
-      const options: Intl.DateTimeFormatOptions = {
-        year: "numeric",
-        month: "long",
-      };
-
-      if (isDaily) {
-        options.day = "numeric";
-      }
-
-      return date.toLocaleDateString("en-US", options);
+  const clampDate = useCallback(
+    (date: Date): Date => {
+      if (date < minDate) return minDate;
+      if (date > maxDate) return maxDate;
+      return date;
     },
-    [currentDataset],
+    [minDate, maxDate],
   );
 
-  const setDate = useCallback(
+  const commitDate = useCallback(
     (date: Date) => {
-      try {
-        // Clamp date to valid range
-        let clampedDate = date;
-        if (date < minDate) {
-          clampedDate = minDate;
-        } else if (date > maxDate) {
-          clampedDate = maxDate;
-        }
-
-        const newDate = new Date(
-          clampedDate.getFullYear(),
-          clampedDate.getMonth(),
-          clampedDate.getDate(),
-        );
-        onDateChange?.(newDate);
-      } catch (error) {
-        console.error("Error setting date:", error);
-      }
+      const clamped = clampDate(date);
+      const normalized = new Date(
+        clamped.getFullYear(),
+        clamped.getMonth(),
+        clamped.getDate(),
+      );
+      onDateChange?.(normalized);
     },
-    [minDate, maxDate, onDateChange],
+    [clampDate, onDateChange],
   );
 
+  // Parse a user-typed date string and commit it
+  const commitDateFromInput = useCallback(
+    (value: string) => {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        setDateInputValue(formatDateDisplay(selectedDate, isDailyDataset));
+        return;
+      }
+
+      const parsed = new Date(trimmed);
+      if (Number.isNaN(parsed.getTime())) {
+        // Invalid input -- revert
+        setDateInputValue(formatDateDisplay(selectedDate, isDailyDataset));
+        return;
+      }
+
+      // For monthly datasets, snap to the 1st of the month
+      if (!isDailyDataset) {
+        parsed.setDate(1);
+      }
+
+      commitDate(parsed);
+    },
+    [selectedDate, isDailyDataset, commitDate],
+  );
+
+  // Slider interaction
   const updateMonth = useCallback(
     (clientX: number) => {
       if (!trackRef.current) return;
@@ -158,9 +184,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
           baseDate.getDate(),
         );
 
-        let clamped = tentative;
-        if (tentative < minDate) clamped = minDate;
-        if (tentative > maxDate) clamped = maxDate;
+        const clamped = clampDate(tentative);
 
         setPreviewDate(clamped);
         setTooltipPosition(percentage);
@@ -172,8 +196,7 @@ const TimeBar: React.FC<TimeBarProps> = ({
       previewDate,
       isDragging,
       getMonthIndexFromPosition,
-      minDate,
-      maxDate,
+      clampDate,
     ],
   );
 
@@ -196,9 +219,9 @@ const TimeBar: React.FC<TimeBarProps> = ({
 
   const handleInteractionEnd = useCallback(() => {
     setIsDragging(false);
-    setDate(previewDate);
+    commitDate(previewDate);
     setTimeout(() => setShowTooltip(false), 1500);
-  }, [previewDate, setDate]);
+  }, [previewDate, commitDate]);
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -237,23 +260,21 @@ const TimeBar: React.FC<TimeBarProps> = ({
   );
 
   const handlePlayPause = useCallback(() => {
-    if (disablePlayButton) {
-      return;
-    }
-    const newIsPlaying = !isPlaying;
-    onPlayPause?.(newIsPlaying);
+    if (disablePlayButton) return;
+    onPlayPause?.(!isPlaying);
   }, [disablePlayButton, isPlaying, onPlayPause]);
 
   const handleCalendarSelect = useCallback(
     (date: Date | undefined) => {
       if (date) {
-        setDate(date);
-        setShowCalendar(false);
+        commitDate(date);
+        setCalendarOpen(false);
       }
     },
-    [setDate],
+    [commitDate],
   );
 
+  // Autoplay effect
   useEffect(() => {
     if (!disableAutoplay && isPlaying && !playIntervalRef.current) {
       playIntervalRef.current = setInterval(() => {
@@ -286,22 +307,21 @@ const TimeBar: React.FC<TimeBarProps> = ({
     disableAutoplay,
   ]);
 
+  // Global drag listeners
   useEffect(() => {
-    if (isDragging) {
-      document.addEventListener("mousemove", handleMouseMove);
-      document.addEventListener("mouseup", handleMouseUp);
-      document.addEventListener("touchmove", handleTouchMove, {
-        passive: false,
-      });
-      document.addEventListener("touchend", handleTouchEnd);
+    if (!isDragging) return;
 
-      return () => {
-        document.removeEventListener("mousemove", handleMouseMove);
-        document.removeEventListener("mouseup", handleMouseUp);
-        document.removeEventListener("touchmove", handleTouchMove);
-        document.removeEventListener("touchend", handleTouchEnd);
-      };
-    }
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    document.addEventListener("touchmove", handleTouchMove, { passive: false });
+    document.addEventListener("touchend", handleTouchEnd);
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.removeEventListener("touchmove", handleTouchMove);
+      document.removeEventListener("touchend", handleTouchEnd);
+    };
   }, [
     isDragging,
     handleMouseMove,
@@ -327,53 +347,63 @@ const TimeBar: React.FC<TimeBarProps> = ({
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => !isDragging && setIsHovered(false)}
         >
+          {/* Controls row: play button + date input */}
           <div className="relative mb-2 flex items-center justify-center gap-2">
-            <button
-              onClick={handlePlayPause}
-              disabled={disablePlayButton}
-              className={`flex h-5 w-5 items-center justify-center rounded-full transition-all duration-200 hover:scale-110 focus:outline-none ${
-                isPlaying || isActive
-                  ? "border border-white/30 bg-white/20 text-white"
-                  : "border border-gray-500/30 bg-gray-600/40 text-gray-400 hover:border-white/20 hover:bg-white/10 hover:text-white"
-              }`}
-              title={isPlaying ? "Pause" : "Play"}
-              type="button"
-              aria-label={isPlaying ? "Pause animation" : "Play animation"}
-            >
-              {isPlaying ? <Pause size={12} /> : <Play size={12} />}
-            </button>
-
-            <Popover open={showCalendar} onOpenChange={setShowCalendar}>
-              <PopoverTrigger asChild>
-                <button
-                  className={`group flex items-center gap-2 rounded-lg px-3 py-1 text-base font-medium transition-all duration-200 hover:bg-white/10 ${
-                    isActive
-                      ? "scale-105 text-white"
-                      : "text-gray-200 hover:text-white"
-                  }`}
-                  title="Click to edit date"
-                  type="button"
-                  aria-label="Edit date"
-                >
-                  <span>{formatDate(displayDate)}</span>
-                </button>
-              </PopoverTrigger>
-              <PopoverContent
-                className="w-auto border-0 p-0 shadow-none"
-                align="center"
-              >
-                <Calendar
-                  mode="single"
-                  className="rounded-md border shadow-sm select-none"
-                  selected={selectedDate}
-                  onSelect={handleCalendarSelect}
-                  defaultMonth={selectedDate}
-                  disabled={(date) => date < minDate || date > maxDate}
-                  autoFocus
+            <Field className="mx-auto w-42">
+              <InputGroup>
+                <InputGroupInput
+                  id="date-input"
+                  value={dateInputValue}
+                  placeholder={isDailyDataset ? "Jan 15, 2020" : "January 2020"}
+                  onChange={(e) => setDateInputValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      commitDateFromInput(dateInputValue);
+                      (e.target as HTMLInputElement).blur();
+                    }
+                    if (e.key === "Escape") {
+                      setCalendarOpen(false);
+                    }
+                  }}
+                  onBlur={() => commitDateFromInput(dateInputValue)}
                 />
-              </PopoverContent>
-            </Popover>
+                <InputGroupAddon align="inline-end">
+                  <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+                    <PopoverTrigger asChild>
+                      <InputGroupButton
+                        id="date-picker"
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label="Select date"
+                      >
+                        <CalendarIcon />
+                      </InputGroupButton>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      className="w-auto overflow-hidden p-0"
+                      align="end"
+                      alignOffset={-8}
+                      sideOffset={10}
+                    >
+                      <Calendar
+                        mode="single"
+                        captionLayout="dropdown"
+                        className="rounded-md border shadow-sm select-none"
+                        selected={selectedDate}
+                        onSelect={handleCalendarSelect}
+                        defaultMonth={selectedDate}
+                        disabled={(date) => date < minDate || date > maxDate}
+                        autoFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </InputGroupAddon>
+              </InputGroup>
+            </Field>
           </div>
+
+          {/* Slider track */}
           <div
             className={`relative h-1 touch-none ${
               isDragging ? "cursor-grabbing" : "cursor-grab"

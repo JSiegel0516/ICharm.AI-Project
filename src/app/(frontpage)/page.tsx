@@ -458,24 +458,31 @@ export default function HomePage() {
     if (!currentDataset) return new Date();
     return datasetEndDate;
   }, [currentDataset, datasetEndDate]);
-
-  // FIXED: Set the selected date to the dataset's most recent date when dataset changes
+  // Clamp selectedDate to the new dataset's valid range when switching datasets
   useEffect(() => {
-    if (!currentDataset || !currentDataset.id) return;
+    const datasetId = currentDataset?.id;
+    if (!datasetId) return;
 
-    // Only set the initial date if we haven't set it for this dataset yet
-    const datasetId = currentDataset.id;
-    if (initialDateSetRef.current !== datasetId) {
-      console.log(
-        "Setting initial date for dataset:",
-        datasetId,
-        "to:",
-        defaultDateForDataset,
-      );
-      setSelectedDate(defaultDateForDataset);
-      initialDateSetRef.current = datasetId;
+    if (initialDateSetRef.current === datasetId) return;
+    initialDateSetRef.current = datasetId;
+
+    // Keep the current date if it's within range, otherwise clamp
+    const clamped = clampDateToRange(
+      selectedDate,
+      datasetStartDate,
+      datasetEndDate,
+    );
+
+    if (clamped.getTime() !== selectedDate.getTime()) {
+      setSelectedDate(clamped);
     }
-  }, [currentDataset, defaultDateForDataset, setSelectedDate]);
+  }, [
+    currentDataset?.id,
+    selectedDate,
+    datasetStartDate,
+    datasetEndDate,
+    setSelectedDate,
+  ]);
 
   const totalDatasetDays = useMemo(
     () =>
@@ -1417,7 +1424,7 @@ export default function HomePage() {
         </div>
 
         {/* Color Bar */}
-        <div className="pointer-events-auto">
+        <div className="pointer-events-auto z-9999">
           <ColorBar
             show={showColorbar}
             onToggle={toggleColorbar}
