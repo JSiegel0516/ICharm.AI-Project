@@ -1,6 +1,6 @@
 export type BoundaryDataset = {
   name: string;
-  kind: "boundary" | "geographicLines";
+  kind: "boundary" | "geographicLines" | "timeZones";
   data: any;
 };
 
@@ -16,6 +16,7 @@ export const loadGeographicBoundaries = async (options: {
   lakeResolution: "none" | "low" | "medium" | "high";
   includeGeographicLines: boolean;
   includeBoundaries: boolean;
+  includeTimeZones?: boolean;
 }): Promise<BoundaryDataset[]> => {
   console.log("[CesiumBoundaries] loadGeographicBoundaries", options);
   const files: Array<{
@@ -53,6 +54,13 @@ export const loadGeographicBoundaries = async (options: {
       name: "ne_110m_geographic_lines.json",
       kind: "geographicLines",
       path: "/_countries/ne_110m_geographic_lines.json",
+    });
+  }
+  if (options.includeTimeZones) {
+    files.push({
+      name: "ne_10m_time_zones.json",
+      kind: "timeZones",
+      path: "/_countries/ne_10m_time_zones.json",
     });
   }
 
@@ -100,6 +108,7 @@ export const addGeographicBoundaries = (
     geographicLines?: string;
     geographicGrid?: string;
   },
+  includeTimeZoneLines = false,
 ) => {
   const thickness = 1;
   console.log(
@@ -108,6 +117,7 @@ export const addGeographicBoundaries = (
   );
   const boundaryEntities: any[] = [];
   const geographicLineEntities: any[] = [];
+  const timeZoneLineEntities: any[] = [];
   const naturalEarthLineEntities: any[] = [];
   const coastlineColorCss =
     lineColors?.coastlines ?? lineColors?.boundaryLines ?? "#000000";
@@ -152,10 +162,13 @@ export const addGeographicBoundaries = (
   boundaryData.forEach(({ name, kind, data }) => {
     const isGeographicLines =
       kind === "geographicLines" || name.includes("geographic_lines");
+    const isTimeZones = kind === "timeZones" || name.includes("time_zones");
 
-    const targetCollection = isGeographicLines
-      ? naturalEarthLineEntities
-      : boundaryEntities;
+    const targetCollection = isTimeZones
+      ? timeZoneLineEntities
+      : isGeographicLines
+        ? naturalEarthLineEntities
+        : boundaryEntities;
 
     if (Array.isArray(data?.Lon) && Array.isArray(data?.Lat)) {
       let color = Cesium.Color.fromCssColorString("#f8fafc").withAlpha(0.8);
@@ -176,6 +189,11 @@ export const addGeographicBoundaries = (
           geographicLineColorCss,
         ).withAlpha(0.6);
         width = 1;
+      } else if (isTimeZones) {
+        color = Cesium.Color.fromCssColorString(
+          geographicGridColorCss,
+        ).withAlpha(0.55);
+        width = 1.1;
       }
 
       const positions: any[] = [];
@@ -199,16 +217,12 @@ export const addGeographicBoundaries = (
         segments += 1;
       }
 
-      console.log(
-        "[CesiumBoundaries] processed lon/lat",
-        name,
-        "segments",
+      console.log("[CesiumBoundaries] processed lon/lat", name, "segments", {
         segments,
-        "entities",
-        isGeographicLines
-          ? naturalEarthLineEntities.length
-          : boundaryEntities.length,
-      );
+        boundaryEntities: boundaryEntities.length,
+        geographicLineEntities: naturalEarthLineEntities.length,
+        timeZoneLineEntities: timeZoneLineEntities.length,
+      });
       return;
     }
 
@@ -231,6 +245,11 @@ export const addGeographicBoundaries = (
           geographicLineColorCss,
         ).withAlpha(0.6);
         width = 1 * thickness;
+      } else if (isTimeZones) {
+        color = Cesium.Color.fromCssColorString(
+          geographicGridColorCss,
+        ).withAlpha(0.55);
+        width = 1.1 * thickness;
       }
 
       data.features.forEach((feature: any) => {
@@ -257,16 +276,12 @@ export const addGeographicBoundaries = (
         }
       });
 
-      console.log(
-        "[CesiumBoundaries] processed",
-        name,
-        "features",
-        data.features.length,
-        "entities",
-        isGeographicLines
-          ? naturalEarthLineEntities.length
-          : boundaryEntities.length,
-      );
+      console.log("[CesiumBoundaries] processed", name, "features", {
+        count: data.features.length,
+        boundaryEntities: boundaryEntities.length,
+        geographicLineEntities: naturalEarthLineEntities.length,
+        timeZoneLineEntities: timeZoneLineEntities.length,
+      });
     }
   });
 
@@ -316,8 +331,13 @@ export const addGeographicBoundaries = (
     addLonLine(lon);
   }
 
+  if (includeTimeZoneLines && timeZoneLineEntities.length === 0) {
+    console.warn("[CesiumBoundaries] time zones enabled but dataset missing");
+  }
+
   console.log("[CesiumBoundaries] grid lines", {
     geographicLineEntities: geographicLineEntities.length,
+    timeZoneLineEntities: timeZoneLineEntities.length,
     boundaryEntities: boundaryEntities.length,
     naturalEarthLineEntities: naturalEarthLineEntities.length,
   });
@@ -325,6 +345,7 @@ export const addGeographicBoundaries = (
   return {
     boundaryEntities,
     geographicLineEntities,
+    timeZoneLineEntities,
     naturalEarthLineEntities,
   };
 };

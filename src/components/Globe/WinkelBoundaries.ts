@@ -5,7 +5,7 @@ import type { GlobeLineResolution, LineColorSettings } from "@/types";
 
 export type BoundaryDataset = {
   name: string;
-  kind: "boundary" | "geographicLines";
+  kind: "boundary" | "geographicLines" | "timeZones";
   data: any;
 };
 
@@ -21,6 +21,7 @@ export const loadNaturalEarthBoundaries = async (options: {
   lakeResolution: GlobeLineResolution;
   includeGeographicLines: boolean;
   includeBoundaries: boolean;
+  includeTimeZones?: boolean;
 }): Promise<BoundaryDataset[]> => {
   const files: Array<{
     name: string;
@@ -57,6 +58,13 @@ export const loadNaturalEarthBoundaries = async (options: {
       name: "ne_110m_geographic_lines.json",
       kind: "geographicLines",
       path: "/assets/naturalearth/geographic/ne_110m_geographic_lines.json",
+    });
+  }
+  if (options.includeTimeZones) {
+    files.push({
+      name: "ne_10m_time_zones.json",
+      kind: "timeZones",
+      path: "/_countries/ne_10m_time_zones.json",
     });
   }
 
@@ -126,6 +134,7 @@ export class WinkelBoundaries {
     boundaryData: BoundaryDataset[],
     options: {
       showGraticule: boolean;
+      showTimeZoneLines: boolean;
       lineColors?: LineColorSettings;
     },
   ) {
@@ -184,10 +193,16 @@ export class WinkelBoundaries {
     }
 
     boundaryData.forEach((dataset) => {
+      if (dataset.kind === "timeZones" && !options.showTimeZoneLines) {
+        return;
+      }
       let stroke = coastlineColor;
       if (dataset.name.includes("rivers")) stroke = riverColor;
       if (dataset.name.includes("lakes")) stroke = lakeColor;
       if (dataset.kind === "geographicLines") stroke = geographicLineColor;
+      if (dataset.kind === "timeZones") stroke = graticuleColor;
+      const isTimeZones = dataset.kind === "timeZones";
+      const isGeographic = dataset.kind === "geographicLines";
       this.svg
         .append("path")
         .datum(dataset.data)
@@ -196,9 +211,9 @@ export class WinkelBoundaries {
         .attr("stroke", stroke)
         .attr(
           "stroke-width",
-          (dataset.kind === "geographicLines" ? 0.5 : 0.7) * lineThickness,
+          (isGeographic ? 0.5 : isTimeZones ? 0.55 : 0.7) * lineThickness,
         )
-        .attr("opacity", dataset.kind === "geographicLines" ? 0.8 : 0.9)
+        .attr("opacity", isGeographic ? 0.8 : isTimeZones ? 0.6 : 0.9)
         .attr("clip-path", `url(#${clipId})`)
         .attr("d", this.pathGenerator);
     });

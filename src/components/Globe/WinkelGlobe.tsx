@@ -19,6 +19,8 @@ type Props = {
   smoothGridBoxValues: boolean;
   boundaryLinesVisible: boolean;
   geographicLinesVisible: boolean;
+  timeZoneLinesVisible: boolean;
+  pacificCentered: boolean;
   coastlineResolution?: GlobeLineResolution;
   riverResolution?: GlobeLineResolution;
   lakeResolution?: GlobeLineResolution;

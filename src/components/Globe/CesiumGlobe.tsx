@@ -49,6 +49,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       satelliteLayerVisible = true,
       boundaryLinesVisible = true,
       geographicLinesVisible = false,
+      timeZoneLinesVisible = false,
       coastlineResolution = "low",
       riverResolution = "none",
       lakeResolution = "none",
@@ -58,6 +59,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       rasterBlurEnabled = false,
       hideZeroPrecipitation = false,
       bumpMapMode = "none",
+      pacificCentered = false,
       useMeshRaster = false,
       lineColors,
       mapOrientations,
@@ -99,6 +101,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
     const streetOverlayLayerRef = useRef<any>(null);
     const boundaryEntitiesRef = useRef<any[]>([]);
     const geographicLineEntitiesRef = useRef<any[]>([]);
+    const timeZoneLineEntitiesRef = useRef<any[]>([]);
     const naturalEarthLineEntitiesRef = useRef<any[]>([]);
     const rasterLayerRef = useRef<any[]>([]);
     const textureLoadIdRef = useRef(0);
@@ -1790,6 +1793,22 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
     }, [effectiveViewMode, enforceInfiniteScrollDisabled]);
 
     useEffect(() => {
+      if (!viewerRef.current || !cesiumInstance || !viewerReady) return;
+      if (effectiveViewMode !== "2d") return;
+      const viewer = viewerRef.current;
+      const current = viewer.camera?.positionCartographic;
+      const height = current?.height ?? 20000000;
+      const targetLon = pacificCentered ? 180 : 0;
+      viewer.camera.setView({
+        destination: cesiumInstance.Cartesian3.fromDegrees(
+          targetLon,
+          0,
+          height,
+        ),
+      });
+    }, [pacificCentered, effectiveViewMode, viewerReady, cesiumInstance]);
+
+    useEffect(() => {
       if (!satelliteLayerRef.current) return;
 
       satelliteLayerRef.current.show =
@@ -1827,6 +1846,15 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
     }, [geographicLinesVisible, effectiveViewMode]);
 
     useEffect(() => {
+      if (timeZoneLineEntitiesRef.current.length === 0) return;
+
+      timeZoneLineEntitiesRef.current.forEach((entity) => {
+        entity.show =
+          effectiveViewMode === "ortho" ? false : timeZoneLinesVisible;
+      });
+    }, [timeZoneLinesVisible, effectiveViewMode]);
+
+    useEffect(() => {
       if (naturalEarthLineEntitiesRef.current.length === 0) return;
 
       naturalEarthLineEntitiesRef.current.forEach((entity) => {
@@ -1858,6 +1886,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
         riverResolution,
         lakeResolution,
         includeGeographic: naturalEarthGeographicLinesVisible,
+        includeTimeZones: timeZoneLinesVisible,
         lineColors: lineColors ?? null,
       });
       const configChanged = boundaryConfigRef.current !== configKey;
@@ -1866,9 +1895,11 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
         removeEntities(boundaryEntitiesRef.current);
         removeEntities(naturalEarthLineEntitiesRef.current);
         removeEntities(geographicLineEntitiesRef.current);
+        removeEntities(timeZoneLineEntitiesRef.current);
         boundaryEntitiesRef.current = [];
         naturalEarthLineEntitiesRef.current = [];
         geographicLineEntitiesRef.current = [];
+        timeZoneLineEntitiesRef.current = [];
       }
 
       if (!boundaryLinesVisible && boundaryEntitiesRef.current.length) {
@@ -1878,6 +1909,10 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       if (!geographicLinesVisible && geographicLineEntitiesRef.current.length) {
         removeEntities(geographicLineEntitiesRef.current);
         geographicLineEntitiesRef.current = [];
+      }
+      if (!timeZoneLinesVisible && timeZoneLineEntitiesRef.current.length) {
+        removeEntities(timeZoneLineEntitiesRef.current);
+        timeZoneLineEntitiesRef.current = [];
       }
       if (
         !naturalEarthGeographicLinesVisible &&
@@ -1890,7 +1925,8 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       const shouldLoad =
         boundaryLinesVisible ||
         naturalEarthGeographicLinesVisible ||
-        geographicLinesVisible;
+        geographicLinesVisible ||
+        timeZoneLinesVisible;
 
       const needsReload =
         configChanged ||
@@ -1905,21 +1941,25 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
           lakeResolution,
           includeGeographicLines: naturalEarthGeographicLinesVisible,
           includeBoundaries: boundaryLinesVisible,
+          includeTimeZones: timeZoneLinesVisible,
         })
           .then((boundaryData) => {
             if (!viewerRef.current || !cesiumInstance) return;
             const {
               boundaryEntities,
               geographicLineEntities,
+              timeZoneLineEntities,
               naturalEarthLineEntities,
             } = addGeographicBoundaries(
               cesiumInstance,
               viewerRef.current,
               boundaryData,
               lineColors,
+              timeZoneLinesVisible,
             );
             boundaryEntitiesRef.current = boundaryEntities;
             geographicLineEntitiesRef.current = geographicLineEntities;
+            timeZoneLineEntitiesRef.current = timeZoneLineEntities;
             naturalEarthLineEntitiesRef.current = naturalEarthLineEntities;
             const showBoundaries = boundaryLinesVisible;
             const showGeographic = geographicLinesVisible;
@@ -1928,6 +1968,9 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
             });
             geographicLineEntitiesRef.current.forEach((entity) => {
               entity.show = showGeographic;
+            });
+            timeZoneLineEntitiesRef.current.forEach((entity) => {
+              entity.show = timeZoneLinesVisible;
             });
             naturalEarthLineEntitiesRef.current.forEach((entity) => {
               entity.show = naturalEarthGeographicLinesVisible;
@@ -1946,12 +1989,16 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       geographicLineEntitiesRef.current.forEach((entity) => {
         entity.show = showGeographic;
       });
+      timeZoneLineEntitiesRef.current.forEach((entity) => {
+        entity.show = timeZoneLinesVisible;
+      });
       naturalEarthLineEntitiesRef.current.forEach((entity) => {
         entity.show = naturalEarthGeographicLinesVisible;
       });
     }, [
       boundaryLinesVisible,
       geographicLinesVisible,
+      timeZoneLinesVisible,
       naturalEarthGeographicLinesVisible,
       effectiveViewMode,
       cesiumInstance,
@@ -2357,6 +2404,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
             satelliteLayerVisible={effectiveSatelliteVisible}
             boundaryLinesVisible={boundaryLinesVisible}
             geographicLinesVisible={geographicLinesVisible}
+            timeZoneLinesVisible={timeZoneLinesVisible}
             coastlineResolution={coastlineResolution}
             riverResolution={riverResolution}
             lakeResolution={lakeResolution}
@@ -2389,6 +2437,8 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
             smoothGridBoxValues={rasterBlurEnabled}
             boundaryLinesVisible={boundaryLinesVisible}
             geographicLinesVisible={geographicLinesVisible}
+            timeZoneLinesVisible={timeZoneLinesVisible}
+            pacificCentered={pacificCentered}
             coastlineResolution={coastlineResolution}
             riverResolution={riverResolution}
             lakeResolution={lakeResolution}

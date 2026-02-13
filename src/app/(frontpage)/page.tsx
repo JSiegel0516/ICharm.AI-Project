@@ -428,6 +428,8 @@ export default function HomePage() {
     satelliteLayerVisible: true,
     boundaryLinesVisible: true,
     geographicLinesVisible: false,
+    timeZoneLinesVisible: false,
+    pacificCentered: false,
     coastlineResolution: "low",
     riverResolution: "none",
     lakeResolution: "none",
@@ -1251,6 +1253,14 @@ export default function HomePage() {
     setGlobeSettings((prev) => ({ ...prev, geographicLinesVisible: visible }));
   }, []);
 
+  const handleTimeZoneLinesToggle = useCallback((visible: boolean) => {
+    setGlobeSettings((prev) => ({ ...prev, timeZoneLinesVisible: visible }));
+  }, []);
+
+  const handlePacificCenteredToggle = useCallback((enabled: boolean) => {
+    setGlobeSettings((prev) => ({ ...prev, pacificCentered: enabled }));
+  }, []);
+
   const handleCoastlineResolutionChange = useCallback(
     (resolution: GlobeLineResolution) => {
       setGlobeSettings((prev) => ({
@@ -1569,6 +1579,8 @@ export default function HomePage() {
         satelliteLayerVisible={globeSettings.satelliteLayerVisible}
         boundaryLinesVisible={globeSettings.boundaryLinesVisible}
         geographicLinesVisible={globeSettings.geographicLinesVisible}
+        timeZoneLinesVisible={globeSettings.timeZoneLinesVisible}
+        pacificCentered={globeSettings.pacificCentered}
         coastlineResolution={globeSettings.coastlineResolution}
         riverResolution={globeSettings.riverResolution}
         lakeResolution={globeSettings.lakeResolution}
@@ -1606,6 +1618,8 @@ export default function HomePage() {
             onSatelliteToggle={handleSatelliteToggle}
             onBoundaryToggle={handleBoundaryToggle}
             onGeographicLinesToggle={handleGeographicLinesToggle}
+            onTimeZoneLinesToggle={handleTimeZoneLinesToggle}
+            onPacificCenteredToggle={handlePacificCenteredToggle}
             onCoastlineResolutionChange={handleCoastlineResolutionChange}
             onRiverResolutionChange={handleRiverResolutionChange}
             onLakeResolutionChange={handleLakeResolutionChange}

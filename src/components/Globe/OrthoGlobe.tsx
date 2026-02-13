@@ -15,6 +15,8 @@ import {
   type LabelKind,
 } from "@/lib/labels/openlayersVectorTiles";
 import { useGlobeLines } from "@/hooks/useGlobeLines";
+import { LineGeometryProcessor } from "@/utils/lineGeometryProcessor";
+import type { NELineData } from "@/utils/naturalEarthLoader";
 import {
   BASE_RADIUS,
   BASE_TEXTURE_URL,
@@ -60,6 +62,7 @@ type Props = {
   satelliteLayerVisible: boolean;
   boundaryLinesVisible: boolean;
   geographicLinesVisible: boolean;
+  timeZoneLinesVisible?: boolean;
   coastlineResolution?: GlobeLineResolution;
   riverResolution?: GlobeLineResolution;
   lakeResolution?: GlobeLineResolution;
@@ -94,6 +97,7 @@ const OrthoGlobe: React.FC<Props> = ({
   satelliteLayerVisible,
   boundaryLinesVisible,
   geographicLinesVisible,
+  timeZoneLinesVisible = false,
   coastlineResolution = "low",
   riverResolution = "none",
   lakeResolution = "none",
@@ -124,6 +128,8 @@ const OrthoGlobe: React.FC<Props> = ({
   const rasterOverlayRef = useRef<THREE.Mesh | null>(null);
   const rasterMaterialRef = useRef<THREE.ShaderMaterial | null>(null);
   const geographicLineGroupRef = useRef<THREE.Group | null>(null);
+  const timeZoneLineGroupRef = useRef<THREE.Group | null>(null);
+  const timeZoneDataRef = useRef<NELineData | null>(null);
   const markerRef = useRef<THREE.Mesh | null>(null);
   const skyboxTextureRef = useRef<THREE.CubeTexture | null>(null);
   const gridTextureRef = useRef<THREE.Texture | null>(null);
@@ -1548,6 +1554,95 @@ const OrthoGlobe: React.FC<Props> = ({
     globeGroupRef.current.add(group);
     requestRender();
   }, [geographicLinesVisible, requestRender, lineColors?.geographicGrid]);
+
+  useEffect(() => {
+    if (!sceneRef.current || !globeGroupRef.current) return;
+    if (!timeZoneLinesVisible) {
+      if (timeZoneLineGroupRef.current) {
+        timeZoneLineGroupRef.current.traverse((child) => {
+          if (child instanceof THREE.LineSegments) {
+            child.geometry.dispose();
+            if (Array.isArray(child.material)) {
+              child.material.forEach((material) => material.dispose());
+            } else {
+              child.material.dispose();
+            }
+          }
+        });
+        timeZoneLineGroupRef.current.removeFromParent();
+        timeZoneLineGroupRef.current = null;
+      }
+      requestRender();
+      return;
+    }
+
+    if (timeZoneLineGroupRef.current) {
+      timeZoneLineGroupRef.current.traverse((child) => {
+        if (child instanceof THREE.LineSegments) {
+          child.geometry.dispose();
+          if (Array.isArray(child.material)) {
+            child.material.forEach((material) => material.dispose());
+          } else {
+            child.material.dispose();
+          }
+        }
+      });
+      timeZoneLineGroupRef.current.removeFromParent();
+      timeZoneLineGroupRef.current = null;
+    }
+
+    let cancelled = false;
+
+    const buildLines = (data: NELineData) => {
+      if (cancelled) return;
+      const color = lineColors?.geographicGrid ?? "#9ca3af";
+      const segments = LineGeometryProcessor.processNEData(
+        data,
+        "geographic",
+        OVERLAY_RADIUS + 0.002,
+        color,
+      );
+      if (!segments.length || cancelled) return;
+      const lineGeometry = LineGeometryProcessor.createLineGeometry(
+        segments,
+        1,
+      );
+      lineGeometry.renderOrder = 10;
+      lineGeometry.frustumCulled = false;
+      if (Array.isArray(lineGeometry.material)) {
+        lineGeometry.material.forEach((material) => {
+          material.opacity = 0.55;
+        });
+      } else {
+        lineGeometry.material.opacity = 0.55;
+      }
+      const group = new THREE.Group();
+      group.add(lineGeometry);
+      timeZoneLineGroupRef.current = group;
+      globeGroupRef.current?.add(group);
+      requestRender();
+    };
+
+    if (timeZoneDataRef.current) {
+      buildLines(timeZoneDataRef.current);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    fetch("/_countries/ne_10m_time_zones.json")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!data?.Lon || !data?.Lat) return;
+        timeZoneDataRef.current = data as NELineData;
+        buildLines(timeZoneDataRef.current);
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [timeZoneLinesVisible, requestRender, lineColors?.geographicGrid]);
 
   useEffect(() => {
     if (!containerRef.current) return;

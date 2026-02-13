@@ -39,6 +39,8 @@ type Props = {
   smoothGridBoxValues: boolean;
   boundaryLinesVisible: boolean;
   geographicLinesVisible: boolean;
+  timeZoneLinesVisible: boolean;
+  pacificCentered: boolean;
   coastlineResolution?: GlobeLineResolution;
   riverResolution?: GlobeLineResolution;
   lakeResolution?: GlobeLineResolution;
@@ -73,6 +75,8 @@ const ProjectedGlobe: React.FC<Props> = ({
   smoothGridBoxValues,
   boundaryLinesVisible,
   geographicLinesVisible,
+  timeZoneLinesVisible,
+  pacificCentered,
   coastlineResolution = "low",
   riverResolution = "none",
   lakeResolution = "none",
@@ -118,6 +122,7 @@ const ProjectedGlobe: React.FC<Props> = ({
   const interactionRafRef = useRef<number | null>(null);
   const orientationTimeoutRef = useRef<number | null>(null);
   const lastAppliedOrientationRef = useRef<MapOrientation | null>(null);
+  const lastPacificOffsetRef = useRef<number>(0);
   const scheduleMeshRenderRef = useRef<((force?: boolean) => void) | null>(
     null,
   );
@@ -135,21 +140,58 @@ const ProjectedGlobe: React.FC<Props> = ({
     return orientation;
   }, [orientation]);
 
+  const pacificOffset = pacificCentered ? 180 : 0;
+  const applyPacificOffset = useCallback(
+    (next?: MapOrientation) => {
+      if (!next) return undefined;
+      const rotate: [number, number, number] = [
+        next.rotate[0] + pacificOffset,
+        next.rotate[1],
+        next.rotate[2],
+      ];
+      return { ...next, rotate };
+    },
+    [pacificOffset],
+  );
+
+  const stripPacificOffset = useCallback(
+    (next?: MapOrientation) => {
+      if (!next) return undefined;
+      const rotate: [number, number, number] = [
+        next.rotate[0] - pacificOffset,
+        next.rotate[1],
+        next.rotate[2],
+      ];
+      return { ...next, rotate };
+    },
+    [pacificOffset],
+  );
+
+  const renderOrientation = useMemo(
+    () => applyPacificOffset(effectiveOrientation),
+    [applyPacificOffset, effectiveOrientation],
+  );
+
   const boundaryConfigKey = useMemo(
     () =>
-      `${boundaryLinesVisible}-${coastlineResolution}-${riverResolution}-${lakeResolution}-${naturalEarthGeographicLinesVisible}`,
+      `${boundaryLinesVisible}-${coastlineResolution}-${riverResolution}-${lakeResolution}-${naturalEarthGeographicLinesVisible}-${timeZoneLinesVisible}`,
     [
       boundaryLinesVisible,
       coastlineResolution,
       riverResolution,
       lakeResolution,
       naturalEarthGeographicLinesVisible,
+      timeZoneLinesVisible,
     ],
   );
 
   useEffect(() => {
     let active = true;
-    if (!boundaryLinesVisible && !naturalEarthGeographicLinesVisible) {
+    if (
+      !boundaryLinesVisible &&
+      !naturalEarthGeographicLinesVisible &&
+      !timeZoneLinesVisible
+    ) {
       setBoundaryData([]);
       return;
     }
@@ -159,6 +201,7 @@ const ProjectedGlobe: React.FC<Props> = ({
       lakeResolution: lakeResolution ?? "none",
       includeGeographicLines: naturalEarthGeographicLinesVisible,
       includeBoundaries: boundaryLinesVisible,
+      includeTimeZones: timeZoneLinesVisible,
     }).then((data) => {
       if (!active) return;
       setBoundaryData(data);
@@ -170,6 +213,7 @@ const ProjectedGlobe: React.FC<Props> = ({
     boundaryConfigKey,
     boundaryLinesVisible,
     naturalEarthGeographicLinesVisible,
+    timeZoneLinesVisible,
     coastlineResolution,
     riverResolution,
     lakeResolution,
@@ -183,11 +227,12 @@ const ProjectedGlobe: React.FC<Props> = ({
     orientationTimeoutRef.current = window.setTimeout(() => {
       orientationTimeoutRef.current = null;
       const next = projectionRef.current?.getOrientation();
-      if (next) {
-        onOrientationChange(next);
+      const normalized = stripPacificOffset(next);
+      if (normalized) {
+        onOrientationChange(normalized);
       }
     }, 150);
-  }, [onOrientationChange]);
+  }, [onOrientationChange, stripPacificOffset]);
 
   const renderOverlay = useCallback(() => {
     if (!overlayCanvasRef.current) return;
@@ -553,9 +598,10 @@ const ProjectedGlobe: React.FC<Props> = ({
     if (!svgRef.current || !boundariesRef.current) return;
     boundariesRef.current.renderToSVG(svgRef.current, boundaryData, {
       showGraticule: geographicLinesVisible,
+      showTimeZoneLines: timeZoneLinesVisible,
       lineColors,
     });
-  }, [boundaryData, geographicLinesVisible, lineColors]);
+  }, [boundaryData, geographicLinesVisible, timeZoneLinesVisible, lineColors]);
 
   const applySize = useCallback(
     (width: number, height: number, force = false) => {
@@ -593,7 +639,7 @@ const ProjectedGlobe: React.FC<Props> = ({
         );
         scaleRef.current = projectionRef.current.getScale();
       } else {
-        const resetScale = !effectiveOrientation && !hasInteractedRef.current;
+        const resetScale = !renderOrientation && !hasInteractedRef.current;
         projectionRef.current.setSize(width, height, resetScale);
         if (resetScale) {
           scaleRef.current = projectionRef.current.getScale();
@@ -614,10 +660,10 @@ const ProjectedGlobe: React.FC<Props> = ({
         overlayRef.current?.setSize(width, height);
       }
 
-      if (effectiveOrientation && projectionRef.current) {
-        projectionRef.current.setOrientation(effectiveOrientation);
+      if (renderOrientation && projectionRef.current) {
+        projectionRef.current.setOrientation(renderOrientation);
         scaleRef.current = projectionRef.current.getScale();
-        lastAppliedOrientationRef.current = effectiveOrientation;
+        lastAppliedOrientationRef.current = renderOrientation;
       }
 
       renderBoundaries();
@@ -625,7 +671,7 @@ const ProjectedGlobe: React.FC<Props> = ({
       scheduleMeshRender(true);
     },
     [
-      effectiveOrientation,
+      renderOrientation,
       projectionId,
       renderBoundaries,
       requestRender,
@@ -653,7 +699,7 @@ const ProjectedGlobe: React.FC<Props> = ({
 
   useEffect(() => {
     if (!containerRef.current) return;
-    if (hasInteractedRef.current || effectiveOrientation) return;
+    if (hasInteractedRef.current || renderOrientation) return;
     let frame2: number | null = null;
     const frame1 = window.requestAnimationFrame(() => {
       if (!containerRef.current) return;
@@ -675,7 +721,7 @@ const ProjectedGlobe: React.FC<Props> = ({
         window.cancelAnimationFrame(frame2);
       }
     };
-  }, [applySize, effectiveOrientation]);
+  }, [applySize, renderOrientation]);
 
   useEffect(() => {
     renderBoundaries();
@@ -683,20 +729,35 @@ const ProjectedGlobe: React.FC<Props> = ({
   }, [renderBoundaries, requestRender]);
 
   useEffect(() => {
-    if (!projectionRef.current || !effectiveOrientation) return;
+    if (!projectionRef.current) return;
+    if (renderOrientation) {
+      lastPacificOffsetRef.current = pacificOffset;
+      return;
+    }
+    const delta = pacificOffset - lastPacificOffsetRef.current;
+    if (Math.abs(delta) < 0.001) return;
+    const rotate = projectionRef.current.getRotate();
+    projectionRef.current.setRotate([rotate[0] + delta, rotate[1], rotate[2]]);
+    lastPacificOffsetRef.current = pacificOffset;
+    requestRender();
+    scheduleMeshRender(true);
+  }, [pacificOffset, renderOrientation, requestRender, scheduleMeshRender]);
+
+  useEffect(() => {
+    if (!projectionRef.current || !renderOrientation) return;
     if (
       orientationsEqual(
         lastAppliedOrientationRef.current ?? undefined,
-        effectiveOrientation,
+        renderOrientation,
       )
     ) {
       return;
     }
-    projectionRef.current.setOrientation(effectiveOrientation);
+    projectionRef.current.setOrientation(renderOrientation);
     scaleRef.current = projectionRef.current.getScale();
-    lastAppliedOrientationRef.current = effectiveOrientation;
+    lastAppliedOrientationRef.current = renderOrientation;
     requestRender();
-  }, [effectiveOrientation, requestRender]);
+  }, [renderOrientation, requestRender]);
 
   useEffect(() => {
     requestRender();

@@ -149,6 +149,8 @@ const useAppStateInternal = () => {
       satelliteLayerVisible: true,
       boundaryLinesVisible: true,
       geographicLinesVisible: false,
+      timeZoneLinesVisible: false,
+      pacificCentered: false,
       coastlineResolution: "low",
       riverResolution: "none",
       lakeResolution: "none",

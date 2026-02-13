@@ -21,6 +21,10 @@ interface GlobeSettingsPanelProps {
   onBoundaryLinesToggle: (visible: boolean) => void;
   geographicLinesVisible: boolean;
   onGeographicLinesToggle: (visible: boolean) => void;
+  timeZoneLinesVisible: boolean;
+  onTimeZoneLinesToggle: (visible: boolean) => void;
+  pacificCentered: boolean;
+  onPacificCenteredToggle: (enabled: boolean) => void;
   coastlineResolution?: "none" | "low" | "medium" | "high";
   onCoastlineResolutionChange?: (
     resolution: "none" | "low" | "medium" | "high",
@@ -69,6 +73,10 @@ export function GlobeSettingsPanel({
   onBoundaryLinesToggle,
   geographicLinesVisible,
   onGeographicLinesToggle,
+  timeZoneLinesVisible,
+  onTimeZoneLinesToggle,
+  pacificCentered,
+  onPacificCenteredToggle,
   coastlineResolution = "low",
   onCoastlineResolutionChange,
   riverResolution = "none",
@@ -350,6 +358,17 @@ export function GlobeSettingsPanel({
                           className="data-[state=checked]:bg-rose-500"
                         />
                       </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <Label className="text-xs text-slate-300">
+                          Time Zone Lines
+                        </Label>
+                        <Switch
+                          id="timezone-lines-toggle"
+                          checked={timeZoneLinesVisible}
+                          onCheckedChange={onTimeZoneLinesToggle}
+                          className="data-[state=checked]:bg-rose-500"
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -387,6 +406,35 @@ export function GlobeSettingsPanel({
                       </select>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Map Orientation */}
+              {(isCesiumView || isProjectionView) && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold text-white">
+                    Map Orientation
+                  </h3>
+                  <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
+                    <div className="space-y-0.5">
+                      <Label
+                        htmlFor="pacific-centered-toggle"
+                        className="cursor-pointer text-sm font-medium text-white"
+                      >
+                        Pacific Centered
+                      </Label>
+                      <p className="text-xs text-slate-400">
+                        Shift the map seam so the Pacific sits at center
+                      </p>
+                    </div>
+                    <Switch
+                      id="pacific-centered-toggle"
+                      checked={pacificCentered}
+                      onCheckedChange={onPacificCenteredToggle}
+                      className="data-[state=checked]:bg-rose-500"
+                      disabled={!isProjectionView && viewMode !== "2d"}
+                    />
+                  </div>
                 </div>
               )}
 

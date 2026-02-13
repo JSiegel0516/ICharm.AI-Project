@@ -40,6 +40,8 @@ interface SideButtonsProps {
   onSatelliteToggle: (visible: boolean) => void;
   onBoundaryToggle: (visible: boolean) => void;
   onGeographicLinesToggle: (visible: boolean) => void;
+  onTimeZoneLinesToggle: (visible: boolean) => void;
+  onPacificCenteredToggle: (enabled: boolean) => void;
   onCoastlineResolutionChange: (resolution: GlobeLineResolution) => void;
   onRiverResolutionChange: (resolution: GlobeLineResolution) => void;
   onLakeResolutionChange: (resolution: GlobeLineResolution) => void;
@@ -82,6 +84,8 @@ export function SideButtons({
   onSatelliteToggle,
   onBoundaryToggle,
   onGeographicLinesToggle,
+  onTimeZoneLinesToggle,
+  onPacificCenteredToggle,
   onCoastlineResolutionChange,
   onRiverResolutionChange,
   onLakeResolutionChange,
@@ -743,6 +747,10 @@ export function SideButtons({
         onBoundaryLinesToggle={onBoundaryToggle}
         geographicLinesVisible={globeSettings.geographicLinesVisible}
         onGeographicLinesToggle={onGeographicLinesToggle}
+        timeZoneLinesVisible={globeSettings.timeZoneLinesVisible}
+        onTimeZoneLinesToggle={onTimeZoneLinesToggle}
+        pacificCentered={globeSettings.pacificCentered}
+        onPacificCenteredToggle={onPacificCenteredToggle}
         coastlineResolution={globeSettings.coastlineResolution}
         onCoastlineResolutionChange={onCoastlineResolutionChange}
         riverResolution={globeSettings.riverResolution}

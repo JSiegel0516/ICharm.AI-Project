@@ -186,6 +186,8 @@ export interface GlobeSettings {
   satelliteLayerVisible: boolean;
   boundaryLinesVisible: boolean;
   geographicLinesVisible: boolean;
+  timeZoneLinesVisible: boolean;
+  pacificCentered: boolean;
   coastlineResolution?: GlobeLineResolution;
   riverResolution?: GlobeLineResolution;
   lakeResolution?: GlobeLineResolution;
@@ -305,6 +307,8 @@ export interface GlobeProps {
   satelliteLayerVisible?: boolean;
   boundaryLinesVisible?: boolean;
   geographicLinesVisible?: boolean;
+  timeZoneLinesVisible?: boolean;
+  pacificCentered?: boolean;
   coastlineResolution?: GlobeLineResolution;
   riverResolution?: GlobeLineResolution;
   lakeResolution?: GlobeLineResolution;
@@ -495,6 +499,10 @@ export interface GlobeSettingsPanelProps {
   onBoundaryLinesToggle: (visible: boolean) => void;
   geographicLinesVisible: boolean;
   onGeographicLinesToggle: (visible: boolean) => void;
+  timeZoneLinesVisible: boolean;
+  onTimeZoneLinesToggle: (visible: boolean) => void;
+  pacificCentered: boolean;
+  onPacificCenteredToggle: (enabled: boolean) => void;
   coastlineResolution?: GlobeLineResolution;
   onCoastlineResolutionChange?: (resolution: GlobeLineResolution) => void;
   riverResolution?: GlobeLineResolution;
