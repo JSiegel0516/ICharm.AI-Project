@@ -17,8 +17,7 @@ export interface ClimateDatasetRecord {
   levels?: string | null;
   levelValues?: string | null; // String from DB, will be parsed
   levelUnits?: string | null;
-  Stored?: string | null; // Note: capital S (database inconsistency)
-  stored?: string | null; // lowercase variant
+  stored?: string | null; 
   storageType?: string | null;
   postgresProcessor?: string | null;
   inputFile?: string | null;

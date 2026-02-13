@@ -11,7 +11,7 @@ interface DatabaseDataset {
   levels: string;
   levelValues: string | null;
   levelUnits: string | null;
-  Stored: string;
+  stored: string;
   inputFile: string;
   keyVariable: string;
   units: string;
