@@ -119,7 +119,7 @@ const lonLatToGeoJson = (raw: any) => {
 
 export class WinkelBoundaries {
   private pathGenerator: ReturnType<typeof geoPath>;
-  private svg: Selection<SVGSVGElement, unknown, null, undefined> | null = null;
+  private svg: Selection | null = null;
   private showGraticule = false;
   private lineColors?: LineColorSettings;
   private boundaryData: BoundaryDataset[] = [];
@@ -138,8 +138,9 @@ export class WinkelBoundaries {
       lineColors?: LineColorSettings;
     },
   ) {
-    this.svg = select(svgElement);
-    this.svg.selectAll("*").remove();
+    const svg = select(svgElement);
+    svg.selectAll("*").remove();
+    this.svg = svg;
     this.showGraticule = options.showGraticule;
     this.lineColors = options.lineColors;
     const lineThickness = 1;
@@ -161,7 +162,9 @@ export class WinkelBoundaries {
       this.lineColors?.geographicLines ??
       "#4b5563";
 
-    const defs = this.svg.append("defs");
+    if (!this.svg) return;
+    const svgSel = this.svg as any;
+    const defs = svgSel.append("defs");
     defs
       .append("clipPath")
       .attr("id", clipId)
@@ -169,7 +172,7 @@ export class WinkelBoundaries {
       .datum({ type: "Sphere" })
       .attr("d", this.pathGenerator);
 
-    this.svg
+    svgSel
       .append("path")
       .datum({ type: "Sphere" })
       .attr("class", "winkel-sphere")
@@ -180,7 +183,7 @@ export class WinkelBoundaries {
 
     if (this.showGraticule) {
       const graticule = geoGraticule();
-      this.svg
+      svgSel
         .append("path")
         .datum(graticule())
         .attr("class", "winkel-graticule")
@@ -203,7 +206,7 @@ export class WinkelBoundaries {
       if (dataset.kind === "timeZones") stroke = graticuleColor;
       const isTimeZones = dataset.kind === "timeZones";
       const isGeographic = dataset.kind === "geographicLines";
-      this.svg
+      svgSel
         .append("path")
         .datum(dataset.data)
         .attr("class", "winkel-boundary")
@@ -221,6 +224,7 @@ export class WinkelBoundaries {
 
   update() {
     if (!this.svg) return;
-    this.svg.selectAll("path").attr("d", this.pathGenerator as any);
+    const svgSel = this.svg as any;
+    svgSel.selectAll("path").attr("d", this.pathGenerator as any);
   }
 }

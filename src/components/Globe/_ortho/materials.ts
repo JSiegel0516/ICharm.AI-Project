@@ -48,6 +48,7 @@ export const createGlobeMaterial = (options: {
   normalMap?: THREE.Texture;
   lightingEnabled?: boolean;
   lightDirection?: THREE.Vector3;
+  ambientIntensity?: number;
 }) => {
   const {
     transparent = false,

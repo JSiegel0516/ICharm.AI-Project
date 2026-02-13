@@ -27,6 +27,7 @@ import { SettingsGearIcon } from "@/components/ui/settings-gear";
 import { Info } from "lucide-react";
 import { ModeToggle } from "@/components/ui/modetoggle";
 import { useAppState } from "@/context/HeaderContext";
+import type { LineColorSettings } from "@/types";
 import { COLOR_MAP_PRESETS } from "@/utils/colorScales";
 import { Switch } from "@/components/ui/switch";
 
@@ -751,7 +752,7 @@ export default function NavigationIcons() {
                         const selectedKeys = Object.entries(lineColorSelection)
                           .filter(([, enabled]) => enabled)
                           .map(([k]) => k);
-                        const keysToApply =
+                        const keysToApply = (
                           selectedKeys.length > 0
                             ? selectedKeys
                             : [
@@ -761,11 +762,12 @@ export default function NavigationIcons() {
                                 "lakes",
                                 "geographicLines",
                                 "geographicGrid",
-                              ];
+                              ]
+                        ) as Array<keyof LineColorSettings>;
                         setSettings((prev) => {
-                          const next = {
-                            ...(prev.lineColors ?? {}),
-                          } as Record<string, string>;
+                          const next: LineColorSettings = {
+                            ...prev.lineColors,
+                          };
                           keysToApply.forEach((selectedKey) => {
                             next[selectedKey] = value;
                           });

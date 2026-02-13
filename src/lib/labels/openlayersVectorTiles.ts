@@ -113,7 +113,7 @@ export const parseOpenLayersTile = (
   x: number,
   y: number,
 ) => {
-  let tile: VectorTile;
+  let tile: any;
   try {
     tile = new VectorTile(new Pbf(new Uint8Array(buffer)));
   } catch (error) {

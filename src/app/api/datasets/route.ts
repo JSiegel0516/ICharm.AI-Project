@@ -80,7 +80,7 @@ export async function GET(request: Request) {
     // Normalize the field name - Add lowercase 'stored' field
     const normalizedDatasets = datasets.map((dataset) => ({
       ...dataset,
-      stored: dataset.stored ?? dataset.Stored, // Add lowercase version
+      stored: dataset.stored ?? dataset.storageType ?? null,
       description: dataset.description,
     }));
 

@@ -39,8 +39,8 @@ type Props = {
   smoothGridBoxValues: boolean;
   boundaryLinesVisible: boolean;
   geographicLinesVisible: boolean;
-  timeZoneLinesVisible: boolean;
-  pacificCentered: boolean;
+  timeZoneLinesVisible?: boolean;
+  pacificCentered?: boolean;
   coastlineResolution?: GlobeLineResolution;
   riverResolution?: GlobeLineResolution;
   lakeResolution?: GlobeLineResolution;
@@ -75,8 +75,8 @@ const ProjectedGlobe: React.FC<Props> = ({
   smoothGridBoxValues,
   boundaryLinesVisible,
   geographicLinesVisible,
-  timeZoneLinesVisible,
-  pacificCentered,
+  timeZoneLinesVisible = false,
+  pacificCentered = false,
   coastlineResolution = "low",
   riverResolution = "none",
   lakeResolution = "none",
@@ -854,6 +854,9 @@ const ProjectedGlobe: React.FC<Props> = ({
       dragHasMovedRef.current = false;
       if (dragDistance <= 6) {
         if (onRegionClick && projectionRef.current) {
+          if (typeof projectionRef.current.projection.invert !== "function") {
+            return;
+          }
           const [localX, localY] = getLocalPointer(event);
           const inverted = projectionRef.current.projection.invert([
             localX,

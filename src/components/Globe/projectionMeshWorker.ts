@@ -418,7 +418,7 @@ const handleRender = (payload: RenderPayload) => {
     ctx.save();
     const path = geoPath(projection).context(ctx);
     ctx.beginPath();
-    path({ type: "Sphere" } as GeoJSON.Geometry);
+    path({ type: "Sphere" } as unknown as GeoJSON.Geometry);
     ctx.clip();
     ctx.drawImage(tempCanvas, 0, 0, width, height);
     ctx.restore();
@@ -468,7 +468,7 @@ const handleRender = (payload: RenderPayload) => {
     ctx.save();
     const path = geoPath(projection).context(ctx);
     ctx.beginPath();
-    path({ type: "Sphere" } as GeoJSON.Geometry);
+    path({ type: "Sphere" } as unknown as GeoJSON.Geometry);
     ctx.clip();
 
     const renderCell = (

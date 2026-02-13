@@ -250,7 +250,7 @@ const useAppStateInternal = () => {
       lineColors: {
         ...prev.lineColors,
         ...next,
-      },
+      } as AppState["lineColors"],
     }));
   }, []);
 

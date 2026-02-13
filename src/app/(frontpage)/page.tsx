@@ -32,6 +32,7 @@ import {
   GlobeLineResolution,
   MapOrientation,
   MapProjectionId,
+  GlobeViewMode,
   type Dataset,
 } from "@/types";
 import { pressureLevels } from "@/utils/constants";
@@ -1626,7 +1627,6 @@ export default function HomePage() {
             onNaturalEarthGeographicLinesToggle={
               handleNaturalEarthGeographicLinesToggle
             }
-            onBaseMapModeChange={handleBaseMapModeChange}
             onLabelsToggle={handleLabelsToggle}
             onRasterOpacityChange={handleRasterOpacityChange}
             onHideZeroPrecipToggle={handleHideZeroPrecipToggle}
