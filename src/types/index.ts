@@ -226,7 +226,6 @@ export interface AppState {
   error: string | null;
   globeSettings?: GlobeSettings; // NEW
   lineColors?: LineColorSettings;
-  lineThickness?: number;
   colorBarOrientation: ColorBarOrientation;
   selectedColorMap?: string | null;
   colorScaleBaselines?: Record<string, ColorScale>;
@@ -317,7 +316,6 @@ export interface GlobeProps {
   bumpMapMode?: "none" | "land" | "landBathymetry";
   useMeshRaster?: boolean;
   lineColors?: LineColorSettings;
-  lineThickness?: number;
   mapOrientations?: Partial<Record<MapProjectionId, MapOrientation>>;
   onProjectionOrientationChange?: (
     projectionId: MapProjectionId,

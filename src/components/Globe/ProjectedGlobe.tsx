@@ -44,7 +44,6 @@ type Props = {
   lakeResolution?: GlobeLineResolution;
   naturalEarthGeographicLinesVisible?: boolean;
   lineColors?: LineColorSettings;
-  lineThickness?: number;
   orientation?: MapOrientation;
   onOrientationChange?: (orientation: MapOrientation) => void;
   onRegionClick?: (lat: number, lon: number, data: RegionData) => void;
@@ -79,7 +78,6 @@ const ProjectedGlobe: React.FC<Props> = ({
   lakeResolution = "none",
   naturalEarthGeographicLinesVisible = false,
   lineColors,
-  lineThickness = 1,
   orientation,
   onOrientationChange,
   onRegionClick,
@@ -556,9 +554,8 @@ const ProjectedGlobe: React.FC<Props> = ({
     boundariesRef.current.renderToSVG(svgRef.current, boundaryData, {
       showGraticule: geographicLinesVisible,
       lineColors,
-      lineThickness,
     });
-  }, [boundaryData, geographicLinesVisible, lineColors, lineThickness]);
+  }, [boundaryData, geographicLinesVisible, lineColors]);
 
   const applySize = useCallback(
     (width: number, height: number, force = false) => {

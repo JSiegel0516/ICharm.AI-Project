@@ -60,7 +60,6 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       bumpMapMode = "none",
       useMeshRaster = false,
       lineColors,
-      lineThickness = 1,
       mapOrientations,
       onProjectionOrientationChange,
       onRasterMetadataChange,
@@ -861,7 +860,6 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
               viewer,
               boundaryData,
               lineColors,
-              lineThickness,
             );
             console.log("[CesiumGlobe] initial boundary entities", {
               boundary: boundaryEntities.length,
@@ -1860,7 +1858,6 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
         riverResolution,
         lakeResolution,
         includeGeographic: naturalEarthGeographicLinesVisible,
-        lineThickness,
         lineColors: lineColors ?? null,
       });
       const configChanged = boundaryConfigRef.current !== configKey;
@@ -1920,7 +1917,6 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
               viewerRef.current,
               boundaryData,
               lineColors,
-              lineThickness,
             );
             boundaryEntitiesRef.current = boundaryEntities;
             geographicLineEntitiesRef.current = geographicLineEntities;
@@ -1963,7 +1959,6 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       coastlineResolution,
       riverResolution,
       lakeResolution,
-      lineThickness,
       lineColors,
     ]);
 
@@ -2369,7 +2364,6 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
               naturalEarthGeographicLinesVisible
             }
             lineColors={lineColors}
-            lineThickness={lineThickness}
             currentDataset={currentDataset}
             useMeshRaster={useMeshRasterEffective}
             labelsVisible={labelsVisible}
@@ -2402,7 +2396,6 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
               naturalEarthGeographicLinesVisible
             }
             lineColors={lineColors}
-            lineThickness={lineThickness}
             orientation={mapOrientations?.[projectionId]}
             onOrientationChange={(orientation) => {
               if (!onProjectionOrientationChange) return;

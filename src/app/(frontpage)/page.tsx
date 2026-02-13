@@ -252,7 +252,6 @@ export default function HomePage() {
     error,
     lineColors,
     setLineColors,
-    lineThickness,
   } = useAppState();
   const globeRef = useRef<GlobeRef>(null);
   const lastDatasetIdRef = useRef<string | null>(null);
@@ -464,12 +463,12 @@ export default function HomePage() {
 
   const DEFAULT_LINE_COLORS_GRAY = useMemo(
     () => ({
-      boundaryLines: "#9ca3af",
-      coastlines: "#9ca3af",
-      rivers: "#9ca3af",
-      lakes: "#9ca3af",
-      geographicLines: "#9ca3af",
-      geographicGrid: "#9ca3af",
+      boundaryLines: "#4b5563",
+      coastlines: "#4b5563",
+      rivers: "#4b5563",
+      lakes: "#4b5563",
+      geographicLines: "#4b5563",
+      geographicGrid: "#4b5563",
     }),
     [],
   );
@@ -1581,7 +1580,6 @@ export default function HomePage() {
         rasterBlurEnabled={globeSettings.rasterBlurEnabled}
         bumpMapMode={globeSettings.bumpMapMode}
         lineColors={lineColors}
-        lineThickness={lineThickness}
         mapOrientations={globeSettings.mapOrientations}
         onProjectionOrientationChange={handleProjectionOrientationChange}
         useMeshRaster={useMeshRaster}

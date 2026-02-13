@@ -40,8 +40,6 @@ export default function NavigationIcons() {
     setSelectedColorMapInverse,
     lineColors,
     setLineColors,
-    lineThickness,
-    setLineThickness,
     globeSettings,
   } = useAppState();
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
@@ -58,12 +56,12 @@ export default function NavigationIcons() {
           geographicGrid: "#000000",
         }
       : {
-          boundaryLines: "#9ca3af",
-          coastlines: "#9ca3af",
-          rivers: "#9ca3af",
-          lakes: "#9ca3af",
-          geographicLines: "#9ca3af",
-          geographicGrid: "#9ca3af",
+          boundaryLines: "#4b5563",
+          coastlines: "#4b5563",
+          rivers: "#4b5563",
+          lakes: "#4b5563",
+          geographicLines: "#4b5563",
+          geographicGrid: "#4b5563",
         };
 
   const [settings, setSettings] = React.useState(() => ({
@@ -90,7 +88,6 @@ export default function NavigationIcons() {
     colorBarOrientation,
     colorMapPreset: selectedColorMap ?? "dataset-default",
     colorMapInverse: selectedColorMapInverse ?? false,
-    lineThickness: lineThickness ?? 1,
     lineColors: lineColors ?? defaultLineColors,
   }));
 
@@ -113,14 +110,12 @@ export default function NavigationIcons() {
       colorBarOrientation,
       colorMapPreset: selectedColorMap ?? "dataset-default",
       colorMapInverse: selectedColorMapInverse ?? false,
-      lineThickness: lineThickness ?? 1,
       lineColors: lineColors ?? prev.lineColors,
     }));
   }, [
     colorBarOrientation,
     selectedColorMap,
     selectedColorMapInverse,
-    lineThickness,
     lineColors,
   ]);
 
@@ -146,9 +141,6 @@ export default function NavigationIcons() {
     console.log("Saving settings:", settings);
     if (settings.lineColors) {
       setLineColors(settings.lineColors);
-    }
-    if (typeof settings.lineThickness === "number") {
-      setLineThickness(settings.lineThickness);
     }
     setLineColorSelection({
       boundaryLines: false,
@@ -179,13 +171,11 @@ export default function NavigationIcons() {
       colorBarOrientation: "horizontal",
       colorMapPreset: "dataset-default",
       colorMapInverse: false,
-      lineThickness: 1,
       lineColors: defaultLineColors,
     });
     setColorBarOrientation("horizontal");
     setSelectedColorMap("dataset-default");
     setSelectedColorMapInverse(false);
-    setLineThickness(1);
     setActiveColorMapCategory(DEFAULT_COLOR_MAP_CATEGORY);
     setLineColors(defaultLineColors);
     setLineColorSelection({
@@ -208,7 +198,7 @@ export default function NavigationIcons() {
   const lineColorOptions = [
     { value: "#111827", label: "Black" },
     { value: "#ffffff", label: "White" },
-    { value: "#9ca3af", label: "Gray" },
+    { value: "#4b5563", label: "Gray" },
     { value: "#e5e7eb", label: "Light Gray" },
     { value: "#64748b", label: "Slate" },
     { value: "#3b82f6", label: "Blue" },
@@ -811,35 +801,6 @@ export default function NavigationIcons() {
                         ? "Reset to Black"
                         : "Reset to Gray"}
                     </button>
-                  </div>
-
-                  <div className="rounded-lg bg-gray-800/30 p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <span className="text-sm font-medium">
-                          Line Thickness
-                        </span>
-                        <div className="text-xs text-gray-400">
-                          Adjust overlay line weight
-                        </div>
-                      </div>
-                      <span className="text-sm text-gray-300">
-                        {Number(settings.lineThickness ?? 1).toFixed(1)}x
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0.5"
-                      max="3"
-                      step="0.1"
-                      value={settings.lineThickness ?? 1}
-                      onChange={(e) => {
-                        const value = Number(e.target.value);
-                        updateSetting("lineThickness", value);
-                        setLineThickness(value);
-                      }}
-                      className="mt-3 w-full accent-blue-500"
-                    />
                   </div>
 
                   <div className="grid gap-3">

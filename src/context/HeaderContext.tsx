@@ -167,7 +167,6 @@ const useAppStateInternal = () => {
       geographicLines: "#000000",
       geographicGrid: "#000000",
     },
-    lineThickness: 1,
     selectedColorMap: "dataset-default",
     selectedColorMapInverse: DEFAULT_COLOR_MAP_INVERSE,
     colorScaleBaselines: {},
@@ -250,13 +249,6 @@ const useAppStateInternal = () => {
         ...prev.lineColors,
         ...next,
       },
-    }));
-  }, []);
-
-  const setLineThickness = useCallback((value: number) => {
-    setState((prev) => ({
-      ...prev,
-      lineThickness: value,
     }));
   }, []);
 
@@ -505,8 +497,6 @@ const useAppStateInternal = () => {
     setCurrentLocationMarker,
     lineColors: state.lineColors,
     setLineColors,
-    lineThickness: state.lineThickness ?? 1,
-    setLineThickness,
     requestLocationFocus,
     requestLocationMarkerClear,
     clearLocationFocusRequest,

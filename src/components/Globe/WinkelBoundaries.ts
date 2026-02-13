@@ -127,15 +127,13 @@ export class WinkelBoundaries {
     options: {
       showGraticule: boolean;
       lineColors?: LineColorSettings;
-      lineThickness?: number;
     },
   ) {
     this.svg = select(svgElement);
     this.svg.selectAll("*").remove();
     this.showGraticule = options.showGraticule;
     this.lineColors = options.lineColors;
-    const lineThickness =
-      typeof options.lineThickness === "number" ? options.lineThickness : 1;
+    const lineThickness = 1;
     this.boundaryData = boundaryData;
 
     const clipId = `winkel-clip-${WinkelBoundaries.clipIdCounter++}`;
@@ -143,16 +141,16 @@ export class WinkelBoundaries {
     const coastlineColor =
       this.lineColors?.coastlines ??
       this.lineColors?.boundaryLines ??
-      "#9ca3af";
+      "#4b5563";
     const riverColor =
-      this.lineColors?.rivers ?? this.lineColors?.boundaryLines ?? "#9ca3af";
+      this.lineColors?.rivers ?? this.lineColors?.boundaryLines ?? "#4b5563";
     const lakeColor =
-      this.lineColors?.lakes ?? this.lineColors?.boundaryLines ?? "#9ca3af";
-    const geographicLineColor = this.lineColors?.geographicLines ?? "#9ca3af";
+      this.lineColors?.lakes ?? this.lineColors?.boundaryLines ?? "#4b5563";
+    const geographicLineColor = this.lineColors?.geographicLines ?? "#4b5563";
     const graticuleColor =
       this.lineColors?.geographicGrid ??
       this.lineColors?.geographicLines ??
-      "#9ca3af";
+      "#4b5563";
 
     const defs = this.svg.append("defs");
     defs

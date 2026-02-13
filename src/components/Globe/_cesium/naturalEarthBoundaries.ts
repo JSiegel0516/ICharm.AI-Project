@@ -100,12 +100,8 @@ export const addGeographicBoundaries = (
     geographicLines?: string;
     geographicGrid?: string;
   },
-  lineThickness?: number,
 ) => {
-  const thickness =
-    typeof lineThickness === "number" && Number.isFinite(lineThickness)
-      ? lineThickness
-      : 1;
+  const thickness = 1;
   console.log(
     "[CesiumBoundaries] addGeographicBoundaries",
     boundaryData.map((entry) => ({ name: entry.name, kind: entry.kind })),

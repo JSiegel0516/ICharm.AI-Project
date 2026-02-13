@@ -1,4 +1,5 @@
 import type { Dataset } from "@/types";
+import { normalizeLon } from "@/lib/mesh/rasterUtils";
 
 type TimestampEntry = {
   id: number;
@@ -15,6 +16,13 @@ type GridboxEntry = {
   gridboxId: number;
   lat: number;
   lon: number;
+};
+
+type TimeseriesEntry = {
+  timestampId: number;
+  date: Date;
+  raw: string;
+  value: number | null;
 };
 
 type GridboxDataResponse = {
@@ -35,10 +43,18 @@ export const isPostgresDataset = (dataset?: Dataset): boolean => {
   return storageType.includes("postgres");
 };
 
-const parseTimestamp = (raw: string): Date | null => {
-  const direct = new Date(raw);
+const parseTimestamp = (raw: string | number | Date): Date | null => {
+  if (raw instanceof Date) {
+    return Number.isNaN(raw.getTime()) ? null : raw;
+  }
+  if (typeof raw === "number") {
+    const numeric = new Date(raw);
+    if (!Number.isNaN(numeric.getTime())) return numeric;
+  }
+  const rawStr = String(raw);
+  const direct = new Date(rawStr);
   if (!Number.isNaN(direct.getTime())) return direct;
-  const normalized = raw.replace(" ", "T");
+  const normalized = rawStr.replace(" ", "T");
   const fallback = new Date(normalized);
   if (!Number.isNaN(fallback.getTime())) return fallback;
   return null;
@@ -132,6 +148,36 @@ export const fetchDatasetGridboxes = async (
   return entries;
 };
 
+export const resolveGridboxId = (
+  gridboxes: GridboxEntry[],
+  latitude: number,
+  longitude: number,
+): number | null => {
+  if (!gridboxes.length) return null;
+
+  const targetLat = Number(latitude);
+  const targetLon = normalizeLon(Number(longitude));
+  if (!Number.isFinite(targetLat) || !Number.isFinite(targetLon)) return null;
+
+  let best = gridboxes[0];
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (const entry of gridboxes) {
+    const lat = Number(entry.lat);
+    const lon = normalizeLon(Number(entry.lon));
+    const latDiff = lat - targetLat;
+    let lonDiff = Math.abs(lon - targetLon);
+    if (lonDiff > 180) lonDiff = 360 - lonDiff;
+    const score = latDiff * latDiff + lonDiff * lonDiff;
+    if (score < bestScore) {
+      best = entry;
+      bestScore = score;
+    }
+  }
+
+  return best.gridboxId;
+};
+
 export const resolveTimestampId = (
   timestamps: TimestampEntry[],
   targetDate: Date,
@@ -199,6 +245,50 @@ export const fetchGridboxData = async (args: {
     throw new Error(await response.text());
   }
   return response.json();
+};
+
+export const fetchGridboxTimeseries = async (args: {
+  datasetId: string;
+  gridboxId: number;
+  levelId: number;
+  signal?: AbortSignal;
+}): Promise<TimeseriesEntry[]> => {
+  const { datasetId, gridboxId, levelId, signal } = args;
+  const response = await fetch(
+    `/api/datasets/timeseries?datasetId=${encodeURIComponent(
+      datasetId,
+    )}&gridboxId=${encodeURIComponent(
+      String(gridboxId),
+    )}&levelId=${encodeURIComponent(String(levelId))}`,
+    { signal },
+  );
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  const payload = await response.json();
+  const ids: number[] = payload?.timestamp_id ?? [];
+  const values: string[] =
+    payload?.timestamp_value ?? payload?.timestamp_val ?? [];
+  const dataValues: Array<number | null> = payload?.value ?? [];
+
+  return ids
+    .map((id, idx) => {
+      const raw = String(values[idx] ?? "");
+      const parsed = parseTimestamp(raw);
+      if (!parsed) return null;
+      const rawValue = dataValues[idx];
+      const value =
+        rawValue == null || Number.isNaN(Number(rawValue))
+          ? null
+          : Number(rawValue);
+      return {
+        timestampId: Number(id),
+        date: parsed,
+        raw,
+        value,
+      };
+    })
+    .filter((entry): entry is TimeseriesEntry => Boolean(entry));
 };
 
 export const buildGridFromPoints = (

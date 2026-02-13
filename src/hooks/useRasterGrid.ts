@@ -118,6 +118,12 @@ export async function fetchRasterGrid(options: {
     throw new Error("Missing dataset or date for raster grid request");
   }
 
+  const effectiveRange = resolveEffectiveColorbarRange(
+    dataset,
+    level,
+    colorbarRange,
+  );
+
   if (isPostgresDataset(dataset)) {
     const targetDate = new Date(dateKey);
     const [timestamps, levels, gridboxes] = await Promise.all([
@@ -170,11 +176,6 @@ export async function fetchRasterGrid(options: {
     };
   }
 
-  const effectiveRange = resolveEffectiveColorbarRange(
-    dataset,
-    level,
-    colorbarRange,
-  );
   const customRange = deriveCustomRange(effectiveRange);
 
   const response = await fetch("/api/raster/grid", {
