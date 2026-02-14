@@ -10,6 +10,16 @@ import {
   resolveEffectiveColorbarRange,
   getDatasetIdentifierText,
 } from "@/lib/mesh/rasterUtils";
+import {
+  isPostgresDataset,
+  fetchDatasetTimestamps,
+  fetchDatasetLevels,
+  fetchDatasetGridboxes,
+  resolveTimestampId,
+  resolveLevelId,
+  fetchGridboxData,
+  buildGridFromPoints,
+} from "@/lib/postgresRaster";
 
 export type RasterGridData = {
   lat: Float64Array;
@@ -113,6 +123,59 @@ export async function fetchRasterGrid(options: {
     level,
     colorbarRange,
   );
+
+  if (isPostgresDataset(dataset)) {
+    const targetDate = new Date(dateKey);
+    const [timestamps, levels, gridboxes] = await Promise.all([
+      fetchDatasetTimestamps(targetDatasetId, signal),
+      fetchDatasetLevels(targetDatasetId, signal),
+      fetchDatasetGridboxes(targetDatasetId, signal),
+    ]);
+    const timestampId = resolveTimestampId(timestamps, targetDate);
+    const levelId = resolveLevelId(levels, level);
+    if (timestampId == null || levelId == null) {
+      throw new Error("Missing timestamp or level mapping for dataset");
+    }
+
+    const gridboxPayload = await fetchGridboxData({
+      datasetId: targetDatasetId,
+      timestampId,
+      levelId,
+      signal,
+    });
+
+    const grid = buildGridFromPoints(gridboxPayload, gridboxes);
+    const rows = grid.lat.length;
+    const cols = grid.lon.length;
+    const sampler = buildSampler(
+      grid.lat,
+      grid.lon,
+      grid.values,
+      undefined,
+      rows,
+      cols,
+    );
+    const computedRange = computeValueRange(grid.values, undefined);
+    const appliedMin =
+      effectiveRange?.enabled && effectiveRange?.min != null
+        ? Number(effectiveRange.min)
+        : computedRange.min;
+    const appliedMax =
+      effectiveRange?.enabled && effectiveRange?.max != null
+        ? Number(effectiveRange.max)
+        : computedRange.max;
+
+    return {
+      lat: grid.lat,
+      lon: grid.lon,
+      values: grid.values,
+      units: dataset?.units,
+      min: appliedMin ?? undefined,
+      max: appliedMax ?? undefined,
+      sampleValue: sampler,
+    };
+  }
+
   const customRange = deriveCustomRange(effectiveRange);
 
   const response = await fetch("/api/raster/grid", {

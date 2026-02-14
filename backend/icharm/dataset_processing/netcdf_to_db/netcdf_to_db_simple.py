@@ -1,20 +1,16 @@
-import io
 import os
 import re
 from datetime import datetime, timedelta
+
 from pathlib import Path
 
 import numpy
-import pandas
-from dotenv import load_dotenv
 from netCDF4 import Dataset, num2date
 from tqdm import tqdm
 from typing import Any
 
 from icharm.dataset_processing.netcdf_to_db.netcdf_to_db_base import NetCDFtoDbBase
 from icharm.utils.benchmark import benchmark
-
-load_dotenv()
 
 TIME_VAR_CANDIDATES = ["time"]
 LAT_VAR_CANDIDATES = ["lat", "latitude"]
@@ -166,89 +162,24 @@ class NetCDFtoDbSimple(NetCDFtoDbBase):
                         time_idx += 1
         return
 
-    def _process_multi_level_gridbox_data(
-        self, data, dim_names, fill_value, time_id, cur
-    ):
-        n_lat = len(self.latitudes.keys())
-        n_lon = len(self.longitudes.keys())
-        n_levels = len(self.levels.keys())
-
-        # If it's a masked array, fill masked with NaN
-        if numpy.ma.isMaskedArray(data):
-            data = data.filled(numpy.nan)
-
-        # Replace values with fill_value with numpy.nan
-        if fill_value is not None:
-            data = numpy.where(data == fill_value, numpy.nan, data)
-
-        # Map dim names -> axis indices in `data`
-        name_to_axis = {name: i for i, name in enumerate(dim_names)}
-
-        # Find lat & lon axes
-        try:
-            lat_axis = name_to_axis[self.latitude_variable_name]  # e.g. 'lat'
-            lon_axis = name_to_axis[self.longitude_variable_name]  # e.g. 'lon'
-        except KeyError as e:
-            raise ValueError(
-                f"Could not find lat/lon dims in {dim_names}. "
-                f"lat name={self.latitude_variable_name}, lon name={self.longitude_variable_name}"
-            ) from e
-
-        # Does this dataset have levels?
-        level_axis = (
-            name_to_axis.get(self.level_variable_name) if n_levels > 0 else None
-        )
-
-        if level_axis is None:
-            data_lat_lon = numpy.transpose(data, (lat_axis, lon_axis))
-            assert data_lat_lon.shape == (n_lat, n_lon)
-
-            flat_values = data_lat_lon.reshape(-1)
-            value_cols = ["value_0"]
-
-        else:
-            data_lat_lon_level = numpy.transpose(data, (lat_axis, lon_axis, level_axis))
-            assert data_lat_lon_level.shape == (n_lat, n_lon, n_levels)
-
-            flat_values = data_lat_lon_level.reshape(-1, n_levels)
-            value_cols = [f"value_{k}" for k in list(self.levels.keys())]
-
-        df_griddata = pandas.DataFrame(flat_values, columns=value_cols)
-        df_griddata.insert(0, "gridbox_id", self.gridbox_ids)
-        df_griddata.insert(1, "timestamp_id", time_id)
-
-        # Reshape data to gridbox_id, timestamp_id, value
-        with io.StringIO() as csv_buffer_grid_date:
-            df_griddata.to_csv(csv_buffer_grid_date, index=False)
-            csv_buffer_grid_date.seek(0)
-            values_str = ",".join(value_cols)
-            cur.copy_expert(
-                f"""
-                COPY grid_data (gridbox_id, timestamp_id, {values_str})
-                FROM STDIN WITH (FORMAT csv, HEADER true, NULL '')
-                """,
-                csv_buffer_grid_date,
-            )
-        return
-
     def _create_sql_functions(self, conn):
         with conn.cursor() as cur:
             ###############################
-            # get_dates()
+            # get_timestamps()
             ###############################
-            # Function used by the front-end to get list of all valid dates
-            cur.execute("DROP FUNCTION IF EXISTS get_dates();")
+            # Function used by the front-end to get list of all valid timestamps
+            cur.execute("DROP FUNCTION IF EXISTS get_timestamps();")
             get_dates_sql = """
-                CREATE FUNCTION get_dates()
+                CREATE FUNCTION get_timestamps()
                 RETURNS TABLE (
-                    date_id     INT
-                    , date_val  TIMESTAMP
+                    timestamp_id     INT
+                    , timestamp_val  TIMESTAMP
                 )
                 LANGUAGE sql
                 AS $$
                     SELECT
-                        timestamp_id AS date_id
-                        , timestamp_val AS date_val
+                        timestamp_id
+                        , timestamp_val
                     FROM timestamp_dim
                     ORDER BY timestamp_id ASC
                 $$;
@@ -260,21 +191,35 @@ class NetCDFtoDbSimple(NetCDFtoDbBase):
             ###############################
             # Function used by the front-end to get list of all valid dates
             cur.execute("DROP FUNCTION IF EXISTS get_levels();")
-            get_levels_sql = """
-                CREATE FUNCTION get_levels()
-                RETURNS TABLE (
-                    level_id  INT
-                    , name VARCHAR(255)
-                )
-                LANGUAGE sql
-                AS $$
+            if len(self.levels.keys()) == 0:
+                get_levels_sql = f"""
+                    CREATE FUNCTION get_levels()
+                        RETURNS TABLE (
+                            level_id INT,
+                            name     VARCHAR(255)
+                        )
+                        LANGUAGE sql AS $$
                     SELECT
-                        level_id
-                        , "name"
-                    FROM level
-                    ORDER BY level_id ASC
-                $$;
-            """
+                            0 AS level_id
+                            , '{self.variable_of_interest_name}' AS "name"
+                         $$;
+                     """
+            else:
+                get_levels_sql = """
+                    CREATE FUNCTION get_levels()
+                    RETURNS TABLE (
+                        level_id  INT
+                        , name VARCHAR(255)
+                    )
+                    LANGUAGE sql
+                    AS $$
+                        SELECT
+                            level_id
+                            , "name"
+                        FROM level
+                        ORDER BY level_id ASC
+                    $$;
+                """
             cur.execute(get_levels_sql)
 
             ###############################
@@ -314,13 +259,13 @@ class NetCDFtoDbSimple(NetCDFtoDbBase):
             # Function used by the front-end to get all all the gridboxes at a date_id
             cur.execute("""
                 DROP FUNCTION IF EXISTS get_gridbox_data(
-                    in_date_id INTEGER
+                    in_timestamp_id INTEGER
                     , in_level_id INTEGER
                 );
             """)
             get_gridbox_data_sql = """
                 CREATE FUNCTION get_gridbox_data(
-                    in_date_id    INTEGER
+                    in_timestamp_id    INTEGER
                     , in_level_id INTEGER
                 )
                 RETURNS TABLE (
@@ -335,6 +280,8 @@ class NetCDFtoDbSimple(NetCDFtoDbBase):
                         gd.gridbox_id
                         , lat.lat
                         , lon.lon
+                        -- TODO: Change this to the same trick we did in "by_year" to not use tq_jsonb.
+                        --       It should speed up processing.
                         , (to_jsonb(gd) ->> ('value_' || in_level_id))::double precision AS value
                     FROM grid_data gd
                     JOIN gridbox gb ON
@@ -342,7 +289,7 @@ class NetCDFtoDbSimple(NetCDFtoDbBase):
                     JOIN lat ON lat.lat_id = gb.lat_id
                     JOIN lon ON lon.lon_id = gb.lon_id
                     WHERE
-                        gd.timestamp_id = in_date_id
+                        gd.timestamp_id = in_timestamp_id
                     ORDER BY gridbox_id ASC
                 $$;
             """
@@ -366,13 +313,15 @@ class NetCDFtoDbSimple(NetCDFtoDbBase):
                     , in_level_id INTEGER
                 )
                 RETURNS TABLE (
-                    date_val     DATE
-                    , value      DOUBLE PRECISION
+                    timestamp_val  TIMESTAMP
+                    , value        DOUBLE PRECISION
                 )
                 LANGUAGE sql
                 AS $$
                     SELECT
-                        timestamp_val AS date_val
+                        timestamp_val
+                        -- TODO: Change this to the same trick we did in "by_year" to not use tq_jsonb.
+                        --       It should speed up processing.
                         -- Convert the row to a json to grab the column name dynamically
                         , (to_jsonb(gd) ->> ('value_' || in_level_id))::double precision AS value
                     FROM timestamp_dim AS d
@@ -387,9 +336,9 @@ class NetCDFtoDbSimple(NetCDFtoDbBase):
 
 
 def main():
-    data_path = "/var/www/html/icharm/backend/datasets/temperature_anomaly_monthly"
-    dataset_name = "ocean_heat_content"
-    variable_of_interest_name = "t_an"
+    data_path = "/home/mrsharky/dev/sdsu/ICharm.AI-Project/backend/datasets/ncep"
+    dataset_name = "ncep"
+    variable_of_interest_name = "air"
 
     database_username = os.getenv("POSTGRES_USERNAME", "icharm_user")
     database_password = os.getenv("POSTGRES_PASSWORD")

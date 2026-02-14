@@ -1,7 +1,11 @@
 import type { ColorScale } from "@/types";
 import type { ClimateDatasetRecord, Dataset } from "@/types";
 import { getColorMapColors } from "@/utils/colorMaps";
-import { AIR_TEMPERATURE_BASE, SHARP_BANDS } from "@/utils/colorScales";
+import {
+  AIR_TEMPERATURE_BASE,
+  SHARP_BANDS,
+  resolveColorMapColors,
+} from "@/utils/colorScales";
 
 const reducePalette = (colors: string[], count: number): string[] => {
   if (!colors.length) return [];
@@ -271,6 +275,7 @@ export function generateColorScale(
 
   const SST_COLORS = getColorMapColors("Matlab|Jet");
   const AIR_COLORS = AIR_TEMPERATURE_BASE;
+  const ANOMALY_COLORS = resolveColorMapColors("Anomaly|Blue Yellow Red");
   const PRECIP_COLORS = getColorMapColors(
     "Color Brewer 2.0|Sequential|Multi-hue|9-class YlGnBu",
   );
@@ -296,6 +301,32 @@ export function generateColorScale(
     );
   }
 
+  // Anomaly datasets
+  if (
+    name.includes("anomal") ||
+    param.includes("anomaly") ||
+    param.includes("t_an") ||
+    unitsLower.includes("anomaly")
+  ) {
+    return buildScale(ANOMALY_COLORS, ["-2", "-1", "0", "1", "2"], -2, 2);
+  }
+
+  // GODAS vertical velocity
+  if (
+    name.includes("godas") ||
+    name.includes("global ocean data assimilation system") ||
+    name.includes("ncep global ocean data assimilation") ||
+    param.includes("dzdt")
+  ) {
+    const GODAS_COLORS = resolveColorMapColors("Anomaly|Blue Yellow Red");
+    return buildScale(
+      GODAS_COLORS,
+      ["-0.000005", "0", "0.000005"],
+      -0.000005,
+      0.000005,
+    );
+  }
+
   // Air Temperature scales
   if (
     name.includes("noaaglobaltemp") ||
@@ -303,12 +334,7 @@ export function generateColorScale(
     name.includes("noaa global temp") ||
     name.includes("noaa global temperature")
   ) {
-    return buildScale(
-      AIR_COLORS,
-      ["-40°C", "-20°C", "0°C", "20°C", "40°C"],
-      -40,
-      40,
-    );
+    return buildScale(ANOMALY_COLORS, ["-2", "-1", "0", "1", "2"], -2, 2);
   }
 
   if (
@@ -324,32 +350,6 @@ export function generateColorScale(
       ["-40°C", "-20°C", "0°C", "20°C", "40°C"],
       -40,
       40,
-    );
-  }
-
-  // GODAS vertical velocity
-  if (
-    name.includes("godas") ||
-    name.includes("global ocean data assimilation system") ||
-    name.includes("ncep global ocean data assimilation") ||
-    param.includes("dzdt")
-  ) {
-    const GODAS_COLORS = [
-      "#6b00b5",
-      "#8a4bcc",
-      "#a777dd",
-      "#c8b6ea",
-      "#e7e7ee",
-      "#b8e2e6",
-      "#7dc9cc",
-      "#3ea3a8",
-      "#137b80",
-    ];
-    return buildScale(
-      GODAS_COLORS,
-      ["-0.000005", "0", "0.000005"],
-      -0.000005,
-      0.000005,
     );
   }
 
@@ -403,8 +403,12 @@ export function generateColorScale(
 
 export function transformBackendDataset(record: ClimateDatasetRecord): Dataset {
   const storedValue = (record.stored ?? "").toLowerCase();
-  const stored =
-    storedValue === "local" || storedValue === "cloud" ? storedValue : null;
+  const storageType = (record.storageType ?? "").toLowerCase();
+  const stored = storageType.includes("postgres")
+    ? "postgres"
+    : storedValue === "local" || storedValue === "cloud"
+      ? storedValue
+      : null;
 
   return {
     // Core identifiers
@@ -443,6 +447,9 @@ export function transformBackendDataset(record: ClimateDatasetRecord): Dataset {
 
     // Storage and processing
     stored,
+    storageType: record.storageType ?? null,
+    datasetShortName: record.datasetShortName ?? null,
+    postgresProcessor: record.postgresProcessor ?? null,
     inputFile: record.inputFile ?? null,
     keyVariable: record.keyVariable ?? null,
     spatialResolution: record.spatialResolution ?? null,

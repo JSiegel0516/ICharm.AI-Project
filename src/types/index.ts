@@ -10,13 +10,16 @@ export interface ClimateDatasetRecord {
   slug?: string | null;
   sourceName?: string | null;
   datasetName: string;
+  datasetShortName?: string | null;
   layerParameter?: string | null;
   statistic?: string | null;
   datasetType?: string | null;
   levels?: string | null;
   levelValues?: string | null; // String from DB, will be parsed
   levelUnits?: string | null;
-  stored?: string | null; // lowercase variant
+  stored?: string | null;
+  storageType?: string | null;
+  postgresProcessor?: string | null;
   inputFile?: string | null;
   keyVariable?: string | null;
   units?: string | null;
@@ -65,6 +68,9 @@ export interface Dataset {
 
   // Storage and processing
   stored?: "local" | "cloud" | "postgres" | null;
+  storageType?: string | null;
+  datasetShortName?: string | null;
+  postgresProcessor?: string | null;
   inputFile?: string | null;
   keyVariable?: string | null;
   spatialResolution?: string | null;
@@ -97,6 +103,11 @@ export interface ChatMessage {
     id: string;
     title: string;
     score: number;
+  }>;
+  toolCalls?: Array<{
+    name?: string;
+    input?: Record<string, unknown>;
+    output?: Record<string, unknown>;
   }>;
 }
 
@@ -170,15 +181,25 @@ export interface SettingsIconProps extends HTMLAttributes<HTMLDivElement> {
 
 // NEW: Globe settings interface
 export interface GlobeSettings {
+  baseMapMode?: "satellite" | "street";
   satelliteLayerVisible: boolean;
   boundaryLinesVisible: boolean;
   geographicLinesVisible: boolean;
+  timeZoneLinesVisible: boolean;
+  pacificCentered: boolean;
+  coastlineResolution?: GlobeLineResolution;
+  riverResolution?: GlobeLineResolution;
+  lakeResolution?: GlobeLineResolution;
+  naturalEarthGeographicLinesVisible?: boolean;
+  labelsVisible: boolean;
   rasterOpacity: number;
   hideZeroPrecipitation: boolean;
   rasterBlurEnabled: boolean;
+  bumpMapMode: "none" | "land" | "landBathymetry";
   colorbarCustomMin?: number | null;
   colorbarCustomMax?: number | null;
   viewMode?: GlobeViewMode;
+  mapOrientations?: Partial<Record<MapProjectionId, MapOrientation>>;
 }
 
 export interface AppState {
@@ -205,6 +226,7 @@ export interface AppState {
   isLoading: boolean;
   error: string | null;
   globeSettings?: GlobeSettings; // NEW
+  lineColors?: LineColorSettings;
   colorBarOrientation: ColorBarOrientation;
   selectedColorMap?: string | null;
   colorScaleBaselines?: Record<string, ColorScale>;
@@ -264,6 +286,7 @@ export interface GlobeProps {
   currentDataset?: Dataset;
   selectedDate?: Date;
   selectedLevel?: number | null;
+  baseMapMode?: "satellite" | "street";
   colorbarRange?: {
     enabled?: boolean;
     min?: number | null;
@@ -283,10 +306,24 @@ export interface GlobeProps {
   satelliteLayerVisible?: boolean;
   boundaryLinesVisible?: boolean;
   geographicLinesVisible?: boolean;
+  timeZoneLinesVisible?: boolean;
+  pacificCentered?: boolean;
+  coastlineResolution?: GlobeLineResolution;
+  riverResolution?: GlobeLineResolution;
+  lakeResolution?: GlobeLineResolution;
+  naturalEarthGeographicLinesVisible?: boolean;
+  labelsVisible?: boolean;
   rasterOpacity?: number;
   hideZeroPrecipitation?: boolean;
   rasterBlurEnabled?: boolean;
+  bumpMapMode?: "none" | "land" | "landBathymetry";
   useMeshRaster?: boolean;
+  lineColors?: LineColorSettings;
+  mapOrientations?: Partial<Record<MapProjectionId, MapOrientation>>;
+  onProjectionOrientationChange?: (
+    projectionId: MapProjectionId,
+    orientation: MapOrientation,
+  ) => void;
   rasterState: UseRasterLayerResult;
   rasterGridState: UseRasterGridResult;
   // Disable loading overlays during timeline playback
@@ -307,7 +344,45 @@ export interface GlobeProps {
   ) => void;
 }
 
-export type GlobeViewMode = "3d" | "ortho" | "2d" | "winkel";
+export type MapProjectionId =
+  | "winkel"
+  | "atlantis"
+  | "armadillo"
+  | "august"
+  | "baker"
+  | "berghaus"
+  | "craig"
+  | "foucaut"
+  | "hammerRetroazimuthal"
+  | "homolosine"
+  | "loximuthal"
+  | "naturalEarth"
+  | "peirceQuincuncial"
+  | "polyconic"
+  | "sinuMollweide"
+  | "conicEquidistant"
+  | "patterson"
+  | "stereographic"
+  | "sinusoidal"
+  | "waterman";
+export type GlobeViewMode = "3d" | "ortho" | "2d" | MapProjectionId;
+export type MapOrientation = {
+  rotate: [number, number, number];
+  scale: number;
+  baseScale?: number;
+};
+export type WinkelOrientation = MapOrientation;
+export type GlobeLineResolution = "none" | "low" | "medium" | "high";
+export type LineColorOption = string;
+
+export interface LineColorSettings {
+  boundaryLines: LineColorOption;
+  coastlines: LineColorOption;
+  rivers: LineColorOption;
+  lakes: LineColorOption;
+  geographicLines: LineColorOption;
+  geographicGrid: LineColorOption;
+}
 
 export interface RegionData {
   name: string;
@@ -398,22 +473,6 @@ export interface YearSelectorProps {
   className?: string;
 }
 
-export interface TutorialSection {
-  id: string;
-  title: string;
-  content: string;
-  embedding: number[];
-  category?: string;
-}
-
-export interface RetrievalResult {
-  id: string;
-  title: string;
-  content: string;
-  score: number;
-  category?: string;
-}
-
 // Base modal props
 export interface ModalProps {
   onClose: () => void;
@@ -431,18 +490,36 @@ export interface TutorialModalProps extends ModalProps {}
 export interface GlobeSettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;
+  baseMapMode?: "satellite" | "street";
+  onBaseMapModeChange?: (mode: "satellite" | "street") => void;
   satelliteLayerVisible: boolean;
   onSatelliteLayerToggle: (visible: boolean) => void;
   boundaryLinesVisible: boolean;
   onBoundaryLinesToggle: (visible: boolean) => void;
   geographicLinesVisible: boolean;
   onGeographicLinesToggle: (visible: boolean) => void;
+  timeZoneLinesVisible: boolean;
+  onTimeZoneLinesToggle: (visible: boolean) => void;
+  pacificCentered: boolean;
+  onPacificCenteredToggle: (enabled: boolean) => void;
+  coastlineResolution?: GlobeLineResolution;
+  onCoastlineResolutionChange?: (resolution: GlobeLineResolution) => void;
+  riverResolution?: GlobeLineResolution;
+  onRiverResolutionChange?: (resolution: GlobeLineResolution) => void;
+  lakeResolution?: GlobeLineResolution;
+  onLakeResolutionChange?: (resolution: GlobeLineResolution) => void;
+  naturalEarthGeographicLinesVisible?: boolean;
+  onNaturalEarthGeographicLinesToggle?: (visible: boolean) => void;
+  labelsVisible: boolean;
+  onLabelsToggle: (visible: boolean) => void;
   rasterOpacity: number;
   onRasterOpacityChange: (opacity: number) => void;
   hideZeroPrecipitation: boolean;
   onHideZeroPrecipitationToggle: (enabled: boolean) => void;
   rasterBlurEnabled: boolean;
   onRasterBlurToggle: (enabled: boolean) => void;
+  bumpMapMode: "none" | "land" | "landBathymetry";
+  onBumpMapModeChange: (mode: "none" | "land" | "landBathymetry") => void;
   colorbarCustomMin?: number | null;
   colorbarCustomMax?: number | null;
   onColorbarRangeChange: (payload: {

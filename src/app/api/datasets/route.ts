@@ -23,7 +23,7 @@ export async function GET(request: Request) {
 
     if (stored && stored !== "all") {
       console.log(`Filtering by stored: ${stored}`);
-      conditions.push(eq(climateDataset.Stored, stored));
+      conditions.push(eq(climateDataset.stored, stored));
     } else {
       console.log("Returning all datasets (no storage filter)");
     }
@@ -80,7 +80,7 @@ export async function GET(request: Request) {
     // Normalize the field name - Add lowercase 'stored' field
     const normalizedDatasets = datasets.map((dataset) => ({
       ...dataset,
-      stored: dataset.stored, // Add lowercase version
+      stored: dataset.stored ?? dataset.storageType ?? null,
       description: dataset.description,
     }));
 

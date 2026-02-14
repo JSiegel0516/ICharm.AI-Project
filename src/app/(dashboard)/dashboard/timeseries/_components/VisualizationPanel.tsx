@@ -659,7 +659,7 @@ export function VisualizationPanel({
         />
       )}
 
-      {/* Data Table 
+      {/* Data Table
       {chartData.length > 0 && (
         <DataTable
           data={chartData}

@@ -1,5 +1,6 @@
 # FastAPI and server
 fastapi
+orjson
 pydantic
 uvicorn[standard]
 
@@ -38,6 +39,11 @@ ujson
 # Connection
 httpx
 requests
+
+# LLM + vector search
+anthropic
+chromadb
+openai
 
 # Geocoding
 geographiclib==2.0

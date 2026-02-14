@@ -7,7 +7,7 @@ import { ChatInputProps } from "@/types";
 const ChatInput: React.FC<ChatInputProps> = ({
   onSendMessage,
   disabled = false,
-  placeholder = "Ask me about climate data...",
+  placeholder = "Ask me anything...",
 }) => {
   const [message, setMessage] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);

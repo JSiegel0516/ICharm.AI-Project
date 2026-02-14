@@ -27,6 +27,7 @@ import { SettingsGearIcon } from "@/components/ui/settings-gear";
 import { Info } from "lucide-react";
 import { ModeToggle } from "@/components/ui/modetoggle";
 import { useAppState } from "@/context/HeaderContext";
+import type { LineColorSettings } from "@/types";
 import { COLOR_MAP_PRESETS } from "@/utils/colorScales";
 import { Switch } from "@/components/ui/switch";
 
@@ -38,8 +39,31 @@ export default function NavigationIcons() {
     setSelectedColorMap,
     selectedColorMapInverse,
     setSelectedColorMapInverse,
+    lineColors,
+    setLineColors,
+    globeSettings,
   } = useAppState();
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
+
+  const viewMode = globeSettings?.viewMode ?? "3d";
+  const defaultLineColors =
+    viewMode === "3d" || viewMode === "2d" || viewMode === "ortho"
+      ? {
+          boundaryLines: "#000000",
+          coastlines: "#000000",
+          rivers: "#000000",
+          lakes: "#000000",
+          geographicLines: "#000000",
+          geographicGrid: "#000000",
+        }
+      : {
+          boundaryLines: "#4b5563",
+          coastlines: "#4b5563",
+          rivers: "#4b5563",
+          lakes: "#4b5563",
+          geographicLines: "#4b5563",
+          geographicGrid: "#4b5563",
+        };
 
   const [settings, setSettings] = React.useState(() => ({
     // Appearance
@@ -65,12 +89,21 @@ export default function NavigationIcons() {
     colorBarOrientation,
     colorMapPreset: selectedColorMap ?? "dataset-default",
     colorMapInverse: selectedColorMapInverse ?? false,
+    lineColors: lineColors ?? defaultLineColors,
   }));
 
   const DEFAULT_COLOR_MAP_CATEGORY = "cb-zero";
   const [activeColorMapCategory, setActiveColorMapCategory] = React.useState(
     DEFAULT_COLOR_MAP_CATEGORY,
   );
+  const [lineColorSelection, setLineColorSelection] = React.useState(() => ({
+    boundaryLines: false,
+    coastlines: false,
+    rivers: false,
+    lakes: false,
+    geographicLines: false,
+    geographicGrid: false,
+  }));
 
   React.useEffect(() => {
     setSettings((prev) => ({
@@ -78,8 +111,14 @@ export default function NavigationIcons() {
       colorBarOrientation,
       colorMapPreset: selectedColorMap ?? "dataset-default",
       colorMapInverse: selectedColorMapInverse ?? false,
+      lineColors: lineColors ?? prev.lineColors,
     }));
-  }, [colorBarOrientation, selectedColorMap, selectedColorMapInverse]);
+  }, [
+    colorBarOrientation,
+    selectedColorMap,
+    selectedColorMapInverse,
+    lineColors,
+  ]);
 
   const updateSetting = (key: string, value: any) => {
     setSettings((prev) => ({
@@ -101,6 +140,17 @@ export default function NavigationIcons() {
   const handleSave = () => {
     // Save settings logic here
     console.log("Saving settings:", settings);
+    if (settings.lineColors) {
+      setLineColors(settings.lineColors);
+    }
+    setLineColorSelection({
+      boundaryLines: false,
+      coastlines: false,
+      rivers: false,
+      lakes: false,
+      geographicLines: false,
+      geographicGrid: false,
+    });
     setIsSettingsOpen(false);
   };
 
@@ -122,11 +172,21 @@ export default function NavigationIcons() {
       colorBarOrientation: "horizontal",
       colorMapPreset: "dataset-default",
       colorMapInverse: false,
+      lineColors: defaultLineColors,
     });
     setColorBarOrientation("horizontal");
     setSelectedColorMap("dataset-default");
     setSelectedColorMapInverse(false);
     setActiveColorMapCategory(DEFAULT_COLOR_MAP_CATEGORY);
+    setLineColors(defaultLineColors);
+    setLineColorSelection({
+      boundaryLines: false,
+      coastlines: false,
+      rivers: false,
+      lakes: false,
+      geographicLines: false,
+      geographicGrid: false,
+    });
   };
 
   const fontSizeOptions = [
@@ -135,6 +195,50 @@ export default function NavigationIcons() {
     { value: "large", label: "Large", size: "text-lg" },
     { value: "xlarge", label: "Extra Large", size: "text-xl" },
   ];
+
+  const lineColorOptions = [
+    { value: "#111827", label: "Black" },
+    { value: "#ffffff", label: "White" },
+    { value: "#4b5563", label: "Gray" },
+    { value: "#e5e7eb", label: "Light Gray" },
+    { value: "#64748b", label: "Slate" },
+    { value: "#3b82f6", label: "Blue" },
+    { value: "#22d3ee", label: "Cyan" },
+    { value: "#22c55e", label: "Green" },
+    { value: "#eab308", label: "Yellow" },
+    { value: "#ef4444", label: "Red" },
+    { value: "#a855f7", label: "Purple" },
+  ];
+
+  const updateLineColor = (key: string, value: string) => {
+    setSettings((prev) => ({
+      ...prev,
+      lineColors: {
+        ...prev.lineColors,
+        [key]: value,
+      },
+    }));
+  };
+
+  const resetLineColors = () => {
+    const defaults = defaultLineColors;
+    setSettings((prev) => ({
+      ...prev,
+      lineColors: defaults,
+    }));
+    setLineColorSelection({
+      boundaryLines: false,
+      coastlines: false,
+      rivers: false,
+      lakes: false,
+      geographicLines: false,
+      geographicGrid: false,
+    });
+  };
+
+  const applyLineColor = (key: string, value: string) => {
+    updateLineColor(key, value);
+  };
 
   const languageOptions = [
     { value: "en", label: "English" },
@@ -147,43 +251,59 @@ export default function NavigationIcons() {
     { value: "ar", label: "العربية" },
   ];
 
-  const colorMapCategories = [
-    {
-      id: "cb-non",
-      label: "Color Brewer 2.0 | Non-Centered",
-      match: (id: string) =>
-        id.includes("Color Brewer 2.0|Diverging|Non Centered"),
-    },
-    {
-      id: "cb-zero",
-      label: "Color Brewer 2.0 | Zero-Centered",
-      match: (id: string) =>
-        id.includes("Color Brewer 2.0|Diverging|Zero Centered"),
-    },
-    {
-      id: "cb-multi",
-      label: "Color Brewer 2.0 | Multi-hue",
-      match: (id: string) =>
-        id.includes("Color Brewer 2.0|Sequential|Multi-hue"),
-    },
-    {
-      id: "cb-single",
-      label: "Color Brewer 2.0 | Single-hue",
-      match: (id: string) =>
-        id.includes("Color Brewer 2.0|Sequential|Single-hue"),
-    },
-    {
-      id: "matlab",
-      label: "Matlab",
-      match: (id: string) => id.startsWith("Matlab|"),
-    },
-    {
-      id: "other",
-      label: "Other",
-      match: (id: string) =>
-        id.startsWith("Other|") || id === "dataset-default",
-    },
-  ];
+  const colorMapCategories = React.useMemo(
+    () => [
+      {
+        id: "anomaly",
+        label: "Anomaly",
+        match: (id: string) => id.startsWith("Anomaly|"),
+      },
+      {
+        id: "cb-non",
+        label: "Color Brewer 2.0 | Non-Centered",
+        match: (id: string) =>
+          id.includes("Color Brewer 2.0|Diverging|Non Centered"),
+      },
+      {
+        id: "cb-zero",
+        label: "Color Brewer 2.0 | Zero-Centered",
+        match: (id: string) =>
+          id.includes("Color Brewer 2.0|Diverging|Zero Centered"),
+      },
+      {
+        id: "cb-multi",
+        label: "Color Brewer 2.0 | Multi-hue",
+        match: (id: string) =>
+          id.includes("Color Brewer 2.0|Sequential|Multi-hue"),
+      },
+      {
+        id: "cb-single",
+        label: "Color Brewer 2.0 | Single-hue",
+        match: (id: string) =>
+          id.includes("Color Brewer 2.0|Sequential|Single-hue"),
+      },
+      {
+        id: "matlab",
+        label: "Matlab",
+        match: (id: string) => id.startsWith("Matlab|"),
+      },
+      {
+        id: "other",
+        label: "Other",
+        match: (id: string) =>
+          id.startsWith("Other|") || id === "dataset-default",
+      },
+    ],
+    [],
+  );
+
+  const visibleColorMapCategories = React.useMemo(
+    () =>
+      colorMapCategories.filter((cat) =>
+        COLOR_MAP_PRESETS.some((preset) => cat.match(preset.id)),
+      ),
+    [colorMapCategories],
+  );
 
   const buildLinearGradient = (colors: string[]) =>
     colors
@@ -196,12 +316,25 @@ export default function NavigationIcons() {
       })
       .join(", ");
 
+  React.useEffect(() => {
+    if (
+      visibleColorMapCategories.length &&
+      !visibleColorMapCategories.some(
+        (cat) => cat.id === activeColorMapCategory,
+      )
+    ) {
+      setActiveColorMapCategory(visibleColorMapCategories[0].id);
+    }
+  }, [activeColorMapCategory, visibleColorMapCategories]);
+
   const filteredPresets = React.useMemo(() => {
     const category =
-      colorMapCategories.find((cat) => cat.id === activeColorMapCategory) ??
-      colorMapCategories[0];
+      visibleColorMapCategories.find(
+        (cat) => cat.id === activeColorMapCategory,
+      ) ?? visibleColorMapCategories[0];
+    if (!category) return [];
     return COLOR_MAP_PRESETS.filter((preset) => category.match(preset.id));
-  }, [activeColorMapCategory]);
+  }, [activeColorMapCategory, visibleColorMapCategories]);
 
   return (
     <ButtonGroup>
@@ -398,7 +531,7 @@ export default function NavigationIcons() {
                             }
                             className="rounded-lg bg-gray-700 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
                           >
-                            {colorMapCategories.map((cat) => (
+                            {visibleColorMapCategories.map((cat) => (
                               <option key={cat.id} value={cat.id}>
                                 {cat.label}
                               </option>
@@ -423,7 +556,7 @@ export default function NavigationIcons() {
                         </div>
 
                         <div className="flex flex-wrap gap-2">
-                          {colorMapCategories.map((cat) => (
+                          {visibleColorMapCategories.map((cat) => (
                             <button
                               key={cat.id}
                               type="button"
@@ -594,6 +727,145 @@ export default function NavigationIcons() {
 
                   <div className="rounded-lg bg-gray-800/30 p-4">
                     <ModeToggle />
+                  </div>
+                </section>
+
+                {/* Map Overlay Colors Section */}
+                <section className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <LayoutList className="h-5 w-5 text-blue-400" />
+                    <h3 className="text-lg font-medium">Map Overlay Colors</h3>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-lg bg-gray-800/30 p-4">
+                    <div>
+                      <span className="text-sm font-medium">Master Color</span>
+                      <div className="text-xs text-gray-400">
+                        Applies to checked rows (all if none selected)
+                      </div>
+                    </div>
+                    <select
+                      className="rounded-lg bg-gray-700 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (!value) return;
+                        const selectedKeys = Object.entries(lineColorSelection)
+                          .filter(([, enabled]) => enabled)
+                          .map(([k]) => k);
+                        const keysToApply = (
+                          selectedKeys.length > 0
+                            ? selectedKeys
+                            : [
+                                "boundaryLines",
+                                "coastlines",
+                                "rivers",
+                                "lakes",
+                                "geographicLines",
+                                "geographicGrid",
+                              ]
+                        ) as Array<keyof LineColorSettings>;
+                        setSettings((prev) => {
+                          const next: LineColorSettings = {
+                            ...prev.lineColors,
+                          };
+                          keysToApply.forEach((selectedKey) => {
+                            next[selectedKey] = value;
+                          });
+                          return {
+                            ...prev,
+                            lineColors: next,
+                          };
+                        });
+                        e.currentTarget.selectedIndex = 0;
+                      }}
+                    >
+                      <option value="">Select color…</option>
+                      {lineColorOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-lg bg-gray-800/30 p-4">
+                    <span className="text-sm font-medium">
+                      Reset all colors
+                    </span>
+                    <button
+                      type="button"
+                      onClick={resetLineColors}
+                      className="rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-sm text-gray-200 hover:bg-gray-600"
+                    >
+                      {viewMode === "3d" ||
+                      viewMode === "2d" ||
+                      viewMode === "ortho"
+                        ? "Reset to Black"
+                        : "Reset to Gray"}
+                    </button>
+                  </div>
+
+                  <div className="grid gap-3">
+                    {[
+                      { key: "boundaryLines", label: "Boundary Lines" },
+                      { key: "coastlines", label: "Coastlines" },
+                      { key: "rivers", label: "Rivers" },
+                      { key: "lakes", label: "Lakes" },
+                      { key: "geographicLines", label: "Geographic Lines" },
+                      { key: "geographicGrid", label: "Geographic Grid" },
+                    ].map((item) => (
+                      <div
+                        key={item.key}
+                        className="flex items-center justify-between rounded-lg bg-gray-800/30 p-4"
+                      >
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            checked={
+                              lineColorSelection[
+                                item.key as keyof typeof lineColorSelection
+                              ]
+                            }
+                            onChange={(e) =>
+                              setLineColorSelection((prev) => ({
+                                ...prev,
+                                [item.key]: e.target.checked,
+                              }))
+                            }
+                            className="rounded bg-gray-700 text-blue-500 focus:ring-blue-500"
+                          />
+                          <div
+                            className="h-3 w-3 rounded-full border border-white/20"
+                            style={{
+                              backgroundColor:
+                                settings.lineColors?.[
+                                  item.key as keyof typeof settings.lineColors
+                                ] ?? "#000000",
+                            }}
+                          />
+                          <span className="text-sm font-medium">
+                            {item.label}
+                          </span>
+                        </div>
+                        <select
+                          value={
+                            settings.lineColors?.[
+                              item.key as keyof typeof settings.lineColors
+                            ] ?? "#000000"
+                          }
+                          onChange={(e) =>
+                            applyLineColor(item.key, e.target.value)
+                          }
+                          className="rounded-lg bg-gray-700 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        >
+                          {lineColorOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
                   </div>
                 </section>
 

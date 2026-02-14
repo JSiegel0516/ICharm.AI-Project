@@ -52,6 +52,14 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
+import {
+  isPostgresDataset,
+  fetchDatasetGridboxes,
+  fetchDatasetLevels,
+  resolveGridboxId,
+  resolveLevelId,
+  fetchGridboxTimeseries,
+} from "@/lib/postgresRaster";
 
 // Types
 type TemperatureUnitInfo = {
@@ -605,6 +613,42 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     setTimeseriesError(null);
 
     try {
+      if (isPostgresDataset(currentDataset)) {
+        const [gridboxes, levels] = await Promise.all([
+          fetchDatasetGridboxes(datasetId),
+          fetchDatasetLevels(datasetId),
+        ]);
+        const gridboxId = resolveGridboxId(gridboxes, latitude, longitude);
+        const levelId = resolveLevelId(levels, null);
+
+        if (gridboxId == null || levelId == null) {
+          throw new Error("Missing gridbox or level mapping for dataset");
+        }
+
+        const timeseries = await fetchGridboxTimeseries({
+          datasetId,
+          gridboxId,
+          levelId,
+        });
+
+        const startMs = startDate.getTime();
+        const endMs = endDate.getTime();
+        const series: SeriesPoint[] = timeseries
+          .filter((entry) => {
+            const ts = entry.date.getTime();
+            return ts >= startMs && ts <= endMs;
+          })
+          .sort((a, b) => a.date.getTime() - b.date.getTime())
+          .map((entry) => ({
+            date: formatDate(entry.date),
+            value: entry.value,
+          }));
+
+        setTimeseriesSeries(series);
+        setTimeseriesUnits(datasetUnit);
+        return;
+      }
+
       const focusCoords = `${latitude},${longitude}`;
       const payload = {
         datasetIds: [datasetId],
@@ -675,7 +719,14 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     } finally {
       setTimeseriesLoading(false);
     }
-  }, [datasetId, calculateDateRange, latitude, longitude, datasetUnit]);
+  }, [
+    datasetId,
+    calculateDateRange,
+    latitude,
+    longitude,
+    datasetUnit,
+    currentDataset,
+  ]);
 
   const handleExportCSV = useCallback(() => {
     if (!chartData.length) return;

@@ -25,11 +25,10 @@ export const isSeaSurfaceTemperatureDataset = (
   }
 
   const fields: Array<string | null | undefined> = [
-    dataset.description,
-    dataset?.units,
     dataset.name,
     dataset.layerParameter,
-    dataset.dataType,
+    dataset.slug,
+    dataset.id,
   ];
 
   return fields.some(containsSeaSurfaceKeywords);

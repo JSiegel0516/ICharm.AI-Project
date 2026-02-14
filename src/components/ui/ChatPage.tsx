@@ -34,7 +34,7 @@ type SessionSummary = {
   updatedAt: Date;
 };
 
-const GREETING = "How can I help you analyze the climate data?";
+const GREETING = "How can I help?";
 
 const createGreetingMessage = (): ChatMessage => ({
   id: `welcome-${Date.now()}`,
@@ -116,7 +116,11 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
   }, []);
 
   const appendAnimatedAssistantMessage = useCallback(
-    (content: string, sources?: ChatMessage["sources"]) => {
+    (
+      content: string,
+      sources?: ChatMessage["sources"],
+      toolCalls?: ChatMessage["toolCalls"],
+    ) => {
       const id = `${Date.now()}-bot`;
       const newMessage: ChatMessage = {
         id,
@@ -124,6 +128,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
         message: "",
         timestamp: new Date(),
         sources,
+        toolCalls,
       };
       setMessages((prev) => [...prev, newMessage]);
 
@@ -630,7 +635,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
         activeSessionId = data.sessionId;
       }
 
-      const botResponse = (data.content ?? "").trim();
+      const botResponse = (data.message ?? "").trim();
       if (!botResponse) {
         throw new Error("Empty response from API");
       }
@@ -638,6 +643,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
       appendAnimatedAssistantMessage(
         botResponse,
         Array.isArray(data.sources) ? data.sources : undefined,
+        Array.isArray(data.toolCalls) ? data.toolCalls : undefined,
       );
       void loadSessions();
     } catch (error) {
@@ -929,6 +935,23 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
                       <p className="text-sm leading-relaxed">
                         {message.message}
                       </p>
+                      {message.toolCalls && message.toolCalls.length > 0 && (
+                        <details className="mt-2 text-[11px] text-neutral-400">
+                          <summary className="cursor-pointer">
+                            Used {message.toolCalls.length} tool(s)
+                          </summary>
+                          <ul className="mt-1 space-y-1">
+                            {message.toolCalls.map((toolCall, idx) => (
+                              <li key={idx}>
+                                - {toolCall.name ?? "tool"}
+                                {toolCall.input
+                                  ? ` (${Object.keys(toolCall.input).length} params)`
+                                  : ""}
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
                     </div>
 
                     {message.type === "user" && (
@@ -978,7 +1001,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ show, onClose }) => {
                 value={inputValue}
                 onChange={(event) => setInputValue(event.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder="Ask about climate data..."
+                placeholder="Ask anything..."
                 className="flex-1 rounded-xl border border-gray-700/30 bg-neutral-900/30 px-3 py-2 text-sm text-gray-200 placeholder-neutral-500 focus:border-gray-600 focus:ring-2 focus:ring-gray-600 focus:outline-none"
               />
               <button

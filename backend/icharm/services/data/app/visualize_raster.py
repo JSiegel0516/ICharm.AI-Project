@@ -56,6 +56,7 @@ class VisualizeRaster:
             logger.info(f"  level: {request.level}")
             logger.info(f"  Custom range: min={chosen_min}, max={chosen_max}")
             logger.info(f"  CSS colors: {len(request.cssColors or [])}")
+            logger.info(f"  Smooth gridboxes: {request.smoothGridBoxValues}")
 
             # Get metadata
             metadata_df = DatabaseQueries.get_metadata_by_ids([request.datasetId])
@@ -68,7 +69,7 @@ class VisualizeRaster:
             meta_row = metadata_df.iloc[0]
 
             # Open dataset
-            stored = str(meta_row.get("Stored", "")).lower()
+            stored = str(meta_row.get("stored") or meta_row.get("Stored") or "").lower()
             if stored == "local":
                 ds = await DatasetLocal.open_local_dataset(meta_row)
             elif stored == "postgres":
@@ -154,6 +155,11 @@ class VisualizeRaster:
                 css_colors=request.cssColors,
                 value_min_override=chosen_min,  # Pass the custom min
                 value_max_override=chosen_max,  # Pass the custom max
+                smooth_gridboxes=(
+                    request.smoothGridBoxValues
+                    if request.smoothGridBoxValues is not None
+                    else True
+                ),
             )
 
             # Add processing info
@@ -226,7 +232,7 @@ class VisualizeRaster:
             metadata_df = metadata_df.reset_index(drop=True)
             meta_row = metadata_df.iloc[0]
 
-            stored = str(meta_row.get("Stored", "")).lower()
+            stored = str(meta_row.get("stored") or meta_row.get("Stored") or "").lower()
             if stored == "local":
                 ds = await DatasetLocal.open_local_dataset(meta_row)
             elif stored == "postgres":

@@ -4,9 +4,10 @@ Supports both local and cloud-based datasets with advanced processing capabiliti
 NOW WITH RASTER VISUALIZATION SUPPORT
 """
 
-from fastapi import FastAPI, APIRouter, HTTPException
+import orjson
+from fastapi import FastAPI, APIRouter, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response, RedirectResponse
 from typing import Optional, Any, Literal
 from datetime import datetime
 import pandas as pd
@@ -27,6 +28,9 @@ from icharm.services.data.app.models import (
     TimeSeriesResponse,
     TimeSeriesRequest,
     RasterRequest,
+    DatasetRequest,
+    GridboxDataRequest,
+    TimeseriesDataRequest,
 )
 
 # Import raster visualization module
@@ -114,7 +118,7 @@ app = FastAPI(
     title="Enhanced Climate Time Series API",
     description="Advanced API for extracting and processing climate time series data",
     version="2.0.0",
-    default_response_class=CustomJSONResponse,
+    # default_response_class=CustomJSONResponse,
 )
 
 # Configure CORS
@@ -169,8 +173,26 @@ async def raster_grid(request: RasterRequest):
     return await VisualizeRaster.visualize_raster_grid(request)
 
 
-@router.get("/timeseries/datasets", response_class=CustomJSONResponse)
+@router.get(path="/datasets", response_class=CustomJSONResponse)
+async def get_datasets(
+    stored: Optional[Literal["local", "cloud", "all"]] = "all",
+    source: Optional[str] = None,
+    search: Optional[str] = None,
+):
+    logger.info("Using /datasets")
+    data = await DatabaseQueries.get_all_metadata(
+        stored=stored,
+        source=source,
+        search=search,
+    )
+    return data
+
+
+@router.get(
+    path="/timeseries/datasets", response_class=CustomJSONResponse, deprecated=True
+)
 async def list_available_datasets(
+    request: Request,
     stored: Optional[Literal["local", "cloud", "all"]] = "all",
     source: Optional[str] = None,
     search: Optional[str] = None,
@@ -178,15 +200,56 @@ async def list_available_datasets(
     """
     List all available datasets with filtering options
     """
-    try:
-        datasets = DatabaseQueries.get_datasets(stored, source, search)
+    # Rebuild query string
+    logger.info("Using deprecated dataset gathering")
+    params = request.query_params
+    url = request.url_for("get_datasets")
 
-    except Exception as e:
-        logger.error(f"Error listing datasets: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to list datasets: {str(e)}"
-        )
-    return datasets
+    if params:
+        url = f"{url}?{params}"
+
+    # Redirect response to new method
+    return RedirectResponse(url=url, status_code=307)
+
+
+@router.get(path="/timestamps")
+async def timestamps(request: DatasetRequest):
+    """Get all available timestamps for dataset"""
+    data = await DatabaseQueries.get_timestamps(request)
+    payload = orjson.dumps(data)
+    return Response(content=payload, media_type="application/json")
+
+
+@router.get(path="/levels")
+async def get_levels(request: DatasetRequest):
+    """Get all available levels for dataset"""
+    data = await DatabaseQueries.get_levels(request)
+    payload = orjson.dumps(data)
+    return Response(content=payload, media_type="application/json")
+
+
+@router.get(path="/gridboxes")
+async def get_gridboxes(request: DatasetRequest):
+    """Get all available gridboxes for dataset"""
+    data = await DatabaseQueries.get_gridboxes(request)
+    payload = orjson.dumps(data)
+    return Response(content=payload, media_type="application/json")
+
+
+@router.get(path="/gridbox_data")
+async def get_gridbox_data(request: GridboxDataRequest):
+    """Get all available gridboxes for dataset"""
+    data = await DatabaseQueries.get_gridbox_data(request)
+    payload = orjson.dumps(data)
+    return Response(content=payload, media_type="application/json")
+
+
+@router.get(path="/timeseries_data")
+async def get_timeseries_data(request: TimeseriesDataRequest):
+    """Get all available gridboxes for dataset"""
+    data = await DatabaseQueries.get_timeseries_data(request)
+    payload = orjson.dumps(data)
+    return Response(content=payload, media_type="application/json")
 
 
 @router.get("/health")
@@ -275,4 +338,4 @@ if __name__ == "__main__":
     print("   - Spatial filtering and aggregation")
     print("   - Multiple chart types")
     print("   - Data caching for performance")
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8002, reload=True)
