@@ -402,7 +402,7 @@ export function generateColorScale(
 }
 
 export function transformBackendDataset(record: ClimateDatasetRecord): Dataset {
-  const storedValue = (record.Stored ?? record.stored ?? "").toLowerCase();
+  const storedValue = (record.stored ?? "").toLowerCase();
   const stored =
     storedValue === "local" || storedValue === "cloud" ? storedValue : null;
 

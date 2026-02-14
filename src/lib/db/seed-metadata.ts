@@ -155,7 +155,7 @@ async function seedDatasets() {
       levels: row.levels,
       levelValues: row.levelValues === "None" ? null : row.levelValues,
       levelUnits: row.levelUnits === "None" ? null : row.levelUnits,
-      Stored: row.Stored,
+      stored: row.stored,
       inputFile: row.inputFile,
       keyVariable: row.keyVariable,
       units: row.units,
