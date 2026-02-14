@@ -34,7 +34,7 @@ export const loadNaturalEarthBoundaries = async (options: {
     files.push({
       name: `ne_${res}_coastline.json`,
       kind: "boundary",
-      path: `/assets/naturalearth/coastlines/ne_${res}_coastline.json`,
+      path: `/_countries/ne_${res}_coastline.json`,
     });
   }
   if (options.includeBoundaries && options.lakeResolution !== "none") {
@@ -42,7 +42,7 @@ export const loadNaturalEarthBoundaries = async (options: {
     files.push({
       name: `ne_${res}_lakes.json`,
       kind: "boundary",
-      path: `/assets/naturalearth/lakes/ne_${res}_lakes.json`,
+      path: `/_countries/ne_${res}_lakes.json`,
     });
   }
   if (options.includeBoundaries && options.riverResolution !== "none") {
@@ -50,14 +50,14 @@ export const loadNaturalEarthBoundaries = async (options: {
     files.push({
       name: `ne_${res}_rivers_lake_centerlines.json`,
       kind: "boundary",
-      path: `/assets/naturalearth/rivers/ne_${res}_rivers_lake_centerlines.json`,
+      path: `/_countries/ne_${res}_rivers_lake_centerlines.json`,
     });
   }
   if (options.includeGeographicLines) {
     files.push({
       name: "ne_110m_geographic_lines.json",
       kind: "geographicLines",
-      path: "/assets/naturalearth/geographic/ne_110m_geographic_lines.json",
+      path: "/_countries/ne_110m_geographic_lines.json",
     });
   }
   if (options.includeTimeZones) {

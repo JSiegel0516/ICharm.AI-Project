@@ -15,17 +15,17 @@ const RESOLUTION_MAP: Record<Exclude<NEResolution, "none">, string> = {
 const buildPath = (type: NEDataType, resolution: NEResolution) => {
   if (resolution === "none") return null;
   if (type === "geographic") {
-    return "/assets/naturalearth/geographic/ne_110m_geographic_lines.json";
+    return "/_countries/ne_110m_geographic_lines.json";
   }
   const res = RESOLUTION_MAP[resolution];
   if (type === "coastlines") {
-    return `/assets/naturalearth/coastlines/ne_${res}_coastline.json`;
+    return `/_countries/ne_${res}_coastline.json`;
   }
   if (type === "rivers") {
-    return `/assets/naturalearth/rivers/ne_${res}_rivers_lake_centerlines.json`;
+    return `/_countries/ne_${res}_rivers_lake_centerlines.json`;
   }
   if (type === "lakes") {
-    return `/assets/naturalearth/lakes/ne_${res}_lakes.json`;
+    return `/_countries/ne_${res}_lakes.json`;
   }
   return null;
 };
