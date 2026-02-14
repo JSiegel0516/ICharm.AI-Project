@@ -1,12 +1,10 @@
 import os
-import io
 import re
 from datetime import datetime, timedelta
 
 from pathlib import Path
 
 import numpy
-import pandas
 from netCDF4 import Dataset, num2date
 from tqdm import tqdm
 from typing import Any

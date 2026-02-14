@@ -29,6 +29,7 @@ import { GlobeSettingsPanel } from "@/app/(frontpage)/_components/GlobeSettingsP
 import { useAppState } from "@/context/HeaderContext";
 import type { Dataset, GlobeSettings } from "@/types";
 import { Database, Cloud, Server, Globe, X } from "lucide-react";
+import type { GlobeLineResolution } from "@/types";
 
 interface SideButtonsProps {
   selectedDate: Date;
