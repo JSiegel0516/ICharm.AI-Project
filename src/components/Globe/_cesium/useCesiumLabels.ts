@@ -16,6 +16,7 @@ import {
 import { getTileKeysForView } from "./labelTiles";
 import {
   LABEL_FADE_MS,
+  LABEL_HIDE_HEIGHT,
   LABEL_MIN_VISIBLE,
   LABEL_TILE_URL,
   LABEL_VISIBILITY_THROTTLE_MS,
@@ -36,6 +37,45 @@ export const useCesiumLabels = ({
   effectiveViewMode,
   viewerReady,
 }: Params) => {
+  const earthRadius = 6_378_137;
+  const degreesFromHeight = (height: number) => {
+    if (height <= 0) return 0;
+    const ratio = earthRadius / (earthRadius + height);
+    const clamped = Math.max(0, Math.min(1, ratio));
+    const radians = Math.acos(clamped);
+    return (radians * 180) / Math.PI;
+  };
+  const angularDistanceDeg = (
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number,
+  ) => {
+    const toRad = (value: number) => (value * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return (c * 180) / Math.PI;
+  };
+  const getViewCenterLatLon = (viewer: any, Cesium: any) => {
+    const canvas = viewer?.scene?.canvas;
+    if (!canvas) return null;
+    const center = new Cesium.Cartesian2(
+      canvas.clientWidth / 2,
+      canvas.clientHeight / 2,
+    );
+    const ray = viewer.camera.getPickRay(center);
+    const hit = viewer.scene.globe?.pick(ray, viewer.scene);
+    if (!hit) return null;
+    const carto = Cesium.Cartographic.fromCartesian(hit);
+    return {
+      lat: Cesium.Math.toDegrees(carto.latitude),
+      lon: Cesium.Math.toDegrees(carto.longitude),
+    };
+  };
   const labelTileCacheRef = useRef<Map<string, any[]>>(new Map());
   const labelTilePendingRef = useRef<Set<string>>(new Set());
   const labelTileAbortRef = useRef<AbortController | null>(null);
@@ -142,7 +182,19 @@ export const useCesiumLabels = ({
 
     const viewer = viewerRef.current;
     const Cesium = cesiumInstance;
-    const height = viewer.camera.positionCartographic.height;
+    const cameraCarto = viewer.camera.positionCartographic;
+    const height = cameraCarto.height;
+    if (height > LABEL_HIDE_HEIGHT) {
+      labelTileCacheRef.current.forEach((entities) => {
+        entities.forEach((entity) => {
+          setLabelTarget(entity, false);
+          setLabelOpacity(entity, 0);
+          entity.show = false;
+        });
+      });
+      viewer.scene?.requestRender();
+      return;
+    }
     const zoom = Math.min(10, heightToTileZoom(height));
     const zoomFloat = heightToTileZoomFloat(height);
     const tier = getLabelTier(zoomFloat);
@@ -151,7 +203,13 @@ export const useCesiumLabels = ({
     if (!tileInfo || !tileInfo.keys.length) {
       return;
     }
-    const { keys: tileKeys, centerLon, centerLat } = tileInfo;
+    const viewCenter = getViewCenterLatLon(viewer, Cesium);
+    const centerLon =
+      viewCenter?.lon ?? Cesium.Math.toDegrees(cameraCarto.longitude);
+    const centerLat =
+      viewCenter?.lat ?? Cesium.Math.toDegrees(cameraCarto.latitude);
+    const { keys: tileKeys } = tileInfo;
+    const maxAngularDistance = degreesFromHeight(height) + 4;
     tileKeys.sort((a, b) => {
       const [za, xa, ya] = a.split("/").map((value) => Number(value));
       const [zb, xb, yb] = b.split("/").map((value) => Number(value));
@@ -167,7 +225,18 @@ export const useCesiumLabels = ({
       return dLonA * dLonA + dLatA * dLatA - (dLonB * dLonB + dLatB * dLatB);
     });
 
-    const activeKeys = new Set(tileKeys);
+    const filteredTileKeys = tileKeys.filter((key) => {
+      const [z, x, y] = key.split("/").map((value) => Number(value));
+      const center = tileCenter(x, y, z);
+      const distance = angularDistanceDeg(
+        center.lat,
+        center.lon,
+        centerLat,
+        centerLon,
+      );
+      return distance <= maxAngularDistance + 4;
+    });
+    const activeKeys = new Set(filteredTileKeys);
     const occluder = new Cesium.EllipsoidalOccluder(
       Cesium.Ellipsoid.WGS84,
       viewer.camera.position,
@@ -274,7 +343,13 @@ export const useCesiumLabels = ({
       );
       Cesium.Cartesian3.normalize(vector, vector);
       const centerDot = Cesium.Cartesian3.dot(vector, cameraDirection);
-      if (centerDot < 0.15) return false;
+      if (centerDot < 0.35) return false;
+
+      const carto = Cesium.Cartographic.fromCartesian(position);
+      const lon = Cesium.Math.toDegrees(carto.longitude);
+      const lat = Cesium.Math.toDegrees(carto.latitude);
+      const distance = angularDistanceDeg(lat, lon, centerLat, centerLon);
+      if (distance > maxAngularDistance) return false;
 
       const screenPosition = Cesium.SceneTransforms.wgs84ToWindowCoordinates(
         scene,
@@ -456,7 +531,14 @@ export const useCesiumLabels = ({
     }
 
     const viewer = viewerRef.current;
-    const height = viewer.camera.positionCartographic.height;
+    const Cesium = cesiumInstance;
+    const cameraCarto = viewer.camera.positionCartographic;
+    const height = cameraCarto.height;
+    if (height > LABEL_HIDE_HEIGHT) {
+      clearLabelTiles();
+      labelUpdateInFlightRef.current = false;
+      return;
+    }
     const zoom = Math.min(10, heightToTileZoom(height));
     const zoomFloat = heightToTileZoomFloat(height);
     const tier = getLabelTier(zoomFloat);
@@ -470,7 +552,13 @@ export const useCesiumLabels = ({
       labelUpdateInFlightRef.current = false;
       return;
     }
-    const { keys: tileKeys, centerLon, centerLat } = tileInfo;
+    const viewCenter = getViewCenterLatLon(viewer, Cesium);
+    const centerLon =
+      viewCenter?.lon ?? Cesium.Math.toDegrees(cameraCarto.longitude);
+    const centerLat =
+      viewCenter?.lat ?? Cesium.Math.toDegrees(cameraCarto.latitude);
+    const { keys: tileKeys } = tileInfo;
+    const maxAngularDistance = degreesFromHeight(height) + 6;
     tileKeys.sort((a, b) => {
       const [za, xa, ya] = a.split("/").map((value) => Number(value));
       const [zb, xb, yb] = b.split("/").map((value) => Number(value));
@@ -485,6 +573,17 @@ export const useCesiumLabels = ({
       const dLatB = cb.lat - centerLat;
       return dLonA * dLonA + dLatA * dLatA - (dLonB * dLonB + dLatB * dLatB);
     });
+    const filteredTileKeys = tileKeys.filter((key) => {
+      const [z, x, y] = key.split("/").map((value) => Number(value));
+      const center = tileCenter(x, y, z);
+      const distance = angularDistanceDeg(
+        center.lat,
+        center.lon,
+        centerLat,
+        centerLon,
+      );
+      return distance <= maxAngularDistance;
+    });
 
     if (labelTileZoomRef.current !== zoom) {
       clearLabelTiles();
@@ -492,8 +591,8 @@ export const useCesiumLabels = ({
     }
 
     const maxTiles = 24;
-    if (tileKeys.length > maxTiles) {
-      tileKeys.length = maxTiles;
+    if (filteredTileKeys.length > maxTiles) {
+      filteredTileKeys.length = maxTiles;
     }
     if (!labelTileAbortRef.current) {
       labelTileAbortRef.current = new AbortController();
@@ -502,8 +601,8 @@ export const useCesiumLabels = ({
 
     let addedTiles = false;
     const maxConcurrent = 6;
-    for (let i = 0; i < tileKeys.length; i += maxConcurrent) {
-      const chunk = tileKeys.slice(i, i + maxConcurrent);
+    for (let i = 0; i < filteredTileKeys.length; i += maxConcurrent) {
+      const chunk = filteredTileKeys.slice(i, i + maxConcurrent);
       await Promise.all(
         chunk.map(async (key) => {
           if (labelTileCacheRef.current.has(key)) return;

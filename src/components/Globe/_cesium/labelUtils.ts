@@ -1,34 +1,26 @@
 import type { LabelKind } from "@/lib/labels/openlayersVectorTiles";
 
 export const heightToTileZoom = (height: number) => {
-  if (height > 35_000_000) return 2;
-  if (height > 22_000_000) return 3;
-  if (height > 14_000_000) return 4;
+  if (height > 20_000_000) return 2;
+  if (height > 15_000_000) return 4;
   if (height > 8_000_000) return 5;
-  if (height > 4_500_000) return 6;
-  if (height > 2_500_000) return 7;
-  if (height > 1_300_000) return 8;
-  if (height > 700_000) return 9;
-  if (height > 350_000) return 10;
-  if (height > 180_000) return 11;
-  if (height > 90_000) return 12;
-  return 13;
+  if (height > 3_000_000) return 7;
+  if (height > 1_500_000) return 8;
+  if (height > 800_000) return 9;
+  if (height > 400_000) return 10;
+  return 11;
 };
 
 export const heightToTileZoomFloat = (height: number) => {
   const levels = [
-    { zoom: 2, height: 35_000_000 },
-    { zoom: 3, height: 22_000_000 },
-    { zoom: 4, height: 14_000_000 },
-    { zoom: 5, height: 8_000_000 },
-    { zoom: 6, height: 4_500_000 },
-    { zoom: 7, height: 2_500_000 },
-    { zoom: 8, height: 1_300_000 },
-    { zoom: 9, height: 700_000 },
-    { zoom: 10, height: 350_000 },
-    { zoom: 11, height: 180_000 },
-    { zoom: 12, height: 90_000 },
-    { zoom: 13, height: 0 },
+    { zoom: 2, height: 20_000_000 },
+    { zoom: 4, height: 15_000_000 },
+    { zoom: 5.5, height: 8_000_000 },
+    { zoom: 7, height: 3_000_000 },
+    { zoom: 8, height: 1_500_000 },
+    { zoom: 9.5, height: 800_000 },
+    { zoom: 10.5, height: 400_000 },
+    { zoom: 12, height: 0 },
   ];
   if (height >= levels[0].height) return levels[0].zoom;
   for (let i = 0; i < levels.length - 1; i += 1) {
@@ -46,31 +38,31 @@ export const getLabelTier = (zoom: number) => {
   if (zoom <= 4) {
     return {
       display: ["continent"] as LabelKind[],
-      eligible: ["continent", "country"] as LabelKind[],
+      eligible: ["continent"] as LabelKind[],
     };
   }
   if (zoom <= 5.5) {
     return {
       display: ["continent", "country"] as LabelKind[],
-      eligible: ["continent", "country", "state"] as LabelKind[],
+      eligible: ["continent", "country"] as LabelKind[],
     };
   }
   if (zoom <= 7) {
     return {
       display: ["country", "state"] as LabelKind[],
-      eligible: ["country", "state", "cityLarge"] as LabelKind[],
+      eligible: ["country", "state"] as LabelKind[],
     };
   }
   if (zoom <= 8) {
     return {
       display: ["state", "cityLarge"] as LabelKind[],
-      eligible: ["state", "cityLarge", "cityMedium"] as LabelKind[],
+      eligible: ["state", "cityLarge"] as LabelKind[],
     };
   }
   if (zoom <= 9.5) {
     return {
       display: ["cityLarge", "cityMedium"] as LabelKind[],
-      eligible: ["cityLarge", "cityMedium", "citySmall"] as LabelKind[],
+      eligible: ["cityLarge", "cityMedium"] as LabelKind[],
     };
   }
   return {
