@@ -68,3 +68,13 @@ backend/datasets/*.nc
 backend/datasets/cmorph
 backend/icharm/kerchunk/kerchunk*
 **/*.nc
+
+# local boundary datasets
+public/_state/
+public/_country_boundaries/
+public/_countries/ne_10m_admin_0_boundary_lines_land.geojson
+public/_countries/ne_10m_admin_1_states_provinces_lines.geojson
+public/_countries/ne_50m_admin_0_boundary_lines_land.geojson
+public/_countries/ne_50m_admin_1_states_provinces_lines.geojson
+public/_countries/ne_110m_admin_0_boundary_lines_land.geojson
+public/_countries/ne_110m_admin_1_states_provinces_lines.geojson

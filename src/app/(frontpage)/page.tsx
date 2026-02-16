@@ -428,6 +428,8 @@ export default function HomePage() {
     baseMapMode: "satellite",
     satelliteLayerVisible: true,
     boundaryLinesVisible: true,
+    countryBoundaryResolution: "low",
+    stateBoundaryResolution: "low",
     geographicLinesVisible: false,
     timeZoneLinesVisible: false,
     pacificCentered: false,
@@ -1257,6 +1259,26 @@ export default function HomePage() {
     setGlobeSettings((prev) => ({ ...prev, boundaryLinesVisible: visible }));
   }, []);
 
+  const handleCountryBoundaryResolutionChange = useCallback(
+    (resolution: GlobeLineResolution) => {
+      setGlobeSettings((prev) => ({
+        ...prev,
+        countryBoundaryResolution: resolution,
+      }));
+    },
+    [],
+  );
+
+  const handleStateBoundaryResolutionChange = useCallback(
+    (resolution: GlobeLineResolution) => {
+      setGlobeSettings((prev) => ({
+        ...prev,
+        stateBoundaryResolution: resolution,
+      }));
+    },
+    [],
+  );
+
   const handleGeographicLinesToggle = useCallback((visible: boolean) => {
     setGlobeSettings((prev) => ({ ...prev, geographicLinesVisible: visible }));
   }, []);
@@ -1586,6 +1608,8 @@ export default function HomePage() {
         baseMapMode={globeSettings.baseMapMode}
         satelliteLayerVisible={globeSettings.satelliteLayerVisible}
         boundaryLinesVisible={globeSettings.boundaryLinesVisible}
+        countryBoundaryResolution={globeSettings.countryBoundaryResolution}
+        stateBoundaryResolution={globeSettings.stateBoundaryResolution}
         geographicLinesVisible={globeSettings.geographicLinesVisible}
         timeZoneLinesVisible={globeSettings.timeZoneLinesVisible}
         pacificCentered={globeSettings.pacificCentered}
@@ -1625,6 +1649,12 @@ export default function HomePage() {
             onBaseMapModeChange={handleBaseMapModeChange}
             onSatelliteToggle={handleSatelliteToggle}
             onBoundaryToggle={handleBoundaryToggle}
+            onCountryBoundaryResolutionChange={
+              handleCountryBoundaryResolutionChange
+            }
+            onStateBoundaryResolutionChange={
+              handleStateBoundaryResolutionChange
+            }
             onGeographicLinesToggle={handleGeographicLinesToggle}
             onTimeZoneLinesToggle={handleTimeZoneLinesToggle}
             onPacificCenteredToggle={handlePacificCenteredToggle}

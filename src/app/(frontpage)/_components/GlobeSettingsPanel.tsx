@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
-import type { GlobeSettings } from "@/types";
+import type { GlobeLineResolution, GlobeSettings } from "@/types";
 import { MAP_PROJECTIONS } from "@/components/Globe/projectionConfig";
 
 interface GlobeSettingsPanelProps {
@@ -19,24 +19,22 @@ interface GlobeSettingsPanelProps {
   onSatelliteLayerToggle: (visible: boolean) => void;
   boundaryLinesVisible: boolean;
   onBoundaryLinesToggle: (visible: boolean) => void;
+  countryBoundaryResolution: GlobeLineResolution;
+  onCountryBoundaryResolutionChange: (resolution: GlobeLineResolution) => void;
+  stateBoundaryResolution: GlobeLineResolution;
+  onStateBoundaryResolutionChange: (resolution: GlobeLineResolution) => void;
   geographicLinesVisible: boolean;
   onGeographicLinesToggle: (visible: boolean) => void;
   timeZoneLinesVisible: boolean;
   onTimeZoneLinesToggle: (visible: boolean) => void;
   pacificCentered: boolean;
   onPacificCenteredToggle: (enabled: boolean) => void;
-  coastlineResolution?: "none" | "low" | "medium" | "high";
-  onCoastlineResolutionChange?: (
-    resolution: "none" | "low" | "medium" | "high",
-  ) => void;
-  riverResolution?: "none" | "low" | "medium" | "high";
-  onRiverResolutionChange?: (
-    resolution: "none" | "low" | "medium" | "high",
-  ) => void;
-  lakeResolution?: "none" | "low" | "medium" | "high";
-  onLakeResolutionChange?: (
-    resolution: "none" | "low" | "medium" | "high",
-  ) => void;
+  coastlineResolution?: GlobeLineResolution;
+  onCoastlineResolutionChange?: (resolution: GlobeLineResolution) => void;
+  riverResolution?: GlobeLineResolution;
+  onRiverResolutionChange?: (resolution: GlobeLineResolution) => void;
+  lakeResolution?: GlobeLineResolution;
+  onLakeResolutionChange?: (resolution: GlobeLineResolution) => void;
   naturalEarthGeographicLinesVisible?: boolean;
   onNaturalEarthGeographicLinesToggle?: (visible: boolean) => void;
   labelsVisible: boolean;
@@ -71,6 +69,10 @@ export function GlobeSettingsPanel({
   onSatelliteLayerToggle,
   boundaryLinesVisible,
   onBoundaryLinesToggle,
+  countryBoundaryResolution,
+  onCountryBoundaryResolutionChange,
+  stateBoundaryResolution,
+  onStateBoundaryResolutionChange,
   geographicLinesVisible,
   onGeographicLinesToggle,
   timeZoneLinesVisible,
@@ -114,6 +116,7 @@ export function GlobeSettingsPanel({
     { value: "medium", label: "Medium (50m)" },
     { value: "high", label: "High (10m)" },
   ] as const;
+  const adminResolutionOptions = resolutionOptions;
 
   // Click-outside handler
   useEffect(() => {
@@ -267,6 +270,47 @@ export function GlobeSettingsPanel({
                       <div className="flex items-center justify-between gap-2">
                         <Label className="text-xs text-slate-300">
                           Boundary Lines
+                        </Label>
+                        <select
+                          className="rounded-md border border-slate-600 bg-neutral-800 px-2 py-1 text-xs text-white"
+                          value={countryBoundaryResolution}
+                          onChange={(e) =>
+                            onCountryBoundaryResolutionChange(
+                              e.target
+                                .value as typeof countryBoundaryResolution,
+                            )
+                          }
+                        >
+                          {adminResolutionOptions.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <Label className="text-xs text-slate-300">
+                          State Lines
+                        </Label>
+                        <select
+                          className="rounded-md border border-slate-600 bg-neutral-800 px-2 py-1 text-xs text-white"
+                          value={stateBoundaryResolution}
+                          onChange={(e) =>
+                            onStateBoundaryResolutionChange(
+                              e.target.value as typeof stateBoundaryResolution,
+                            )
+                          }
+                        >
+                          {adminResolutionOptions.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <Label className="text-xs text-slate-300">
+                          Natural Earth Lines
                         </Label>
                         <Switch
                           id="boundary-toggle"

@@ -40,6 +40,8 @@ interface SideButtonsProps {
   onBaseMapModeChange: (mode: "satellite" | "street") => void;
   onSatelliteToggle: (visible: boolean) => void;
   onBoundaryToggle: (visible: boolean) => void;
+  onCountryBoundaryResolutionChange: (resolution: GlobeLineResolution) => void;
+  onStateBoundaryResolutionChange: (resolution: GlobeLineResolution) => void;
   onGeographicLinesToggle: (visible: boolean) => void;
   onTimeZoneLinesToggle: (visible: boolean) => void;
   onPacificCenteredToggle: (enabled: boolean) => void;
@@ -84,6 +86,8 @@ export function SideButtons({
   onBaseMapModeChange,
   onSatelliteToggle,
   onBoundaryToggle,
+  onCountryBoundaryResolutionChange,
+  onStateBoundaryResolutionChange,
   onGeographicLinesToggle,
   onTimeZoneLinesToggle,
   onPacificCenteredToggle,
@@ -714,6 +718,10 @@ export function SideButtons({
         onSatelliteLayerToggle={onSatelliteToggle}
         boundaryLinesVisible={globeSettings.boundaryLinesVisible}
         onBoundaryLinesToggle={onBoundaryToggle}
+        countryBoundaryResolution={globeSettings.countryBoundaryResolution}
+        onCountryBoundaryResolutionChange={onCountryBoundaryResolutionChange}
+        stateBoundaryResolution={globeSettings.stateBoundaryResolution}
+        onStateBoundaryResolutionChange={onStateBoundaryResolutionChange}
         geographicLinesVisible={globeSettings.geographicLinesVisible}
         onGeographicLinesToggle={onGeographicLinesToggle}
         timeZoneLinesVisible={globeSettings.timeZoneLinesVisible}

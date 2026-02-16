@@ -30,11 +30,14 @@ import {
   loadGeographicBoundaries,
 } from "./_cesium/naturalEarthBoundaries";
 import { useCesiumLabels } from "./_cesium/useCesiumLabels";
+import { addGeoJsonLines } from "./_cesium/geoJsonLines";
 import {
   IMAGERY_HIDE_HEIGHT,
   IMAGERY_PRELOAD_HEIGHT,
   VERTEX_COLOR_GAIN,
 } from "./_cesium/constants";
+import { getLabelTier, heightToTileZoomFloat } from "./_cesium/labelUtils";
+import { fetchGeoJson, preloadGeoJson } from "@/utils/geoJsonCache";
 
 const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
   (
@@ -48,6 +51,8 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       baseMapMode = "satellite",
       satelliteLayerVisible = true,
       boundaryLinesVisible = true,
+      countryBoundaryResolution = "low",
+      stateBoundaryResolution = "low",
       geographicLinesVisible = false,
       timeZoneLinesVisible = false,
       coastlineResolution = "low",
@@ -74,6 +79,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
   ) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const viewerRef = useRef<any>(null);
+    const cesiumDebugRef = useRef<HTMLDivElement | null>(null);
     const initializingViewerRef = useRef(false);
 
     // FIXED: Better loading state management
@@ -103,6 +109,8 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
     const geographicLineEntitiesRef = useRef<any[]>([]);
     const timeZoneLineEntitiesRef = useRef<any[]>([]);
     const naturalEarthLineEntitiesRef = useRef<any[]>([]);
+    const countryBoundaryEntitiesRef = useRef<any[]>([]);
+    const stateBoundaryEntitiesRef = useRef<any[]>([]);
     const rasterLayerRef = useRef<any[]>([]);
     const textureLoadIdRef = useRef(0);
     const isComponentUnmountedRef = useRef(false);
@@ -116,6 +124,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
     });
     const globeMaterialRef = useRef<any>(null);
     const boundaryConfigRef = useRef<string>("");
+    const adminBoundaryConfigRef = useRef<string>("");
 
     const rasterDataRef = useRef<RasterLayerData | RasterGridData | undefined>(
       undefined,
@@ -1865,6 +1874,199 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       });
     }, [naturalEarthGeographicLinesVisible, effectiveViewMode]);
 
+    const updateAdminBoundaryVisibility = useCallback(() => {
+      if (!viewerRef.current) return;
+      if (effectiveViewMode === "ortho") {
+        countryBoundaryEntitiesRef.current.forEach((entity) => {
+          entity.show = false;
+        });
+        stateBoundaryEntitiesRef.current.forEach((entity) => {
+          entity.show = false;
+        });
+        return;
+      }
+
+      const height = viewerRef.current.camera.positionCartographic.height;
+      const zoomFloat = heightToTileZoomFloat(height);
+      const tier = getLabelTier(zoomFloat);
+      const showCountry =
+        labelsVisible &&
+        countryBoundaryResolution !== "none" &&
+        tier.display.includes("country");
+      const showState =
+        labelsVisible &&
+        stateBoundaryResolution !== "none" &&
+        tier.display.includes("state");
+
+      countryBoundaryEntitiesRef.current.forEach((entity) => {
+        entity.show = showCountry;
+      });
+      stateBoundaryEntitiesRef.current.forEach((entity) => {
+        entity.show = showState;
+      });
+    }, [
+      countryBoundaryResolution,
+      effectiveViewMode,
+      labelsVisible,
+      stateBoundaryResolution,
+    ]);
+
+    useEffect(() => {
+      if (!viewerReady || !viewerRef.current || !cesiumInstance) return;
+      const viewer = viewerRef.current;
+      const handleCameraChange = () => {
+        updateAdminBoundaryVisibility();
+      };
+      viewer.camera.changed.addEventListener(handleCameraChange);
+      viewer.scene.preRender.addEventListener(handleCameraChange);
+      updateAdminBoundaryVisibility();
+      return () => {
+        if (!viewerRef.current || viewerRef.current.isDestroyed()) return;
+        viewer.camera.changed.removeEventListener(handleCameraChange);
+        viewer.scene.preRender.removeEventListener(handleCameraChange);
+      };
+    }, [cesiumInstance, updateAdminBoundaryVisibility, viewerReady]);
+
+    useEffect(() => {
+      if (!cesiumDebugRef.current) return;
+      const interval = window.setInterval(() => {
+        const viewer = viewerRef.current;
+        if (!viewer || viewer.isDestroyed?.()) return;
+        const height = viewer.camera.positionCartographic.height;
+        const tileZoom = heightToTileZoomFloat(height);
+        if (cesiumDebugRef.current) {
+          cesiumDebugRef.current.textContent = `height: ${Math.round(
+            height,
+          ).toLocaleString()}m | tileZoom: ${tileZoom.toFixed(2)}`;
+        }
+      }, 200);
+      return () => {
+        window.clearInterval(interval);
+      };
+    }, []);
+
+    useEffect(() => {
+      if (effectiveViewMode === "ortho") return;
+      const resMap = { low: "110m", medium: "50m", high: "10m" } as const;
+      const urls: string[] = [];
+      if (countryBoundaryResolution !== "none") {
+        const res = resMap[countryBoundaryResolution];
+        urls.push(`/_countries/ne_${res}_admin_0_boundary_lines_land.geojson`);
+      }
+      if (stateBoundaryResolution !== "none") {
+        const res = resMap[stateBoundaryResolution];
+        urls.push(
+          `/_countries/ne_${res}_admin_1_states_provinces_lines.geojson`,
+        );
+      }
+      if (!urls.length) return;
+      const preload = () => {
+        urls.forEach((url) => preloadGeoJson(url));
+      };
+      if ("requestIdleCallback" in window) {
+        (window as any).requestIdleCallback(preload, { timeout: 1200 });
+      } else {
+        window.setTimeout(preload, 300);
+      }
+    }, [countryBoundaryResolution, effectiveViewMode, stateBoundaryResolution]);
+
+    useEffect(() => {
+      if (!viewerRef.current || !cesiumInstance) return;
+      if (!viewerReady) return;
+      if (effectiveViewMode === "ortho") return;
+
+      const viewer = viewerRef.current;
+      const removeEntities = (entities: any[]) => {
+        if (!entities.length) return;
+        entities.forEach((entity) => {
+          try {
+            viewer.entities.remove(entity);
+          } catch (err) {
+            console.warn("Failed to remove admin boundary entity", err);
+          }
+        });
+      };
+
+      const configKey = JSON.stringify({
+        countryBoundaryResolution,
+        stateBoundaryResolution,
+        lineColors: lineColors ?? null,
+      });
+      const configChanged = adminBoundaryConfigRef.current !== configKey;
+      if (configChanged) {
+        adminBoundaryConfigRef.current = configKey;
+        removeEntities(countryBoundaryEntitiesRef.current);
+        removeEntities(stateBoundaryEntitiesRef.current);
+        countryBoundaryEntitiesRef.current = [];
+        stateBoundaryEntitiesRef.current = [];
+      }
+
+      const shouldLoad =
+        countryBoundaryResolution !== "none" ||
+        stateBoundaryResolution !== "none";
+
+      if (!shouldLoad) {
+        updateAdminBoundaryVisibility();
+        return;
+      }
+
+      const boundaryColor =
+        lineColors?.boundaryLines ?? lineColors?.coastlines ?? "#e2e8f0";
+
+      const loadCountryBoundaries = async () => {
+        if (countryBoundaryResolution === "none") return;
+        if (countryBoundaryEntitiesRef.current.length) return;
+        const resMap = { low: "110m", medium: "50m", high: "10m" } as const;
+        const res = resMap[countryBoundaryResolution];
+        const data = await fetchGeoJson(
+          `/_countries/ne_${res}_admin_0_boundary_lines_land.geojson`,
+        );
+        if (!data) return;
+        const entities = addGeoJsonLines(cesiumInstance, viewer, data, {
+          color: boundaryColor,
+          width: 1.6,
+          height: 50,
+        });
+        countryBoundaryEntitiesRef.current = entities;
+      };
+
+      const loadStateBoundaries = async () => {
+        if (stateBoundaryResolution === "none") return;
+        if (stateBoundaryEntitiesRef.current.length) return;
+        const resMap = { low: "110m", medium: "50m", high: "10m" } as const;
+        const res = resMap[stateBoundaryResolution];
+        const data = await fetchGeoJson(
+          `/_countries/ne_${res}_admin_1_states_provinces_lines.geojson`,
+        );
+        if (!data) return;
+        const entities = addGeoJsonLines(cesiumInstance, viewer, data, {
+          color: boundaryColor,
+          width: 1.0,
+          dashed: true,
+          dashLength: 14,
+          height: 50,
+        });
+        stateBoundaryEntitiesRef.current = entities;
+      };
+
+      Promise.all([loadCountryBoundaries(), loadStateBoundaries()])
+        .then(() => {
+          updateAdminBoundaryVisibility();
+          viewer.scene?.requestRender();
+        })
+        .catch((err) => {
+          console.warn("Failed to load admin boundaries", err);
+        });
+    }, [
+      cesiumInstance,
+      countryBoundaryResolution,
+      effectiveViewMode,
+      lineColors,
+      stateBoundaryResolution,
+      updateAdminBoundaryVisibility,
+      viewerReady,
+    ]);
+
     useEffect(() => {
       if (!viewerRef.current || !cesiumInstance) return;
       if (!viewerReady) return;
@@ -2393,6 +2595,17 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
             display: isProjection ? "none" : "block",
           }}
         />
+        <div
+          ref={cesiumDebugRef}
+          className="absolute bottom-3 left-3 z-10 rounded-lg px-2 py-1 text-xs"
+          style={{
+            background: "rgba(15, 23, 42, 0.7)",
+            color: "#e2e8f0",
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            pointerEvents: "none",
+            display: isProjection || isOrtho ? "none" : "block",
+          }}
+        />
 
         {isOrtho && (
           <OrthoGlobe
@@ -2403,6 +2616,8 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
             rasterOpacity={rasterOpacity}
             satelliteLayerVisible={effectiveSatelliteVisible}
             boundaryLinesVisible={boundaryLinesVisible}
+            countryBoundaryResolution={countryBoundaryResolution}
+            stateBoundaryResolution={stateBoundaryResolution}
             geographicLinesVisible={geographicLinesVisible}
             timeZoneLinesVisible={timeZoneLinesVisible}
             coastlineResolution={coastlineResolution}

@@ -57,9 +57,56 @@ export class LineGeometryProcessor {
     return segments;
   }
 
+  static processGeoJSON(
+    data: any,
+    radius: number,
+    colorOverride?: string,
+  ): LineSegment[] {
+    if (!data || !Array.isArray(data.features)) return [];
+    const segments: LineSegment[] = [];
+    const color = new THREE.Color(colorOverride ?? "#f8fafc");
+
+    const addLine = (coords: number[][]) => {
+      if (!coords || coords.length < 2) return;
+      const positions = coords.map(([lon, lat]) =>
+        latLonToCartesian(lat, lon, radius),
+      );
+      segments.push({ positions, color });
+    };
+
+    const processGeometry = (geometry: any) => {
+      if (!geometry) return;
+      if (geometry.type === "LineString") {
+        addLine(geometry.coordinates);
+      } else if (geometry.type === "MultiLineString") {
+        geometry.coordinates.forEach(addLine);
+      } else if (geometry.type === "Polygon") {
+        geometry.coordinates.forEach(addLine);
+      } else if (geometry.type === "MultiPolygon") {
+        geometry.coordinates.forEach((poly: any[]) => {
+          poly.forEach(addLine);
+        });
+      }
+    };
+
+    data.features.forEach((feature: any) => {
+      processGeometry(feature?.geometry);
+    });
+
+    return segments;
+  }
+
   static createLineGeometry(
     segments: LineSegment[],
     lineWidth = 1,
+    options?: {
+      dashed?: boolean;
+      dashSize?: number;
+      gapSize?: number;
+      color?: string;
+      opacity?: number;
+      depthTest?: boolean;
+    },
   ): THREE.LineSegments {
     const geometry = new THREE.BufferGeometry();
     const positions: number[] = [];
@@ -79,15 +126,44 @@ export class LineGeometryProcessor {
       "position",
       new THREE.Float32BufferAttribute(positions, 3),
     );
-    geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+    if (!options?.dashed) {
+      geometry.setAttribute(
+        "color",
+        new THREE.Float32BufferAttribute(colors, 3),
+      );
+    }
 
-    const material = new THREE.LineBasicMaterial({
-      vertexColors: true,
-      linewidth: lineWidth,
-      transparent: true,
-      opacity: 1,
-    });
+    const opacity = typeof options?.opacity === "number" ? options.opacity : 1;
+    const material = options?.dashed
+      ? new THREE.LineDashedMaterial({
+          color: options.color ?? "#f8fafc",
+          linewidth: lineWidth,
+          dashSize: options.dashSize ?? 2,
+          gapSize: options.gapSize ?? 2,
+          transparent: true,
+          opacity,
+        })
+      : new THREE.LineBasicMaterial({
+          vertexColors: true,
+          linewidth: lineWidth,
+          transparent: true,
+          opacity,
+        });
 
-    return new THREE.LineSegments(geometry, material);
+    const line = new THREE.LineSegments(geometry, material);
+    if (options?.dashed) {
+      line.computeLineDistances();
+    }
+    const depthTest = options?.depthTest ?? true;
+    if (line.material && !Array.isArray(line.material)) {
+      line.material.depthTest = depthTest;
+      line.material.depthWrite = false;
+    } else if (Array.isArray(line.material)) {
+      line.material.forEach((mat) => {
+        mat.depthTest = depthTest;
+        mat.depthWrite = false;
+      });
+    }
+    return line;
   }
 }
