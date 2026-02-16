@@ -48,6 +48,7 @@ repos:
           - .secrets.baseline
           - --exclude-files
           - '\.ipynb$' # Unfortunately, notebooks can have weird strings in them
+        exclude: pnpm-lock\.yaml # False positives due to SHA-512 checksums
         additional_dependencies:
           - gibberish-detector
   # To be able to run prettier

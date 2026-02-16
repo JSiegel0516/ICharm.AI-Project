@@ -10,12 +10,12 @@ AI-powered climate data exploration combining interactive visualization, tutoria
 
 ## Prerequisites
 
-- Node.js 18+ and npm (or pnpm/yarn if you prefer).
+- Node.js 18+ and pnpm.
 - A Hugging Face access token with permission to run the target LLM.
 
 ## Installation
 
-1. Install [pro-commit](https://pre-commit.com) hook
+1. Install [pre-commit](https://pre-commit.com) hook
 
    ```bash
    pre-commit install
@@ -30,7 +30,7 @@ pre-commit run --all-files
 2. Install dependencies:
 
    ```bash
-   npm install
+   pnpm install
    ```
 
 3. Create `.env.local` in the project root (same folder as `package.json`) and supply:
@@ -71,7 +71,7 @@ Install Docker before attempting to run the database
 
    # IF YOU START TO GET API ERRORS FOR THE RASTERS OR DATABASE:
 
-   # If these coommands do not work, try to delete the container manually in the GUI
+   # If these commands do not work, try to delete the container manually in the GUI
 
    docker compose down
    docker compose build
@@ -81,11 +81,11 @@ Install Docker before attempting to run the database
 
    # Generate SQL migrations based on your Drizzle schema
    # Then apply those migrations to your database
-   npx drizzle-kit generate && npx drizzle-kit migrate
+   pnpm exec drizzle-kit generate && pnpm exec drizzle-kit migrate
 
    # Populate the database with initial seed data
-   npm run db:push
-   npm run db:seed
+   pnpm run db:push
+   pnpm run db:seed
    ```
 
    # make sure the docker containers are running when typing these commands
@@ -218,7 +218,7 @@ python backend/icharm/data_processing/godas.py
 
 - Start the Next.js dev server:
   ```bash
-  npm run dev
+  pnpm dev
   ```
 - Open <http://localhost:3000> to interact with the globe and chat UI.
 
@@ -231,7 +231,7 @@ python backend/icharm/data_processing/godas.py
 ## Troubleshooting
 
 - If the chat route returns `404`, double-check the `LLAMA_MODEL` slug and verify your Hugging Face access.
-- Ensure environment variables are loaded in the same shell that runs `npm run dev`.
+- Ensure environment variables are loaded in the same shell that runs `pnpm dev`.
 
 ## Theming
 

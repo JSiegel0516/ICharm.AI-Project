@@ -17,9 +17,8 @@ ENV/
 .venv/
 .idea
 
-
+# zarr files
 *.zarr
-
 
 # python
 __pycache__/
