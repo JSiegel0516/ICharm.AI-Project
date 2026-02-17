@@ -4,9 +4,10 @@ import {
   formatDateForApi,
   resolveEffectiveColorbarRange,
 } from "@/lib/mesh/rasterUtils";
-import { buildRasterImage } from "@/lib/mesh/rasterImage";
+import { buildRasterImageFromMesh } from "@/lib/mesh/rasterImage";
 import { fetchRasterGrid } from "@/hooks/useRasterGrid";
-import { prepareRasterMeshGrid } from "@/lib/mesh/rasterMesh";
+import { prepareRasterMeshGrid, buildRasterMesh } from "@/lib/mesh/rasterMesh";
+import { VERTEX_COLOR_GAIN } from "@/components/Globe/_cesium/constants";
 
 export type RasterLayerTexture = {
   imageUrl: string;
@@ -24,130 +25,6 @@ export type RasterLayerData = {
   min?: number;
   max?: number;
   sampleValue: (latitude: number, longitude: number) => number | null;
-};
-
-const downsampleGridForTexture = (args: {
-  lat: Float64Array;
-  lon: Float64Array;
-  values: Float32Array;
-  mask?: Uint8Array;
-  maxSize?: number;
-}): {
-  lat: Float64Array;
-  lon: Float64Array;
-  values: Float32Array;
-  mask?: Uint8Array;
-} => {
-  const { lat, lon, values, mask, maxSize = 2048 } = args;
-  const rows = lat.length;
-  const cols = lon.length;
-  if (!rows || !cols || !values.length) {
-    return { lat, lon, values, mask };
-  }
-  if (rows <= maxSize && cols <= maxSize) {
-    return { lat, lon, values, mask };
-  }
-
-  const rowStep = Math.ceil(rows / maxSize);
-  const colStep = Math.ceil(cols / maxSize);
-  const outRows = Math.max(1, Math.ceil(rows / rowStep));
-  const outCols = Math.max(1, Math.ceil(cols / colStep));
-
-  const outLat = new Float64Array(outRows);
-  const outLon = new Float64Array(outCols);
-  const outValues = new Float32Array(outRows * outCols);
-  const outMask = mask ? new Uint8Array(outRows * outCols) : undefined;
-
-  for (let r = 0; r < outRows; r += 1) {
-    const srcRow = Math.min(rows - 1, r * rowStep);
-    outLat[r] = lat[srcRow];
-  }
-  for (let c = 0; c < outCols; c += 1) {
-    const srcCol = Math.min(cols - 1, c * colStep);
-    outLon[c] = lon[srcCol];
-  }
-
-  for (let r = 0; r < outRows; r += 1) {
-    const srcRow = Math.min(rows - 1, r * rowStep);
-    for (let c = 0; c < outCols; c += 1) {
-      const srcCol = Math.min(cols - 1, c * colStep);
-      const srcIdx = srcRow * cols + srcCol;
-      const dstIdx = r * outCols + c;
-      outValues[dstIdx] = values[srcIdx];
-      if (outMask && mask) {
-        outMask[dstIdx] = mask[srcIdx];
-      }
-    }
-  }
-
-  return {
-    lat: outLat,
-    lon: outLon,
-    values: outValues,
-    mask: outMask,
-  };
-};
-
-const buildCellAveragedGrid = (args: {
-  lat: Float64Array;
-  lon: Float64Array;
-  values: Float32Array;
-  mask?: Uint8Array;
-}): {
-  lat: Float64Array;
-  lon: Float64Array;
-  values: Float32Array;
-  mask?: Uint8Array;
-} => {
-  const { lat, lon, values, mask } = args;
-  const rows = lat.length;
-  const cols = lon.length;
-  if (rows < 2 || cols < 2 || values.length < rows * cols) {
-    return { lat, lon, values, mask };
-  }
-
-  const outRows = rows - 1;
-  const outCols = cols - 1;
-  const outLat = new Float64Array(outRows);
-  const outLon = new Float64Array(outCols);
-  const outValues = new Float32Array(outRows * outCols);
-  const outMask = mask ? new Uint8Array(outRows * outCols) : undefined;
-
-  for (let r = 0; r < outRows; r += 1) {
-    outLat[r] = (lat[r] + lat[r + 1]) / 2;
-  }
-  for (let c = 0; c < outCols; c += 1) {
-    outLon[c] = (lon[c] + lon[c + 1]) / 2;
-  }
-
-  for (let r = 0; r < outRows; r += 1) {
-    for (let c = 0; c < outCols; c += 1) {
-      const i0 = r * cols + c;
-      const i1 = i0 + 1;
-      const i2 = i0 + cols;
-      const i3 = i2 + 1;
-      let sum = 0;
-      let count = 0;
-      const idxs = [i0, i1, i2, i3];
-      for (const idx of idxs) {
-        if (mask && mask[idx] === 0) continue;
-        const value = values[idx];
-        if (!Number.isFinite(value)) continue;
-        sum += value;
-        count += 1;
-      }
-      const outIdx = r * outCols + c;
-      if (count > 0) {
-        outValues[outIdx] = sum / count;
-        if (outMask) outMask[outIdx] = 1;
-      } else {
-        outValues[outIdx] = Number.NaN;
-        if (outMask) outMask[outIdx] = 0;
-      }
-    }
-  }
-
-  return { lat: outLat, lon: outLon, values: outValues, mask: outMask };
 };
 
 type UseRasterLayerOptions = {
@@ -297,37 +174,51 @@ export async function fetchRasterVisualization(options: {
       ? prepared.values
       : Float32Array.from(prepared.values as Float64Array);
 
-  const baseGrid =
-    smoothGridBoxValues === false
-      ? buildCellAveragedGrid({
-          lat: prepared.lat,
-          lon: prepared.lon,
-          values: preparedValues,
-          mask: prepared.mask,
-        })
-      : {
-          lat: prepared.lat,
-          lon: prepared.lon,
-          values: preparedValues,
-          mask: prepared.mask,
-        };
-
-  const textureGrid = downsampleGridForTexture({
-    lat: baseGrid.lat,
-    lon: baseGrid.lon,
-    values: baseGrid.values,
-    mask: baseGrid.mask,
-    maxSize: 2048,
-  });
-  const image = buildRasterImage({
-    lat: textureGrid.lat,
-    lon: textureGrid.lon,
-    values: textureGrid.values,
-    mask: textureGrid.mask,
+  const mesh = buildRasterMesh({
+    lat: prepared.lat,
+    lon: prepared.lon,
+    values: preparedValues,
+    mask: prepared.mask,
     min,
     max,
     colors,
     opacity: 1,
+    smoothValues: false,
+    flatShading: smoothGridBoxValues === false,
+    sampleStep: 1,
+    wrapSeam: true,
+    useTiling: false,
+  });
+
+  const applyGain = (colorsOut: Uint8Array) => {
+    if (VERTEX_COLOR_GAIN === 1) return;
+    for (let i = 0; i < colorsOut.length; i += 4) {
+      colorsOut[i] = Math.min(
+        255,
+        Math.round(colorsOut[i] * VERTEX_COLOR_GAIN),
+      );
+      colorsOut[i + 1] = Math.min(
+        255,
+        Math.round(colorsOut[i + 1] * VERTEX_COLOR_GAIN),
+      );
+      colorsOut[i + 2] = Math.min(
+        255,
+        Math.round(colorsOut[i + 2] * VERTEX_COLOR_GAIN),
+      );
+    }
+  };
+
+  if (mesh.colors.length) {
+    applyGain(mesh.colors);
+  }
+
+  const image = buildRasterImageFromMesh({
+    lat: prepared.lat,
+    lon: prepared.lon,
+    rows: prepared.rows,
+    cols: prepared.cols,
+    colors: mesh.colors,
+    flatShading: smoothGridBoxValues === false,
   });
 
   return {
