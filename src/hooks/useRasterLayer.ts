@@ -11,6 +11,8 @@ import { VERTEX_COLOR_GAIN } from "@/components/Globe/_cesium/constants";
 
 export type RasterLayerTexture = {
   imageUrl: string;
+  width?: number;
+  height?: number;
   rectangle: {
     west: number;
     south: number;
@@ -181,12 +183,14 @@ export async function fetchRasterVisualization(options: {
     prepared.values instanceof Float32Array
       ? prepared.values
       : Float32Array.from(prepared.values as Float64Array);
+  const preparedGrid = { ...prepared, values: preparedValues };
 
   const mesh = buildRasterMesh({
     lat: prepared.lat,
     lon: prepared.lon,
     values: preparedValues,
     mask: prepared.mask,
+    preparedGrid,
     min,
     max,
     colors,
@@ -197,28 +201,6 @@ export async function fetchRasterVisualization(options: {
     wrapSeam: false,
     useTiling: false,
   });
-
-  const applyGain = (colorsOut: Uint8Array) => {
-    if (VERTEX_COLOR_GAIN === 1) return;
-    for (let i = 0; i < colorsOut.length; i += 4) {
-      colorsOut[i] = Math.min(
-        255,
-        Math.round(colorsOut[i] * VERTEX_COLOR_GAIN),
-      );
-      colorsOut[i + 1] = Math.min(
-        255,
-        Math.round(colorsOut[i + 1] * VERTEX_COLOR_GAIN),
-      );
-      colorsOut[i + 2] = Math.min(
-        255,
-        Math.round(colorsOut[i + 2] * VERTEX_COLOR_GAIN),
-      );
-    }
-  };
-
-  if (mesh.colors.length) {
-    applyGain(mesh.colors);
-  }
 
   const meshMidIdx = Math.floor(mesh.colors.length / 2);
   const meshMid = mesh.colors.slice(meshMidIdx, meshMidIdx + 4);
@@ -236,11 +218,15 @@ export async function fetchRasterVisualization(options: {
     cols: prepared.cols,
     colors: mesh.colors,
     flatShading: smoothGridBoxValues === false,
+    colorGain: VERTEX_COLOR_GAIN,
   });
   console.debug("[RasterLayer] image built", {
     datasetId: targetDatasetId,
     hasImage: Boolean(image),
     urlSize: image?.dataUrl?.length ?? 0,
+    imageRows: prepared.rows,
+    imageCols: prepared.cols,
+    rectangle: image?.rectangle ?? null,
   });
 
   return {
@@ -248,6 +234,8 @@ export async function fetchRasterVisualization(options: {
       ? [
           {
             imageUrl: image.dataUrl,
+            width: image.width,
+            height: image.height,
             rectangle: image.rectangle,
           },
         ]

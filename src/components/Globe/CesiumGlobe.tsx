@@ -5,6 +5,7 @@ import React, {
   useRef,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useCallback,
   forwardRef,
 } from "react";
@@ -17,7 +18,8 @@ import type {
 } from "@/types";
 import { useRasterLayer } from "@/hooks/useRasterLayer";
 import { useRasterGrid, RasterGridData } from "@/hooks/useRasterGrid";
-import { buildRasterMesh } from "@/lib/mesh/rasterMesh";
+import { buildRasterMesh, prepareRasterMeshGrid } from "@/lib/mesh/rasterMesh";
+import { buildRasterImageFromMesh } from "@/lib/mesh/rasterImage";
 import type { RasterLayerData } from "@/hooks/useRasterLayer";
 import GlobeLoading from "./GlobeLoading";
 import OrthoGlobe from "./OrthoGlobe";
@@ -34,11 +36,12 @@ import { addGeoJsonLines } from "./_cesium/geoJsonLines";
 import {
   IMAGERY_HIDE_HEIGHT,
   IMAGERY_PRELOAD_HEIGHT,
-  IMAGERY_OVERLAP_HEIGHT,
-  MESH_TO_IMAGERY_HEIGHT,
   VERTEX_COLOR_GAIN,
 } from "./_cesium/constants";
 import { getLabelTier, heightToTileZoomFloat } from "./_cesium/labelUtils";
+
+const FORCE_IMAGERY_ONLY = true;
+const FORCE_MESH_ONLY = false;
 import { fetchGeoJson, preloadGeoJson } from "@/utils/geoJsonCache";
 
 const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
@@ -147,6 +150,8 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
     const meshOpacityKey = rasterOpacity.toFixed(3);
     const effectiveViewMode = viewMode;
     const isOrtho = effectiveViewMode === "ortho";
+    const forceImageryOnly = FORCE_IMAGERY_ONLY && !FORCE_MESH_ONLY;
+    const forceMeshOnly = FORCE_MESH_ONLY && !FORCE_IMAGERY_ONLY;
     const projectionId = MAP_PROJECTIONS.find(
       (projection) => projection.id === effectiveViewMode,
     )?.id as MapProjectionId | undefined;
@@ -192,6 +197,74 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       prefetchedData: prefetchedRasterGrids,
     });
 
+    const meshDerivedRaster = useMemo(() => {
+      const grid = rasterGridState.data;
+      if (!grid || !currentDataset?.colorScale?.colors?.length) {
+        return undefined;
+      }
+
+      const min = grid.min ?? 0;
+      const max = grid.max ?? 1;
+      const prepared = prepareRasterMeshGrid({
+        lat: grid.lat,
+        lon: grid.lon,
+        values: grid.values,
+        mask: grid.mask,
+        smoothValues: false,
+        flatShading: !rasterBlurEnabled,
+        sampleStep: meshSamplingStep,
+        wrapSeam: true,
+      });
+      const mesh = buildRasterMesh({
+        lat: prepared.lat,
+        lon: prepared.lon,
+        values: prepared.values,
+        mask: prepared.mask,
+        preparedGrid: prepared,
+        min,
+        max,
+        colors: currentDataset.colorScale.colors,
+        opacity: 1,
+        smoothValues: false,
+        flatShading: !rasterBlurEnabled,
+        sampleStep: meshSamplingStep,
+        useTiling: false,
+      });
+
+      const image = buildRasterImageFromMesh({
+        lat: prepared.lat,
+        lon: prepared.lon,
+        rows: prepared.rows,
+        cols: prepared.cols,
+        colors: mesh.colors,
+        flatShading: !rasterBlurEnabled,
+        colorGain: VERTEX_COLOR_GAIN,
+      });
+
+      if (!image) return undefined;
+
+      return {
+        textures: [
+          {
+            imageUrl: image.dataUrl,
+            width: image.width,
+            height: image.height,
+            rectangle: image.rectangle,
+          },
+        ],
+        units: grid.units ?? currentDataset?.units,
+        min,
+        max,
+        sampleValue: grid.sampleValue,
+      };
+    }, [
+      currentDataset?.colorScale?.colors,
+      currentDataset?.units,
+      meshSamplingStep,
+      rasterBlurEnabled,
+      rasterGridState.data,
+    ]);
+
     // FIXED: Add loading timeout to prevent infinite loading
     useEffect(() => {
       if (isLoading && !loadingTimeout) {
@@ -229,6 +302,8 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
     const getShowImagery = useCallback(() => {
       const viewer = viewerRef.current;
       if (!viewer) return true;
+      if (forceImageryOnly) return true;
+      if (forceMeshOnly) return false;
       if (
         !useMeshRasterActiveRef.current ||
         effectiveViewMode === "2d" ||
@@ -238,7 +313,12 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       }
       const height = viewer.camera.positionCartographic.height;
       return height < IMAGERY_HIDE_HEIGHT;
-    }, [effectiveViewMode, IMAGERY_HIDE_HEIGHT]);
+    }, [
+      effectiveViewMode,
+      forceImageryOnly,
+      forceMeshOnly,
+      IMAGERY_HIDE_HEIGHT,
+    ]);
 
     const setMarkerLayerVisibility = useCallback((showImagery: boolean) => {
       if (!viewerRef.current) return;
@@ -290,6 +370,40 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
     const updateRasterLod = useCallback(() => {
       if (!viewerRef.current || !viewerReady) return;
 
+      if (forceImageryOnly) {
+        setMeshRasterActive(false);
+        setMarkerLayerVisibility(true);
+        const layers = rasterLayerRef.current;
+        if (layers.length) {
+          layers.forEach((layer) => {
+            layer.show = true;
+            layer.alpha = rasterOpacity;
+          });
+          if (viewerRef.current.scene.globe.material) {
+            viewerRef.current.scene.globe.material = undefined;
+          }
+          viewerRef.current.scene.requestRender();
+        }
+        return;
+      }
+
+      if (forceMeshOnly) {
+        setMeshRasterActive(true);
+        setMarkerLayerVisibility(false);
+        const layers = rasterLayerRef.current;
+        if (layers.length) {
+          layers.forEach((layer) => {
+            layer.show = false;
+            layer.alpha = 0;
+          });
+          if (globeMaterialRef.current) {
+            viewerRef.current.scene.globe.material = globeMaterialRef.current;
+          }
+          viewerRef.current.scene.requestRender();
+        }
+        return;
+      }
+
       if (isPlaying) {
         setMeshRasterActive(false);
         return;
@@ -300,15 +414,12 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
 
+      setMeshRasterActive(true);
+
       const viewer = viewerRef.current;
       const height = viewer.camera.positionCartographic.height;
 
-      const showImagery = height < IMAGERY_OVERLAP_HEIGHT;
-      const hasRasterTextures = Boolean(rasterState.data?.textures?.length);
-      const imageryReady = rasterLayerRef.current.length > 0;
-      const shouldUseMesh =
-        height > MESH_TO_IMAGERY_HEIGHT || !hasRasterTextures || !imageryReady;
-      setMeshRasterActive(shouldUseMesh);
+      const showImagery = height < IMAGERY_HIDE_HEIGHT;
       setMarkerLayerVisibility(showImagery);
 
       // Keep imagery in sync with zoom even if mesh state lags.
@@ -330,14 +441,14 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
         viewer.scene.requestRender();
       }
     }, [
+      forceImageryOnly,
+      forceMeshOnly,
       setMeshRasterActive,
       useMeshRasterEffective,
       viewerReady,
       effectiveViewMode,
       rasterOpacity,
-      smoothGridBoxValues,
       setMarkerLayerVisibility,
-      rasterState.data,
     ]);
 
     const clearMarker = useCallback(() => {
@@ -600,16 +711,20 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
     );
 
     useEffect(() => {
+      if (forceMeshOnly) {
+        setMeshRasterActive(true);
+        return;
+      }
       if (!useMeshRasterEffective) {
         setMeshRasterActive(false);
       }
-    }, [setMeshRasterActive, useMeshRasterEffective]);
+    }, [forceMeshOnly, setMeshRasterActive, useMeshRasterEffective]);
 
     useEffect(() => {
-      if (isPlaying) {
+      if (isPlaying && !forceMeshOnly) {
         setMeshRasterActive(false);
       }
-    }, [isPlaying, setMeshRasterActive]);
+    }, [forceMeshOnly, isPlaying, setMeshRasterActive]);
 
     useEffect(() => {
       if (!viewerReady || !viewerRef.current) return;
@@ -966,6 +1081,75 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
                   };
 
                   onRegionClick(latitude, longitude, regionData);
+
+                  const texture = (meshDerivedRaster ?? rasterState.data)
+                    ?.textures?.[0];
+                  const rect = texture?.rectangle;
+                  const width = texture?.width;
+                  const height = texture?.height;
+                  if (
+                    rect &&
+                    typeof width === "number" &&
+                    typeof height === "number" &&
+                    width > 0 &&
+                    height > 0 &&
+                    typeof texture?.imageUrl === "string"
+                  ) {
+                    const lonRange = rect.east - rect.west;
+                    let lonForSample = longitude;
+                    if (lonRange > 300 && lonForSample < rect.west) {
+                      lonForSample += 360;
+                    }
+                    const x =
+                      lonRange !== 0
+                        ? Math.floor(
+                            ((lonForSample - rect.west) / lonRange) * width,
+                          )
+                        : 0;
+                    const yRange = rect.north - rect.south;
+                    const y =
+                      yRange !== 0
+                        ? Math.floor(
+                            ((rect.north - latitude) / yRange) * height,
+                          )
+                        : 0;
+
+                    const image = new Image();
+                    image.crossOrigin = "anonymous";
+                    image.onload = () => {
+                      const canvas = document.createElement("canvas");
+                      canvas.width = width;
+                      canvas.height = height;
+                      const ctx = canvas.getContext("2d");
+                      if (!ctx) return;
+                      ctx.drawImage(image, 0, 0, width, height);
+                      const px = Math.min(Math.max(x, 0), width - 1);
+                      const py = Math.min(Math.max(y, 0), height - 1);
+                      const data = ctx.getImageData(px, py, 1, 1).data;
+                      console.debug("[RasterDebug] sample", {
+                        latitude,
+                        longitude,
+                        rect,
+                        width,
+                        height,
+                        pixel: { x: px, y: py },
+                        rgba: Array.from(data),
+                        value,
+                      });
+                    };
+                    image.onerror = (err) => {
+                      console.debug("[RasterDebug] image load failed", err);
+                    };
+                    image.src = texture.imageUrl;
+                  } else {
+                    console.debug("[RasterDebug] missing texture", {
+                      hasTexture: Boolean(texture),
+                      width,
+                      height,
+                      rect,
+                      hasImageUrl: typeof texture?.imageUrl === "string",
+                    });
+                  }
                 }
               }
             },
@@ -2226,15 +2410,23 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
 
-      const textureCount = rasterState.data?.textures?.length ?? 0;
+      if (forceMeshOnly) {
+        viewerRef.current?.scene?.requestRender();
+        return;
+      }
+
+      const imageryData = meshDerivedRaster ?? rasterState.data;
+      const textureCount = imageryData?.textures?.length ?? 0;
       if (textureCount === 0) {
         viewerRef.current?.scene?.requestRender();
         return;
       }
 
-      applyRasterLayers(rasterState.data);
+      applyRasterLayers(imageryData);
     }, [
       applyRasterLayers,
+      forceMeshOnly,
+      meshDerivedRaster,
       rasterState.data,
       rasterState.requestKey,
       viewerReady,
@@ -2243,12 +2435,13 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
     useEffect(() => {
       if (!viewerReady || !viewerRef.current) return;
       const viewer = viewerRef.current;
-      const hasRasterTextures = Boolean(rasterState.data?.textures?.length);
+      const imageryData = meshDerivedRaster ?? rasterState.data;
+      const hasRasterTextures = Boolean(imageryData?.textures?.length);
       const shouldShowImagery =
-        hasRasterTextures && effectiveViewMode !== "ortho";
+        !forceMeshOnly && hasRasterTextures && effectiveViewMode !== "ortho";
       const rasterOverlayActive =
         effectiveViewMode !== "ortho" &&
-        (useMeshRasterActive || shouldShowImagery);
+        (useMeshRasterActive || forceMeshOnly || shouldShowImagery);
 
       // Cesium globe materials override imagery layers, so clear when showing rasters.
       if (shouldShowImagery) {
@@ -2269,9 +2462,11 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       }
     }, [
       viewerReady,
+      meshDerivedRaster,
       rasterState.data,
       rasterState.requestKey,
       useMeshRasterActive,
+      forceMeshOnly,
       effectiveViewMode,
     ]);
 
@@ -2391,7 +2586,9 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
         rasterGridState.data &&
         rasterGridState.dataKey === rasterGridState.requestKey;
       if (!hasMatchingGrid && rasterState.data?.textures?.length) {
-        setMeshRasterActive(false);
+        if (!forceMeshOnly) {
+          setMeshRasterActive(false);
+        }
       }
     }, [
       rasterGridState.data,
@@ -2401,9 +2598,14 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       setMeshRasterActive,
       useMeshRaster,
       useMeshRasterActive,
+      forceMeshOnly,
     ]);
 
     useEffect(() => {
+      if (forceImageryOnly) {
+        clearRasterMesh();
+        return;
+      }
       if (!viewerReady) return;
       if (!useMeshRasterEffective || !useMeshRasterActive) {
         clearRasterMesh();
@@ -2467,6 +2669,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       applyMeshColorGain,
       clearRasterMesh,
       currentDataset?.colorScale?.colors,
+      forceImageryOnly,
       meshSamplingStep,
       meshOpacityKey,
       rasterGridState.data,

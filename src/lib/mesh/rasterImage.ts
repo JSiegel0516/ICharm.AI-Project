@@ -19,6 +19,7 @@ type RasterImageFromMeshOptions = {
   cols: number;
   flatShading?: boolean;
   colors: Uint8Array;
+  colorGain?: number;
 };
 
 export const buildRasterImage = ({
@@ -90,7 +91,7 @@ export const buildRasterImage = ({
     if (lon[i] > east) east = lon[i];
   }
   const lonRange = east - west;
-  if (lonRange > 300 && west >= 0) {
+  if (lonRange > 300) {
     west = -180;
     east = 180;
   }
@@ -114,8 +115,11 @@ export const buildRasterImageFromMesh = ({
   cols,
   flatShading = false,
   colors,
+  colorGain = 1,
 }: RasterImageFromMeshOptions): {
   dataUrl: string;
+  width: number;
+  height: number;
   rectangle: {
     west: number;
     south: number;
@@ -137,7 +141,28 @@ export const buildRasterImageFromMesh = ({
 
   const imageData = ctx.createImageData(imageCols, imageRows);
   const out = imageData.data;
+  const gain = Number.isFinite(colorGain) ? Math.max(0, colorGain) : 1;
 
+  let lonForBounds = lon;
+  if (lon.length > 1) {
+    const last = lon[lon.length - 1];
+    const expected = lon[0] + 360;
+    if (Math.abs(last - expected) < 1e-6) {
+      lonForBounds = lon.subarray(0, lon.length - 1);
+    }
+  }
+
+  let west = lonForBounds[0];
+  let east = lonForBounds[0];
+  for (let i = 1; i < lonForBounds.length; i += 1) {
+    if (lonForBounds[i] < west) west = lonForBounds[i];
+    if (lonForBounds[i] > east) east = lonForBounds[i];
+  }
+  const lonRange = east - west;
+  if (lonRange > 300) {
+    west = -180;
+    east = 180;
+  }
   if (flatShading) {
     const cells = imageRows * imageCols;
     for (let i = 0; i < cells; i += 1) {
@@ -150,9 +175,9 @@ export const buildRasterImageFromMesh = ({
       const col = i - row * imageCols;
       const flippedRow = imageRows - 1 - row;
       const outIdx = (flippedRow * imageCols + col) * 4;
-      out[outIdx] = r;
-      out[outIdx + 1] = g;
-      out[outIdx + 2] = b;
+      out[outIdx] = Math.min(255, Math.round(r * gain));
+      out[outIdx + 1] = Math.min(255, Math.round(g * gain));
+      out[outIdx + 2] = Math.min(255, Math.round(b * gain));
       out[outIdx + 3] = a;
     }
   } else {
@@ -167,26 +192,15 @@ export const buildRasterImageFromMesh = ({
       const col = i - row * cols;
       const flippedRow = imageRows - 1 - row;
       const outIdx = (flippedRow * imageCols + col) * 4;
-      out[outIdx] = r;
-      out[outIdx + 1] = g;
-      out[outIdx + 2] = b;
+      out[outIdx] = Math.min(255, Math.round(r * gain));
+      out[outIdx + 1] = Math.min(255, Math.round(g * gain));
+      out[outIdx + 2] = Math.min(255, Math.round(b * gain));
       out[outIdx + 3] = a;
     }
   }
 
   ctx.putImageData(imageData, 0, 0);
 
-  let west = lon[0];
-  let east = lon[0];
-  for (let i = 1; i < lon.length; i += 1) {
-    if (lon[i] < west) west = lon[i];
-    if (lon[i] > east) east = lon[i];
-  }
-  const lonRange = east - west;
-  if (lonRange > 300 && west >= 0) {
-    west = -180;
-    east = 180;
-  }
   let south = lat[0];
   let north = lat[0];
   for (let i = 1; i < lat.length; i += 1) {
@@ -194,8 +208,52 @@ export const buildRasterImageFromMesh = ({
     if (lat[i] > north) north = lat[i];
   }
 
+  if (flatShading) {
+    const lonSpan = east - west;
+    const latSpan = north - south;
+    const lonStep =
+      lonRange > 300 && imageCols > 0
+        ? 360 / imageCols
+        : lonForBounds.length > 1
+          ? lonSpan / (lonForBounds.length - 1)
+          : 0;
+    const latStep =
+      lat.length > 1 && imageRows > 0 ? latSpan / (lat.length - 1) : 0;
+
+    if (Number.isFinite(lonStep) && lonStep !== 0) {
+      west += lonStep / 2;
+      east -= lonStep / 2;
+    }
+    if (Number.isFinite(latStep) && latStep !== 0) {
+      south += latStep / 2;
+      north -= latStep / 2;
+    }
+  } else {
+    const lonSpan = east - west;
+    const latSpan = north - south;
+    const lonStep =
+      lonRange > 300 && imageCols > 0
+        ? 360 / imageCols
+        : lonForBounds.length > 1
+          ? lonSpan / (lonForBounds.length - 1)
+          : 0;
+    const latStep =
+      lat.length > 1 && imageRows > 0 ? latSpan / (lat.length - 1) : 0;
+
+    if (Number.isFinite(lonStep) && lonStep !== 0 && !(lonRange > 300)) {
+      west -= lonStep / 2;
+      east += lonStep / 2;
+    }
+    if (Number.isFinite(latStep) && latStep !== 0) {
+      south -= latStep / 2;
+      north += latStep / 2;
+    }
+  }
+
   return {
     dataUrl: canvas.toDataURL("image/png"),
+    width: imageCols,
+    height: imageRows,
     rectangle: { west, east, south, north },
   };
 };
