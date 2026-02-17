@@ -8,6 +8,7 @@ import { buildRasterImageFromMesh } from "@/lib/mesh/rasterImage";
 import { fetchRasterGrid } from "@/hooks/useRasterGrid";
 import { prepareRasterMeshGrid, buildRasterMesh } from "@/lib/mesh/rasterMesh";
 import { VERTEX_COLOR_GAIN } from "@/components/Globe/_cesium/constants";
+import { isOceanOnlyDataset as isOceanOnlyDatasetGuard } from "@/utils/datasetGuards";
 
 export type RasterLayerTexture = {
   imageUrl: string;
@@ -228,22 +229,7 @@ export async function fetchRasterVisualization(options: {
     throw new Error("Missing dataset or date for raster request");
   }
 
-  const datasetText = [
-    dataset?.id,
-    dataset?.slug,
-    dataset?.name,
-    dataset?.description,
-  ]
-    .filter((value): value is string => typeof value === "string")
-    .map((value) => value.toLowerCase())
-    .join(" ");
-  const isOceanOnlyDataset =
-    datasetText.includes("sea surface") ||
-    datasetText.includes("sst") ||
-    datasetText.includes("godas") ||
-    datasetText.includes("ocean data assimilation") ||
-    datasetText.includes("global ocean data assimilation") ||
-    datasetText.includes("ncep global ocean data assimilation");
+  const isOceanOnlyDataset = isOceanOnlyDatasetGuard(dataset);
 
   const grid = await fetchRasterGrid({
     dataset,
@@ -274,11 +260,13 @@ export async function fetchRasterVisualization(options: {
     colors: colors.length,
     midSample,
   });
+  const effectiveMask = isOceanOnlyDataset ? grid.mask : undefined;
+
   const prepared = prepareRasterMeshGrid({
     lat: grid.lat,
     lon: grid.lon,
     values: gridValues,
-    mask: grid.mask,
+    mask: effectiveMask,
     smoothValues: false,
     flatShading: smoothGridBoxValues === false,
     sampleStep: 1,
@@ -295,7 +283,7 @@ export async function fetchRasterVisualization(options: {
     lat: prepared.lat,
     lon: prepared.lon,
     values: preparedValues,
-    mask: prepared.mask,
+    mask: effectiveMask ? prepared.mask : undefined,
     preparedGrid,
     min,
     max,
@@ -403,25 +391,10 @@ export const useRasterLayer = ({
     return sanitized.length ? sanitized : undefined;
   }, [dataset]);
 
-  const isOceanOnlyDataset = useMemo(() => {
-    const datasetText = [
-      dataset?.id,
-      dataset?.slug,
-      dataset?.name,
-      dataset?.description,
-    ]
-      .filter((value): value is string => typeof value === "string")
-      .map((value) => value.toLowerCase())
-      .join(" ");
-    return (
-      datasetText.includes("sea surface") ||
-      datasetText.includes("sst") ||
-      datasetText.includes("godas") ||
-      datasetText.includes("ocean data assimilation") ||
-      datasetText.includes("global ocean data assimilation") ||
-      datasetText.includes("ncep global ocean data assimilation")
-    );
-  }, [dataset]);
+  const isOceanOnlyDataset = useMemo(
+    () => isOceanOnlyDatasetGuard(dataset),
+    [dataset],
+  );
 
   const effectiveColorbarRange = useMemo(
     () => resolveEffectiveColorbarRange(dataset, level, colorbarRange),
@@ -555,6 +528,8 @@ export const useRasterLayer = ({
       abortOngoingRequest();
       const controller = new AbortController();
       controllerRef.current = controller;
+      // Hard guarantee: clear old imagery immediately so it cannot flash.
+      setData(undefined);
       setIsLoading(true);
       setError(null);
 
