@@ -183,11 +183,6 @@ const OrthoGlobe: React.FC<Props> = ({
   }, [useMeshRasterActive]);
 
   useEffect(() => {
-    if (!adminBoundaryGroupRef.current || !linesRoot) return;
-    loadAdminBoundaries();
-  }, [loadAdminBoundaries, linesRoot]);
-
-  useEffect(() => {
     const resMap: Record<Exclude<GlobeLineResolution, "none">, string> = {
       low: "110m",
       medium: "50m",
@@ -508,6 +503,11 @@ const OrthoGlobe: React.FC<Props> = ({
     requestRender,
     stateBoundaryResolution,
   ]);
+
+  useEffect(() => {
+    if (!adminBoundaryGroupRef.current || !linesRoot) return;
+    loadAdminBoundaries();
+  }, [loadAdminBoundaries, linesRoot]);
 
   const getTileKeysForView = useCallback(
     (zoom: number) => {

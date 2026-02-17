@@ -1491,6 +1491,7 @@ export default function HomePage() {
     level: selectedLevelValue ?? null,
     maskZeroValues: globeSettings.hideZeroPrecipitation,
     smoothGridBoxValues: globeSettings.rasterBlurEnabled,
+    opacity: globeSettings.rasterOpacity,
     colorbarRange,
     prefetchedData: prefetchedRasters,
   });

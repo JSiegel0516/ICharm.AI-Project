@@ -34,6 +34,7 @@ type UseRasterLayerOptions = {
   maskZeroValues?: boolean;
   smoothGridBoxValues?: boolean;
   clientRasterize?: boolean;
+  opacity?: number;
   colorbarRange?: {
     enabled?: boolean;
     min?: number | null;
@@ -64,6 +65,7 @@ export const buildRasterRequestKey = (args: {
   maskZeroValues?: boolean;
   smoothGridBoxValues?: boolean;
   clientRasterize?: boolean;
+  opacity?: number;
   colorbarRange?: {
     enabled?: boolean;
     min?: number | null;
@@ -83,11 +85,15 @@ export const buildRasterRequestKey = (args: {
   const maskKey = args.maskZeroValues ? "mask" : "nomask";
   const smoothKey = args.smoothGridBoxValues === false ? "blocky" : "smooth";
   const rasterizeKey = args.clientRasterize ? "client" : "server";
+  const opacityKey =
+    typeof args.opacity === "number" && Number.isFinite(args.opacity)
+      ? `op-${args.opacity.toFixed(3)}`
+      : "op-auto";
   const customRangeKey = args.colorbarRange?.enabled
     ? `range-${Number.isFinite(args.colorbarRange?.min as number) ? args.colorbarRange?.min : "auto"}-${Number.isFinite(args.colorbarRange?.max as number) ? args.colorbarRange?.max : "auto"}`
     : "norange";
 
-  return `${datasetId}::${dateKey}::${args.level ?? "surface"}::${colorKey}::${maskKey}::${smoothKey}::${rasterizeKey}::${customRangeKey}`;
+  return `${datasetId}::${dateKey}::${args.level ?? "surface"}::${colorKey}::${maskKey}::${smoothKey}::${rasterizeKey}::${opacityKey}::${customRangeKey}`;
 };
 
 // ============================================================================
@@ -103,6 +109,7 @@ export async function fetchRasterVisualization(options: {
   maskZeroValues?: boolean;
   smoothGridBoxValues?: boolean;
   clientRasterize?: boolean;
+  opacity?: number;
   colorbarRange?: {
     enabled?: boolean;
     min?: number | null;
@@ -120,6 +127,7 @@ export async function fetchRasterVisualization(options: {
     smoothGridBoxValues,
     colorbarRange,
     signal,
+    opacity = 1,
   } = options;
 
   const targetDatasetId = backendDatasetId ?? dataset?.id ?? dataset?.slug;
@@ -186,7 +194,7 @@ export async function fetchRasterVisualization(options: {
     smoothValues: false,
     flatShading: smoothGridBoxValues === false,
     sampleStep: 1,
-    wrapSeam: true,
+    wrapSeam: false,
     useTiling: false,
   });
 
@@ -212,6 +220,15 @@ export async function fetchRasterVisualization(options: {
     applyGain(mesh.colors);
   }
 
+  const meshMidIdx = Math.floor(mesh.colors.length / 2);
+  const meshMid = mesh.colors.slice(meshMidIdx, meshMidIdx + 4);
+  console.debug("[RasterLayer] mesh colors", {
+    datasetId: targetDatasetId,
+    meshColors: mesh.colors.length,
+    meshMid: Array.from(meshMid),
+    flatShading: smoothGridBoxValues === false,
+  });
+
   const image = buildRasterImageFromMesh({
     lat: prepared.lat,
     lon: prepared.lon,
@@ -219,6 +236,11 @@ export async function fetchRasterVisualization(options: {
     cols: prepared.cols,
     colors: mesh.colors,
     flatShading: smoothGridBoxValues === false,
+  });
+  console.debug("[RasterLayer] image built", {
+    datasetId: targetDatasetId,
+    hasImage: Boolean(image),
+    urlSize: image?.dataUrl?.length ?? 0,
   });
 
   return {
@@ -248,6 +270,7 @@ export const useRasterLayer = ({
   maskZeroValues = false,
   smoothGridBoxValues,
   clientRasterize = true,
+  opacity = 1,
   colorbarRange,
   prefetchedData,
 }: UseRasterLayerOptions): UseRasterLayerResult => {
@@ -286,6 +309,7 @@ export const useRasterLayer = ({
         maskZeroValues,
         smoothGridBoxValues,
         clientRasterize,
+        opacity,
         colorbarRange: effectiveColorbarRange,
       }),
     [
@@ -297,6 +321,7 @@ export const useRasterLayer = ({
       maskZeroValues,
       smoothGridBoxValues,
       clientRasterize,
+      opacity,
       effectiveColorbarRange,
     ],
   );
@@ -386,6 +411,7 @@ export const useRasterLayer = ({
           maskZeroValues,
           smoothGridBoxValues,
           clientRasterize,
+          opacity,
           colorbarRange: effectiveColorbarRange,
           signal: controller.signal,
         });
@@ -425,6 +451,7 @@ export const useRasterLayer = ({
     maskZeroValues,
     smoothGridBoxValues,
     clientRasterize,
+    opacity,
     waitingForLevel,
     effectiveColorbarRange,
     requestKey,

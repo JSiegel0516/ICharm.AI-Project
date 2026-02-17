@@ -177,6 +177,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       level: selectedLevel ?? null,
       maskZeroValues: shouldHideZero,
       smoothGridBoxValues: rasterBlurEnabled,
+      opacity: rasterOpacity,
       clientRasterize: clientRasterizeImagery,
       colorbarRange,
       prefetchedData: prefetchedRasters,
@@ -2446,6 +2447,15 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
         flatShading: !rasterBlurEnabled,
         sampleStep: meshSamplingStep,
         useTiling: shouldTileLargeMesh,
+      });
+      const meshMidIdx = Math.floor(mesh.colors.length / 2);
+      const meshMid = mesh.colors.slice(meshMidIdx, meshMidIdx + 4);
+      console.debug("[RasterMesh] colors", {
+        datasetId: currentDataset?.id ?? null,
+        meshColors: mesh.colors.length,
+        meshMid: Array.from(meshMid),
+        flatShading: !rasterBlurEnabled,
+        opacity: effectiveOpacity,
       });
       applyMeshColorGain(mesh);
       const meshKey = rasterGridState.requestKey
