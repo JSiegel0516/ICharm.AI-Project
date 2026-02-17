@@ -20,6 +20,9 @@ from icharm.services.data.app.models import (
     GridboxDataRequest,
     TimeseriesDataRequest,
 )
+from icharm.services.data.app.dataset_local import DatasetLocal
+from icharm.services.data.app.dataset_cloud import DatasetCloud
+from icharm.services.data.app.data_processing import DataProcessing
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +46,10 @@ engine = create_engine(POSTRGRES_URL, poolclass=NullPool)
 
 
 class DatabaseQueries:
+    _local_cloud_time_cache: dict[str, list[datetime]] = {}
+    _local_cloud_level_cache: dict[str, list[float | str]] = {}
+    _local_cloud_grid_cache: dict[str, dict[str, Any]] = {}
+
     ##############################
     # Helper methods
     ##############################
@@ -55,6 +62,107 @@ class DatabaseQueries:
         logger.info(f"Database connection: {database_name}")
         db_engine = create_engine(db_url, poolclass=NullPool)
         return db_engine
+
+    @staticmethod
+    def _parse_date(value: Any, fallback: datetime) -> datetime:
+        if value is None:
+            return fallback
+        try:
+            parsed = pandas.to_datetime(value, errors="coerce")
+            if pandas.isna(parsed):
+                return fallback
+            return parsed.to_pydatetime()
+        except Exception:
+            return fallback
+
+    @staticmethod
+    def _metadata_row_for_id(dataset_id: str) -> pandas.Series:
+        df = DatabaseQueries.get_metadata_by_ids([dataset_id])
+        if df.empty:
+            raise HTTPException(
+                status_code=404, detail=f"Dataset not found: {dataset_id}"
+            )
+        return df.iloc[0]
+
+    @staticmethod
+    async def _open_dataset_for_metadata(meta_row: pandas.Series) -> xr.Dataset:
+        stored = str(meta_row.get("stored") or meta_row.get("Stored") or "").lower()
+        if stored == "local":
+            return await DatasetLocal.open_local_dataset(meta_row)
+
+        # Default to cloud if not local/postgres
+        fallback = datetime.utcnow()
+        start = DatabaseQueries._parse_date(meta_row.get("startDate"), fallback)
+        end = DatabaseQueries._parse_date(meta_row.get("endDate"), fallback)
+        return await DatasetCloud.open_cloud_dataset(meta_row, start, end)
+
+    @staticmethod
+    def _get_level_values(ds: xr.Dataset, meta_row: pandas.Series) -> list[float | str]:
+        var_name = meta_row.get("keyVariable") or meta_row.get("key_variable")
+        if not var_name or var_name not in ds:
+            raise ValueError("Dataset variable not found for levels")
+        lat_name, lon_name, time_name = DataProcessing.normalize_coordinates(ds)
+        var = ds[var_name]
+        level_dims = [d for d in var.dims if d not in (time_name, lat_name, lon_name)]
+        if not level_dims:
+            return ["surface"]
+        level_dim = level_dims[0]
+        coord_values = ds[level_dim].values if level_dim in ds.coords else None
+        if coord_values is None or len(coord_values) == 0:
+            return [str(i + 1) for i in range(var.sizes.get(level_dim, 1))]
+        return [v.item() if hasattr(v, "item") else v for v in coord_values]
+
+    @staticmethod
+    def _get_time_values(ds: xr.Dataset, meta_row: pandas.Series) -> list[datetime]:
+        lat_name, lon_name, time_name = DataProcessing.normalize_coordinates(ds)
+        if not time_name or time_name not in ds.coords:
+            fallback = datetime.utcnow()
+            start = DatabaseQueries._parse_date(meta_row.get("startDate"), fallback)
+            return [start]
+        raw = ds[time_name].values
+        if raw is None or len(raw) == 0:
+            fallback = datetime.utcnow()
+            start = DatabaseQueries._parse_date(meta_row.get("startDate"), fallback)
+            return [start]
+        try:
+            parsed = pandas.to_datetime(raw)
+        except Exception:
+            parsed = pandas.to_datetime([str(v) for v in raw], errors="coerce")
+        parsed = [v.to_pydatetime() for v in parsed if not pandas.isna(v)]
+        return parsed
+
+    @staticmethod
+    def _get_grid_definition(ds: xr.Dataset, meta_row: pandas.Series) -> dict[str, Any]:
+        cache_key = str(meta_row.get("id") or meta_row.get("datasetId") or "")
+        cached = DatabaseQueries._local_cloud_grid_cache.get(cache_key)
+        if cached:
+            return cached
+
+        lat_name, lon_name, _ = DataProcessing.normalize_coordinates(ds)
+        if not lat_name or not lon_name:
+            raise ValueError("Dataset missing lat/lon coordinates")
+        lat_values = numpy.asarray(ds[lat_name].values, dtype=float)
+        lon_values = numpy.asarray(ds[lon_name].values, dtype=float)
+        if lat_values.ndim != 1 or lon_values.ndim != 1:
+            raise ValueError("Only 1D lat/lon grids are supported")
+
+        rows = int(lat_values.shape[0])
+        cols = int(lon_values.shape[0])
+        gridbox_id = numpy.arange(rows * cols, dtype=int) + 1
+        lat = numpy.repeat(lat_values, cols)
+        lon = numpy.tile(lon_values, rows)
+
+        payload = {
+            "rows": rows,
+            "cols": cols,
+            "lat_values": lat_values,
+            "lon_values": lon_values,
+            "gridbox_id": gridbox_id,
+            "lat": lat,
+            "lon": lon,
+        }
+        DatabaseQueries._local_cloud_grid_cache[cache_key] = payload
+        return payload
 
     @staticmethod
     async def get_all_metadata(
@@ -151,83 +259,252 @@ class DatabaseQueries:
     @staticmethod
     async def get_timestamps(request: DatasetRequest) -> dict[str, Any]:
         metadata = DatabaseQueries.get_metadata(request)
-        with DatabaseQueries.get_engine(metadata.dataset_short_name).connect() as conn:
-            query = text("SELECT * FROM get_timestamps()")
-            rows = conn.execute(query).fetchall()
-            results = {
-                "timestamp_id": [r[0] for r in rows],
-                "timestamp_value": [r[1] for r in rows],
-            }
-            return results
+        stored = (metadata.stored or metadata.storage_type or "").lower()
+        if stored == "postgres" or "postgres" in stored:
+            with DatabaseQueries.get_engine(
+                metadata.dataset_short_name
+            ).connect() as conn:
+                query = text("SELECT * FROM get_timestamps()")
+                rows = conn.execute(query).fetchall()
+                return {
+                    "timestamp_id": [r[0] for r in rows],
+                    "timestamp_value": [r[1] for r in rows],
+                }
+
+        cache_key = str(metadata.id)
+        cached = DatabaseQueries._local_cloud_time_cache.get(cache_key)
+        if cached is None:
+            meta_row = DatabaseQueries._metadata_row_for_id(metadata.id)
+            ds = await DatabaseQueries._open_dataset_for_metadata(meta_row)
+            cached = DatabaseQueries._get_time_values(ds, meta_row)
+            DatabaseQueries._local_cloud_time_cache[cache_key] = cached
+
+        return {
+            "timestamp_id": list(range(1, len(cached) + 1)),
+            "timestamp_value": [ts.isoformat() for ts in cached],
+        }
 
     @staticmethod
     async def get_levels(request: DatasetRequest) -> dict[str, Any]:
         metadata = DatabaseQueries.get_metadata(request)
-        with DatabaseQueries.get_engine(metadata.dataset_short_name).connect() as conn:
-            query = text("SELECT * FROM get_levels()")
-            rows = conn.execute(query).fetchall()
-            results = {
-                "level_id": [r[0] for r in rows],
-                "name": [r[1] for r in rows],
-            }
-            return results
+        stored = (metadata.stored or metadata.storage_type or "").lower()
+        if stored == "postgres" or "postgres" in stored:
+            with DatabaseQueries.get_engine(
+                metadata.dataset_short_name
+            ).connect() as conn:
+                query = text("SELECT * FROM get_levels()")
+                rows = conn.execute(query).fetchall()
+                return {
+                    "level_id": [r[0] for r in rows],
+                    "name": [r[1] for r in rows],
+                }
+
+        cache_key = str(metadata.id)
+        cached = DatabaseQueries._local_cloud_level_cache.get(cache_key)
+        if cached is None:
+            meta_row = DatabaseQueries._metadata_row_for_id(metadata.id)
+            ds = await DatabaseQueries._open_dataset_for_metadata(meta_row)
+            cached = DatabaseQueries._get_level_values(ds, meta_row)
+            DatabaseQueries._local_cloud_level_cache[cache_key] = cached
+
+        return {
+            "level_id": list(range(1, len(cached) + 1)),
+            "name": [str(value) for value in cached],
+        }
 
     @staticmethod
     async def get_gridboxes(request: DatasetRequest) -> dict[str, Any]:
         metadata = DatabaseQueries.get_metadata(request)
-        with DatabaseQueries.get_engine(metadata.dataset_short_name).connect() as conn:
-            query = text("SELECT * FROM get_gridboxes()")
-            rows = conn.execute(query).fetchall()
-            results = {
-                "gridbox_id": [r[0] for r in rows],
-                "lat_id": [r[1] for r in rows],
-                "lon_id": [r[2] for r in rows],
-                "lat": [r[3] for r in rows],
-                "lon": [r[4] for r in rows],
-            }
-            return results
+        stored = (metadata.stored or metadata.storage_type or "").lower()
+        if stored == "postgres" or "postgres" in stored:
+            with DatabaseQueries.get_engine(
+                metadata.dataset_short_name
+            ).connect() as conn:
+                query = text("SELECT * FROM get_gridboxes()")
+                rows = conn.execute(query).fetchall()
+                return {
+                    "gridbox_id": [r[0] for r in rows],
+                    "lat_id": [r[1] for r in rows],
+                    "lon_id": [r[2] for r in rows],
+                    "lat": [r[3] for r in rows],
+                    "lon": [r[4] for r in rows],
+                }
+
+        meta_row = DatabaseQueries._metadata_row_for_id(metadata.id)
+        ds = await DatabaseQueries._open_dataset_for_metadata(meta_row)
+        grid = DatabaseQueries._get_grid_definition(ds, meta_row)
+
+        rows = grid["rows"]
+        cols = grid["cols"]
+        lat_ids = numpy.repeat(numpy.arange(rows, dtype=int) + 1, cols)
+        lon_ids = numpy.tile(numpy.arange(cols, dtype=int) + 1, rows)
+
+        return {
+            "gridbox_id": grid["gridbox_id"].tolist(),
+            "lat_id": lat_ids.tolist(),
+            "lon_id": lon_ids.tolist(),
+            "lat": grid["lat"].tolist(),
+            "lon": grid["lon"].tolist(),
+        }
 
     @staticmethod
     async def get_gridbox_data(request: GridboxDataRequest) -> dict[str, Any]:
         metadata = DatabaseQueries.get_metadata(request)
-        with DatabaseQueries.get_engine(metadata.dataset_short_name).connect() as conn:
-            rows = conn.execute(
-                statement=text("""
-                    SELECT * FROM get_gridbox_data(:timestamp_id, :level_id)
-                """),
-                parameters={
-                    "timestamp_id": request.timestamp_id,
-                    "level_id": request.level_id,
-                },
-            ).fetchall()
-            results = {
-                "gridbox_id": [r[0] for r in rows],
-                "lat": [r[1] for r in rows],
-                "lon": [r[2] for r in rows],
-                "value": [r[3] for r in rows],
-            }
-            return results
+        stored = (metadata.stored or metadata.storage_type or "").lower()
+        if stored == "postgres" or "postgres" in stored:
+            with DatabaseQueries.get_engine(
+                metadata.dataset_short_name
+            ).connect() as conn:
+                rows = conn.execute(
+                    statement=text("""
+                        SELECT * FROM get_gridbox_data(:timestamp_id, :level_id)
+                    """),
+                    parameters={
+                        "timestamp_id": request.timestamp_id,
+                        "level_id": request.level_id,
+                    },
+                ).fetchall()
+                return {
+                    "gridbox_id": [r[0] for r in rows],
+                    "lat": [r[1] for r in rows],
+                    "lon": [r[2] for r in rows],
+                    "value": [r[3] for r in rows],
+                }
+
+        meta_row = DatabaseQueries._metadata_row_for_id(metadata.id)
+        ds = await DatabaseQueries._open_dataset_for_metadata(meta_row)
+        var_name = meta_row.get("keyVariable") or meta_row.get("key_variable")
+        if not var_name or var_name not in ds:
+            raise HTTPException(status_code=500, detail="Dataset variable not found")
+
+        lat_name, lon_name, time_name = DataProcessing.normalize_coordinates(ds)
+        if not lat_name or not lon_name:
+            raise HTTPException(
+                status_code=500, detail="Dataset missing lat/lon coords"
+            )
+
+        data_array = ds[var_name]
+
+        if time_name and time_name in data_array.dims:
+            times = DatabaseQueries._local_cloud_time_cache.get(str(metadata.id))
+            if times is None:
+                times = DatabaseQueries._get_time_values(ds, meta_row)
+                DatabaseQueries._local_cloud_time_cache[str(metadata.id)] = times
+            time_idx = max(0, min(len(times) - 1, request.timestamp_id - 1))
+            data_array = data_array.isel({time_name: time_idx})
+
+        level_values = DatabaseQueries._local_cloud_level_cache.get(str(metadata.id))
+        if level_values is None:
+            level_values = DatabaseQueries._get_level_values(ds, meta_row)
+            DatabaseQueries._local_cloud_level_cache[str(metadata.id)] = level_values
+
+        level_dims = [
+            d for d in data_array.dims if d not in (time_name, lat_name, lon_name)
+        ]
+        if level_dims:
+            level_dim = level_dims[0]
+            level_idx = max(0, min(len(level_values) - 1, request.level_id - 1))
+            data_array = data_array.isel({level_dim: level_idx})
+
+        if lat_name in data_array.dims and lon_name in data_array.dims:
+            data_array = data_array.transpose(lat_name, lon_name)
+
+        data = numpy.asarray(data_array.values, dtype=float)
+
+        grid = DatabaseQueries._get_grid_definition(ds, meta_row)
+        flat_values = data.reshape(-1)
+
+        return {
+            "gridbox_id": grid["gridbox_id"].tolist(),
+            "lat": grid["lat"].tolist(),
+            "lon": grid["lon"].tolist(),
+            "value": flat_values.tolist(),
+        }
 
     @staticmethod
     async def get_timeseries_data(request: TimeseriesDataRequest) -> dict[str, Any]:
         metadata = DatabaseQueries.get_metadata(request)
-        with DatabaseQueries.get_engine(metadata.dataset_short_name).connect() as conn:
-            rows = conn.execute(
-                statement=text("""
-                    SELECT * FROM get_timeseries(:gridbox_id, :level_id)
-                """),
-                parameters={
-                    "gridbox_id": request.gridbox_id,
-                    "level_id": request.level_id,
-                },
-            ).fetchall()
-            results = {
-                "timestamp_id": [r[0] for r in rows],
-                "timestamp_value": [r[1] for r in rows],
-                "level_id": [r[2] for r in rows],
-                "value": [r[3] for r in rows],
+        stored = (metadata.stored or metadata.storage_type or "").lower()
+        if stored == "postgres" or "postgres" in stored:
+            with DatabaseQueries.get_engine(
+                metadata.dataset_short_name
+            ).connect() as conn:
+                rows = conn.execute(
+                    statement=text("""
+                        SELECT * FROM get_timeseries(:gridbox_id, :level_id)
+                    """),
+                    parameters={
+                        "gridbox_id": request.gridbox_id,
+                        "level_id": request.level_id,
+                    },
+                ).fetchall()
+                return {
+                    "timestamp_id": [r[0] for r in rows],
+                    "timestamp_value": [r[1] for r in rows],
+                    "level_id": [r[2] for r in rows],
+                    "value": [r[3] for r in rows],
+                }
+
+        meta_row = DatabaseQueries._metadata_row_for_id(metadata.id)
+        ds = await DatabaseQueries._open_dataset_for_metadata(meta_row)
+        var_name = meta_row.get("keyVariable") or meta_row.get("key_variable")
+        if not var_name or var_name not in ds:
+            raise HTTPException(status_code=500, detail="Dataset variable not found")
+
+        lat_name, lon_name, time_name = DataProcessing.normalize_coordinates(ds)
+        if not lat_name or not lon_name:
+            raise HTTPException(
+                status_code=500, detail="Dataset missing lat/lon coords"
+            )
+
+        grid = DatabaseQueries._get_grid_definition(ds, meta_row)
+        rows = grid["rows"]
+        cols = grid["cols"]
+        idx = max(0, request.gridbox_id - 1)
+        row_idx = idx // cols
+        col_idx = idx % cols
+
+        data_array = ds[var_name]
+        level_values = DatabaseQueries._local_cloud_level_cache.get(str(metadata.id))
+        if level_values is None:
+            level_values = DatabaseQueries._get_level_values(ds, meta_row)
+            DatabaseQueries._local_cloud_level_cache[str(metadata.id)] = level_values
+
+        level_dims = [
+            d for d in data_array.dims if d not in (time_name, lat_name, lon_name)
+        ]
+        if level_dims:
+            level_dim = level_dims[0]
+            level_idx = max(0, min(len(level_values) - 1, request.level_id - 1))
+            data_array = data_array.isel({level_dim: level_idx})
+
+        if lat_name in data_array.dims:
+            data_array = data_array.isel({lat_name: row_idx})
+        if lon_name in data_array.dims:
+            data_array = data_array.isel({lon_name: col_idx})
+
+        if time_name and time_name in data_array.dims:
+            values = numpy.asarray(data_array.values, dtype=float).reshape(-1)
+            times = DatabaseQueries._local_cloud_time_cache.get(str(metadata.id))
+            if times is None:
+                times = DatabaseQueries._get_time_values(ds, meta_row)
+                DatabaseQueries._local_cloud_time_cache[str(metadata.id)] = times
+            length = min(len(times), len(values))
+            return {
+                "timestamp_id": list(range(1, length + 1)),
+                "timestamp_value": [ts.isoformat() for ts in times[:length]],
+                "level_id": [request.level_id] * length,
+                "value": values[:length].tolist(),
             }
-            return results
+
+        value = float(data_array.values) if numpy.size(data_array.values) == 1 else None
+        ts_fallback = DatabaseQueries._get_time_values(ds, meta_row)[0]
+        return {
+            "timestamp_id": [1],
+            "timestamp_value": [ts_fallback.isoformat()],
+            "level_id": [request.level_id],
+            "value": [value],
+        }
 
     @staticmethod
     def get_datasets(

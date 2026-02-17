@@ -34,6 +34,8 @@ import { addGeoJsonLines } from "./_cesium/geoJsonLines";
 import {
   IMAGERY_HIDE_HEIGHT,
   IMAGERY_PRELOAD_HEIGHT,
+  IMAGERY_OVERLAP_HEIGHT,
+  MESH_TO_IMAGERY_HEIGHT,
   VERTEX_COLOR_GAIN,
 } from "./_cesium/constants";
 import { getLabelTier, heightToTileZoomFloat } from "./_cesium/labelUtils";
@@ -163,12 +165,19 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       viewerReady,
     });
 
+    const [useMeshRasterActive, setUseMeshRasterActive] = useState(
+      useMeshRasterEffective,
+    );
+    const useMeshRasterActiveRef = useRef(useMeshRasterEffective);
+    const [clientRasterizeImagery] = useState(true);
+    const clientRasterizeImageryRef = useRef(true);
     const rasterState = useRasterLayer({
       dataset: rasterLayerDataset,
       date: selectedDate,
       level: selectedLevel ?? null,
       maskZeroValues: shouldHideZero,
       smoothGridBoxValues: rasterBlurEnabled,
+      clientRasterize: clientRasterizeImagery,
       colorbarRange,
       prefetchedData: prefetchedRasters,
     });
@@ -181,10 +190,6 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       enabled: effectiveViewMode !== "ortho" || useMeshRasterEffective,
       prefetchedData: prefetchedRasterGrids,
     });
-    const [useMeshRasterActive, setUseMeshRasterActive] = useState(
-      useMeshRasterEffective,
-    );
-    const useMeshRasterActiveRef = useRef(useMeshRasterEffective);
 
     // FIXED: Add loading timeout to prevent infinite loading
     useEffect(() => {
@@ -294,12 +299,15 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
 
-      setMeshRasterActive(true);
-
       const viewer = viewerRef.current;
       const height = viewer.camera.positionCartographic.height;
 
-      const showImagery = height < IMAGERY_HIDE_HEIGHT;
+      const showImagery = height < IMAGERY_OVERLAP_HEIGHT;
+      const hasRasterTextures = Boolean(rasterState.data?.textures?.length);
+      const imageryReady = rasterLayerRef.current.length > 0;
+      const shouldUseMesh =
+        height > MESH_TO_IMAGERY_HEIGHT || !hasRasterTextures || !imageryReady;
+      setMeshRasterActive(shouldUseMesh);
       setMarkerLayerVisibility(showImagery);
 
       // Keep imagery in sync with zoom even if mesh state lags.
@@ -328,6 +336,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       rasterOpacity,
       smoothGridBoxValues,
       setMarkerLayerVisibility,
+      rasterState.data,
     ]);
 
     const clearMarker = useCallback(() => {
@@ -1286,12 +1295,12 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
             layer.gamma = 1.0;
 
             const filter = rasterBlurEnabled
-              ? cesiumInstance.TextureMinificationFilter.NEAREST
-              : cesiumInstance.TextureMinificationFilter.LINEAR;
+              ? cesiumInstance.TextureMinificationFilter.LINEAR
+              : cesiumInstance.TextureMinificationFilter.NEAREST;
             layer.minificationFilter = filter;
             layer.magnificationFilter = rasterBlurEnabled
-              ? cesiumInstance.TextureMagnificationFilter.NEAREST
-              : cesiumInstance.TextureMagnificationFilter.LINEAR;
+              ? cesiumInstance.TextureMagnificationFilter.LINEAR
+              : cesiumInstance.TextureMagnificationFilter.NEAREST;
 
             viewer.scene.imageryLayers.raiseToTop(layer);
             newLayers.push(layer);
@@ -2411,6 +2420,19 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       const min = grid.min ?? 0;
       const max = grid.max ?? 1;
       const effectiveOpacity = rasterOpacity;
+      const midIdx = Math.floor(grid.values.length / 2);
+      const midSample = Number.isFinite(grid.values[midIdx])
+        ? grid.values[midIdx]
+        : null;
+      console.debug("[RasterMesh] build", {
+        datasetId: currentDataset?.id ?? null,
+        min,
+        max,
+        flatShading: !rasterBlurEnabled,
+        smoothValues: false,
+        sampleStep: meshSamplingStep,
+        midSample,
+      });
       const mesh = buildRasterMesh({
         lat: grid.lat,
         lon: grid.lon,

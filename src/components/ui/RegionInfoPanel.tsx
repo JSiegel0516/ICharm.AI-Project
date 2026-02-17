@@ -53,7 +53,6 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import {
-  isPostgresDataset,
   fetchDatasetGridboxes,
   fetchDatasetLevels,
   resolveGridboxId,
@@ -613,102 +612,38 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     setTimeseriesError(null);
 
     try {
-      if (isPostgresDataset(currentDataset)) {
-        const [gridboxes, levels] = await Promise.all([
-          fetchDatasetGridboxes(datasetId),
-          fetchDatasetLevels(datasetId),
-        ]);
-        const gridboxId = resolveGridboxId(gridboxes, latitude, longitude);
-        const levelId = resolveLevelId(levels, null);
+      const [gridboxes, levels] = await Promise.all([
+        fetchDatasetGridboxes(datasetId),
+        fetchDatasetLevels(datasetId),
+      ]);
+      const gridboxId = resolveGridboxId(gridboxes, latitude, longitude);
+      const levelId = resolveLevelId(levels, null);
 
-        if (gridboxId == null || levelId == null) {
-          throw new Error("Missing gridbox or level mapping for dataset");
-        }
-
-        const timeseries = await fetchGridboxTimeseries({
-          datasetId,
-          gridboxId,
-          levelId,
-        });
-
-        const startMs = startDate.getTime();
-        const endMs = endDate.getTime();
-        const series: SeriesPoint[] = timeseries
-          .filter((entry) => {
-            const ts = entry.date.getTime();
-            return ts >= startMs && ts <= endMs;
-          })
-          .sort((a, b) => a.date.getTime() - b.date.getTime())
-          .map((entry) => ({
-            date: formatDate(entry.date),
-            value: entry.value,
-          }));
-
-        setTimeseriesSeries(series);
-        setTimeseriesUnits(datasetUnit);
-        return;
+      if (gridboxId == null || levelId == null) {
+        throw new Error("Missing gridbox or level mapping for dataset");
       }
 
-      const focusCoords = `${latitude},${longitude}`;
-      const payload = {
-        datasetIds: [datasetId],
-        startDate: formatDate(startDate),
-        endDate: formatDate(endDate),
-        focusCoordinates: focusCoords,
-        aggregation: "mean",
-        includeStatistics: false,
-        includeMetadata: true,
-      };
-
-      console.log("[Timeseries] Request payload:", payload);
-
-      const response = await fetch("/api/timeseries/extract", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
+      const timeseries = await fetchGridboxTimeseries({
+        datasetId,
+        gridboxId,
+        levelId,
       });
 
-      console.log("[Timeseries] Response status:", response.status);
-
-      const contentType = response.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        const text = await response.text();
-        console.error(
-          "[Timeseries] Non-JSON response:",
-          text.substring(0, 500),
-        );
-        throw new Error(
-          `Server returned ${response.status}: ${response.statusText}`,
-        );
-      }
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(
-          errorData?.detail || `Request failed with status ${response.status}`,
-        );
-      }
-
-      const result = await response.json();
-      console.log("[Timeseries] Full API Response:", result);
-
-      if (!result?.data || !Array.isArray(result.data)) {
-        throw new Error("Invalid response format");
-      }
-
-      const series: SeriesPoint[] = result.data.map((point: any) => ({
-        date: point.date,
-        value: point.values?.[datasetId] ?? null,
-      }));
-
-      const units = result.metadata?.[datasetId]?.units ?? datasetUnit;
+      const startMs = startDate.getTime();
+      const endMs = endDate.getTime();
+      const series: SeriesPoint[] = timeseries
+        .filter((entry) => {
+          const ts = entry.date.getTime();
+          return ts >= startMs && ts <= endMs;
+        })
+        .sort((a, b) => a.date.getTime() - b.date.getTime())
+        .map((entry) => ({
+          date: formatDate(entry.date),
+          value: entry.value,
+        }));
 
       setTimeseriesSeries(series);
-      setTimeseriesUnits(units);
-
-      console.log(`[Timeseries] Loaded ${series.length} data points`);
+      setTimeseriesUnits(datasetUnit);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to load timeseries";
@@ -719,14 +654,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     } finally {
       setTimeseriesLoading(false);
     }
-  }, [
-    datasetId,
-    calculateDateRange,
-    latitude,
-    longitude,
-    datasetUnit,
-    currentDataset,
-  ]);
+  }, [datasetId, calculateDateRange, latitude, longitude, datasetUnit]);
 
   const handleExportCSV = useCallback(() => {
     if (!chartData.length) return;

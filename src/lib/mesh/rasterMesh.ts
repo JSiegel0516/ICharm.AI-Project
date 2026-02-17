@@ -39,6 +39,11 @@ type RasterMeshOptions = {
   useTiling?: boolean;
 };
 
+type RasterGridOptions = Omit<
+  RasterMeshOptions,
+  "min" | "max" | "colors" | "opacity" | "useTiling"
+>;
+
 const MAX_VERTS_PER_TILE = 32000;
 
 const createValueArray = (
@@ -259,7 +264,7 @@ const computeCellAverage = (
   return sum / count;
 };
 
-const prepareRasterMesh = (options: RasterMeshOptions) => {
+export const prepareRasterMeshGrid = (options: RasterGridOptions) => {
   const {
     lat,
     lon,
@@ -582,7 +587,7 @@ export const buildRasterMeshTiles = (
   options: RasterMeshOptions,
 ): RasterMesh => {
   const { min, max, colors, opacity = 1, flatShading = false } = options;
-  const prepared = prepareRasterMesh(options);
+  const prepared = prepareRasterMeshGrid(options);
   const rows = prepared.rows;
   const cols = prepared.cols;
   const totalVerts = rows * cols;
@@ -731,6 +736,6 @@ export const buildRasterMesh = (options: RasterMeshOptions): RasterMesh => {
     return buildRasterMeshTiles(options);
   }
 
-  const prepared = prepareRasterMesh(options);
+  const prepared = prepareRasterMeshGrid(options);
   return buildSingleMesh(prepared, min, max, colors, opacity, flatShading);
 };

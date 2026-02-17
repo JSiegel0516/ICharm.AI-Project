@@ -5,7 +5,7 @@ NOW WITH RASTER VISUALIZATION SUPPORT
 """
 
 import orjson
-from fastapi import FastAPI, APIRouter, Request
+from fastapi import FastAPI, APIRouter, Request, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, RedirectResponse
 from typing import Optional, Any, Literal
@@ -34,7 +34,6 @@ from icharm.services.data.app.models import (
 )
 
 # Import raster visualization module
-from icharm.services.data.app.visualize_raster import VisualizeRaster
 from icharm.utils.logger import setup_logging
 
 warnings.filterwarnings("ignore")
@@ -164,13 +163,19 @@ async def visualize_raster(request: RasterRequest):
     Generate raster visualization for 3D globe display
     Now supports custom min/max range for color mapping
     """
-    return await VisualizeRaster.visualize_raster(request)
+    raise HTTPException(
+        status_code=410,
+        detail="Raster PNG generation is disabled; use client-side rasterization.",
+    )
 
 
 @router.post("/raster/grid", response_class=CustomJSONResponse)
 async def raster_grid(request: RasterRequest):
     """Generate raw raster grid for client-side mesh rendering."""
-    return await VisualizeRaster.visualize_raster_grid(request)
+    raise HTTPException(
+        status_code=410,
+        detail="Raster grid generation is disabled; use client-side grid construction.",
+    )
 
 
 @router.get(path="/datasets", response_class=CustomJSONResponse)
@@ -213,41 +218,61 @@ async def list_available_datasets(
 
 
 @router.get(path="/timestamps")
-async def timestamps(request: DatasetRequest):
+async def timestamps(datasetId: str = Query(..., description="Dataset UUID")):
     """Get all available timestamps for dataset"""
-    data = await DatabaseQueries.get_timestamps(request)
+    data = await DatabaseQueries.get_timestamps(DatasetRequest(datasetId=datasetId))
     payload = orjson.dumps(data)
     return Response(content=payload, media_type="application/json")
 
 
 @router.get(path="/levels")
-async def get_levels(request: DatasetRequest):
+async def get_levels(datasetId: str = Query(..., description="Dataset UUID")):
     """Get all available levels for dataset"""
-    data = await DatabaseQueries.get_levels(request)
+    data = await DatabaseQueries.get_levels(DatasetRequest(datasetId=datasetId))
     payload = orjson.dumps(data)
     return Response(content=payload, media_type="application/json")
 
 
 @router.get(path="/gridboxes")
-async def get_gridboxes(request: DatasetRequest):
+async def get_gridboxes(datasetId: str = Query(..., description="Dataset UUID")):
     """Get all available gridboxes for dataset"""
-    data = await DatabaseQueries.get_gridboxes(request)
+    data = await DatabaseQueries.get_gridboxes(DatasetRequest(datasetId=datasetId))
     payload = orjson.dumps(data)
     return Response(content=payload, media_type="application/json")
 
 
 @router.get(path="/gridbox_data")
-async def get_gridbox_data(request: GridboxDataRequest):
+async def get_gridbox_data(
+    datasetId: str = Query(..., description="Dataset UUID"),
+    timestampId: int = Query(..., description="Timestamp id"),
+    levelId: int = Query(..., description="Level id"),
+):
     """Get all available gridboxes for dataset"""
-    data = await DatabaseQueries.get_gridbox_data(request)
+    data = await DatabaseQueries.get_gridbox_data(
+        GridboxDataRequest(
+            datasetId=datasetId,
+            timestampId=timestampId,
+            levelId=levelId,
+        )
+    )
     payload = orjson.dumps(data)
     return Response(content=payload, media_type="application/json")
 
 
 @router.get(path="/timeseries_data")
-async def get_timeseries_data(request: TimeseriesDataRequest):
+async def get_timeseries_data(
+    datasetId: str = Query(..., description="Dataset UUID"),
+    gridboxId: int = Query(..., description="Gridbox id"),
+    levelId: int = Query(..., description="Level id"),
+):
     """Get all available gridboxes for dataset"""
-    data = await DatabaseQueries.get_timeseries_data(request)
+    data = await DatabaseQueries.get_timeseries_data(
+        TimeseriesDataRequest(
+            datasetId=datasetId,
+            gridboxId=gridboxId,
+            levelId=levelId,
+        )
+    )
     payload = orjson.dumps(data)
     return Response(content=payload, media_type="application/json")
 

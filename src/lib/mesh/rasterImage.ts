@@ -77,6 +77,11 @@ export const buildRasterImage = ({
     if (lon[i] < west) west = lon[i];
     if (lon[i] > east) east = lon[i];
   }
+  const lonRange = east - west;
+  if (lonRange > 300 && west >= 0) {
+    west = -180;
+    east = 180;
+  }
   let south = lat[0];
   let north = lat[0];
   for (let i = 1; i < lat.length; i += 1) {
