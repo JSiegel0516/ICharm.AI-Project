@@ -16,7 +16,7 @@ import type {
   GlobeRef,
   MapProjectionId,
 } from "@/types";
-import { useRasterLayer } from "@/hooks/useRasterLayer";
+import { useRasterLayer, applyLandMask } from "@/hooks/useRasterLayer";
 import { useRasterGrid, RasterGridData } from "@/hooks/useRasterGrid";
 import { buildRasterMesh, prepareRasterMeshGrid } from "@/lib/mesh/rasterMesh";
 import { buildRasterImageFromMesh } from "@/lib/mesh/rasterImage";
@@ -1329,12 +1329,17 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       [],
     );
 
+    const maskedTextureCacheRef = useRef<Map<string, string>>(new Map());
+    const rasterLayerLoadIdRef = useRef(0);
+
     const applyRasterLayers = useCallback(
-      (layerData?: RasterLayerData) => {
+      async (layerData?: RasterLayerData) => {
         const viewer = viewerRef.current;
         if (!viewer || !cesiumInstance) {
           return;
         }
+        const rasterLoadId = rasterLayerLoadIdRef.current + 1;
+        rasterLayerLoadIdRef.current = rasterLoadId;
 
         const previousLayers = [...rasterLayerRef.current];
 
@@ -1458,7 +1463,43 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
           Number.isFinite(height) && height < IMAGERY_PRELOAD_HEIGHT;
         const visible = true;
 
-        validTextures.forEach((texture, index) => {
+        const datasetName = (currentDataset?.name ?? "").toLowerCase();
+        const datasetId = (currentDataset?.id ?? "").toLowerCase();
+        const shouldMaskLand =
+          datasetName.includes("sea surface") ||
+          datasetName.includes("sst") ||
+          datasetName.includes("godas") ||
+          datasetName.includes("ocean data assimilation") ||
+          datasetId.includes("godas");
+
+        const resolveMaskedTexture = async (
+          texture: RasterLayerTexture,
+        ): Promise<RasterLayerTexture> => {
+          if (!shouldMaskLand) return texture;
+          const key = `${texture.imageUrl}::${texture.width ?? "auto"}x${texture.height ?? "auto"}`;
+          const cached = maskedTextureCacheRef.current.get(key);
+          if (cached) {
+            return { ...texture, imageUrl: cached };
+          }
+          try {
+            const maskedUrl = await applyLandMask({
+              imageUrl: texture.imageUrl,
+              width: texture.width,
+              height: texture.height,
+            });
+            maskedTextureCacheRef.current.set(key, maskedUrl);
+            return { ...texture, imageUrl: maskedUrl };
+          } catch (err) {
+            console.warn("[RasterLayer] land mask failed", err);
+            return texture;
+          }
+        };
+
+        for (let index = 0; index < validTextures.length; index += 1) {
+          if (rasterLayerLoadIdRef.current !== rasterLoadId) {
+            return;
+          }
+          const texture = await resolveMaskedTexture(validTextures[index]);
           try {
             const provider = new cesiumInstance.SingleTileImageryProvider({
               url: texture.imageUrl,
@@ -1492,8 +1533,11 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
           } catch (err) {
             console.error(`Failed to add texture ${index}:`, err);
           }
-        });
+        }
 
+        if (rasterLayerLoadIdRef.current !== rasterLoadId) {
+          return;
+        }
         rasterLayerRef.current = newLayers;
         const fadeDuration = 100; // Reduced from 220ms
 
@@ -2757,6 +2801,8 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
     ]);
 
     useEffect(() => {
+      maskedTextureCacheRef.current.clear();
+      rasterLayerLoadIdRef.current += 1;
       clearMeshCache();
     }, [clearMeshCache, currentDataset?.id, selectedLevel]);
     const showInitialLoading = !isProjection && isLoading && !viewerReady;

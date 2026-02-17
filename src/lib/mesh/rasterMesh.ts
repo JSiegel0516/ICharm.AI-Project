@@ -47,6 +47,7 @@ type RasterMeshOptions = {
   sampleStep?: number;
   flatShading?: boolean;
   useTiling?: boolean;
+  maskZeroValues?: boolean;
 };
 
 type RasterGridOptions = Omit<
@@ -392,6 +393,7 @@ const buildSingleMesh = (
   colors: string[],
   opacity: number,
   flatShading: boolean,
+  maskZeroValues: boolean,
 ): RasterMesh => {
   const rows = prepared.rows;
   const cols = prepared.cols;
@@ -429,7 +431,9 @@ const buildSingleMesh = (
         ]);
 
         const rgba =
-          avg === null ? [0, 0, 0, 0] : mapValueToRgba(avg, min, max, stops);
+          avg === null || (maskZeroValues && avg === 0)
+            ? [0, 0, 0, 0]
+            : mapValueToRgba(avg, min, max, stops);
         rgba[3] = Math.round(rgba[3] * opacity);
 
         const base = vOffset * 4;
@@ -481,6 +485,10 @@ const buildSingleMesh = (
       }
 
       const value = prepared.values[idx];
+      if (maskZeroValues && value === 0) {
+        colorsOut.set([0, 0, 0, 0], idx * 4);
+        continue;
+      }
       const rgba = mapValueToRgba(value, min, max, stops);
       rgba[3] = Math.round(rgba[3] * opacity);
       colorsOut.set(rgba, idx * 4);
@@ -520,6 +528,7 @@ const buildFlatMeshTiles = (
   max: number,
   colors: string[],
   opacity: number,
+  maskZeroValues: boolean,
 ): RasterMesh => {
   const rows = prepared.rows;
   const cols = prepared.cols;
@@ -589,7 +598,9 @@ const buildFlatMeshTiles = (
           ]);
 
           const rgba =
-            avg === null ? [0, 0, 0, 0] : mapValueToRgba(avg, min, max, stops);
+            avg === null || (maskZeroValues && avg === 0)
+              ? [0, 0, 0, 0]
+              : mapValueToRgba(avg, min, max, stops);
           rgba[3] = Math.round(rgba[3] * opacity);
 
           const base = vOffset * 4;
@@ -645,18 +656,40 @@ const buildFlatMeshTiles = (
 export const buildRasterMeshTiles = (
   options: RasterMeshOptions,
 ): RasterMesh => {
-  const { min, max, colors, opacity = 1, flatShading = false } = options;
+  const {
+    min,
+    max,
+    colors,
+    opacity = 1,
+    flatShading = false,
+    maskZeroValues = false,
+  } = options;
   const prepared = options.preparedGrid ?? prepareRasterMeshGrid(options);
   const rows = prepared.rows;
   const cols = prepared.cols;
   const totalVerts = rows * cols;
 
   if (!shouldTileMesh(rows, cols)) {
-    return buildSingleMesh(prepared, min, max, colors, opacity, flatShading);
+    return buildSingleMesh(
+      prepared,
+      min,
+      max,
+      colors,
+      opacity,
+      flatShading,
+      maskZeroValues,
+    );
   }
 
   if (flatShading) {
-    return buildFlatMeshTiles(prepared, min, max, colors, opacity);
+    return buildFlatMeshTiles(
+      prepared,
+      min,
+      max,
+      colors,
+      opacity,
+      maskZeroValues,
+    );
   }
 
   const vertsPerRow = cols;
@@ -717,6 +750,11 @@ export const buildRasterMeshTiles = (
             tileColors.set([0, 0, 0, 0], tileIdx * 4);
           } else {
             const value = prepared.values[origIdx];
+            if (maskZeroValues && value === 0) {
+              tileColors.set([0, 0, 0, 0], tileIdx * 4);
+              tileIdx += 1;
+              continue;
+            }
             const rgba = mapValueToRgba(value, min, max, stops);
             rgba[3] = Math.round(rgba[3] * opacity);
             tileColors.set(rgba, tileIdx * 4);
@@ -780,6 +818,7 @@ export const buildRasterMesh = (options: RasterMeshOptions): RasterMesh => {
     opacity = 1,
     useTiling,
     flatShading = false,
+    maskZeroValues = false,
   } = options;
 
   if (preparedGrid) {
@@ -802,6 +841,7 @@ export const buildRasterMesh = (options: RasterMeshOptions): RasterMesh => {
       colors,
       opacity,
       flatShading,
+      maskZeroValues,
     );
   }
 
@@ -820,5 +860,13 @@ export const buildRasterMesh = (options: RasterMeshOptions): RasterMesh => {
   }
 
   const prepared = prepareRasterMeshGrid(options);
-  return buildSingleMesh(prepared, min, max, colors, opacity, flatShading);
+  return buildSingleMesh(
+    prepared,
+    min,
+    max,
+    colors,
+    opacity,
+    flatShading,
+    maskZeroValues,
+  );
 };

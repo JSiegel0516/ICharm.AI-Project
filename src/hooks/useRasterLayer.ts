@@ -29,6 +29,95 @@ export type RasterLayerData = {
   sampleValue: (latitude: number, longitude: number) => number | null;
 };
 
+const LAND_MASK_URL = "/_land/earth_specularmap_flat_8192x4096.jpg";
+const LAND_MASK_THRESHOLD = 60;
+let landMaskImagePromise: Promise<HTMLImageElement> | null = null;
+
+const loadLandMaskImage = () => {
+  if (landMaskImagePromise) return landMaskImagePromise;
+  landMaskImagePromise = new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = LAND_MASK_URL;
+  });
+  return landMaskImagePromise;
+};
+
+export const applyLandMask = async (args: {
+  imageUrl: string;
+  width?: number;
+  height?: number;
+}): Promise<string> => {
+  const [maskImg, rasterImg] = await Promise.all([
+    loadLandMaskImage(),
+    new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = args.imageUrl;
+    }),
+  ]);
+
+  const rasterWidth = args.width ?? rasterImg.naturalWidth ?? rasterImg.width;
+  const rasterHeight =
+    args.height ?? rasterImg.naturalHeight ?? rasterImg.height;
+  if (!rasterWidth || !rasterHeight) {
+    console.debug("[LandMask] missing raster dimensions");
+    return args.imageUrl;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = rasterWidth;
+  canvas.height = rasterHeight;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    console.debug("[LandMask] missing 2d context");
+    return args.imageUrl;
+  }
+
+  ctx.drawImage(rasterImg, 0, 0, rasterWidth, rasterHeight);
+  const rasterData = ctx.getImageData(0, 0, rasterWidth, rasterHeight);
+
+  const maskCanvas = document.createElement("canvas");
+  maskCanvas.width = rasterWidth;
+  maskCanvas.height = rasterHeight;
+  const maskCtx = maskCanvas.getContext("2d");
+  if (!maskCtx) {
+    console.debug("[LandMask] missing mask 2d context");
+    return args.imageUrl;
+  }
+  maskCtx.drawImage(maskImg, 0, 0, rasterWidth, rasterHeight);
+  const maskData = maskCtx.getImageData(0, 0, rasterWidth, rasterHeight).data;
+
+  const out = rasterData.data;
+  let masked = 0;
+  let total = 0;
+  for (let i = 0; i < out.length; i += 4) {
+    const r = maskData[i];
+    const g = maskData[i + 1];
+    const b = maskData[i + 2];
+    const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    total += 1;
+    if (luminance < LAND_MASK_THRESHOLD) {
+      out[i + 3] = 0;
+      masked += 1;
+    }
+  }
+
+  ctx.putImageData(rasterData, 0, 0);
+  console.debug("[LandMask] applied", {
+    width: rasterWidth,
+    height: rasterHeight,
+    masked,
+    total,
+    threshold: LAND_MASK_THRESHOLD,
+  });
+  return canvas.toDataURL("image/png");
+};
+
 type UseRasterLayerOptions = {
   dataset?: Dataset;
   date?: Date;
@@ -139,6 +228,23 @@ export async function fetchRasterVisualization(options: {
     throw new Error("Missing dataset or date for raster request");
   }
 
+  const datasetText = [
+    dataset?.id,
+    dataset?.slug,
+    dataset?.name,
+    dataset?.description,
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.toLowerCase())
+    .join(" ");
+  const isOceanOnlyDataset =
+    datasetText.includes("sea surface") ||
+    datasetText.includes("sst") ||
+    datasetText.includes("godas") ||
+    datasetText.includes("ocean data assimilation") ||
+    datasetText.includes("global ocean data assimilation") ||
+    datasetText.includes("ncep global ocean data assimilation");
+
   const grid = await fetchRasterGrid({
     dataset,
     backendDatasetId: targetDatasetId,
@@ -200,6 +306,7 @@ export async function fetchRasterVisualization(options: {
     sampleStep: 1,
     wrapSeam: false,
     useTiling: false,
+    maskZeroValues: maskZeroValues ?? false,
   });
 
   const meshMidIdx = Math.floor(mesh.colors.length / 2);
@@ -220,6 +327,21 @@ export async function fetchRasterVisualization(options: {
     flatShading: smoothGridBoxValues === false,
     colorGain: VERTEX_COLOR_GAIN,
   });
+  const maskedImage =
+    image && isOceanOnlyDataset && image.width && image.height
+      ? await applyLandMask({
+          imageUrl: image.dataUrl,
+          width: image.width,
+          height: image.height,
+        })
+      : image?.dataUrl;
+  console.debug("[RasterLayer] land mask", {
+    datasetId: targetDatasetId,
+    isOceanOnlyDataset,
+    applied: Boolean(
+      image && isOceanOnlyDataset && image.width && image.height,
+    ),
+  });
   console.debug("[RasterLayer] image built", {
     datasetId: targetDatasetId,
     hasImage: Boolean(image),
@@ -233,7 +355,7 @@ export async function fetchRasterVisualization(options: {
     textures: image
       ? [
           {
-            imageUrl: image.dataUrl,
+            imageUrl: maskedImage ?? image.dataUrl,
             width: image.width,
             height: image.height,
             rectangle: image.rectangle,
@@ -279,6 +401,26 @@ export const useRasterLayer = ({
       .map((color) => (typeof color === "string" ? color.trim() : ""))
       .filter((color) => color.length > 0);
     return sanitized.length ? sanitized : undefined;
+  }, [dataset]);
+
+  const isOceanOnlyDataset = useMemo(() => {
+    const datasetText = [
+      dataset?.id,
+      dataset?.slug,
+      dataset?.name,
+      dataset?.description,
+    ]
+      .filter((value): value is string => typeof value === "string")
+      .map((value) => value.toLowerCase())
+      .join(" ");
+    return (
+      datasetText.includes("sea surface") ||
+      datasetText.includes("sst") ||
+      datasetText.includes("godas") ||
+      datasetText.includes("ocean data assimilation") ||
+      datasetText.includes("global ocean data assimilation") ||
+      datasetText.includes("ncep global ocean data assimilation")
+    );
   }, [dataset]);
 
   const effectiveColorbarRange = useMemo(
@@ -375,6 +517,33 @@ export const useRasterLayer = ({
 
     if (prefetched) {
       abortOngoingRequest();
+      if (isOceanOnlyDataset && prefetched.textures?.length) {
+        setIsLoading(true);
+        setError(null);
+        Promise.all(
+          prefetched.textures.map(async (texture) => {
+            if (!texture?.imageUrl || !texture.rectangle) {
+              return texture;
+            }
+            const maskedUrl = await applyLandMask({
+              imageUrl: texture.imageUrl,
+              width: texture.width,
+              height: texture.height,
+            });
+            return { ...texture, imageUrl: maskedUrl };
+          }),
+        )
+          .then((textures) => {
+            setData({ ...prefetched, textures });
+            setIsLoading(false);
+          })
+          .catch((err) => {
+            console.warn("[RasterLayer] land mask failed", err);
+            setData(prefetched);
+            setIsLoading(false);
+          });
+        return;
+      }
       setData(prefetched);
       setError(null);
       setIsLoading(false);
@@ -442,6 +611,7 @@ export const useRasterLayer = ({
     opacity,
     waitingForLevel,
     effectiveColorbarRange,
+    isOceanOnlyDataset,
     requestKey,
   ]);
 

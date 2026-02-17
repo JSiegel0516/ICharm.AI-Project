@@ -10,6 +10,7 @@ type RasterImageOptions = {
   colors: string[];
   opacity?: number;
   colorGain?: number;
+  maskZeroValues?: boolean;
 };
 
 type RasterImageFromMeshOptions = {
@@ -32,6 +33,7 @@ export const buildRasterImage = ({
   colors,
   opacity = 1,
   colorGain = 1,
+  maskZeroValues = false,
 }: RasterImageOptions): {
   dataUrl: string;
   rectangle: {
@@ -70,6 +72,10 @@ export const buildRasterImage = ({
       }
       const value = values[idx];
       if (!Number.isFinite(value)) {
+        out[outIdx + 3] = 0;
+        continue;
+      }
+      if (maskZeroValues && value === 0) {
         out[outIdx + 3] = 0;
         continue;
       }
