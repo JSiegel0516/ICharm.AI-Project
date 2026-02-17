@@ -5,7 +5,7 @@ import {
   resolveEffectiveColorbarRange,
 } from "@/lib/mesh/rasterUtils";
 import { buildRasterImageFromMesh } from "@/lib/mesh/rasterImage";
-import { fetchRasterGrid } from "@/hooks/useRasterGrid";
+import { fetchRasterGrid, type RasterGridData } from "@/hooks/useRasterGrid";
 import { prepareRasterMeshGrid, buildRasterMesh } from "@/lib/mesh/rasterMesh";
 import { VERTEX_COLOR_GAIN } from "@/components/Globe/_cesium/constants";
 import { isOceanOnlyDataset as isOceanOnlyDatasetGuard } from "@/utils/datasetGuards";
@@ -164,6 +164,7 @@ type UseRasterLayerOptions = {
   smoothGridBoxValues?: boolean;
   clientRasterize?: boolean;
   opacity?: number;
+  keepPreviousData?: boolean;
   colorbarRange?: {
     enabled?: boolean;
     min?: number | null;
@@ -239,6 +240,7 @@ export async function fetchRasterVisualization(options: {
   smoothGridBoxValues?: boolean;
   clientRasterize?: boolean;
   opacity?: number;
+  gridData?: RasterGridData;
   colorbarRange?: {
     enabled?: boolean;
     min?: number | null;
@@ -268,15 +270,17 @@ export async function fetchRasterVisualization(options: {
 
   const isOceanOnlyDataset = isOceanOnlyDatasetGuard(dataset);
 
-  const grid = await fetchRasterGrid({
-    dataset,
-    backendDatasetId: targetDatasetId,
-    date,
-    level,
-    maskZeroValues,
-    colorbarRange,
-    signal,
-  });
+  const grid =
+    options.gridData ??
+    (await fetchRasterGrid({
+      dataset,
+      backendDatasetId: targetDatasetId,
+      date,
+      level,
+      maskZeroValues,
+      colorbarRange,
+      signal,
+    }));
   const colors = cssColors?.length
     ? cssColors
     : (dataset?.colorScale?.colors ?? []);
@@ -407,6 +411,7 @@ export const useRasterLayer = ({
   smoothGridBoxValues,
   clientRasterize = true,
   opacity = 1,
+  keepPreviousData = false,
   colorbarRange,
   prefetchedData,
 }: UseRasterLayerOptions): UseRasterLayerResult => {
@@ -503,7 +508,9 @@ export const useRasterLayer = ({
     // Early return for invalid states
     if (!dataset?.id || !backendDatasetId || !date) {
       abortOngoingRequest();
-      setData(undefined);
+      if (!keepPreviousData) {
+        setData(undefined);
+      }
       setError(null);
       setIsLoading(false);
       return;
@@ -512,7 +519,9 @@ export const useRasterLayer = ({
     // Wait for level selection if required
     if (waitingForLevel) {
       abortOngoingRequest();
-      setData(undefined);
+      if (!keepPreviousData) {
+        setData(undefined);
+      }
       setError(null);
       setIsLoading(true);
       return;
@@ -567,8 +576,10 @@ export const useRasterLayer = ({
       abortOngoingRequest();
       const controller = new AbortController();
       controllerRef.current = controller;
-      // Hard guarantee: clear old imagery immediately so it cannot flash.
-      setData(undefined);
+      // Clear old imagery only when requested; otherwise keep to allow fading.
+      if (!keepPreviousData) {
+        setData(undefined);
+      }
       setIsLoading(true);
       setError(null);
 
@@ -598,7 +609,9 @@ export const useRasterLayer = ({
         setError(
           err instanceof Error ? err.message : "Failed to load raster layer",
         );
-        setData(undefined);
+        if (!keepPreviousData) {
+          setData(undefined);
+        }
         setIsLoading(false);
       } finally {
         if (controllerRef.current === controller) {
@@ -623,6 +636,7 @@ export const useRasterLayer = ({
     smoothGridBoxValues,
     clientRasterize,
     opacity,
+    keepPreviousData,
     waitingForLevel,
     effectiveColorbarRange,
     isOceanOnlyDataset,

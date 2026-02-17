@@ -230,6 +230,21 @@ const dayIndexToDate = (index: number, minDate: Date, maxDate: Date) => {
   return clampDateToRange(next, minDate, maxDate);
 };
 
+const yieldToBrowser = () =>
+  new Promise<void>((resolve) => {
+    if (typeof window === "undefined") {
+      resolve();
+      return;
+    }
+    const idle = (window as unknown as { requestIdleCallback?: Function })
+      .requestIdleCallback;
+    if (typeof idle === "function") {
+      idle(() => resolve(), { timeout: 200 });
+      return;
+    }
+    window.requestAnimationFrame(() => resolve());
+  });
+
 export default function HomePage() {
   const {
     showColorbar,
@@ -299,6 +314,7 @@ export default function HomePage() {
   );
   const visualizationPrefetchIndexRef = useRef(0);
   const visualizationResumeTimeoutRef = useRef<number | null>(null);
+  const visualizationInteractionTimeoutRef = useRef<number | null>(null);
   const visualizationPausedRef = useRef(false);
   const visualizationPrefetchConfigRef = useRef<{
     dataset: Dataset;
@@ -831,6 +847,10 @@ export default function HomePage() {
       window.clearTimeout(visualizationResumeTimeoutRef.current);
       visualizationResumeTimeoutRef.current = null;
     }
+    if (visualizationInteractionTimeoutRef.current != null) {
+      window.clearTimeout(visualizationInteractionTimeoutRef.current);
+      visualizationInteractionTimeoutRef.current = null;
+    }
     visualizationPausedRef.current = false;
     visualizationPrefetchConfigRef.current = null;
     visualizationPrefetchIndexRef.current = 0;
@@ -902,19 +922,16 @@ export default function HomePage() {
           return;
         }
 
+        // Yield so interactive imagery can render while prefetching.
+        if (i > startIndex) {
+          await yieldToBrowser();
+          if (controller.signal.aborted || visualizationPausedRef.current) {
+            visualizationPrefetchIndexRef.current = i;
+            return;
+          }
+        }
+
         const frameDate = config.frames[i];
-        const raster = await fetchRasterVisualization({
-          dataset: config.dataset,
-          backendDatasetId: config.keyDatasetId,
-          date: frameDate,
-          level: config.level ?? undefined,
-          cssColors: config.cssColors,
-          maskZeroValues: config.hideZero,
-          smoothGridBoxValues: config.smoothGridBoxValues,
-          colorbarRange: config.colorbarRange,
-          signal: controller.signal,
-        });
-        await preloadTextureImages(raster.textures);
         const rasterGrid = await fetchRasterGrid({
           dataset: config.dataset,
           backendDatasetId: config.keyDatasetId,
@@ -924,6 +941,25 @@ export default function HomePage() {
           colorbarRange: config.colorbarRange,
           signal: controller.signal,
         });
+        const raster = await fetchRasterVisualization({
+          dataset: config.dataset,
+          backendDatasetId: config.keyDatasetId,
+          date: frameDate,
+          level: config.level ?? undefined,
+          cssColors: config.cssColors,
+          maskZeroValues: config.hideZero,
+          smoothGridBoxValues: config.smoothGridBoxValues,
+          gridData: rasterGrid,
+          colorbarRange: config.colorbarRange,
+          signal: controller.signal,
+        });
+        await preloadTextureImages(raster.textures);
+
+        await yieldToBrowser();
+        if (controller.signal.aborted || visualizationPausedRef.current) {
+          visualizationPrefetchIndexRef.current = i + 1;
+          return;
+        }
 
         const key = buildRasterRequestKey({
           dataset: config.dataset,
@@ -1178,6 +1214,25 @@ export default function HomePage() {
     visualizationStatus,
     visualizationTarget?.datasetId,
   ]);
+
+  useEffect(() => {
+    if (visualizationStatus !== "preparing") {
+      return;
+    }
+    if (visualizationInteractionTimeoutRef.current != null) {
+      window.clearTimeout(visualizationInteractionTimeoutRef.current);
+    }
+    visualizationPausedRef.current = true;
+    if (visualizationAbortRef.current) {
+      visualizationAbortRef.current.abort();
+      visualizationAbortRef.current = null;
+    }
+    visualizationInteractionTimeoutRef.current = window.setTimeout(() => {
+      visualizationInteractionTimeoutRef.current = null;
+      visualizationPausedRef.current = false;
+      runVisualizationPrefetch(visualizationPrefetchIndexRef.current);
+    }, 1000);
+  }, [selectedDate, runVisualizationPrefetch, visualizationStatus]);
 
   // Event Handlers
   const handleDateChange = useCallback(
@@ -1492,6 +1547,7 @@ export default function HomePage() {
     maskZeroValues: globeSettings.hideZeroPrecipitation,
     smoothGridBoxValues: globeSettings.rasterBlurEnabled,
     opacity: globeSettings.rasterOpacity,
+    keepPreviousData: visualizationStatus === "playing",
     colorbarRange,
     prefetchedData: prefetchedRasters,
   });

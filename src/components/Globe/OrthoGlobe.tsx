@@ -81,6 +81,7 @@ type Props = {
   hideZeroValues?: boolean;
   minZoom?: number;
   maxZoom?: number;
+  fadeDurationMs?: number;
   clearMarkerSignal?: number;
   onRegionClick?: (lat: number, lon: number, data: RegionData) => void;
 };
@@ -118,6 +119,7 @@ const OrthoGlobe: React.FC<Props> = ({
   hideZeroValues = false,
   minZoom = DEFAULT_MIN_ZOOM,
   maxZoom = DEFAULT_MAX_ZOOM,
+  fadeDurationMs = 0,
   clearMarkerSignal = 0,
   onRegionClick,
 }) => {
@@ -132,6 +134,10 @@ const OrthoGlobe: React.FC<Props> = ({
   const meshMaterialRef = useRef<THREE.ShaderMaterial | null>(null);
   const rasterOverlayRef = useRef<THREE.Mesh | null>(null);
   const rasterMaterialRef = useRef<THREE.ShaderMaterial | null>(null);
+  const rasterFadeOverlayRef = useRef<THREE.Mesh | null>(null);
+  const rasterFadeMaterialRef = useRef<THREE.ShaderMaterial | null>(null);
+  const rasterFadeTextureRef = useRef<THREE.Texture | null>(null);
+  const rasterFadeFrameRef = useRef<number | null>(null);
   const geographicLineGroupRef = useRef<THREE.Group | null>(null);
   const timeZoneLineGroupRef = useRef<THREE.Group | null>(null);
   const timeZoneDataRef = useRef<NELineData | null>(null);
@@ -1039,6 +1045,11 @@ const OrthoGlobe: React.FC<Props> = ({
         ? !useMeshRasterActiveRef.current && Boolean(rasterTextureRef.current)
         : !useVertexColorsActive && Boolean(rasterTextureRef.current);
     }
+    if (rasterFadeOverlayRef.current) {
+      rasterFadeOverlayRef.current.visible =
+        Boolean(rasterFadeTextureRef.current) &&
+        rasterFadeMaterialRef.current?.uniforms.opacity.value > 0.001;
+    }
     requestRender();
   }, [requestRender, useGridTexture, useVertexColorsActive]);
 
@@ -1052,8 +1063,42 @@ const OrthoGlobe: React.FC<Props> = ({
       rasterMaterialRef.current.uniforms.opacity.value = opacity;
       rasterMaterialRef.current.needsUpdate = true;
     }
+    if (rasterFadeMaterialRef.current) {
+      rasterFadeMaterialRef.current.uniforms.opacity.value = opacity;
+      rasterFadeMaterialRef.current.needsUpdate = true;
+    }
     requestRender();
   }, [rasterOpacity, requestRender]);
+
+  const animateRasterFade = useCallback(
+    (from: number, to: number, duration: number, onComplete?: () => void) => {
+      if (!rasterFadeMaterialRef.current) {
+        onComplete?.();
+        return;
+      }
+      if (rasterFadeFrameRef.current != null) {
+        cancelAnimationFrame(rasterFadeFrameRef.current);
+      }
+      const start = performance.now();
+      const step = (now: number) => {
+        const t = duration > 0 ? Math.min(1, (now - start) / duration) : 1;
+        const opacity = from + (to - from) * t;
+        if (rasterFadeMaterialRef.current) {
+          rasterFadeMaterialRef.current.uniforms.opacity.value = opacity;
+          rasterFadeMaterialRef.current.needsUpdate = true;
+        }
+        requestRender();
+        if (t < 1) {
+          rasterFadeFrameRef.current = requestAnimationFrame(step);
+        } else {
+          rasterFadeFrameRef.current = null;
+          onComplete?.();
+        }
+      };
+      rasterFadeFrameRef.current = requestAnimationFrame(step);
+    },
+    [requestRender],
+  );
 
   const updateSatelliteVisibility = useCallback(() => {
     const visible = satelliteLayerVisible && !useMeshRasterActiveRef.current;
@@ -1419,6 +1464,25 @@ const OrthoGlobe: React.FC<Props> = ({
     rasterMaterialRef.current = rasterMaterial;
     group.add(rasterOverlay);
 
+    const rasterFadeMaterial = createGlobeMaterial({
+      transparent: true,
+      depthWrite: false,
+      opacity: 0,
+      useTexture: false,
+      useVertexColor: false,
+      baseColor: BASE_FILL_COLOR_SRGB,
+      lightingEnabled: false,
+    });
+    const rasterFadeOverlay = new THREE.Mesh(
+      overlayGeometry,
+      rasterFadeMaterial,
+    );
+    rasterFadeOverlay.renderOrder = rasterOverlay.renderOrder + 1;
+    rasterFadeOverlay.visible = false;
+    rasterFadeOverlayRef.current = rasterFadeOverlay;
+    rasterFadeMaterialRef.current = rasterFadeMaterial;
+    group.add(rasterFadeOverlay);
+
     const loader = new THREE.TextureLoader();
     loader.load(BASE_TEXTURE_URL, (texture) => {
       texture.colorSpace = THREE.SRGBColorSpace;
@@ -1623,6 +1687,10 @@ const OrthoGlobe: React.FC<Props> = ({
         rasterTextureRef.current.dispose();
         rasterTextureRef.current = null;
       }
+      if (rasterFadeTextureRef.current) {
+        rasterFadeTextureRef.current.dispose();
+        rasterFadeTextureRef.current = null;
+      }
       if (rasterMaterialRef.current) {
         rasterMaterialRef.current.uniforms.useTexture.value = false;
         rasterMaterialRef.current.uniforms.useVertexColor.value = false;
@@ -1632,19 +1700,67 @@ const OrthoGlobe: React.FC<Props> = ({
           BASE_FILL_COLOR_SRGB,
         );
       }
+      if (rasterFadeMaterialRef.current) {
+        rasterFadeMaterialRef.current.uniforms.useTexture.value = false;
+        rasterFadeMaterialRef.current.uniforms.useVertexColor.value = false;
+        rasterFadeMaterialRef.current.uniforms.colorMap.value =
+          DEFAULT_COLOR_TEXTURE;
+        rasterFadeMaterialRef.current.uniforms.opacity.value = 0;
+      }
       updateMeshVisibility();
       return;
     }
     const textureUrl = rasterData.textures[0]?.imageUrl;
     if (!textureUrl) return;
     let cancelled = false;
+    const previousTexture = rasterTextureRef.current;
     loadRasterTexture(textureUrl)
       .then((texture) => {
         if (cancelled) {
           texture.dispose();
           return;
         }
-        if (rasterTextureRef.current) rasterTextureRef.current.dispose();
+        if (
+          previousTexture &&
+          rasterFadeMaterialRef.current &&
+          fadeDurationMs > 0
+        ) {
+          if (rasterFadeTextureRef.current) {
+            rasterFadeTextureRef.current.dispose();
+          }
+          rasterFadeTextureRef.current = previousTexture;
+          rasterFadeMaterialRef.current.uniforms.useTexture.value = true;
+          rasterFadeMaterialRef.current.uniforms.useVertexColor.value = false;
+          rasterFadeMaterialRef.current.uniforms.colorMap.value =
+            previousTexture;
+          rasterFadeMaterialRef.current.uniforms.opacity.value = clamp(
+            rasterOpacity,
+            0,
+            1,
+          );
+          if (rasterFadeOverlayRef.current) {
+            rasterFadeOverlayRef.current.visible = true;
+          }
+          animateRasterFade(
+            clamp(rasterOpacity, 0, 1),
+            0,
+            fadeDurationMs,
+            () => {
+              if (rasterFadeMaterialRef.current) {
+                rasterFadeMaterialRef.current.uniforms.opacity.value = 0;
+              }
+              if (rasterFadeOverlayRef.current) {
+                rasterFadeOverlayRef.current.visible = false;
+              }
+              if (rasterFadeTextureRef.current) {
+                rasterFadeTextureRef.current.dispose();
+                rasterFadeTextureRef.current = null;
+              }
+            },
+          );
+        } else if (previousTexture) {
+          previousTexture.dispose();
+        }
         rasterTextureRef.current = texture;
         if (rasterMaterialRef.current) {
           rasterMaterialRef.current.uniforms.useTexture.value = true;
@@ -1657,7 +1773,14 @@ const OrthoGlobe: React.FC<Props> = ({
     return () => {
       cancelled = true;
     };
-  }, [loadRasterTexture, rasterData, updateMeshVisibility]);
+  }, [
+    animateRasterFade,
+    fadeDurationMs,
+    loadRasterTexture,
+    rasterData,
+    rasterOpacity,
+    updateMeshVisibility,
+  ]);
 
   useEffect(() => {
     if (!useMeshRaster) {

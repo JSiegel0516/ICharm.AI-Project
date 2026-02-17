@@ -185,6 +185,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       smoothGridBoxValues: rasterBlurEnabled,
       opacity: rasterOpacity,
       clientRasterize: clientRasterizeImagery,
+      keepPreviousData: isPlaying || meshFadeDurationMs > 0,
       colorbarRange,
       prefetchedData: prefetchedRasters,
     });
@@ -1390,19 +1391,29 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
           // FIXED: Clear loading state when no data
           setIsRasterImageryLoading(false);
           if (previousLayers.length) {
-            animateLayerAlpha(previousLayers, startAlpha, 0, 200, () => {
-              previousLayers.forEach((layer) => {
-                try {
-                  viewer.scene.imageryLayers.remove(layer, true);
-                } catch (err) {
-                  console.warn(
-                    "Failed to remove raster layer during fade-out",
-                    err,
-                  );
-                }
-              });
-              viewer.scene.requestRender();
-            });
+            const fadeDuration =
+              typeof meshFadeDurationMs === "number" && meshFadeDurationMs > 0
+                ? meshFadeDurationMs
+                : 160;
+            animateLayerAlpha(
+              previousLayers,
+              startAlpha,
+              0,
+              fadeDuration,
+              () => {
+                previousLayers.forEach((layer) => {
+                  try {
+                    viewer.scene.imageryLayers.remove(layer, true);
+                  } catch (err) {
+                    console.warn(
+                      "Failed to remove raster layer during fade-out",
+                      err,
+                    );
+                  }
+                });
+                viewer.scene.requestRender();
+              },
+            );
           } else {
             viewer.scene.requestRender();
           }
@@ -1438,19 +1449,29 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
           // FIXED: Clear loading state when invalid textures
           setIsRasterImageryLoading(false);
           if (previousLayers.length) {
-            animateLayerAlpha(previousLayers, startAlpha, 0, 200, () => {
-              previousLayers.forEach((layer) => {
-                try {
-                  viewer.scene.imageryLayers.remove(layer, true);
-                } catch (err) {
-                  console.warn(
-                    "Failed to remove raster layer during fade-out",
-                    err,
-                  );
-                }
-              });
-              viewer.scene.requestRender();
-            });
+            const fadeDuration =
+              typeof meshFadeDurationMs === "number" && meshFadeDurationMs > 0
+                ? meshFadeDurationMs
+                : 160;
+            animateLayerAlpha(
+              previousLayers,
+              startAlpha,
+              0,
+              fadeDuration,
+              () => {
+                previousLayers.forEach((layer) => {
+                  try {
+                    viewer.scene.imageryLayers.remove(layer, true);
+                  } catch (err) {
+                    console.warn(
+                      "Failed to remove raster layer during fade-out",
+                      err,
+                    );
+                  }
+                });
+                viewer.scene.requestRender();
+              },
+            );
           } else {
             viewer.scene.requestRender();
           }
@@ -1521,20 +1542,21 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
           return;
         }
         rasterLayerRef.current = newLayers;
-        const fadeDuration = 100; // Reduced from 220ms
+        const fadeDuration =
+          typeof meshFadeDurationMs === "number" && meshFadeDurationMs > 0
+            ? meshFadeDurationMs
+            : 160;
 
         const targetOpacity = visible ? rasterOpacity : 0;
         const shouldShow = visible || shouldPreload;
 
-        // OPTIMIZED: Direct assignment for faster rendering
         newLayers.forEach((layer) => {
-          layer.alpha = targetOpacity;
+          layer.alpha = previousLayers.length ? 0 : targetOpacity;
           layer.show = shouldShow;
         });
 
-        // OPTIMIZED: Quick cleanup of previous layers
-        if (previousLayers.length) {
-          setTimeout(() => {
+        if (previousLayers.length && fadeDuration > 0) {
+          animateLayerAlpha(previousLayers, startAlpha, 0, fadeDuration, () => {
             previousLayers.forEach((layer) => {
               try {
                 viewer.scene.imageryLayers.remove(layer, true);
@@ -1542,7 +1564,21 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
                 console.warn("Failed to remove raster layer", err);
               }
             });
-          }, 50);
+          });
+          animateLayerAlpha(newLayers, 0, targetOpacity, fadeDuration);
+        } else {
+          newLayers.forEach((layer) => {
+            layer.alpha = targetOpacity;
+          });
+          if (previousLayers.length) {
+            previousLayers.forEach((layer) => {
+              try {
+                viewer.scene.imageryLayers.remove(layer, true);
+              } catch (err) {
+                console.warn("Failed to remove raster layer", err);
+              }
+            });
+          }
         }
 
         // FIXED: Ensure loading state is cleared
@@ -1559,6 +1595,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
         rasterOpacity,
         viewerReady,
         effectiveViewMode,
+        meshFadeDurationMs,
       ],
     );
 
@@ -2889,6 +2926,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
               useMeshRasterEffective ? rasterGridState.data : undefined
             }
             rasterOpacity={rasterOpacity}
+            fadeDurationMs={meshFadeDurationMs}
             satelliteLayerVisible={effectiveSatelliteVisible}
             boundaryLinesVisible={boundaryLinesVisible}
             countryBoundaryResolution={countryBoundaryResolution}
@@ -2923,6 +2961,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
             rasterGridDataKey={rasterGridState.dataKey}
             currentDataset={currentDataset}
             rasterOpacity={rasterOpacity}
+            fadeDurationMs={meshFadeDurationMs}
             hideZeroValues={shouldHideZero}
             smoothGridBoxValues={rasterBlurEnabled}
             boundaryLinesVisible={boundaryLinesVisible}
