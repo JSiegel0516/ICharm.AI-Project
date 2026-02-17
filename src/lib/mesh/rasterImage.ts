@@ -136,7 +136,8 @@ export const buildRasterImageFromMesh = ({
   if (!rows || !cols || !colors.length) return null;
 
   const imageRows = flatShading ? rows - 1 : rows;
-  const imageCols = flatShading ? cols - 1 : cols;
+  const baseImageCols = flatShading ? cols - 1 : cols;
+  let imageCols = baseImageCols;
   if (imageRows <= 0 || imageCols <= 0) return null;
 
   const canvas = document.createElement("canvas");
@@ -145,8 +146,8 @@ export const buildRasterImageFromMesh = ({
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
 
-  const imageData = ctx.createImageData(imageCols, imageRows);
-  const out = imageData.data;
+  let imageData = ctx.createImageData(imageCols, imageRows);
+  let out = imageData.data;
   const gain = Number.isFinite(colorGain) ? Math.max(0, colorGain) : 1;
 
   let lonForBounds = lon;
@@ -165,26 +166,36 @@ export const buildRasterImageFromMesh = ({
     if (lonForBounds[i] > east) east = lonForBounds[i];
   }
   const lonRange = east - west;
+  const wrapSeam = lonRange > 300;
+  if (wrapSeam && flatShading) {
+    imageCols = baseImageCols + 1;
+    canvas.width = imageCols;
+    imageData = ctx.createImageData(imageCols, imageRows);
+    out = imageData.data;
+  }
   if (lonRange > 300) {
     west = -180;
     east = 180;
   }
   if (flatShading) {
-    const cells = imageRows * imageCols;
-    for (let i = 0; i < cells; i += 1) {
-      const srcBase = i * 16;
-      const r = colors[srcBase] ?? 0;
-      const g = colors[srcBase + 1] ?? 0;
-      const b = colors[srcBase + 2] ?? 0;
-      const a = colors[srcBase + 3] ?? 0;
-      const row = Math.floor(i / imageCols);
-      const col = i - row * imageCols;
-      const flippedRow = imageRows - 1 - row;
-      const outIdx = (flippedRow * imageCols + col) * 4;
-      out[outIdx] = Math.min(255, Math.round(r * gain));
-      out[outIdx + 1] = Math.min(255, Math.round(g * gain));
-      out[outIdx + 2] = Math.min(255, Math.round(b * gain));
-      out[outIdx + 3] = a;
+    const sourceCols = baseImageCols;
+    const sourceRows = imageRows;
+    for (let row = 0; row < sourceRows; row += 1) {
+      for (let col = 0; col < imageCols; col += 1) {
+        const sourceCol = col < sourceCols ? col : 0;
+        const sourceIndex = row * sourceCols + sourceCol;
+        const srcBase = sourceIndex * 16;
+        const r = colors[srcBase] ?? 0;
+        const g = colors[srcBase + 1] ?? 0;
+        const b = colors[srcBase + 2] ?? 0;
+        const a = colors[srcBase + 3] ?? 0;
+        const flippedRow = imageRows - 1 - row;
+        const outIdx = (flippedRow * imageCols + col) * 4;
+        out[outIdx] = Math.min(255, Math.round(r * gain));
+        out[outIdx + 1] = Math.min(255, Math.round(g * gain));
+        out[outIdx + 2] = Math.min(255, Math.round(b * gain));
+        out[outIdx + 3] = a;
+      }
     }
   } else {
     const verts = rows * cols;
@@ -226,7 +237,7 @@ export const buildRasterImageFromMesh = ({
     const latStep =
       lat.length > 1 && imageRows > 0 ? latSpan / (lat.length - 1) : 0;
 
-    if (Number.isFinite(lonStep) && lonStep !== 0) {
+    if (!wrapSeam && Number.isFinite(lonStep) && lonStep !== 0) {
       west += lonStep / 2;
       east -= lonStep / 2;
     }
