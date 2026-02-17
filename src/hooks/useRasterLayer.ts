@@ -50,6 +50,12 @@ export const applyLandMask = async (args: {
   imageUrl: string;
   width?: number;
   height?: number;
+  rectangle?: {
+    west: number;
+    south: number;
+    east: number;
+    north: number;
+  };
 }): Promise<string> => {
   const [maskImg, rasterImg] = await Promise.all([
     loadLandMaskImage(),
@@ -83,23 +89,54 @@ export const applyLandMask = async (args: {
   const rasterData = ctx.getImageData(0, 0, rasterWidth, rasterHeight);
 
   const maskCanvas = document.createElement("canvas");
-  maskCanvas.width = rasterWidth;
-  maskCanvas.height = rasterHeight;
+  maskCanvas.width = maskImg.naturalWidth || maskImg.width;
+  maskCanvas.height = maskImg.naturalHeight || maskImg.height;
   const maskCtx = maskCanvas.getContext("2d");
   if (!maskCtx) {
     console.debug("[LandMask] missing mask 2d context");
     return args.imageUrl;
   }
-  maskCtx.drawImage(maskImg, 0, 0, rasterWidth, rasterHeight);
-  const maskData = maskCtx.getImageData(0, 0, rasterWidth, rasterHeight).data;
+  maskCtx.drawImage(maskImg, 0, 0);
+  const maskWidth = maskCanvas.width;
+  const maskHeight = maskCanvas.height;
+  const maskData = maskCtx.getImageData(0, 0, maskWidth, maskHeight).data;
 
   const out = rasterData.data;
   let masked = 0;
   let total = 0;
+  const rect = args.rectangle;
+  const hasRect =
+    rect &&
+    Number.isFinite(rect.west) &&
+    Number.isFinite(rect.south) &&
+    Number.isFinite(rect.east) &&
+    Number.isFinite(rect.north);
+  const lonSpan = hasRect ? rect.east - rect.west : 0;
+  const latSpan = hasRect ? rect.north - rect.south : 0;
+
   for (let i = 0; i < out.length; i += 4) {
-    const r = maskData[i];
-    const g = maskData[i + 1];
-    const b = maskData[i + 2];
+    const pixelIndex = i / 4;
+    const x = pixelIndex % rasterWidth;
+    const y = Math.floor(pixelIndex / rasterWidth);
+
+    let maskX = x;
+    let maskY = y;
+    if (hasRect && lonSpan !== 0 && latSpan !== 0) {
+      const lon = rect.west + ((x + 0.5) / rasterWidth) * lonSpan;
+      const lat = rect.north - ((y + 0.5) / rasterHeight) * latSpan;
+      const u = (lon + 180) / 360;
+      const v = (90 - lat) / 180;
+      maskX = Math.min(Math.max(Math.floor(u * maskWidth), 0), maskWidth - 1);
+      maskY = Math.min(Math.max(Math.floor(v * maskHeight), 0), maskHeight - 1);
+    } else {
+      maskX = Math.min(Math.max(x, 0), maskWidth - 1);
+      maskY = Math.min(Math.max(y, 0), maskHeight - 1);
+    }
+
+    const maskIdx = (maskY * maskWidth + maskX) * 4;
+    const r = maskData[maskIdx];
+    const g = maskData[maskIdx + 1];
+    const b = maskData[maskIdx + 2];
     const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
     total += 1;
     if (luminance < LAND_MASK_THRESHOLD) {
@@ -321,6 +358,7 @@ export async function fetchRasterVisualization(options: {
           imageUrl: image.dataUrl,
           width: image.width,
           height: image.height,
+          rectangle: image.rectangle,
         })
       : image?.dataUrl;
   console.debug("[RasterLayer] land mask", {
@@ -502,6 +540,7 @@ export const useRasterLayer = ({
               imageUrl: texture.imageUrl,
               width: texture.width,
               height: texture.height,
+              rectangle: texture.rectangle,
             });
             return { ...texture, imageUrl: maskedUrl };
           }),

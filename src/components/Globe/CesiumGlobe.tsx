@@ -204,6 +204,9 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
     );
 
     const meshDerivedRaster = useMemo(() => {
+      if (isOceanOnlyDataset) {
+        return undefined;
+      }
       const grid = rasterGridState.data;
       if (!grid || !currentDataset?.colorScale?.colors?.length) {
         return undefined;
@@ -2037,14 +2040,17 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
     useEffect(() => {
       if (!satelliteLayerRef.current) return;
 
+      const forceSatellite = isOceanOnlyDataset;
       satelliteLayerRef.current.show =
-        effectiveBaseMapMode === "satellite" && effectiveSatelliteVisible;
-    }, [effectiveSatelliteVisible, effectiveBaseMapMode]);
+        forceSatellite ||
+        (effectiveBaseMapMode === "satellite" && effectiveSatelliteVisible);
+    }, [effectiveSatelliteVisible, effectiveBaseMapMode, isOceanOnlyDataset]);
 
     useEffect(() => {
       if (!streetLayerRef.current) return;
-      streetLayerRef.current.show = effectiveBaseMapMode === "street";
-    }, [effectiveBaseMapMode]);
+      streetLayerRef.current.show =
+        effectiveBaseMapMode === "street" && !isOceanOnlyDataset;
+    }, [effectiveBaseMapMode, isOceanOnlyDataset]);
 
     useEffect(() => {
       if (!streetOverlayLayerRef.current) return;
