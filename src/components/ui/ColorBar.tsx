@@ -932,7 +932,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
     >
       {uiState.isCollapsed ? (
         <Button
-          className="bg-card/90 border-border text-muted-foreground hover:text-card-foreground pointer-events-auto flex cursor-pointer items-center gap-2 rounded-xl border backdrop-blur-sm transition-all duration-200 hover:scale-105 hover:shadow-lg"
+          className="bg-card/90 border-border text-muted-foreground hover:text-card-foreground pointer-events-auto flex cursor-pointer items-center gap-1 rounded-xl border backdrop-blur-sm transition-all duration-200 hover:scale-105 hover:shadow-lg lg:gap-2"
           onClick={handleCollapseToggle}
         >
           <ChevronUp className="pointer-events-none sm:h-2 sm:w-2 lg:h-4 lg:w-4" />
@@ -942,19 +942,19 @@ const ColorBar: React.FC<ColorBarProps> = ({
         </Button>
       ) : (
         <div
-          className="border-border bg-card/90 text-primary group pointer-events-auto relative rounded-2xl border px-6 pt-6 pb-8 shadow-2xl backdrop-blur-md transition-all duration-200"
+          className="border-border bg-card/90 text-primary group pointer-events-auto relative rounded-2xl border px-4 pt-4 pb-4 shadow-2xl backdrop-blur-md transition-all duration-200 lg:px-6 lg:pt-6 lg:pb-8"
           onMouseEnter={() => setIsColorBarHovered(true)}
           onMouseLeave={() => setIsColorBarHovered(false)}
         >
           {/* Header Controls */}
-          <div className="-mt-2 mb-4 flex w-full items-center justify-between gap-2">
+          <div className="-mt-2 flex w-full items-center justify-between gap-2 sm:mb-2 lg:mb-4">
             <button
               onClick={handleCollapseToggle}
               className="text-muted-foreground hover:text-card-foreground -m-1 flex cursor-pointer items-center rounded-full p-2 transition-all hover:bg-white/10 focus:outline-none"
               title="Collapse"
               type="button"
             >
-              <ChevronDown className="h-4 w-4" />
+              <ChevronDown className="h-3 w-3 lg:h-4 lg:w-4" />
             </button>
 
             <div
@@ -964,7 +964,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
               style={{ touchAction: "none" }}
               title="Drag to move"
             >
-              <Move className="text-muted-foreground h-3 w-3" />
+              <Move className="text-muted-foreground h-2.5 w-2.5 lg:h-3 lg:w-3" />
               <span className="text-muted-foreground text-xs font-medium select-none">
                 Color Bar
               </span>
@@ -976,7 +976,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
               title="Reset position"
               type="button"
             >
-              <RotateCcw className="h-4 w-4" />
+              <RotateCcw className="h-3 w-3 lg:h-4 lg:w-4" />
             </button>
           </div>
 
@@ -986,11 +986,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
               {/* Fixed-width slot for reset button to prevent layout shift */}
               <div className="w-24">
                 {hasCustomRange && (onRangeReset || onRangeChange) && (
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    onClick={handleRangeReset}
-                  >
+                  <Button size="xs" variant="ghost" onClick={handleRangeReset}>
                     Reset Range
                   </Button>
                 )}
@@ -1005,22 +1001,24 @@ const ColorBar: React.FC<ColorBarProps> = ({
                       unit === "celsius" ? "fahrenheit" : "celsius",
                     )
                   }
-                  className="bg-card/80 hover:bg-card relative ml-auto inline-flex h-7 w-14 shrink-0 items-center rounded-lg border border-white/20 transition-colors focus:ring-2 focus:ring-white/50 focus:outline-none"
+                  className="bg-card/80 hover:bg-card relative ml-auto inline-flex h-6 w-12 shrink-0 items-center rounded-lg border border-white/20 transition-colors focus:ring-2 focus:ring-white/50 focus:outline-none lg:h-7 lg:w-14"
                 >
                   <span
-                    className={`inline-block h-7 w-7 transform rounded-lg bg-white/80 shadow-lg transition-transform ${
-                      unit === "fahrenheit" ? "translate-x-7" : "translate-x-0"
+                    className={`inline-block h-6 w-6 transform rounded-lg bg-white/80 shadow-lg transition-transform lg:h-7 lg:w-7 ${
+                      unit === "fahrenheit"
+                        ? "translate-x-6 lg:translate-x-7"
+                        : "translate-x-0 lg:translate-x-0"
                     }`}
                   />
                   <span
-                    className={`absolute left-0 w-7 text-center text-sm font-semibold transition-colors ${
+                    className={`absolute left-0 w-7 text-center text-xs font-semibold transition-colors lg:text-sm ${
                       unit === "celsius" ? "text-gray-900" : "text-white"
                     }`}
                   >
                     C
                   </span>
                   <span
-                    className={`absolute right-0 w-7 text-center text-sm font-semibold transition-colors ${
+                    className={`absolute right-0 w-7 text-center text-xs font-semibold transition-colors lg:text-sm ${
                       unit === "fahrenheit" ? "text-gray-900" : "text-white"
                     }`}
                   >
@@ -1028,7 +1026,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
                   </span>
                 </button>
               ) : (
-                <span className="text-card-foreground ml-auto min-w-8 shrink-0 text-right font-mono text-sm">
+                <span className="text-card-foreground ml-auto min-w-8 shrink-0 text-right font-mono text-xs lg:text-sm">
                   {currentUnitSymbol || "–"}
                 </span>
               )}
@@ -1098,10 +1096,10 @@ const ColorBar: React.FC<ColorBarProps> = ({
                 </div>
               </div>
             ) : (
-              <div className="relative mx-auto w-70">
+              <div className="relative mx-auto sm:w-50 lg:w-70">
                 <div
                   ref={gradientRef}
-                  className="relative h-10 w-full cursor-crosshair rounded-xl shadow-inner"
+                  className="relative h-7 w-full cursor-crosshair rounded-xl shadow-inner lg:h-10"
                   style={{
                     background: gradientBackground,
                     touchAction: "none",
