@@ -21,7 +21,7 @@ const Header: React.FC = () => {
 
   return (
     <>
-      <div className="fixed inset-x-0 top-0 z-50 flex items-center justify-between px-4 py-2 lg:px-10 lg:py-8">
+      <div className="fixed inset-x-0 top-0 z-50 mt-2 flex items-center justify-between px-4 py-2 lg:px-10 lg:py-8">
         {/* Logo - Left */}
         <Link href="/" className="flex items-center gap-3 lg:gap-4">
           <img
@@ -41,9 +41,12 @@ const Header: React.FC = () => {
               variant="ghost"
               title="Click for dataset details"
               id="dataset-title"
-              className="text-base font-semibold lg:text-3xl"
+              className="flex flex-col items-center text-base font-semibold lg:text-3xl"
             >
-              {currentDataset?.name}
+              <span>{currentDataset?.name}</span>
+              <span className="font-normal lg:text-2xl">
+                {currentDataset?.statistic}
+              </span>
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-156">
