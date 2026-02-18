@@ -28,8 +28,6 @@ import {
 import { type ChartConfig, ChartContainer } from "@/components/ui/chart";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { applyTransformations } from "@/lib/client-transformations";
-import { AggregationMethod } from "@/hooks/use-timeseries";
 import {
   Dialog,
   DialogClose,
@@ -361,56 +359,33 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
 
   const datasetId = currentDataset?.id ?? null;
 
-  const seriesKey = useMemo(() => {
-    if (!rawTimeseriesData.length) return null;
-    if (datasetId) {
-      const hasId = rawTimeseriesData.some(
-        (point: any) => typeof point?.[datasetId] === "number",
-      );
-      if (hasId) return datasetId;
-    }
-    const sample = rawTimeseriesData.find(
-      (point: any) => point && typeof point === "object",
-    );
-    const keys = sample
-      ? Object.keys(sample).filter(
-          (key) => key !== "date" && key !== "timestamp",
-        )
-      : [];
-    return keys[0] ?? datasetId ?? null;
-  }, [datasetId, rawTimeseriesData]);
-
   const chartData = useMemo(() => {
-    if (!seriesKey || rawTimeseriesData.length === 0) return [];
-    const transformed = applyTransformations(rawTimeseriesData, [seriesKey], {
-      normalize: false,
-      smoothingWindow: undefined,
-      resampleFreq: undefined,
-      aggregation: AggregationMethod.MEAN,
-    });
-    return transformed
+    if (!datasetId || rawTimeseriesData.length === 0) return [];
+    return rawTimeseriesData
       .map((point: any) => {
-        const raw = sanitizeTimeseriesValue(point?.[seriesKey] ?? null);
-        if (raw == null) return { date: point.date, value: null };
+        const raw = sanitizeTimeseriesValue(point?.[datasetId] ?? null);
+        if (raw == null) {
+          return { ...point, [datasetId]: null, value: null };
+        }
         const v = useFahrenheit ? c2f(Number(raw)) : Number(raw);
-        return { date: point.date, value: Number(v.toFixed(2)) };
+        const value = Number(v.toFixed(2));
+        return { ...point, [datasetId]: value, value };
       })
       .sort((a, b) => String(a.date).localeCompare(String(b.date)));
-  }, [rawTimeseriesData, seriesKey, useFahrenheit]);
+  }, [rawTimeseriesData, datasetId, useFahrenheit]);
 
   useEffect(() => {
-    if (!rawTimeseriesData.length || !seriesKey) return;
+    if (!rawTimeseriesData.length || !datasetId) return;
     const numericCount = rawTimeseriesData.filter((point: any) =>
-      Number.isFinite(point?.[seriesKey]),
+      Number.isFinite(point?.[datasetId]),
     ).length;
     console.debug("[Timeseries] summary", {
       datasetId,
-      seriesKey,
       rawPoints: rawTimeseriesData.length,
       numericCount,
       chartPoints: chartData.length,
     });
-  }, [rawTimeseriesData, seriesKey, chartData.length, datasetId]);
+  }, [rawTimeseriesData, datasetId, chartData.length]);
 
   const displayedChartData = useMemo(() => {
     if (!zoomWindow || !chartData.length) return chartData;
@@ -418,13 +393,23 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     return chartData.slice(s, Math.min(e + 1, chartData.length));
   }, [chartData, zoomWindow]);
 
-  const numericChartValues = useMemo(
-    () =>
-      displayedChartData
-        .map((p) => p.value)
-        .filter((v): v is number => typeof v === "number"),
-    [displayedChartData],
-  );
+  const displayedLineData = useMemo(() => {
+    if (!displayedChartData.length || !datasetId) return displayedChartData;
+    return displayedChartData.map((point) => {
+      if (typeof point?.value === "number") return point;
+      const fallback = point?.[datasetId];
+      return {
+        ...point,
+        value: typeof fallback === "number" ? fallback : null,
+      };
+    });
+  }, [displayedChartData, datasetId]);
+
+  const numericChartValues = useMemo(() => {
+    return displayedLineData
+      .map((p) => p?.value)
+      .filter((v): v is number => typeof v === "number");
+  }, [displayedLineData]);
   const validPointCount = numericChartValues.length;
 
   const yAxisDomain = useMemo((): [number, number] | undefined => {
@@ -1167,7 +1152,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                     >
                       <LineChart
                         accessibilityLayer
-                        data={displayedChartData}
+                        data={displayedLineData}
                         margin={{ top: 10, right: 10, bottom: 10, left: 10 }}
                       >
                         <CartesianGrid
@@ -1218,13 +1203,14 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                           }}
                         />
                         <Line
-                          type="monotone"
+                          type="linear"
                           dataKey="value"
                           name={currentDataset?.name || "Value"}
                           stroke="hsl(var(--primary))"
                           strokeWidth={2}
                           dot={validPointCount <= 1 ? { r: 3 } : false}
                           connectNulls
+                          isAnimationActive={false}
                           activeDot={{ r: 4, strokeWidth: 0 }}
                         />
                       </LineChart>

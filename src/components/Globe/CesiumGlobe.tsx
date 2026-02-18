@@ -118,6 +118,8 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
     const countryBoundaryEntitiesRef = useRef<any[]>([]);
     const stateBoundaryEntitiesRef = useRef<any[]>([]);
     const rasterLayerRef = useRef<any[]>([]);
+    const lastDatasetIdRef = useRef<string | null>(null);
+    const lastRasterKeyRef = useRef<string | undefined>(undefined);
     const textureLoadIdRef = useRef(0);
     const isComponentUnmountedRef = useRef(false);
     const isUpdatingMarkerRef = useRef(false);
@@ -148,6 +150,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       .filter(Boolean)
       .map((value) => String(value).toLowerCase())
       .join(" ");
+    const datasetId = currentDataset?.id ?? null;
     const isGodasDataset =
       datasetText.includes("godas") ||
       datasetText.includes("global ocean data assimilation system") ||
@@ -190,8 +193,12 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       useMeshRasterEffective,
     );
     const useMeshRasterActiveRef = useRef(useMeshRasterEffective);
+    const rasterOpacityRef = useRef(rasterOpacity);
     const [clientRasterizeImagery] = useState(true);
     const clientRasterizeImageryRef = useRef(true);
+    const allowKeepPrevious =
+      (isPlaying || meshFadeDurationMs > 0) &&
+      lastDatasetIdRef.current === datasetId;
     const rasterState = useRasterLayer({
       dataset: rasterLayerDataset,
       date: selectedDate,
@@ -200,7 +207,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       smoothGridBoxValues: rasterBlurEnabled,
       opacity: rasterOpacity,
       clientRasterize: clientRasterizeImagery,
-      keepPreviousData: isPlaying || meshFadeDurationMs > 0,
+      keepPreviousData: allowKeepPrevious,
       colorbarRange,
       prefetchedData: prefetchedRasters,
     });
@@ -218,6 +225,10 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       () => isOceanOnlyDatasetGuard(currentDataset),
       [currentDataset],
     );
+
+    useEffect(() => {
+      rasterOpacityRef.current = rasterOpacity;
+    }, [rasterOpacity]);
 
     const meshDerivedRaster = useMemo(() => {
       if (isOceanOnlyDataset) {
@@ -1395,7 +1406,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
         const startAlpha =
           previousLayers[0]?.alpha !== undefined
             ? previousLayers[0].alpha
-            : rasterOpacity;
+            : rasterOpacityRef.current;
 
         if (
           !layerData ||
@@ -1513,8 +1524,27 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
           Number.isFinite(height) && height < IMAGERY_PRELOAD_HEIGHT;
         const visible = true;
 
+        const cleanupNewLayers = (layers: any[], reason?: string) => {
+          if (!layers.length) return;
+          if (process.env.NODE_ENV === "development") {
+            console.info("[CesiumGlobe] cleanup stale raster layers", {
+              count: layers.length,
+              reason: reason ?? "unknown",
+            });
+          }
+          layers.forEach((layer) => {
+            try {
+              viewer.scene.imageryLayers.remove(layer, true);
+            } catch (err) {
+              console.warn("Failed to cleanup raster layer", err);
+            }
+          });
+          viewer.scene.requestRender();
+        };
+
         for (let index = 0; index < validTextures.length; index += 1) {
           if (rasterLayerLoadIdRef.current !== rasterLoadId) {
+            cleanupNewLayers(newLayers, "cancelled-during-add");
             return;
           }
           const texture = validTextures[index];
@@ -1537,6 +1567,9 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
             layer.hue = 0.0;
             layer.saturation = 1.0;
             layer.gamma = 1.0;
+            layer.__rasterLayer = true;
+            layer.__rasterDatasetId = datasetId;
+            layer.__rasterRequestKey = rasterState.requestKey ?? null;
 
             const filter = rasterBlurEnabled
               ? cesiumInstance.TextureMinificationFilter.LINEAR
@@ -1554,6 +1587,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
         }
 
         if (rasterLayerLoadIdRef.current !== rasterLoadId) {
+          cleanupNewLayers(newLayers, "cancelled-after-add");
           return;
         }
         rasterLayerRef.current = newLayers;
@@ -1562,7 +1596,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
             ? meshFadeDurationMs
             : 160;
 
-        const targetOpacity = visible ? rasterOpacity : 0;
+        const targetOpacity = visible ? rasterOpacityRef.current : 0;
         const shouldShow = visible || shouldPreload;
 
         newLayers.forEach((layer) => {
@@ -1606,11 +1640,12 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       [
         animateLayerAlpha,
         cesiumInstance,
+        datasetId,
         rasterBlurEnabled,
-        rasterOpacity,
         viewerReady,
         effectiveViewMode,
         meshFadeDurationMs,
+        rasterState.requestKey,
       ],
     );
 
@@ -1680,20 +1715,21 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
         }
 
         const buildAppearance = () => {
-          const isOpaque = rasterOpacity >= 0.999;
-          return new cesiumInstance.Appearance({
+          const alphaState = { value: rasterOpacityRef.current };
+          const appearance = new cesiumInstance.Appearance({
             vertexFormat: cesiumInstance.VertexFormat.POSITION_AND_COLOR,
             renderState: {
               depthTest: { enabled: true },
               depthMask: true,
-              blending: isOpaque
-                ? undefined
-                : cesiumInstance.BlendingState.ALPHA_BLEND,
+              blending: cesiumInstance.BlendingState.ALPHA_BLEND,
               cull: { enabled: false },
               polygonOffset: { enabled: true, factor: -1, units: -1 },
             },
-            translucent: !isOpaque,
+            translucent: true,
             closed: false,
+            uniforms: {
+              u_alpha: alphaState,
+            },
             vertexShaderSource: `
               attribute vec3 position3DHigh;
               attribute vec3 position3DLow;
@@ -1708,11 +1744,14 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
             `,
             fragmentShaderSource: `
               varying vec4 v_color;
+              uniform float u_alpha;
               void main() {
-                gl_FragColor = v_color;
+                gl_FragColor = vec4(v_color.rgb, v_color.a * u_alpha);
               }
             `,
           });
+          (appearance as any).__meshAlphaUniform = alphaState;
+          return appearance;
         };
 
         const surfaceOffset = 20000;
@@ -1770,6 +1809,9 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
               appearance,
               asynchronous: true, // Keep asynchronous for better performance
             });
+            primitive.__meshAlphaUniform = (
+              appearance as any
+            ).__meshAlphaUniform;
 
             primitive.show = false;
             primitives.push(primitive);
@@ -1835,6 +1877,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
           appearance,
           asynchronous: true, // Keep asynchronous for better performance
         });
+        primitive.__meshAlphaUniform = (appearance as any).__meshAlphaUniform;
         primitive.show = false;
         viewer.scene.primitives.add(primitive);
         try {
@@ -1844,7 +1887,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
         }
         return primitive;
       },
-      [cesiumInstance, rasterOpacity],
+      [cesiumInstance],
     );
 
     const activateMeshPrimitives = useCallback(
@@ -1892,6 +1935,73 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       rasterMeshRef.current = null;
       viewer.scene.requestRender();
     }, [cancelMeshFade, setMeshVisibility]);
+
+    useEffect(() => {
+      if (lastDatasetIdRef.current === datasetId) return;
+      const previous = lastDatasetIdRef.current;
+      lastDatasetIdRef.current = datasetId;
+      if (!previous || !viewerReady || !viewerRef.current) {
+        return;
+      }
+
+      const viewer = viewerRef.current;
+      const layersToRemove: any[] = [];
+      if (rasterLayerRef.current.length) {
+        layersToRemove.push(...rasterLayerRef.current);
+      }
+      const imageryLayers = viewer.scene?.imageryLayers;
+      if (imageryLayers && imageryLayers.length > 0) {
+        for (let i = imageryLayers.length - 1; i >= 0; i -= 1) {
+          const layer = imageryLayers.get(i);
+          if (layer && layer.__rasterLayer) {
+            layersToRemove.push(layer);
+          }
+        }
+      }
+      if (layersToRemove.length) {
+        layersToRemove.forEach((layer) => {
+          try {
+            viewer.scene.imageryLayers.remove(layer, true);
+          } catch (err) {
+            console.warn(
+              "Failed to remove raster layer on dataset change",
+              err,
+            );
+          }
+        });
+        rasterLayerRef.current = [];
+      }
+      clearRasterMesh();
+      viewer.scene.requestRender();
+    }, [datasetId, viewerReady, clearRasterMesh]);
+
+    useEffect(() => {
+      if (process.env.NODE_ENV !== "development") {
+        lastRasterKeyRef.current = rasterState.requestKey;
+        return;
+      }
+      if (!viewerReady || !viewerRef.current) return;
+      if (
+        lastRasterKeyRef.current &&
+        rasterState.requestKey &&
+        lastRasterKeyRef.current !== rasterState.requestKey
+      ) {
+        const viewer = viewerRef.current;
+        if (rasterLayerRef.current.length) {
+          rasterLayerRef.current.forEach((layer) => {
+            try {
+              viewer.scene.imageryLayers.remove(layer, true);
+            } catch (err) {
+              console.warn("Failed to remove raster layer on dev refresh", err);
+            }
+          });
+          rasterLayerRef.current = [];
+        }
+        clearRasterMesh();
+        viewer.scene.requestRender();
+      }
+      lastRasterKeyRef.current = rasterState.requestKey;
+    }, [rasterState.requestKey, viewerReady, clearRasterMesh]);
 
     const applyRasterMesh = useCallback(
       (meshData?: ReturnType<typeof buildRasterMesh>, cacheKey?: string) => {
@@ -2518,6 +2628,14 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
 
+      if (process.env.NODE_ENV === "development") {
+        console.info("[CesiumGlobe] applyRasterLayers", {
+          datasetId,
+          requestKey: rasterState.requestKey,
+          hasTextures: Boolean(imageryData?.textures?.length),
+          isLoading: rasterState.isLoading,
+        });
+      }
       applyRasterLayers(imageryData);
     }, [
       applyRasterLayers,
@@ -2526,6 +2644,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       rasterState.isLoading,
       rasterState.requestKey,
       viewerReady,
+      datasetId,
     ]);
 
     useEffect(() => {
@@ -2603,7 +2722,24 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
 
     useEffect(() => {
       if (!viewerReady || !viewerRef.current) return;
-      const layers = rasterLayerRef.current;
+      let layers = rasterLayerRef.current;
+      if (!layers.length) {
+        const viewer = viewerRef.current;
+        const imageryLayers = viewer?.scene?.imageryLayers;
+        if (imageryLayers && imageryLayers.length > 0) {
+          const tagged: any[] = [];
+          for (let i = imageryLayers.length - 1; i >= 0; i -= 1) {
+            const layer = imageryLayers.get(i);
+            if (layer && layer.__rasterLayer) {
+              tagged.push(layer);
+            }
+          }
+          if (tagged.length) {
+            layers = tagged;
+            rasterLayerRef.current = tagged;
+          }
+        }
+      }
       if (!layers.length) return;
       const clampedOpacity = Math.min(Math.max(rasterOpacity, 0), 1);
       layers.forEach((layer) => {
@@ -2612,6 +2748,20 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       });
       viewerRef.current.scene?.requestRender();
     }, [rasterOpacity, viewerReady]);
+
+    useEffect(() => {
+      if (!viewerReady || !viewerRef.current) return;
+      const clampedOpacity = Math.min(Math.max(rasterOpacity, 0), 1);
+      if (rasterMeshRef.current) {
+        setMeshAlpha(rasterMeshRef.current, clampedOpacity);
+      }
+      if (meshPrimitiveCacheRef.current.size > 0) {
+        meshPrimitiveCacheRef.current.forEach((primitive) => {
+          setMeshAlpha(primitive, clampedOpacity);
+        });
+      }
+      viewerRef.current.scene?.requestRender();
+    }, [rasterOpacity, setMeshAlpha, viewerReady]);
 
     useEffect(() => {
       if (!viewerReady) return;

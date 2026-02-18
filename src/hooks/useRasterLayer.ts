@@ -215,15 +215,11 @@ export const buildRasterRequestKey = (args: {
   const maskKey = args.maskZeroValues ? "mask" : "nomask";
   const smoothKey = args.smoothGridBoxValues === false ? "blocky" : "smooth";
   const rasterizeKey = args.clientRasterize ? "client" : "server";
-  const opacityKey =
-    typeof args.opacity === "number" && Number.isFinite(args.opacity)
-      ? `op-${args.opacity.toFixed(3)}`
-      : "op-auto";
   const customRangeKey = args.colorbarRange?.enabled
     ? `range-${Number.isFinite(args.colorbarRange?.min as number) ? args.colorbarRange?.min : "auto"}-${Number.isFinite(args.colorbarRange?.max as number) ? args.colorbarRange?.max : "auto"}`
     : "norange";
 
-  return `${datasetId}::${dateKey}::${args.level ?? "surface"}::${colorKey}::${maskKey}::${smoothKey}::${rasterizeKey}::${opacityKey}::${customRangeKey}`;
+  return `${datasetId}::${dateKey}::${args.level ?? "surface"}::${colorKey}::${maskKey}::${smoothKey}::${rasterizeKey}::${customRangeKey}`;
 };
 
 // ============================================================================
@@ -455,7 +451,6 @@ export const useRasterLayer = ({
         maskZeroValues,
         smoothGridBoxValues,
         clientRasterize,
-        opacity,
         colorbarRange: effectiveColorbarRange,
       }),
     [
@@ -467,7 +462,6 @@ export const useRasterLayer = ({
       maskZeroValues,
       smoothGridBoxValues,
       clientRasterize,
-      opacity,
       effectiveColorbarRange,
     ],
   );
@@ -635,7 +629,6 @@ export const useRasterLayer = ({
     maskZeroValues,
     smoothGridBoxValues,
     clientRasterize,
-    opacity,
     keepPreviousData,
     waitingForLevel,
     effectiveColorbarRange,
