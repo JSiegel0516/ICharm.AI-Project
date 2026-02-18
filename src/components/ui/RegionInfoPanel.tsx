@@ -1,23 +1,22 @@
 "use client";
 
-import { Monitor } from "lucide-react";
 import React, {
   useState,
   useRef,
   useEffect,
   useMemo,
   useCallback,
+  useReducer,
 } from "react";
 import {
   ChevronDown,
   X,
   MapPin,
   Calendar,
-  Activity,
-  Loader2,
   Download,
+  Monitor,
 } from "lucide-react";
-import { RegionInfoPanelProps } from "@/types";
+import type { RegionInfoPanelProps } from "@/types";
 import {
   Card,
   CardContent,
@@ -26,9 +25,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { ChartConfig, ChartContainer } from "@/components/ui/chart";
+import { type ChartConfig, ChartContainer } from "@/components/ui/chart";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { applyTransformations } from "@/lib/client-transformations";
+import { AggregationMethod } from "@/hooks/use-timeseries";
 import {
   Dialog,
   DialogClose,
@@ -51,25 +52,15 @@ import {
   CartesianGrid,
   Tooltip as RechartsTooltip,
   Legend,
-  ResponsiveContainer,
 } from "recharts";
-import {
-  fetchDatasetGridboxes,
-  fetchDatasetLevels,
-  resolveGridboxId,
-  resolveLevelId,
-  fetchGridboxTimeseries,
-} from "@/lib/postgresRaster";
 
+// ============================================================================
 // Types
+// ============================================================================
+
 type TemperatureUnitInfo = {
   type: "celsius" | "fahrenheit" | "kelvin" | null;
   symbol: string;
-};
-
-type SeriesPoint = {
-  date: string;
-  value: number | null;
 };
 
 type DateRangeOption =
@@ -82,7 +73,67 @@ type DateRangeOption =
 
 type Position = { x: number; y: number };
 
+// ============================================================================
+// Drag reducer (matches ColorBar pattern for smooth dragging)
+// ============================================================================
+
+type DragState = {
+  position: Position;
+  previousPosition: Position;
+  isCollapsed: boolean;
+  isDragging: boolean;
+  dragStart: Position;
+};
+
+type DragAction =
+  | { type: "SET_POSITION"; payload: Position }
+  | { type: "START_DRAG"; payload: Position }
+  | { type: "STOP_DRAG" }
+  | { type: "TOGGLE_COLLAPSE"; payload: Position }
+  | { type: "SET_COLLAPSED"; payload: { collapsed: boolean; pos: Position } };
+
+function dragReducer(state: DragState, action: DragAction): DragState {
+  switch (action.type) {
+    case "SET_POSITION":
+      return { ...state, position: action.payload };
+
+    case "START_DRAG":
+      return { ...state, isDragging: true, dragStart: action.payload };
+
+    case "STOP_DRAG":
+      return { ...state, isDragging: false };
+
+    case "TOGGLE_COLLAPSE":
+      if (state.isCollapsed) {
+        return {
+          ...state,
+          isCollapsed: false,
+          position: state.previousPosition,
+        };
+      }
+      return {
+        ...state,
+        isCollapsed: true,
+        previousPosition: state.position,
+        position: action.payload,
+      };
+
+    case "SET_COLLAPSED":
+      return {
+        ...state,
+        isCollapsed: action.payload.collapsed,
+        position: action.payload.pos,
+      };
+
+    default:
+      return state;
+  }
+}
+
+// ============================================================================
 // Constants
+// ============================================================================
+
 const COLLAPSED_HEIGHT = 52;
 const COLLAPSED_WIDTH = 225;
 const DEFAULT_PANEL_WIDTH = 300;
@@ -93,88 +144,137 @@ const chartConfig = {
   desktop: {
     label: "Desktop",
     icon: Monitor,
-    color: "#2563eb",
+    color: "hsl(var(--primary))",
   },
 } satisfies ChartConfig;
 
-// Helper Functions
+// ============================================================================
+// Helpers
+// ============================================================================
+
 const normalizeTemperatureUnit = (
   rawUnit?: string | null,
 ): TemperatureUnitInfo => {
-  if (!rawUnit || !rawUnit.trim()) {
-    return { type: null, symbol: "units" };
-  }
+  if (!rawUnit?.trim()) return { type: null, symbol: "units" };
 
   const normalized = rawUnit.trim();
   const lower = normalized.toLowerCase();
-  const alphaOnly = lower.replace(/[^a-z]/g, "");
+  const alpha = lower.replace(/[^a-z]/g, "");
 
-  const celsiusHints =
+  if (
     normalized.includes("℃") ||
     lower.includes("celsius") ||
     lower.includes("celcius") ||
     lower.includes("°c") ||
     lower.includes("degc") ||
-    alphaOnly === "c";
-  if (celsiusHints) {
+    alpha === "c"
+  )
     return { type: "celsius", symbol: "°C" };
-  }
 
-  const fahrenheitHints =
+  if (
     normalized.includes("℉") ||
     lower.includes("fahrenheit") ||
     lower.includes("°f") ||
     lower.includes("degf") ||
-    alphaOnly === "f";
-  if (fahrenheitHints) {
+    alpha === "f"
+  )
     return { type: "fahrenheit", symbol: "°F" };
-  }
 
-  const kelvinHints =
+  if (
     normalized.includes("K") ||
     lower.includes("kelvin") ||
     lower.includes("°k") ||
     lower.includes("degk") ||
-    alphaOnly === "k";
-  if (kelvinHints) {
+    alpha === "k"
+  )
     return { type: "kelvin", symbol: "K" };
-  }
 
   return { type: null, symbol: normalized };
 };
 
-const celsiusToFahrenheit = (value: number): number => (value * 9) / 5 + 32;
+const c2f = (v: number) => (v * 9) / 5 + 32;
 
-const formatValue = (value: number | null): string => {
-  if (value === null || !Number.isFinite(value)) return "--";
-
-  const abs = Math.abs(value);
-  if (abs === 0) return "0";
-  if (abs < 1e-4) return value.toExponential(2);
-  if (abs < 1) return Number(value.toPrecision(3)).toString();
-  if (abs < 10) return value.toFixed(2);
-  if (abs < 100) return value.toFixed(1);
-  return value.toFixed(0);
+const fmt = (v: number | null): string => {
+  if (v === null || !Number.isFinite(v)) return "--";
+  if (v === 0) return "0";
+  const a = Math.abs(v);
+  if (a < 1e-4) return v.toExponential(2);
+  if (a < 1) return Number(v.toPrecision(3)).toString();
+  if (a < 10) return v.toFixed(2);
+  if (a < 100) return v.toFixed(1);
+  return v.toFixed(0);
 };
 
-const formatDate = (date: Date): string => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+const isoDate = (d: Date) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
+const sanitizeTimeseriesValue = (value: number | null) => {
+  if (value === null || !Number.isFinite(value)) return null;
+  // Filter sentinel/missing values that blow out the chart scale.
+  if (Math.abs(value) >= 1e6) return null;
+  return value;
 };
 
 const downloadFile = (content: string, filename: string, type: string) => {
   const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  const a = Object.assign(document.createElement("a"), {
+    href: url,
+    download: filename,
+  });
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
   URL.revokeObjectURL(url);
 };
+
+// ============================================================================
+// Chart placeholder component
+// ============================================================================
+
+const ChartPlaceholder = ({
+  icon,
+  title,
+  subtitle,
+  variant = "default",
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle?: string;
+  variant?: "default" | "error";
+}) => (
+  <div className="flex h-full w-full items-center justify-center p-4">
+    <div className="flex flex-col items-center gap-2 text-center">
+      <div
+        className={`rounded-full p-2 sm:p-3 ${
+          variant === "error" ? "bg-destructive/10" : "bg-muted"
+        }`}
+      >
+        {icon}
+      </div>
+      <p
+        className={`text-xs sm:text-sm ${
+          variant === "error" ? "text-destructive" : "text-muted-foreground"
+        }`}
+      >
+        {title}
+      </p>
+      {subtitle && (
+        <p className="text-muted-foreground text-[10px] sm:text-xs">
+          {subtitle}
+        </p>
+      )}
+    </div>
+  </div>
+);
+
+// ============================================================================
+// Component
+// ============================================================================
 
 const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   show,
@@ -198,238 +298,152 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   selectedDate,
   temperatureUnit = "celsius",
 }) => {
-  // Refs
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // Position State
+  // ── Default position ──
   const getDefaultPosition = useCallback((): Position => {
-    if (typeof window === "undefined") {
-      return { x: 800, y: 200 };
-    }
+    if (typeof window === "undefined") return { x: 800, y: 200 };
     const cardWidth = 280;
-    const verticalOffset = Math.round(window.innerHeight * 0.2);
     return {
       x: window.innerWidth - cardWidth - MARGIN - 200,
-      y: verticalOffset,
+      y: Math.round(window.innerHeight * 0.2),
     };
   }, []);
 
-  const [position, setPosition] = useState<Position>(getDefaultPosition);
-  const [previousPosition, setPreviousPosition] =
-    useState<Position>(getDefaultPosition);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  // ── Drag state (useReducer for smooth updates) ──
+  const [drag, dispatch] = useReducer(dragReducer, {
+    position: getDefaultPosition(),
+    previousPosition: getDefaultPosition(),
+    isCollapsed: false,
+    isDragging: false,
+    dragStart: { x: 0, y: 0 },
+  });
 
-  // Drag State
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState<Position>({ x: 0, y: 0 });
-
-  // Timeseries State
+  // ── Timeseries state ──
   const [timeseriesOpen, setTimeseriesOpen] = useState(false);
   const [timeseriesLoading, setTimeseriesLoading] = useState(false);
   const [timeseriesError, setTimeseriesError] = useState<string | null>(null);
-  const [timeseriesSeries, setTimeseriesSeries] = useState<SeriesPoint[]>([]);
+  const [rawTimeseriesData, setRawTimeseriesData] = useState<any[]>([]);
   const [timeseriesUnits, setTimeseriesUnits] = useState<string | null>(null);
   const [dateRangeOption, setDateRangeOption] =
     useState<DateRangeOption>("1year");
-  const [customStartDate, setCustomStartDate] = useState<string>("");
-  const [customEndDate, setCustomEndDate] = useState<string>("");
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
   const [zoomWindow, setZoomWindow] = useState<[number, number] | null>(null);
-
-  // Export Dialog State
   const [showExportDialog, setShowExportDialog] = useState(false);
 
-  // Memoized Values
-  const datasetUnit = useMemo(
-    () => regionData.unit ?? currentDataset?.units ?? "units",
-    [regionData.unit, currentDataset?.units],
-  );
-
-  const datasetIdentifier = useMemo(
-    () => currentDataset?.name ?? regionData.dataset ?? "No dataset",
-    [currentDataset, regionData.dataset],
-  );
+  // ── Memoised derived values ──
+  const datasetUnit = regionData.unit ?? currentDataset?.units ?? "units";
+  const datasetIdentifier =
+    currentDataset?.name ?? regionData.dataset ?? "No dataset";
 
   const datasetUnitInfo = useMemo(
     () => normalizeTemperatureUnit(datasetUnit),
     [datasetUnit],
   );
 
-  const useFahrenheit = useMemo(
-    () =>
-      datasetUnitInfo.type === "celsius" && temperatureUnit === "fahrenheit",
-    [datasetUnitInfo.type, temperatureUnit],
-  );
+  const useFahrenheit =
+    datasetUnitInfo.type === "celsius" && temperatureUnit === "fahrenheit";
 
-  const displayUnitLabel = useMemo(
-    () =>
-      useFahrenheit ? "°F" : datasetUnitInfo.symbol || datasetUnit || "units",
-    [useFahrenheit, datasetUnitInfo.symbol, datasetUnit],
-  );
+  const displayUnitLabel = useFahrenheit
+    ? "°F"
+    : datasetUnitInfo.symbol || datasetUnit || "units";
 
-  const resolvedTimeseriesUnit = useMemo(
-    () =>
-      useFahrenheit
-        ? "°F"
-        : (timeseriesUnits ?? datasetUnitInfo.symbol ?? datasetUnit ?? "units"),
-    [useFahrenheit, timeseriesUnits, datasetUnitInfo.symbol, datasetUnit],
-  );
+  const resolvedTimeseriesUnit = useFahrenheit
+    ? "°F"
+    : (timeseriesUnits ?? datasetUnitInfo.symbol ?? datasetUnit ?? "units");
 
-  const primaryValueSource = useMemo(() => {
-    if (typeof regionData.temperature === "number") {
-      return regionData.temperature;
-    }
-    if (typeof regionData.precipitation === "number") {
-      return regionData.precipitation;
-    }
-    return null;
-  }, [regionData.temperature, regionData.precipitation]);
+  const primaryValue = useMemo(() => {
+    const raw = regionData.temperature ?? regionData.precipitation ?? null;
+    if (raw === null) return null;
+    return useFahrenheit ? c2f(raw) : raw;
+  }, [regionData.temperature, regionData.precipitation, useFahrenheit]);
 
-  const convertedPrimaryValue = useMemo(() => {
-    if (primaryValueSource === null) return null;
-    return useFahrenheit
-      ? celsiusToFahrenheit(primaryValueSource)
-      : primaryValueSource;
-  }, [primaryValueSource, useFahrenheit]);
-
-  const formattedPrimaryValue = useMemo(
-    () => formatValue(convertedPrimaryValue),
-    [convertedPrimaryValue],
-  );
+  const datasetId = currentDataset?.id ?? null;
 
   const chartData = useMemo(() => {
-    return timeseriesSeries.map((entry) => {
-      if (entry.value == null || !Number.isFinite(entry.value)) {
-        return { date: entry.date, value: null };
-      }
-
-      const numericValue = Number(entry.value);
-      const convertedValue = useFahrenheit
-        ? celsiusToFahrenheit(numericValue)
-        : numericValue;
-
-      return {
-        date: entry.date,
-        value: Number(convertedValue.toFixed(2)),
-      };
+    if (!datasetId || rawTimeseriesData.length === 0) return [];
+    const transformed = applyTransformations(rawTimeseriesData, [datasetId], {
+      normalize: false,
+      smoothingWindow: undefined,
+      resampleFreq: undefined,
+      aggregation: AggregationMethod.MEAN,
     });
-  }, [timeseriesSeries, useFahrenheit]);
+    return transformed
+      .map((point: any) => {
+        const raw = sanitizeTimeseriesValue(point?.[datasetId] ?? null);
+        if (raw == null) return { date: point.date, value: null };
+        const v = useFahrenheit ? c2f(Number(raw)) : Number(raw);
+        return { date: point.date, value: Number(v.toFixed(2)) };
+      })
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  }, [datasetId, rawTimeseriesData, useFahrenheit]);
 
   const displayedChartData = useMemo(() => {
-    if (!zoomWindow || chartData.length === 0) {
-      return chartData;
-    }
-    const [start, end] = zoomWindow;
-    return chartData.slice(start, Math.min(end + 1, chartData.length));
+    if (!zoomWindow || !chartData.length) return chartData;
+    const [s, e] = zoomWindow;
+    return chartData.slice(s, Math.min(e + 1, chartData.length));
   }, [chartData, zoomWindow]);
 
-  const baseYAxisDomain = useMemo((): [number, number] | undefined => {
-    const values = displayedChartData
-      .map((point) => point.value)
-      .filter((value): value is number => typeof value === "number");
+  const numericChartValues = useMemo(
+    () =>
+      displayedChartData
+        .map((p) => p.value)
+        .filter((v): v is number => typeof v === "number"),
+    [displayedChartData],
+  );
+  const validPointCount = numericChartValues.length;
 
-    if (!values.length) return undefined;
+  const yAxisDomain = useMemo((): [number, number] | undefined => {
+    const vals = numericChartValues;
+    if (!vals.length) return undefined;
 
-    let min = Math.min(...values);
-    let max = Math.max(...values);
-
+    let min = Math.min(...vals);
+    let max = Math.max(...vals);
     if (!Number.isFinite(min) || !Number.isFinite(max)) return undefined;
 
     if (min === max) {
-      const padding = Math.abs(min) * 0.05 || 1;
-      min -= padding;
-      max += padding;
-    } else {
-      const padding = (max - min) * 0.1;
-      min -= padding;
-      max += padding;
+      const pad = Math.abs(min) * 0.05 || 1;
+      return [min - pad, max + pad];
     }
-
-    return [min, max];
-  }, [displayedChartData]);
-
-  const datasetText = useMemo(
-    () =>
-      [
-        currentDataset?.id,
-        currentDataset?.slug,
-        currentDataset?.name,
-        currentDataset?.description,
-        currentDataset?.sourceName,
-      ]
-        .filter(Boolean)
-        .map((value) => String(value).toLowerCase())
-        .join(" "),
-    [currentDataset],
-  );
-  const isGodasDataset =
-    datasetText.includes("godas") ||
-    datasetText.includes("global ocean data assimilation system") ||
-    datasetText.includes("ncep global ocean data assimilation");
-  const hasColorbarOverrides =
-    Number.isFinite(colorbarCustomMin as number) &&
-    Number.isFinite(colorbarCustomMax as number);
-
-  const [yAxisMode, setYAxisMode] = useState<"auto" | "custom">("auto");
-  const [customYAxisMin, setCustomYAxisMin] = useState<string>("");
-  const [customYAxisMax, setCustomYAxisMax] = useState<string>("");
-
-  const isCustomYAxisValid = useMemo(() => {
-    if (yAxisMode !== "custom") return true;
-    if (!customYAxisMin || !customYAxisMax) return false;
-    const min = Number(customYAxisMin);
-    const max = Number(customYAxisMax);
-    return Number.isFinite(min) && Number.isFinite(max) && min < max;
-  }, [customYAxisMax, customYAxisMin, yAxisMode]);
-
-  const yAxisDomain = useMemo((): [number, number] | undefined => {
-    if (isGodasDataset && hasColorbarOverrides) {
-      return [Number(colorbarCustomMin), Number(colorbarCustomMax)];
-    }
-    if (yAxisMode === "custom" && isCustomYAxisValid) {
-      return [Number(customYAxisMin), Number(customYAxisMax)];
-    }
-    return baseYAxisDomain;
-  }, [
-    baseYAxisDomain,
-    colorbarCustomMax,
-    colorbarCustomMin,
-    customYAxisMax,
-    customYAxisMin,
-    hasColorbarOverrides,
-    isCustomYAxisValid,
-    isGodasDataset,
-    yAxisMode,
-  ]);
-
-  const datasetId = useMemo(() => {
-    return currentDataset?.id ?? currentDataset?.id ?? null;
-  }, [currentDataset]);
+    const pad = (max - min) * 0.1;
+    return [min - pad, max + pad];
+  }, [numericChartValues]);
 
   const datasetStart = useMemo(() => {
-    if (!currentDataset?.startDate && !currentDataset?.startDate) return null;
-    const dateStr = currentDataset.startDate ?? currentDataset.startDate;
-    const parsed = new Date(dateStr);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }, [currentDataset]);
+    const s = currentDataset?.startDate;
+    if (!s) return null;
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }, [currentDataset?.startDate]);
 
   const datasetEnd = useMemo(() => {
-    if (!currentDataset?.endDate && !currentDataset?.endDate) return null;
-    const dateStr = currentDataset.endDate ?? currentDataset.endDate;
-    const parsed = new Date(dateStr);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }, [currentDataset]);
+    const s = currentDataset?.endDate;
+    if (!s) return null;
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }, [currentDataset?.endDate]);
 
-  const isHighFrequencyDataset = useMemo(() => {
-    const datasetName = (currentDataset?.name || "").toLowerCase();
-    return datasetName.includes("vegetation") || datasetName.includes("ndvi");
-  }, [currentDataset]);
+  const isHighFrequency = useMemo(() => {
+    const n = (currentDataset?.name || "").toLowerCase();
+    return n.includes("vegetation") || n.includes("ndvi");
+  }, [currentDataset?.name]);
 
-  // Check if we have loaded timeseries data
-  const hasTimeseriesData = useMemo(() => {
-    return chartData.length > 0 && !timeseriesLoading && !timeseriesError;
-  }, [chartData.length, timeseriesLoading, timeseriesError]);
+  const hasData =
+    numericChartValues.length > 0 && !timeseriesLoading && !timeseriesError;
 
-  // Event Handlers
+  // ── Clamp helper ──
+  const clampPos = useCallback((x: number, y: number): Position => {
+    const el = panelRef.current;
+    const w = el?.offsetWidth ?? DEFAULT_PANEL_WIDTH;
+    const h = el?.offsetHeight ?? DEFAULT_PANEL_HEIGHT;
+    return {
+      x: Math.max(0, Math.min(x, window.innerWidth - w)),
+      y: Math.max(0, Math.min(y, window.innerHeight - h)),
+    };
+  }, []);
+
+  // ── Event handlers ──
   const handleClose = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
@@ -443,156 +457,98 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
+      if (drag.isDragging) return;
 
-      if (isDragging) return;
-
-      setIsCollapsed((prev) => {
-        if (prev) {
-          setPosition(previousPosition);
-          return false;
-        } else {
-          setPreviousPosition(position);
-          if (typeof window !== "undefined") {
-            setPosition({
+      const collapsedPos =
+        typeof window !== "undefined"
+          ? {
               x: window.innerWidth - COLLAPSED_WIDTH,
               y: window.innerHeight - 60,
-            });
-          }
-          return true;
-        }
-      });
+            }
+          : { x: 0, y: 0 };
+
+      dispatch({ type: "TOGGLE_COLLAPSE", payload: collapsedPos });
     },
-    [isDragging, previousPosition, position],
+    [drag.isDragging],
   );
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
-      if (isCollapsed) return;
-
+      if (drag.isCollapsed) return;
       e.preventDefault();
       e.stopPropagation();
-
-      setIsDragging(true);
-      setDragStart({
-        x: e.clientX - position.x,
-        y: e.clientY - position.y,
+      dispatch({
+        type: "START_DRAG",
+        payload: {
+          x: e.clientX - drag.position.x,
+          y: e.clientY - drag.position.y,
+        },
       });
     },
-    [isCollapsed, position],
+    [drag.isCollapsed, drag.position],
   );
 
   const handleTouchStart = useCallback(
     (e: React.TouchEvent) => {
-      if (isCollapsed) return;
-
+      if (drag.isCollapsed) return;
       e.preventDefault();
       e.stopPropagation();
-
-      const touch = e.touches[0];
-      setIsDragging(true);
-      setDragStart({
-        x: touch.clientX - position.x,
-        y: touch.clientY - position.y,
+      const t = e.touches[0];
+      dispatch({
+        type: "START_DRAG",
+        payload: {
+          x: t.clientX - drag.position.x,
+          y: t.clientY - drag.position.y,
+        },
       });
     },
-    [isCollapsed, position],
+    [drag.isCollapsed, drag.position],
   );
 
+  // ── Date range calculation ──
   const calculateDateRange = useCallback((): { start: Date; end: Date } => {
-    let targetDate = selectedDate ?? datasetEnd ?? new Date();
-
-    if (datasetStart && targetDate < datasetStart) {
-      targetDate = datasetStart;
-    }
-    if (datasetEnd && targetDate > datasetEnd) {
-      targetDate = datasetEnd;
-    }
+    let target = selectedDate ?? datasetEnd ?? new Date();
+    if (datasetStart && target < datasetStart) target = datasetStart;
+    if (datasetEnd && target > datasetEnd) target = datasetEnd;
 
     let startDate: Date;
     let endDate: Date;
 
-    if (isHighFrequencyDataset) {
-      startDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
+    if (isHighFrequency) {
+      startDate = new Date(target.getFullYear(), target.getMonth(), 1);
       endDate = new Date(
-        targetDate.getFullYear(),
-        targetDate.getMonth() + 1,
+        target.getFullYear(),
+        target.getMonth() + 1,
         0,
         23,
         59,
         59,
       );
     } else {
+      const endOfMonth = () =>
+        new Date(target.getFullYear(), target.getMonth() + 1, 0, 23, 59, 59);
+
       switch (dateRangeOption) {
         case "all":
-          startDate =
-            datasetStart ?? new Date(targetDate.getFullYear() - 10, 0, 1);
-          endDate = datasetEnd ?? targetDate;
+          startDate = datasetStart ?? new Date(target.getFullYear() - 10, 0, 1);
+          endDate = datasetEnd ?? target;
           break;
-
         case "1year":
-          startDate = new Date(
-            targetDate.getFullYear() - 1,
-            targetDate.getMonth(),
-            1,
-          );
-          endDate = new Date(
-            targetDate.getFullYear(),
-            targetDate.getMonth() + 1,
-            0,
-            23,
-            59,
-            59,
-          );
+          startDate = new Date(target.getFullYear() - 1, target.getMonth(), 1);
+          endDate = endOfMonth();
           break;
-
         case "6months":
-          startDate = new Date(
-            targetDate.getFullYear(),
-            targetDate.getMonth() - 6,
-            1,
-          );
-          endDate = new Date(
-            targetDate.getFullYear(),
-            targetDate.getMonth() + 1,
-            0,
-            23,
-            59,
-            59,
-          );
+          startDate = new Date(target.getFullYear(), target.getMonth() - 6, 1);
+          endDate = endOfMonth();
           break;
-
         case "3months":
-          startDate = new Date(
-            targetDate.getFullYear(),
-            targetDate.getMonth() - 3,
-            1,
-          );
-          endDate = new Date(
-            targetDate.getFullYear(),
-            targetDate.getMonth() + 1,
-            0,
-            23,
-            59,
-            59,
-          );
+          startDate = new Date(target.getFullYear(), target.getMonth() - 3, 1);
+          endDate = endOfMonth();
           break;
-
         case "1month":
-          startDate = new Date(
-            targetDate.getFullYear(),
-            targetDate.getMonth(),
-            1,
-          );
-          endDate = new Date(
-            targetDate.getFullYear(),
-            targetDate.getMonth() + 1,
-            0,
-            23,
-            59,
-            59,
-          );
+          startDate = new Date(target.getFullYear(), target.getMonth(), 1);
+          endDate = endOfMonth();
           break;
-
         case "custom":
           if (customStartDate && customEndDate) {
             const parsedStart = new Date(customStartDate);
@@ -614,92 +570,42 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
           }
           {
             startDate = new Date(
-              targetDate.getFullYear() - 1,
-              targetDate.getMonth(),
+              target.getFullYear() - 1,
+              target.getMonth(),
               1,
             );
-            endDate = new Date(
-              targetDate.getFullYear(),
-              targetDate.getMonth() + 1,
-              0,
-              23,
-              59,
-              59,
-            );
+            endDate = endOfMonth();
           }
           break;
-
         default:
-          startDate = new Date(
-            targetDate.getFullYear() - 1,
-            targetDate.getMonth(),
-            1,
-          );
-          endDate = new Date(
-            targetDate.getFullYear(),
-            targetDate.getMonth() + 1,
-            0,
-            23,
-            59,
-            59,
-          );
+          startDate = new Date(target.getFullYear() - 1, target.getMonth(), 1);
+          endDate = endOfMonth();
       }
     }
 
-    if (datasetStart && startDate < datasetStart) {
-      startDate = datasetStart;
-    }
-    if (datasetEnd && endDate > datasetEnd) {
-      endDate = datasetEnd;
-    }
+    if (datasetStart && startDate < datasetStart) startDate = datasetStart;
+    if (datasetEnd && endDate > datasetEnd) endDate = datasetEnd;
 
     return { start: startDate, end: endDate };
   }, [
     selectedDate,
     datasetEnd,
     datasetStart,
-    isHighFrequencyDataset,
+    isHighFrequency,
     dateRangeOption,
     customStartDate,
     customEndDate,
   ]);
 
   const customRangeDefaults = useMemo(() => {
-    const baseDate = selectedDate ?? datasetEnd ?? new Date();
-    const baseStart = new Date(
-      baseDate.getFullYear() - 1,
-      baseDate.getMonth(),
-      1,
-    );
-    const baseEnd = new Date(
-      baseDate.getFullYear(),
-      baseDate.getMonth() + 1,
-      0,
-      23,
-      59,
-      59,
-    );
+    const base = selectedDate ?? datasetEnd ?? new Date();
+    const start = new Date(base.getFullYear() - 1, base.getMonth(), 1);
+    const end = new Date(base.getFullYear(), base.getMonth() + 1, 0);
     const clampedStart =
-      datasetStart && baseStart < datasetStart ? datasetStart : baseStart;
-    const clampedEnd =
-      datasetEnd && baseEnd > datasetEnd ? datasetEnd : baseEnd;
-    return {
-      start: formatDate(clampedStart),
-      end: formatDate(clampedEnd),
-    };
+      datasetStart && start < datasetStart ? datasetStart : start;
+    const clampedEnd = datasetEnd && end > datasetEnd ? datasetEnd : end;
+    return { start: isoDate(clampedStart), end: isoDate(clampedEnd) };
   }, [datasetEnd, datasetStart, selectedDate]);
-
-  useEffect(() => {
-    if (yAxisMode !== "custom") {
-      return;
-    }
-    if (!customYAxisMin || !customYAxisMax) {
-      if (baseYAxisDomain) {
-        setCustomYAxisMin(baseYAxisDomain[0].toFixed(3));
-        setCustomYAxisMax(baseYAxisDomain[1].toFixed(3));
-      }
-    }
-  }, [baseYAxisDomain, customYAxisMax, customYAxisMin, yAxisMode]);
 
   const isCustomRangeValid = useMemo(() => {
     if (dateRangeOption !== "custom") return true;
@@ -713,107 +619,100 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     );
   }, [customEndDate, customStartDate, dateRangeOption]);
 
+  // ── Timeseries fetch ──
   const handleTimeseriesClick = useCallback(async () => {
     setTimeseriesOpen(true);
 
     if (!datasetId) {
-      console.error("[Timeseries] No dataset ID found");
-      setTimeseriesError(
-        "No dataset selected. Please select a dataset from the sidebar.",
-      );
-      setTimeseriesSeries([]);
+      setTimeseriesError("No dataset selected.");
+      setRawTimeseriesData([]);
       setTimeseriesUnits(null);
       return;
     }
 
     const { start: startDate, end: endDate } = calculateDateRange();
-
     setTimeseriesLoading(true);
     setTimeseriesError(null);
 
     try {
-      const [gridboxes, levels] = await Promise.all([
-        fetchDatasetGridboxes(datasetId),
-        fetchDatasetLevels(datasetId),
-      ]);
-      const gridboxId = resolveGridboxId(gridboxes, latitude, longitude);
-      const levelId = resolveLevelId(levels, null);
-
-      if (gridboxId == null || levelId == null) {
-        throw new Error("Missing gridbox or level mapping for dataset");
-      }
-
-      const timeseries = await fetchGridboxTimeseries({
-        datasetId,
-        gridboxId,
-        levelId,
+      const res = await fetch("/api/timeseries/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          datasetIds: [datasetId],
+          startDate: isoDate(startDate),
+          endDate: isoDate(endDate),
+          focusCoordinates: `${latitude},${longitude}`,
+          aggregation: "mean",
+          includeStatistics: false,
+          includeMetadata: true,
+        }),
       });
 
-      const startMs = startDate.getTime();
-      const endMs = endDate.getTime();
-      const series: SeriesPoint[] = timeseries
-        .filter((entry) => {
-          const ts = entry.date.getTime();
-          return ts >= startMs && ts <= endMs;
-        })
-        .sort((a, b) => a.date.getTime() - b.date.getTime())
-        .map((entry) => ({
-          date: formatDate(entry.date),
-          value: entry.value,
-        }));
+      const ct = res.headers.get("content-type");
+      if (!ct?.includes("application/json")) {
+        throw new Error(`Server returned ${res.status}: ${res.statusText}`);
+      }
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err?.detail || `Request failed (${res.status})`);
+      }
 
-      setTimeseriesSeries(series);
-      setTimeseriesUnits(datasetUnit);
+      const result = await res.json();
+      if (!result?.data || !Array.isArray(result.data)) {
+        throw new Error("Invalid response format");
+      }
+
+      setRawTimeseriesData(result.data);
+      setTimeseriesUnits(result.metadata?.[datasetId]?.units ?? datasetUnit);
     } catch (error) {
-      const message =
+      const msg =
         error instanceof Error ? error.message : "Failed to load timeseries";
-      console.error("[Timeseries] Error:", message);
-      setTimeseriesError(message);
-      setTimeseriesSeries([]);
+      console.error("[Timeseries]", msg);
+      setTimeseriesError(msg);
+      setRawTimeseriesData([]);
       setTimeseriesUnits(null);
     } finally {
       setTimeseriesLoading(false);
     }
   }, [datasetId, calculateDateRange, latitude, longitude, datasetUnit]);
 
+  // ── Export handlers ──
   const handleExportCSV = useCallback(() => {
     if (!chartData.length) return;
-
-    const headers = ["Date", `Value (${resolvedTimeseriesUnit})`];
-    const rows = chartData.map((point) => [
-      point.date,
-      point.value !== null ? point.value.toString() : "",
-    ]);
-
-    const csv = [headers.join(","), ...rows.map((row) => row.join(","))].join(
-      "\n",
+    const csv = [
+      `Date,Value (${resolvedTimeseriesUnit})`,
+      ...chartData.map((p) => `${p.date},${p.value ?? ""}`),
+    ].join("\n");
+    downloadFile(
+      csv,
+      `timeseries_${latitude.toFixed(2)}_${longitude.toFixed(2)}_${isoDate(new Date())}.csv`,
+      "text/csv",
     );
-
-    const filename = `timeseries_${latitude.toFixed(2)}_${longitude.toFixed(2)}_${new Date().toISOString().split("T")[0]}.csv`;
-    downloadFile(csv, filename, "text/csv");
     setShowExportDialog(false);
   }, [chartData, resolvedTimeseriesUnit, latitude, longitude]);
 
   const handleExportJSON = useCallback(() => {
     if (!chartData.length) return;
-
-    const exportData = {
-      metadata: {
-        dataset: currentDataset?.name || datasetIdentifier,
-        location: {
-          latitude,
-          longitude,
+    const json = JSON.stringify(
+      {
+        metadata: {
+          dataset: currentDataset?.name || datasetIdentifier,
+          location: { latitude, longitude },
+          unit: resolvedTimeseriesUnit,
+          exportDate: new Date().toISOString(),
+          dataPoints: chartData.length,
         },
-        unit: resolvedTimeseriesUnit,
-        exportDate: new Date().toISOString(),
-        dataPoints: chartData.length,
+        data: chartData,
       },
-      data: chartData,
-    };
-
-    const json = JSON.stringify(exportData, null, 2);
-    const filename = `timeseries_${latitude.toFixed(2)}_${longitude.toFixed(2)}_${new Date().toISOString().split("T")[0]}.json`;
-    downloadFile(json, filename, "application/json");
+      null,
+      2,
+    );
+    downloadFile(
+      json,
+      `timeseries_${latitude.toFixed(2)}_${longitude.toFixed(2)}_${isoDate(new Date())}.json`,
+      "application/json",
+    );
     setShowExportDialog(false);
   }, [
     chartData,
@@ -824,239 +723,238 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     resolvedTimeseriesUnit,
   ]);
 
+  // ── Chart zoom ──
   const handleChartWheel = useCallback(
-    (event: React.WheelEvent<HTMLDivElement>) => {
-      if (chartData.length === 0) return;
+    (e: React.WheelEvent<HTMLDivElement>) => {
+      if (!chartData.length) return;
+      e.preventDefault();
+      const zoomIn = e.deltaY < 0;
 
-      event.preventDefault();
-      const directionIn = event.deltaY < 0;
-
-      setZoomWindow((current) => {
+      setZoomWindow((cur) => {
         const total = chartData.length;
-        const currentWindow = current ?? [0, total - 1];
-        let [start, end] = currentWindow;
-        const windowSize = end - start + 1;
-        const minWindow = Math.max(5, Math.ceil(total * 0.05));
-        const zoomStep = Math.max(1, Math.ceil(windowSize * 0.1));
+        const [s, end] = cur ?? [0, total - 1];
+        const size = end - s + 1;
+        const minW = Math.max(5, Math.ceil(total * 0.05));
+        const step = Math.max(1, Math.ceil(size * 0.1));
 
-        if (directionIn) {
-          if (windowSize <= minWindow) return currentWindow;
-          start = Math.min(start + zoomStep, end - minWindow + 1);
-          end = Math.max(end - zoomStep, start + minWindow - 1);
-          return [start, end];
+        if (zoomIn) {
+          if (size <= minW) return cur;
+          return [
+            Math.min(s + step, end - minW + 1),
+            Math.max(end - step, s + minW - 1),
+          ];
         }
 
-        start = Math.max(0, start - zoomStep);
-        end = Math.min(total - 1, end + zoomStep);
-
-        if (start === 0 && end === total - 1) return null;
-
-        return [start, end];
+        const ns = Math.max(0, s - step);
+        const ne = Math.min(total - 1, end + step);
+        return ns === 0 && ne === total - 1 ? null : [ns, ne];
       });
     },
     [chartData],
   );
 
+  // ============================================================================
   // Effects
+  // ============================================================================
+
+  // Reset position when panel is shown
   useEffect(() => {
     if (show) {
-      const initialPos = getDefaultPosition();
-      setPosition(initialPos);
-      setPreviousPosition(initialPos);
+      const pos = getDefaultPosition();
+      dispatch({ type: "SET_POSITION", payload: pos });
     }
   }, [show, getDefaultPosition]);
 
+  // Position collapsed pill next to colorbar
   useEffect(() => {
-    if (isCollapsed && typeof window !== "undefined") {
-      const colorBarWidth = colorBarCollapsed ? 160 : 320;
+    if (drag.isCollapsed && typeof window !== "undefined") {
+      const cbW = colorBarCollapsed ? 160 : 320;
       const gap = colorBarCollapsed ? 4 : 8;
-      const newX = colorBarPosition.x + colorBarWidth + gap;
-      const newY = window.innerHeight - COLLAPSED_HEIGHT - MARGIN;
-      setPosition({ x: newX, y: newY });
+      dispatch({
+        type: "SET_COLLAPSED",
+        payload: {
+          collapsed: true,
+          pos: {
+            x: colorBarPosition.x + cbW + gap,
+            y: window.innerHeight - COLLAPSED_HEIGHT - MARGIN,
+          },
+        },
+      });
     }
-  }, [isCollapsed, colorBarPosition.x, colorBarCollapsed]);
+  }, [drag.isCollapsed, colorBarPosition.x, colorBarCollapsed]);
 
-  useEffect(() => {
-    setZoomWindow(null);
-  }, [chartData]);
+  // Reset zoom on new data
+  useEffect(() => setZoomWindow(null), [chartData]);
 
+  // Handle resize
   useEffect(() => {
-    const handleResize = () => {
+    const onResize = () => {
       if (typeof window === "undefined") return;
-
-      if (isCollapsed) {
-        const colorBarWidth = colorBarCollapsed ? 160 : 320;
+      if (drag.isCollapsed) {
+        const cbW = colorBarCollapsed ? 160 : 320;
         const gap = colorBarCollapsed ? 4 : 8;
-        const newX = colorBarPosition.x + colorBarWidth + gap;
-        const newY = window.innerHeight - COLLAPSED_HEIGHT - MARGIN;
-        setPosition({ x: newX, y: newY });
-      } else if (panelRef.current) {
-        const panelWidth = panelRef.current.offsetWidth;
-        const panelHeight = panelRef.current.offsetHeight;
-
-        setPosition((prev) => ({
-          x: Math.min(prev.x, window.innerWidth - panelWidth),
-          y: Math.min(prev.y, window.innerHeight - panelHeight),
-        }));
+        dispatch({
+          type: "SET_POSITION",
+          payload: {
+            x: colorBarPosition.x + cbW + gap,
+            y: window.innerHeight - COLLAPSED_HEIGHT - MARGIN,
+          },
+        });
+      } else {
+        dispatch({
+          type: "SET_POSITION",
+          payload: clampPos(drag.position.x, drag.position.y),
+        });
       }
     };
 
-    if (typeof window !== "undefined") {
-      window.addEventListener("resize", handleResize);
-      return () => window.removeEventListener("resize", handleResize);
-    }
-  }, [isCollapsed, colorBarPosition.x, colorBarCollapsed]);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [
+    drag.isCollapsed,
+    drag.position,
+    colorBarPosition.x,
+    colorBarCollapsed,
+    clampPos,
+  ]);
 
-  // Handle dragging (mouse + touch)
+  // Drag movement (global listeners)
   useEffect(() => {
-    if (!isDragging || isCollapsed) return;
+    if (!drag.isDragging || drag.isCollapsed) return;
 
-    const clampPosition = (rawX: number, rawY: number) => {
-      const panelElement = panelRef.current;
-      const panelWidth = panelElement
-        ? panelElement.offsetWidth
-        : DEFAULT_PANEL_WIDTH;
-      const panelHeight = panelElement
-        ? panelElement.offsetHeight
-        : DEFAULT_PANEL_HEIGHT;
-
-      const maxX = window.innerWidth - panelWidth;
-      const maxY = window.innerHeight - panelHeight;
-
-      return {
-        x: Math.min(Math.max(0, rawX), maxX),
-        y: Math.min(Math.max(0, rawY), maxY),
-      };
+    const onMouseMove = (e: MouseEvent) => {
+      dispatch({
+        type: "SET_POSITION",
+        payload: clampPos(
+          e.clientX - drag.dragStart.x,
+          e.clientY - drag.dragStart.y,
+        ),
+      });
     };
 
-    const handleMouseMove = (e: MouseEvent) => {
-      const newX = e.clientX - dragStart.x;
-      const newY = e.clientY - dragStart.y;
-      setPosition(clampPosition(newX, newY));
+    const onTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+      const t = e.touches[0];
+      dispatch({
+        type: "SET_POSITION",
+        payload: clampPos(
+          t.clientX - drag.dragStart.x,
+          t.clientY - drag.dragStart.y,
+        ),
+      });
     };
 
-    const handleTouchMove = (e: TouchEvent) => {
-      e.preventDefault(); // Prevent iOS scroll/bounce
-      const touch = e.touches[0];
-      const newX = touch.clientX - dragStart.x;
-      const newY = touch.clientY - dragStart.y;
-      setPosition(clampPosition(newX, newY));
-    };
+    const onEnd = () => dispatch({ type: "STOP_DRAG" });
 
-    const handleMouseUp = () => {
-      setIsDragging(false);
-    };
-
-    const handleTouchEnd = () => {
-      setIsDragging(false);
-    };
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-    document.addEventListener("touchmove", handleTouchMove, { passive: false });
-    document.addEventListener("touchend", handleTouchEnd);
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onEnd);
+    document.addEventListener("touchmove", onTouchMove, { passive: false });
+    document.addEventListener("touchend", onEnd);
 
     return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-      document.removeEventListener("touchmove", handleTouchMove);
-      document.removeEventListener("touchend", handleTouchEnd);
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onEnd);
+      document.removeEventListener("touchmove", onTouchMove);
+      document.removeEventListener("touchend", onEnd);
     };
-  }, [isDragging, dragStart, isCollapsed]);
+  }, [drag.isDragging, drag.isCollapsed, drag.dragStart, clampPos]);
+
+  // ============================================================================
+  // Render
+  // ============================================================================
 
   if (!show) return null;
 
   return (
     <div
       ref={panelRef}
-      className={`pointer-events-auto fixed transition-all duration-150 ${className}`}
+      className={`pointer-events-auto fixed ${className}`}
       style={{
-        left: `${position.x}px`,
-        top: `${position.y}px`,
-        zIndex: isCollapsed ? 1000 : 20,
+        left: `${drag.position.x}px`,
+        top: `${drag.position.y}px`,
+        zIndex: drag.isCollapsed ? 1000 : 20,
       }}
     >
-      {isCollapsed ? (
-        <div
-          className="border-border bg-card hover:bg-muted/50 cursor-pointer rounded-lg border px-3 py-2 transition-all duration-200 hover:scale-105 hover:shadow-lg sm:rounded-xl"
+      {drag.isCollapsed ? (
+        /* ── Collapsed pill ── */
+        <Button
+          variant="outline"
+          size="sm"
+          className="bg-card/90 text-muted-foreground hover:text-card-foreground pointer-events-auto cursor-pointer backdrop-blur-sm transition-all duration-200 hover:scale-105"
           onClick={handleCollapseToggle}
         >
-          <div className="pointer-events-none">
-            <div className="text-muted-foreground hover:text-card-foreground flex items-center gap-2 transition-colors">
-              <MapPin className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              <span className="text-xs font-medium select-none sm:text-sm">
-                Region Info
-              </span>
-            </div>
-          </div>
-        </div>
+          <MapPin className="h-3.5 w-3.5" />
+          <span className="font-medium select-none">Region Info</span>
+        </Button>
       ) : (
-        <Card className="max-w-xs">
+        /* ── Expanded card ── */
+        <Card className="max-w-2xs lg:max-w-xs">
           <CardHeader>
+            {/* Controls row */}
             <div className="flex items-center justify-between gap-1">
               <button
                 onClick={handleCollapseToggle}
-                className="text-muted-foreground hover:text-card-foreground z-10 flex cursor-pointer items-center p-1 transition-colors focus:outline-none"
+                className="text-muted-foreground hover:text-card-foreground hover:bg-muted z-10 flex cursor-pointer items-center rounded-full p-1 transition-colors focus:outline-none"
                 title="Collapse"
                 type="button"
               >
-                <ChevronDown className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                <ChevronDown className="h-3 w-3 lg:h-3.5 lg:w-3.5" />
               </button>
 
               <div
-                className={`flex h-3 items-center justify-center gap-0.5 px-2 sm:h-3.5 sm:gap-1 ${isDragging ? "cursor-grabbing" : "cursor-grab"} select-none`}
+                className={`hover:bg-muted flex h-3 items-center justify-center gap-0.5 rounded-full px-2 transition-colors sm:gap-1 lg:h-3.5 ${
+                  drag.isDragging ? "bg-muted cursor-grabbing" : "cursor-grab"
+                } select-none`}
                 onMouseDown={handleMouseDown}
                 onTouchStart={handleTouchStart}
                 style={{ touchAction: "none" }}
                 title="Drag to move"
               >
-                <div className="dot"></div>
-                <div className="dot"></div>
-                <div className="dot"></div>
+                <div className="dot" />
+                <div className="dot" />
+                <div className="dot" />
               </div>
 
               <button
                 onClick={handleClose}
-                className="text-muted-foreground hover:text-card-foreground z-10 flex cursor-pointer items-center p-1 transition-colors focus:outline-none"
+                className="text-muted-foreground hover:text-card-foreground hover:bg-muted z-10 flex cursor-pointer items-center rounded-full p-1 transition-colors focus:outline-none"
                 title="Close"
                 type="button"
               >
-                <X className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                <X className="h-3 w-3 lg:h-3.5 lg:w-3.5" />
               </button>
             </div>
-            <CardTitle className="flex flex-row items-center justify-center gap-2 text-center text-lg sm:text-xl">
-              <MapPin className="text-muted-foreground h-3.5 w-3.5 sm:h-4 sm:w-4" />
+
+            <CardTitle className="flex flex-row items-center justify-center gap-2 text-center text-lg lg:text-xl">
+              <MapPin className="text-muted-foreground h-3.5 w-3.5 lg:h-4 lg:w-4" />
               {Math.abs(latitude).toFixed(2)}° {latitude >= 0 ? "N" : "S"},{" "}
               {Math.abs(longitude).toFixed(2)}° {longitude >= 0 ? "E" : "W"}
             </CardTitle>
-            <CardDescription className="text-center text-xs sm:text-sm">
+            <CardDescription className="text-center text-xs lg:text-sm">
               Latitude, Longitude
             </CardDescription>
           </CardHeader>
 
           <CardContent>
-            <div className="space-y-3">
-              <div className="bg-secondary/40 border-border rounded-lg border p-2 sm:p-3">
-                <div className="text-center">
-                  <div className="mb-1 font-mono text-lg font-bold text-white sm:text-xl">
-                    {formattedPrimaryValue}{" "}
-                    <span className="text-lg font-normal text-white sm:text-xl">
-                      {displayUnitLabel}
-                    </span>
-                  </div>
-                  <div className="text-muted-foreground text-xs sm:text-sm">
-                    {currentDataset?.name ||
-                      regionData.name ||
-                      datasetIdentifier ||
-                      "No dataset selected"}
-                  </div>
+            <div className="bg-muted/40 border-border rounded-lg border p-2 lg:p-3">
+              <div className="text-center">
+                <div className="text-card-foreground text-lg font-medium lg:mb-1 lg:text-xl">
+                  {fmt(primaryValue)}{" "}
+                  <span className="text-card-foreground text-lg font-medium lg:text-xl">
+                    {displayUnitLabel}
+                  </span>
+                </div>
+                <div className="text-muted-foreground text-xs lg:text-sm">
+                  {currentDataset?.name ||
+                    regionData.name ||
+                    datasetIdentifier ||
+                    "No dataset selected"}
                 </div>
               </div>
             </div>
           </CardContent>
 
           <CardFooter className="flex-col gap-2">
-            {/* View Time Series Button */}
             <Dialog open={timeseriesOpen} onOpenChange={setTimeseriesOpen}>
               <DialogTrigger asChild>
                 <Button
@@ -1068,29 +966,29 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                       ? "Select a dataset first"
                       : "View time series for this location"
                   }
-                  className="w-full"
+                  className="w-full text-xs lg:text-sm"
                 >
                   View Time Series
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-[825px]">
+
+              <DialogContent className="sm:max-w-206">
                 <DialogHeader>
-                  <DialogTitle className="text-base sm:text-lg">
+                  <DialogTitle className="text-base lg:text-lg">
                     {currentDataset?.name || "Time Series"}
                   </DialogTitle>
-                  <DialogDescription className="text-xs sm:text-sm">
+                  <DialogDescription className="text-xs lg:text-sm">
                     Location: {latitude.toFixed(2)}°, {longitude.toFixed(2)}°
                   </DialogDescription>
                 </DialogHeader>
 
-                {/* Date Range Selector - Only show for non-high-frequency datasets */}
-                {!isHighFrequencyDataset && (
+                {/* Date range */}
+                {!isHighFrequency && (
                   <div className="space-y-2">
                     <label className="text-card-foreground flex items-center gap-2 text-xs font-medium sm:text-sm">
                       <Calendar className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                       Date Range
                     </label>
-
                     <div className="flex flex-wrap items-center gap-3 sm:gap-4">
                       <NativeSelect
                         value={dateRangeOption}
@@ -1122,7 +1020,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                           Custom Range
                         </NativeSelectOption>
                       </NativeSelect>
-
                       <Button
                         variant="outline"
                         size="sm"
@@ -1143,13 +1040,9 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                             type="date"
                             value={customStartDate}
                             min={
-                              datasetStart
-                                ? formatDate(datasetStart)
-                                : undefined
+                              datasetStart ? isoDate(datasetStart) : undefined
                             }
-                            max={
-                              datasetEnd ? formatDate(datasetEnd) : undefined
-                            }
+                            max={datasetEnd ? isoDate(datasetEnd) : undefined}
                             onChange={(e) => setCustomStartDate(e.target.value)}
                             className="h-9"
                           />
@@ -1162,13 +1055,9 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                             type="date"
                             value={customEndDate}
                             min={
-                              datasetStart
-                                ? formatDate(datasetStart)
-                                : undefined
+                              datasetStart ? isoDate(datasetStart) : undefined
                             }
-                            max={
-                              datasetEnd ? formatDate(datasetEnd) : undefined
-                            }
+                            max={datasetEnd ? isoDate(datasetEnd) : undefined}
                             onChange={(e) => setCustomEndDate(e.target.value)}
                             className="h-9"
                           />
@@ -1183,109 +1072,41 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                   </div>
                 )}
 
-                <div className="space-y-2">
-                  <label className="text-card-foreground flex items-center gap-2 text-xs font-medium sm:text-sm">
-                    <Activity className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                    Y-Axis Range
-                  </label>
-                  {isGodasDataset && hasColorbarOverrides ? (
-                    <p className="text-xs text-slate-300">
-                      GODAS uses the colorbar override range for the Y axis.
-                    </p>
-                  ) : (
-                    <>
-                      <div className="flex flex-wrap items-center gap-3 sm:gap-4">
-                        <NativeSelect
-                          value={yAxisMode}
-                          onChange={(e) =>
-                            setYAxisMode(e.target.value as "auto" | "custom")
-                          }
-                        >
-                          <NativeSelectOption value="auto">
-                            Auto
-                          </NativeSelectOption>
-                          <NativeSelectOption value="custom">
-                            Custom
-                          </NativeSelectOption>
-                        </NativeSelect>
-                      </div>
-                      {yAxisMode === "custom" && (
-                        <div className="flex flex-wrap items-end gap-3 sm:gap-4">
-                          <div className="flex flex-col gap-1">
-                            <label className="text-xs text-slate-300">
-                              Min
-                            </label>
-                            <Input
-                              type="number"
-                              value={customYAxisMin}
-                              onChange={(e) =>
-                                setCustomYAxisMin(e.target.value)
-                              }
-                              className="h-9"
-                            />
-                          </div>
-                          <div className="flex flex-col gap-1">
-                            <label className="text-xs text-slate-300">
-                              Max
-                            </label>
-                            <Input
-                              type="number"
-                              value={customYAxisMax}
-                              onChange={(e) =>
-                                setCustomYAxisMax(e.target.value)
-                              }
-                              className="h-9"
-                            />
-                          </div>
-                          {!isCustomYAxisValid && (
-                            <p className="text-xs text-red-400">
-                              Enter a valid min/max (min &lt; max).
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                {/* Chart Area */}
+                {/* Chart */}
                 <div
-                  className="relative h-64 w-full overflow-hidden rounded-lg border border-gray-700 sm:h-80"
+                  className="border-border relative h-64 w-full overflow-hidden rounded-lg border sm:h-80"
                   onWheel={handleChartWheel}
                 >
                   {timeseriesLoading ? (
                     <div className="flex h-full w-full items-center justify-center">
                       <div className="flex flex-col items-center gap-2">
-                        <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-600 border-t-blue-500 sm:h-8 sm:w-8"></div>
+                        <div className="border-muted border-t-primary h-6 w-6 animate-spin rounded-full border-2 sm:h-8 sm:w-8" />
                         <p className="text-muted-foreground text-xs sm:text-sm">
                           Loading timeseries data...
                         </p>
                       </div>
                     </div>
                   ) : timeseriesError ? (
-                    <div className="flex h-full w-full items-center justify-center p-4">
-                      <div className="flex flex-col items-center gap-2 text-center">
-                        <div className="rounded-full bg-red-900/20 p-2 sm:p-3">
-                          <svg
-                            className="h-5 w-5 text-red-400 sm:h-6 sm:w-6"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                            />
-                          </svg>
-                        </div>
-                        <p className="text-xs text-red-400 sm:text-sm">
-                          {timeseriesError}
-                        </p>
-                      </div>
-                    </div>
-                  ) : chartData.length > 0 ? (
+                    <ChartPlaceholder
+                      variant="error"
+                      icon={
+                        <svg
+                          className="text-destructive h-5 w-5 sm:h-6 sm:w-6"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                          />
+                        </svg>
+                      }
+                      title={timeseriesError}
+                    />
+                  ) : hasData ? (
                     <ChartContainer
                       config={chartConfig}
                       className="h-full w-full"
@@ -1293,47 +1114,46 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                       <LineChart
                         accessibilityLayer
                         data={displayedChartData}
-                        margin={{
-                          top: 10,
-                          right: 10,
-                          bottom: 10,
-                          left: 10,
-                        }}
+                        margin={{ top: 10, right: 10, bottom: 10, left: 10 }}
                       >
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          className="stroke-border"
+                        />
                         <XAxis
                           dataKey="date"
-                          stroke="#94a3b8"
+                          className="fill-muted-foreground"
                           tick={{ fontSize: 10 }}
-                          tickLine={{ stroke: "#4b5563" }}
+                          tickLine={{ className: "stroke-border" }}
                         />
                         <YAxis
-                          stroke="#94a3b8"
+                          className="fill-muted-foreground"
                           tick={{ fontSize: 10 }}
-                          tickLine={{ stroke: "#4b5563" }}
+                          tickLine={{ className: "stroke-border" }}
                           domain={yAxisDomain}
                           label={{
                             value: resolvedTimeseriesUnit,
                             angle: -90,
                             position: "insideLeft",
-                            fill: "#94a3b8",
+                            className: "fill-muted-foreground",
                             fontSize: 10,
                           }}
                         />
                         <RechartsTooltip
                           contentStyle={{
-                            backgroundColor: "#1f2937",
-                            border: "1px solid #374151",
+                            backgroundColor: "hsl(var(--popover))",
+                            border: "1px solid hsl(var(--border))",
                             borderRadius: "0.5rem",
                             padding: "8px 12px",
+                            color: "hsl(var(--popover-foreground))",
                           }}
                           labelStyle={{
-                            color: "#e5e7eb",
+                            color: "hsl(var(--popover-foreground))",
                             marginBottom: "4px",
                             fontSize: "12px",
                           }}
                           itemStyle={{
-                            color: "#38bdf8",
+                            color: "hsl(var(--primary))",
                             fontSize: "12px",
                           }}
                         />
@@ -1347,47 +1167,40 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                           type="monotone"
                           dataKey="value"
                           name={currentDataset?.name || "Value"}
-                          stroke="#38bdf8"
+                          stroke="hsl(var(--primary))"
                           strokeWidth={2}
-                          dot={false}
+                          dot={validPointCount <= 1 ? { r: 3 } : false}
                           connectNulls
                           activeDot={{ r: 4, strokeWidth: 0 }}
                         />
                       </LineChart>
                     </ChartContainer>
                   ) : (
-                    <div className="flex h-full w-full items-center justify-center">
-                      <div className="flex flex-col items-center gap-2 text-center">
-                        <div className="rounded-full bg-gray-700/50 p-2 sm:p-3">
-                          <svg
-                            className="h-5 w-5 text-gray-400 sm:h-6 sm:w-6"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-                            />
-                          </svg>
-                        </div>
-                        <p className="text-muted-foreground text-xs sm:text-sm">
-                          Click on the globe to select a location
-                        </p>
-                        <p className="text-muted-foreground text-[10px] sm:text-xs">
-                          Time series data will appear here
-                        </p>
-                      </div>
-                    </div>
+                    <ChartPlaceholder
+                      icon={
+                        <svg
+                          className="text-muted-foreground h-5 w-5 sm:h-6 sm:w-6"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                          />
+                        </svg>
+                      }
+                      title="Click on the globe to select a location"
+                      subtitle="Time series data will appear here"
+                    />
                   )}
                 </div>
 
                 <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-between">
                   <div className="flex gap-2">
-                    {/* Export Data Button - Only show when data is loaded */}
-                    {hasTimeseriesData && (
+                    {hasData && (
                       <Dialog
                         open={showExportDialog}
                         onOpenChange={setShowExportDialog}

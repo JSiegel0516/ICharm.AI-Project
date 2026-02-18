@@ -539,11 +539,11 @@ export function SideButtons({
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -100, opacity: 0 }}
             transition={{ duration: 0.3, ease: "easeInOut" }}
-            className="pointer-events-auto fixed top-1/2 left-4 z-50 w-96 -translate-y-1/2"
+            className="pointer-events-auto fixed top-1/2 left-2 z-50 w-[calc(100vw-1rem)] -translate-y-1/2 sm:left-4 sm:w-96"
           >
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center justify-between text-lg">
+            <Card className="gap-3 py-3 lg:gap-4 lg:py-4">
+              <CardHeader className="px-3 pb-3 lg:px-4">
+                <CardTitle className="flex items-center justify-between text-base lg:text-lg">
                   <span>Select Dataset</span>
                   <Button
                     variant="ghost"
@@ -554,19 +554,19 @@ export function SideButtons({
                     <X className="h-4 w-4" />
                   </Button>
                 </CardTitle>
-                <CardDescription>
+                <CardDescription className="text-xs lg:text-sm">
                   Choose a dataset to visualize on the globe
                 </CardDescription>
 
                 {/* Source Filter Buttons */}
-                <div className="flex gap-2 pt-3">
+                <div className="flex gap-1.5 pt-2 sm:gap-2 sm:pt-3">
                   <Button
                     variant={dataSourceFilter === "all" ? "default" : "outline"}
                     size="sm"
                     onClick={() => setDataSourceFilter("all")}
-                    className="flex-1"
+                    className="flex-1 text-xs sm:text-sm"
                   >
-                    <Globe className="mr-1.5 h-3.5 w-3.5" />
+                    <Globe className="mr-1 h-3 w-3 sm:mr-1.5 sm:h-3.5 sm:w-3.5" />
                     All
                   </Button>
                   <Button
@@ -575,9 +575,9 @@ export function SideButtons({
                     }
                     size="sm"
                     onClick={() => setDataSourceFilter("local")}
-                    className="flex-1"
+                    className="flex-1 text-xs sm:text-sm"
                   >
-                    <Database className="mr-1.5 h-3.5 w-3.5" />
+                    <Database className="mr-1 h-3 w-3 sm:mr-1.5 sm:h-3.5 sm:w-3.5" />
                     Local
                   </Button>
                   <Button
@@ -586,28 +586,28 @@ export function SideButtons({
                     }
                     size="sm"
                     onClick={() => setDataSourceFilter("cloud")}
-                    className="flex-1"
+                    className="flex-1 text-xs sm:text-sm"
                   >
-                    <Cloud className="mr-1.5 h-3.5 w-3.5" />
+                    <Cloud className="mr-1 h-3 w-3 sm:mr-1.5 sm:h-3.5 sm:w-3.5" />
                     Cloud
                   </Button>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-3 overflow-y-auto sm:max-h-38 lg:max-h-96">
+              <CardContent className="max-h-[40vh] space-y-2 overflow-y-auto px-3 sm:space-y-3 lg:max-h-96 lg:px-4">
                 {isLoading && (
-                  <div className="rounded border border-neutral-600 bg-neutral-800/50 p-3 text-sm text-slate-300">
+                  <div className="rounded border border-neutral-600 bg-neutral-800/50 p-2 text-xs text-slate-300 sm:p-3 sm:text-sm">
                     Loading datasets...
                   </div>
                 )}
 
                 {!isLoading && error && (
-                  <div className="rounded border border-rose-500/40 bg-rose-900/20 p-3 text-sm text-rose-200">
+                  <div className="rounded border border-rose-500/40 bg-rose-900/20 p-2 text-xs text-rose-200 sm:p-3 sm:text-sm">
                     Failed to load datasets: {error}
                   </div>
                 )}
 
                 {!isLoading && !error && filteredDatasets.length === 0 && (
-                  <div className="rounded border border-slate-600 bg-slate-800/50 p-3 text-sm text-slate-300">
+                  <div className="rounded border border-slate-600 bg-slate-800/50 p-2 text-xs text-slate-300 sm:p-3 sm:text-sm">
                     No datasets available. Please try again later.
                   </div>
                 )}
@@ -621,62 +621,60 @@ export function SideButtons({
                   return (
                     <div
                       key={dataset.id}
-                      className={`cursor-pointer rounded-lg border p-3 transition-all ${
+                      className={`cursor-pointer rounded-lg border p-2 transition-all sm:p-3 ${
                         isSelected
                           ? "border-neutral-300/50 bg-neutral-300/20"
                           : "border-neutral-600 bg-neutral-700/50 hover:bg-neutral-700/70"
                       }`}
                       onClick={() => toggleDatasetSelection(dataset.id)}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 space-y-2">
-                          <h3 className="text-primary text-sm font-medium">
+                      <div className="flex items-start justify-between gap-2 sm:gap-3">
+                        <div className="min-w-0 flex-1 space-y-1.5 sm:space-y-2">
+                          <h3 className="text-primary truncate text-xs font-medium sm:text-sm">
                             {dataset.name}
                           </h3>
-                          <p className="text-xs text-slate-400">
+                          <p className="truncate text-[10px] text-slate-400 sm:text-xs">
                             {dataset?.layerParameter} - {dataset?.statistic}
                           </p>
-                          <div className="flex flex-wrap items-center gap-3">
-                            <div className="flex items-center gap-3">
-                              <Badge
-                                variant="outline"
-                                className="flex items-center gap-1 text-xs"
-                              >
-                                {dataset.stored === "local" ? (
-                                  <Database className="text-chart-2 h-3 w-3" />
-                                ) : dataset.stored === "cloud" ? (
-                                  <Cloud className="text-chart-1 h-3 w-3" />
-                                ) : dataset.stored === "postgres" ? (
-                                  <Server className="text-chart-3 h-3 w-3" />
-                                ) : (
-                                  <Globe className="text-chart-3 h-3 w-3" />
-                                )}
-                                {dataset.stored === "postgres"
-                                  ? "PostgreSQL"
-                                  : dataset.stored}
-                              </Badge>
-                              <span className="text-xs text-slate-500">
-                                {dataset.startDate && dataset.endDate
-                                  ? `${new Date(
-                                      dataset.startDate,
-                                    ).toLocaleDateString("en-US", {
-                                      year: "numeric",
-                                      month: "numeric",
-                                      day: "numeric",
-                                    })} to ${new Date(
-                                      dataset.endDate,
-                                    ).toLocaleDateString("en-US", {
-                                      year: "numeric",
-                                      month: "numeric",
-                                      day: "numeric",
-                                    })}`
-                                  : "Date information not available"}
-                              </span>
-                            </div>
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                            <Badge
+                              variant="outline"
+                              className="flex items-center gap-1 text-[10px] sm:text-xs"
+                            >
+                              {dataset.stored === "local" ? (
+                                <Database className="text-chart-2 h-2.5 w-2.5 sm:h-3 sm:w-3" />
+                              ) : dataset.stored === "cloud" ? (
+                                <Cloud className="text-chart-1 h-2.5 w-2.5 sm:h-3 sm:w-3" />
+                              ) : dataset.stored === "postgres" ? (
+                                <Server className="text-chart-3 h-2.5 w-2.5 sm:h-3 sm:w-3" />
+                              ) : (
+                                <Globe className="text-chart-3 h-2.5 w-2.5 sm:h-3 sm:w-3" />
+                              )}
+                              {dataset.stored === "postgres"
+                                ? "PostgreSQL"
+                                : dataset.stored}
+                            </Badge>
+                            <span className="hidden text-xs text-slate-500 sm:inline">
+                              {dataset.startDate && dataset.endDate
+                                ? `${new Date(
+                                    dataset.startDate,
+                                  ).toLocaleDateString("en-US", {
+                                    year: "numeric",
+                                    month: "numeric",
+                                    day: "numeric",
+                                  })} to ${new Date(
+                                    dataset.endDate,
+                                  ).toLocaleDateString("en-US", {
+                                    year: "numeric",
+                                    month: "numeric",
+                                    day: "numeric",
+                                  })}`
+                                : "Date information not available"}
+                            </span>
                           </div>
                         </div>
                         <div
-                          className={`ml-2 flex h-4 w-4 items-center justify-center rounded border ${
+                          className={`ml-1 flex h-4 w-4 shrink-0 items-center justify-center rounded border sm:ml-2 ${
                             isSelected
                               ? "border-rose-500 bg-rose-500"
                               : "border-slate-400"

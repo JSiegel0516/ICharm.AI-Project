@@ -6,7 +6,15 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
-import type { GlobeLineResolution, GlobeSettings } from "@/types";
+import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import type { GlobeSettings, GlobeLineResolution } from "@/types";
 import { MAP_PROJECTIONS } from "@/components/Globe/projectionConfig";
 
 interface GlobeSettingsPanelProps {
@@ -14,7 +22,6 @@ interface GlobeSettingsPanelProps {
   onClose: () => void;
   baseMapMode?: "satellite" | "street";
   onBaseMapModeChange?: (mode: "satellite" | "street") => void;
-  // Layer visibility controls
   satelliteLayerVisible: boolean;
   onSatelliteLayerToggle: (visible: boolean) => void;
   boundaryLinesVisible: boolean;
@@ -39,7 +46,6 @@ interface GlobeSettingsPanelProps {
   onNaturalEarthGeographicLinesToggle?: (visible: boolean) => void;
   labelsVisible: boolean;
   onLabelsToggle: (visible: boolean) => void;
-  // Raster opacity control
   rasterOpacity: number;
   onRasterOpacityChange: (opacity: number) => void;
   hideZeroPrecipitation: boolean;
@@ -110,6 +116,7 @@ export function GlobeSettingsPanel({
   const isProjectionView = MAP_PROJECTIONS.some(
     (projection) => projection.id === viewMode,
   );
+
   const resolutionOptions = [
     { value: "none", label: "None" },
     { value: "low", label: "Low (110m)" },
@@ -137,6 +144,72 @@ export function GlobeSettingsPanel({
     }
   }, [isOpen, onClose]);
 
+  // Reusable row for a switch toggle
+  const ToggleRow = ({
+    id,
+    label,
+    description,
+    checked,
+    onCheckedChange,
+    disabled,
+  }: {
+    id: string;
+    label: string;
+    description?: string;
+    checked: boolean;
+    onCheckedChange: (checked: boolean) => void;
+    disabled?: boolean;
+  }) => (
+    <div className="flex items-center justify-between gap-3">
+      <div className="min-w-0 space-y-0.5">
+        <Label
+          htmlFor={id}
+          className="text-card-foreground cursor-pointer text-sm font-medium"
+        >
+          {label}
+        </Label>
+        {description && (
+          <p className="text-muted-foreground text-xs">{description}</p>
+        )}
+      </div>
+      <Switch
+        id={id}
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        disabled={disabled}
+      />
+    </div>
+  );
+
+  // Reusable row for a resolution select
+  const ResolutionRow = ({
+    label,
+    value,
+    onValueChange,
+    disabled,
+  }: {
+    label: string;
+    value: string;
+    onValueChange: (value: string) => void;
+    disabled?: boolean;
+  }) => (
+    <div className="flex items-center justify-between gap-2">
+      <Label className="text-muted-foreground text-xs">{label}</Label>
+      <Select value={value} onValueChange={onValueChange} disabled={disabled}>
+        <SelectTrigger className="h-7 w-[130px] text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {resolutionOptions.map((opt) => (
+            <SelectItem key={opt.value} value={opt.value}>
+              {opt.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -146,362 +219,220 @@ export function GlobeSettingsPanel({
           animate={{ x: 0, opacity: 1 }}
           exit={{ x: -100, opacity: 0 }}
           transition={{ duration: 0.3, ease: "easeInOut" }}
-          className="pointer-events-auto fixed top-1/2 left-4 z-9999 w-96 -translate-y-1/2"
+          className="pointer-events-auto fixed top-1/2 left-2 z-9999 w-[calc(100vw-1rem)] -translate-y-1/2 sm:left-4 sm:w-96"
         >
-          <Card className="flex max-h-[600px] flex-col">
-            <CardContent className="flex-1 space-y-4 overflow-y-auto py-4">
-              {/* Layer Manipulation Section */}
+          <Card className="flex max-h-[70vh] flex-col">
+            <CardContent
+              className="flex-1 space-y-5 overflow-y-auto py-4"
+              style={{
+                touchAction: "pan-y",
+                WebkitOverflowScrolling: "touch",
+              }}
+              onTouchMove={(e) => e.stopPropagation()}
+            >
+              {/* ── Layer Visibility ── */}
               {(isCesiumView || isProjectionView) && (
-                <div className="space-y-3">
-                  <h3 className="text-sm font-semibold text-white">
+                <section className="space-y-3">
+                  <h3 className="text-card-foreground text-xs font-semibold tracking-wider uppercase">
                     Layer Visibility
                   </h3>
 
+                  {/* Basemap & Labels (3D / 2D, not ortho) */}
                   {isCesiumView && viewMode !== "ortho" && (
-                    <div className="space-y-2 rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
+                    <div className="border-border bg-muted/30 space-y-3 rounded-lg border p-3">
                       <div className="space-y-0.5">
-                        <Label className="text-sm font-medium text-white">
+                        <Label className="text-card-foreground text-sm font-medium">
                           Basemap & Labels
                         </Label>
-                        <p className="text-xs text-slate-400">
+                        <p className="text-muted-foreground text-xs">
                           Control imagery, street view, and place names
                         </p>
                       </div>
-                      <div className="grid grid-cols-1 gap-2">
-                        <div className="flex items-center justify-between">
-                          <div className="space-y-0.5">
-                            <Label
-                              htmlFor="satellite-toggle"
-                              className="cursor-pointer text-sm font-medium text-white"
-                            >
-                              Satellite Imagery
-                            </Label>
-                            <p className="text-xs text-slate-400">
-                              Show/hide satellite base layer
-                            </p>
-                          </div>
-                          <Switch
-                            id="satellite-toggle"
-                            checked={satelliteLayerVisible}
-                            onCheckedChange={onSatelliteLayerToggle}
-                            className="data-[state=checked]:bg-rose-500"
-                          />
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div className="space-y-0.5">
-                            <Label
-                              htmlFor="basemap-toggle"
-                              className="cursor-pointer text-sm font-medium text-white"
-                            >
-                              Street View
-                            </Label>
-                            <p className="text-xs text-slate-400">
-                              Switch between satellite imagery and street maps
-                            </p>
-                          </div>
-                          <Switch
-                            id="basemap-toggle"
-                            checked={baseMapMode === "street"}
-                            onCheckedChange={(checked) =>
-                              onBaseMapModeChange?.(
-                                checked ? "street" : "satellite",
-                              )
-                            }
-                            className="data-[state=checked]:bg-rose-500"
-                          />
-                        </div>
-                        {baseMapMode !== "street" && (
-                          <div className="flex items-center justify-between">
-                            <div className="space-y-0.5">
-                              <Label
-                                htmlFor="labels-toggle"
-                                className="cursor-pointer text-sm font-medium text-white"
-                              >
-                                Place Names
-                              </Label>
-                              <p className="text-xs text-slate-400">
-                                Show/hide continent, country, and city labels
-                              </p>
-                            </div>
-                            <Switch
-                              id="labels-toggle"
-                              checked={labelsVisible}
-                              onCheckedChange={onLabelsToggle}
-                              className="data-[state=checked]:bg-rose-500"
-                            />
-                          </div>
-                        )}
+                      <div className="space-y-2.5">
+                        <ToggleRow
+                          id="satellite-toggle"
+                          label="Satellite Imagery"
+                          description="Show/hide satellite base layer"
+                          checked={satelliteLayerVisible}
+                          onCheckedChange={onSatelliteLayerToggle}
+                        />
+                        <ToggleRow
+                          id="basemap-toggle"
+                          label="Street View"
+                          description="Switch between satellite imagery and street maps"
+                          checked={baseMapMode === "street"}
+                          onCheckedChange={(checked) =>
+                            onBaseMapModeChange?.(
+                              checked ? "street" : "satellite",
+                            )
+                          }
+                        />
+                        <ToggleRow
+                          id="labels-toggle"
+                          label="Place Names"
+                          description="Show/hide continent, country, and city labels"
+                          checked={labelsVisible}
+                          onCheckedChange={onLabelsToggle}
+                          disabled={baseMapMode === "street"}
+                        />
                       </div>
                     </div>
                   )}
 
+                  {/* Ortho: place names only */}
                   {isCesiumView && viewMode === "ortho" && (
-                    <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
-                      <div className="space-y-0.5">
-                        <Label
-                          htmlFor="labels-toggle-ortho"
-                          className="cursor-pointer text-sm font-medium text-white"
-                        >
-                          Place Names
-                        </Label>
-                        <p className="text-xs text-slate-400">
-                          Show/hide continent, country, and city labels
-                        </p>
-                      </div>
-                      <Switch
+                    <div className="border-border bg-muted/30 rounded-lg border p-3">
+                      <ToggleRow
                         id="labels-toggle-ortho"
+                        label="Place Names"
+                        description="Show/hide continent, country, and city labels"
                         checked={labelsVisible}
                         onCheckedChange={onLabelsToggle}
-                        className="data-[state=checked]:bg-rose-500"
                       />
                     </div>
                   )}
 
-                  <div className="space-y-2 rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
+                  {/* Natural Earth Detail */}
+                  <div className="border-border bg-muted/30 space-y-3 rounded-lg border p-3">
                     <div className="space-y-0.5">
-                      <Label className="text-sm font-medium text-white">
+                      <Label className="text-card-foreground text-sm font-medium">
                         Natural Earth Detail
                       </Label>
-                      <p className="text-xs text-slate-400">
+                      <p className="text-muted-foreground text-xs">
                         Adjust boundary and line detail
                       </p>
                     </div>
-                    <div className="grid grid-cols-1 gap-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <Label className="text-xs text-slate-300">
-                          Boundary Lines
-                        </Label>
-                        <select
-                          className="rounded-md border border-slate-600 bg-neutral-800 px-2 py-1 text-xs text-white"
-                          value={countryBoundaryResolution}
-                          onChange={(e) =>
-                            onCountryBoundaryResolutionChange(
-                              e.target
-                                .value as typeof countryBoundaryResolution,
-                            )
-                          }
-                        >
-                          {adminResolutionOptions.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <Label className="text-xs text-slate-300">
-                          State Lines
-                        </Label>
-                        <select
-                          className="rounded-md border border-slate-600 bg-neutral-800 px-2 py-1 text-xs text-white"
-                          value={stateBoundaryResolution}
-                          onChange={(e) =>
-                            onStateBoundaryResolutionChange(
-                              e.target.value as typeof stateBoundaryResolution,
-                            )
-                          }
-                        >
-                          {adminResolutionOptions.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <Label className="text-xs text-slate-300">
-                          Natural Earth Lines
-                        </Label>
-                        <Switch
-                          id="boundary-toggle"
-                          checked={boundaryLinesVisible}
-                          onCheckedChange={onBoundaryLinesToggle}
-                          className="data-[state=checked]:bg-rose-500"
-                        />
-                      </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <Label className="text-xs text-slate-300">
-                          Coastlines
-                        </Label>
-                        <select
-                          className="rounded-md border border-slate-600 bg-neutral-800 px-2 py-1 text-xs text-white"
-                          value={coastlineResolution}
-                          onChange={(e) =>
-                            onCoastlineResolutionChange?.(
-                              e.target.value as typeof coastlineResolution,
-                            )
-                          }
-                          disabled={!boundaryLinesVisible}
-                        >
-                          {resolutionOptions.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <Label className="text-xs text-slate-300">Rivers</Label>
-                        <select
-                          className="rounded-md border border-slate-600 bg-neutral-800 px-2 py-1 text-xs text-white"
-                          value={riverResolution}
-                          onChange={(e) =>
-                            onRiverResolutionChange?.(
-                              e.target.value as typeof riverResolution,
-                            )
-                          }
-                          disabled={!boundaryLinesVisible}
-                        >
-                          {resolutionOptions.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <Label className="text-xs text-slate-300">Lakes</Label>
-                        <select
-                          className="rounded-md border border-slate-600 bg-neutral-800 px-2 py-1 text-xs text-white"
-                          value={lakeResolution}
-                          onChange={(e) =>
-                            onLakeResolutionChange?.(
-                              e.target.value as typeof lakeResolution,
-                            )
-                          }
-                          disabled={!boundaryLinesVisible}
-                        >
-                          {resolutionOptions.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <Label className="text-xs text-slate-300">
-                          Geographic Lines
-                        </Label>
-                        <Switch
-                          checked={naturalEarthGeographicLinesVisible}
-                          onCheckedChange={(checked) =>
-                            onNaturalEarthGeographicLinesToggle?.(checked)
-                          }
-                          className="data-[state=checked]:bg-rose-500"
-                          disabled={!boundaryLinesVisible}
-                        />
-                      </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <Label className="text-xs text-slate-300">
-                          Geographic Grid
-                        </Label>
-                        <Switch
-                          id="geographic-lines-toggle"
-                          checked={geographicLinesVisible}
-                          onCheckedChange={onGeographicLinesToggle}
-                          className="data-[state=checked]:bg-rose-500"
-                        />
-                      </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <Label className="text-xs text-slate-300">
-                          Time Zone Lines
-                        </Label>
-                        <Switch
-                          id="timezone-lines-toggle"
-                          checked={timeZoneLinesVisible}
-                          onCheckedChange={onTimeZoneLinesToggle}
-                          className="data-[state=checked]:bg-rose-500"
-                        />
-                      </div>
+                    <div className="space-y-2">
+                      <ToggleRow
+                        id="boundary-toggle"
+                        label="Boundary Lines"
+                        checked={boundaryLinesVisible}
+                        onCheckedChange={onBoundaryLinesToggle}
+                      />
+                      <ResolutionRow
+                        label="Coastlines"
+                        value={coastlineResolution}
+                        onValueChange={(v) =>
+                          onCoastlineResolutionChange?.(
+                            v as typeof coastlineResolution,
+                          )
+                        }
+                        disabled={!boundaryLinesVisible}
+                      />
+                      <ResolutionRow
+                        label="Rivers"
+                        value={riverResolution}
+                        onValueChange={(v) =>
+                          onRiverResolutionChange?.(v as typeof riverResolution)
+                        }
+                        disabled={!boundaryLinesVisible}
+                      />
+                      <ResolutionRow
+                        label="Lakes"
+                        value={lakeResolution}
+                        onValueChange={(v) =>
+                          onLakeResolutionChange?.(v as typeof lakeResolution)
+                        }
+                        disabled={!boundaryLinesVisible}
+                      />
+                      <ToggleRow
+                        id="ne-geographic-lines"
+                        label="Geographic Lines"
+                        checked={naturalEarthGeographicLinesVisible}
+                        onCheckedChange={(checked) =>
+                          onNaturalEarthGeographicLinesToggle?.(checked)
+                        }
+                        disabled={!boundaryLinesVisible}
+                      />
+                      <ToggleRow
+                        id="geographic-lines-toggle"
+                        label="Geographic Grid"
+                        checked={geographicLinesVisible}
+                        onCheckedChange={onGeographicLinesToggle}
+                      />
+                      <ToggleRow
+                        id="timezone-lines-toggle"
+                        label="Time Zone Lines"
+                        checked={timeZoneLinesVisible}
+                        onCheckedChange={onTimeZoneLinesToggle}
+                      />
                     </div>
                   </div>
 
+                  {/* Bump Mapping (ortho only) */}
                   {isCesiumView && viewMode === "ortho" && (
-                    <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
+                    <div className="border-border bg-muted/30 flex items-center justify-between rounded-lg border p-3">
                       <div className="space-y-0.5">
-                        <Label
-                          htmlFor="bump-map-select"
-                          className="text-sm font-medium text-white"
-                        >
+                        <Label className="text-card-foreground text-sm font-medium">
                           Bump Mapping
                         </Label>
-                        <p className="text-xs text-slate-400">
-                          Choose a normal map for orthographic relief
+                        <p className="text-muted-foreground text-xs">
+                          Normal map for orthographic relief
                         </p>
                       </div>
-                      <select
-                        id="bump-map-select"
-                        className="rounded-md border border-slate-600 bg-neutral-800 px-2 py-1 text-xs text-white"
+                      <Select
                         value={bumpMapMode}
-                        onChange={(e) =>
+                        onValueChange={(v) =>
                           onBumpMapModeChange(
-                            e.target.value as
-                              | "none"
-                              | "land"
-                              | "landBathymetry",
+                            v as "none" | "land" | "landBathymetry",
                           )
                         }
                       >
-                        <option value="none">None</option>
-                        <option value="land">Land</option>
-                        <option value="landBathymetry">
-                          Land + Bathymetry
-                        </option>
-                      </select>
+                        <SelectTrigger className="h-8 w-[150px] text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          <SelectItem value="land">Land</SelectItem>
+                          <SelectItem value="landBathymetry">
+                            Land + Bathymetry
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   )}
-                </div>
+                </section>
               )}
 
-              {/* Map Orientation */}
+              {/* ── Map Orientation ── */}
               {(isCesiumView || isProjectionView) && (
-                <div className="space-y-3">
-                  <h3 className="text-sm font-semibold text-white">
-                    Map Orientation
-                  </h3>
-                  <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
-                    <div className="space-y-0.5">
-                      <Label
-                        htmlFor="pacific-centered-toggle"
-                        className="cursor-pointer text-sm font-medium text-white"
-                      >
-                        Pacific Centered
-                      </Label>
-                      <p className="text-xs text-slate-400">
-                        Shift the map seam so the Pacific sits at center
-                      </p>
+                <>
+                  <Separator />
+                  <section className="space-y-3">
+                    <h3 className="text-card-foreground text-xs font-semibold tracking-wider uppercase">
+                      Map Orientation
+                    </h3>
+                    <div className="border-border bg-muted/30 rounded-lg border p-3">
+                      <ToggleRow
+                        id="pacific-centered-toggle"
+                        label="Pacific Centered"
+                        description="Shift the map seam so the Pacific sits at center"
+                        checked={pacificCentered}
+                        onCheckedChange={onPacificCenteredToggle}
+                        disabled={!isProjectionView && viewMode !== "2d"}
+                      />
                     </div>
-                    <Switch
-                      id="pacific-centered-toggle"
-                      checked={pacificCentered}
-                      onCheckedChange={onPacificCenteredToggle}
-                      className="data-[state=checked]:bg-rose-500"
-                      disabled={!isProjectionView && viewMode !== "2d"}
-                    />
-                  </div>
-                </div>
+                  </section>
+                </>
               )}
 
-              {/* Raster Opacity Section */}
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <Label
-                      htmlFor="raster-opacity"
-                      className="text-sm font-semibold text-white"
-                    >
-                      Raster Opacity
-                    </Label>
-                    <span className="text-sm font-medium text-slate-400">
-                      {Math.round(rasterOpacity * 100)}%
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-400">
-                    Adjust transparency of the climate data layer
-                  </p>
-                </div>
+              <Separator />
 
-                <div className="rounded-lg border border-neutral-600 bg-neutral-700/50 p-3">
+              {/* ── Raster Opacity ── */}
+              <section className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-card-foreground text-xs font-semibold tracking-wider uppercase">
+                    Raster Opacity
+                  </h3>
+                  <span className="text-muted-foreground text-sm font-medium">
+                    {Math.round(rasterOpacity * 100)}%
+                  </span>
+                </div>
+                <p className="text-muted-foreground text-xs">
+                  Adjust transparency of the climate data layer
+                </p>
+
+                <div className="border-border bg-muted/30 rounded-lg border p-3">
                   <Slider
                     id="raster-opacity"
                     min={0}
@@ -511,71 +442,55 @@ export function GlobeSettingsPanel({
                     onValueChange={([value]) => onRasterOpacityChange(value)}
                     className="w-full"
                   />
-                  <div className="mt-2 flex justify-between text-xs text-slate-500">
+                  <div className="text-muted-foreground mt-2 flex justify-between text-xs">
                     <span>Transparent</span>
                     <span>Opaque</span>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
-                  <div className="space-y-0.5">
-                    <Label
-                      htmlFor="raster-blur-toggle"
-                      className="cursor-pointer text-sm font-medium text-white"
-                    >
-                      Smoothed Gridboxes
-                    </Label>
-                    <p className="text-xs text-slate-400">
-                      Blend the grid to reduce hard edges
-                    </p>
-                  </div>
-                  <Switch
+                <div className="border-border bg-muted/30 rounded-lg border p-3">
+                  <ToggleRow
                     id="raster-blur-toggle"
+                    label="Smoothed Gridboxes"
+                    description="Blend the grid to reduce hard edges"
                     checked={rasterBlurEnabled}
                     onCheckedChange={onRasterBlurToggle}
-                    className="data-[state=checked]:bg-rose-500"
                   />
                 </div>
-              </div>
+              </section>
 
-              {/* Precipitation Display */}
-              <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-white">
+              <Separator />
+
+              {/* ── Precipitation Display ── */}
+              <section className="space-y-3">
+                <h3 className="text-card-foreground text-xs font-semibold tracking-wider uppercase">
                   Precipitation Display
                 </h3>
-                <div className="flex items-center justify-between rounded-lg border border-neutral-600 bg-neutral-700/50 p-2.5">
-                  <div className="space-y-0.5">
-                    <Label
-                      htmlFor="precip-zero-toggle"
-                      className="cursor-pointer text-sm font-medium text-white"
-                    >
-                      Only Display Nonzero Data
-                    </Label>
-                    <p className="text-xs text-slate-400">
-                      Hide zero precipitation areas (CMORPH & local datasets)
-                    </p>
-                  </div>
-                  <Switch
+                <div className="border-border bg-muted/30 rounded-lg border p-3">
+                  <ToggleRow
                     id="precip-zero-toggle"
+                    label="Only Display Nonzero Data"
+                    description="Hide zero precipitation areas (CMORPH & local datasets)"
                     checked={hideZeroPrecipitation}
                     onCheckedChange={onHideZeroPrecipitationToggle}
-                    className="data-[state=checked]:bg-rose-500"
                   />
                 </div>
-              </div>
+              </section>
 
-              {/* Colorbar Range */}
-              <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-white">
+              <Separator />
+
+              {/* ── Colorbar Range ── */}
+              <section className="space-y-3">
+                <h3 className="text-card-foreground text-xs font-semibold tracking-wider uppercase">
                   Colorbar Range
                 </h3>
 
-                <div className="space-y-2 rounded-lg border border-neutral-600 bg-neutral-700/50 p-3">
+                <div className="border-border bg-muted/30 space-y-3 rounded-lg border p-3">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label
                         htmlFor="colorbar-min"
-                        className="text-xs font-medium text-slate-300"
+                        className="text-muted-foreground text-xs font-medium"
                       >
                         Min
                       </Label>
@@ -604,14 +519,13 @@ export function GlobeSettingsPanel({
                             });
                           }
                         }}
-                        className="bg-neutral-800 text-white"
                         placeholder="Auto"
                       />
                     </div>
                     <div className="space-y-1.5">
                       <Label
                         htmlFor="colorbar-max"
-                        className="text-xs font-medium text-slate-300"
+                        className="text-muted-foreground text-xs font-medium"
                       >
                         Max
                       </Label>
@@ -640,74 +554,86 @@ export function GlobeSettingsPanel({
                             });
                           }
                         }}
-                        className="bg-neutral-800 text-white"
                         placeholder="Auto"
                       />
                     </div>
                   </div>
-                  <div className="flex items-center justify-between text-xs text-slate-400">
-                    <span>Leave blank for auto; scale stays centered on 0</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground text-xs">
+                      Leave blank for auto
+                    </span>
                     <Button
                       type="button"
-                      variant="outline"
-                      className="border-slate-600 bg-transparent px-3 py-1 text-xs text-slate-200 hover:bg-slate-700"
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground h-7 text-xs"
                       onClick={onColorbarRangeReset}
                     >
                       Reset
                     </Button>
                   </div>
                 </div>
-              </div>
+              </section>
 
-              {/* Globe View */}
-              <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-white">View Mode</h3>
-                <div className="space-y-2 rounded-lg border border-neutral-600 bg-neutral-700/50 p-3">
-                  <p className="text-xs text-slate-400">
+              <Separator />
+
+              {/* ── View Mode ── */}
+              <section className="space-y-3">
+                <h3 className="text-card-foreground text-xs font-semibold tracking-wider uppercase">
+                  View Mode
+                </h3>
+                <div className="border-border bg-muted/30 space-y-2 rounded-lg border p-3">
+                  <p className="text-muted-foreground text-xs">
                     Choose between the interactive 3D globe, orthographic, or a
                     flat 2D map view.
                   </p>
-                  <select
-                    className="w-full rounded-md border border-slate-600 bg-neutral-800 px-3 py-2 text-sm text-white shadow-sm focus:border-white focus:outline-none"
+                  <Select
                     value={viewMode ?? "3d"}
-                    onChange={(e) =>
+                    onValueChange={(v) =>
                       onViewModeChange?.(
-                        (e.target.value as GlobeSettings["viewMode"]) ?? "3d",
+                        (v as GlobeSettings["viewMode"]) ?? "3d",
                       )
                     }
                   >
-                    <option value="3d">3D</option>
-                    <option value="ortho">Orthographic (3D)</option>
-                    <option value="2d">2D (Equirectangular)</option>
-                    {MAP_PROJECTIONS.map((projection) => (
-                      <option key={projection.id} value={projection.id}>
-                        {projection.label}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="w-full text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="3d">3D</SelectItem>
+                      <SelectItem value="ortho">Orthographic (3D)</SelectItem>
+                      <SelectItem value="2d">2D (Equirectangular)</SelectItem>
+                      {MAP_PROJECTIONS.map((projection) => (
+                        <SelectItem key={projection.id} value={projection.id}>
+                          {projection.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              </div>
+              </section>
 
-              {/* Visualization */}
-              <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-white">
+              <Separator />
+
+              {/* ── Visualization ── */}
+              <section className="space-y-3">
+                <h3 className="text-card-foreground text-xs font-semibold tracking-wider uppercase">
                   Visualization
                 </h3>
-                <p className="text-xs text-slate-400">
+                <p className="text-muted-foreground text-xs">
                   Build a multi-date visualization from the current dataset.
                 </p>
                 <Button
                   type="button"
-                  className="w-full bg-rose-500 text-white hover:bg-rose-600"
+                  className="w-full"
                   onClick={onShowVisualizationModal}
                 >
                   Open Visualization Builder
                 </Button>
-              </div>
+              </section>
 
-              {/* Info Section */}
-              <div className="rounded-lg border border-blue-500/30 bg-blue-900/20 p-2.5">
-                <p className="text-xs text-blue-200">
+              {/* Tip */}
+              <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
+                <p className="text-xs text-blue-300">
                   <strong>Tip:</strong> Disable satellite imagery to see pure
                   climate data, or adjust opacity to blend data with terrain
                   features.
@@ -716,10 +642,7 @@ export function GlobeSettingsPanel({
             </CardContent>
 
             <div className="border-border shrink-0 border-t p-3">
-              <Button
-                onClick={onClose}
-                className="text-card-foreground bg-muted-foreground/20 w-full"
-              >
+              <Button variant="secondary" onClick={onClose} className="w-full">
                 Done
               </Button>
             </div>

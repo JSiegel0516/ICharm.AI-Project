@@ -21,7 +21,8 @@ import {
   InputGroupButton,
   InputGroupInput,
 } from "@/components/ui/input-group";
-import { Field } from "@/components/ui/field";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { SearchIcon } from "lucide-react";
 
 interface TimeBarProps {
   selectedDate?: Date;
