@@ -328,6 +328,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   const [timeseriesError, setTimeseriesError] = useState<string | null>(null);
   const [rawTimeseriesData, setRawTimeseriesData] = useState<any[]>([]);
   const [timeseriesUnits, setTimeseriesUnits] = useState<string | null>(null);
+  const [timeseriesRequested, setTimeseriesRequested] = useState(false);
   const [dateRangeOption, setDateRangeOption] =
     useState<DateRangeOption>("1year");
   const [customStartDate, setCustomStartDate] = useState("");
@@ -363,6 +364,33 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   }, [regionData.temperature, regionData.precipitation, useFahrenheit]);
 
   const datasetId = currentDataset?.id ?? null;
+  const datasetText = useMemo(() => {
+    if (!currentDataset) return "";
+    return [
+      currentDataset.name,
+      currentDataset.slug,
+      currentDataset.id,
+      currentDataset.layerParameter,
+      currentDataset.sourceName,
+    ]
+      .filter((value): value is string => typeof value === "string")
+      .map((value) => value.toLowerCase())
+      .join(" ");
+  }, [currentDataset]);
+  const useLongitude360 = useMemo(() => {
+    return (
+      datasetText.includes("sea surface") ||
+      datasetText.includes("sst") ||
+      datasetText.includes("ersst") ||
+      datasetText.includes("godas") ||
+      datasetText.includes("ocean data assimilation") ||
+      datasetText.includes("ocean reanalysis")
+    );
+  }, [datasetText]);
+  const requestLongitude =
+    useLongitude360 && Number.isFinite(longitude) && longitude < 0
+      ? longitude + 360
+      : longitude;
 
   const chartData = useMemo(() => {
     if (!datasetId || rawTimeseriesData.length === 0) return [];
@@ -468,6 +496,11 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
 
   const hasData =
     numericChartValues.length > 0 && !timeseriesLoading && !timeseriesError;
+  const hasRequestedButEmpty =
+    timeseriesRequested &&
+    !timeseriesLoading &&
+    !timeseriesError &&
+    numericChartValues.length === 0;
 
   useEffect(() => {
     if (!timeseriesOpen || !datasetId) return;
@@ -702,6 +735,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   // ── Timeseries fetch ──
   const handleTimeseriesClick = useCallback(async () => {
     setTimeseriesOpen(true);
+    setTimeseriesRequested(true);
 
     if (!datasetId) {
       setTimeseriesError("No dataset selected.");
@@ -715,6 +749,8 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       datasetId,
       latitude,
       longitude,
+      requestLongitude,
+      useLongitude360,
       dateRangeOption,
       startDate: isoDate(startDate),
       endDate: isoDate(endDate),
@@ -730,7 +766,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
           datasetIds: [datasetId],
           startDate: isoDate(startDate),
           endDate: isoDate(endDate),
-          focusCoordinates: `${latitude},${longitude}`,
+          focusCoordinates: `${latitude},${requestLongitude}`,
           aggregation: "mean",
           includeStatistics: false,
           includeMetadata: true,
@@ -776,7 +812,15 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     } finally {
       setTimeseriesLoading(false);
     }
-  }, [datasetId, calculateDateRange, latitude, longitude, datasetUnit]);
+  }, [
+    datasetId,
+    calculateDateRange,
+    latitude,
+    longitude,
+    requestLongitude,
+    useLongitude360,
+    datasetUnit,
+  ]);
 
   // ── Export handlers ──
   const handleExportCSV = useCallback(() => {
@@ -886,6 +930,12 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
 
   // Reset zoom on new data
   useEffect(() => setZoomWindow(null), [chartData]);
+
+  useEffect(() => {
+    if (!timeseriesOpen) {
+      setTimeseriesRequested(false);
+    }
+  }, [timeseriesOpen]);
 
   // Handle resize
   useEffect(() => {
@@ -1303,8 +1353,16 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                           />
                         </svg>
                       }
-                      title="Click on the globe to select a location"
-                      subtitle="Time series data will appear here"
+                      title={
+                        hasRequestedButEmpty
+                          ? "No data available for this location"
+                          : "Click on the globe to select a location"
+                      }
+                      subtitle={
+                        hasRequestedButEmpty
+                          ? "Try a nearby point or a different date range."
+                          : "Time series data will appear here"
+                      }
                     />
                   )}
                 </div>
