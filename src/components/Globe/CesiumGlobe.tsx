@@ -864,13 +864,6 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
             includeGeographicLines: naturalEarthGeographicLinesVisible,
             includeBoundaries: boundaryLinesVisible,
           });
-          console.log("[CesiumGlobe] initial boundary load", {
-            count: boundaryData.length,
-            boundaryLinesVisible,
-            geographicLinesVisible,
-            naturalEarthGeographicLinesVisible,
-          });
-
           if (effectiveViewMode !== "ortho") {
             const {
               boundaryEntities,
@@ -882,11 +875,6 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
               boundaryData,
               lineColors,
             );
-            console.log("[CesiumGlobe] initial boundary entities", {
-              boundary: boundaryEntities.length,
-              geographic: geographicLineEntities.length,
-              naturalEarth: naturalEarthLineEntities.length,
-            });
             boundaryEntitiesRef.current = boundaryEntities;
             geographicLineEntitiesRef.current = geographicLineEntities;
             naturalEarthLineEntitiesRef.current = naturalEarthLineEntities;
@@ -1007,29 +995,12 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
                       const px = Math.min(Math.max(x, 0), width - 1);
                       const py = Math.min(Math.max(y, 0), height - 1);
                       const data = ctx.getImageData(px, py, 1, 1).data;
-                      console.debug("[RasterDebug] sample", {
-                        latitude,
-                        longitude,
-                        rect,
-                        width,
-                        height,
-                        pixel: { x: px, y: py },
-                        rgba: Array.from(data),
-                        value,
-                      });
                     };
                     image.onerror = (err) => {
-                      console.debug("[RasterDebug] image load failed", err);
+                      void err;
                     };
                     image.src = texture.imageUrl;
                   } else {
-                    console.debug("[RasterDebug] missing texture", {
-                      hasTexture: Boolean(texture),
-                      width,
-                      height,
-                      rect,
-                      hasImageUrl: typeof texture?.imageUrl === "string",
-                    });
                   }
                 }
               }
@@ -1365,12 +1336,6 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
 
         const cleanupNewLayers = (layers: any[], reason?: string) => {
           if (!layers.length) return;
-          if (process.env.NODE_ENV === "development") {
-            console.info("[CesiumGlobe] cleanup stale raster layers", {
-              count: layers.length,
-              reason: reason ?? "unknown",
-            });
-          }
           layers.forEach((layer) => {
             try {
               viewer.scene.imageryLayers.remove(layer, true);
@@ -2462,14 +2427,6 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
 
-      if (process.env.NODE_ENV === "development") {
-        console.info("[CesiumGlobe] applyRasterLayers", {
-          datasetId,
-          requestKey: rasterState.requestKey,
-          hasTextures: Boolean(imageryData?.textures?.length),
-          isLoading: rasterState.isLoading,
-        });
-      }
       applyRasterLayers(imageryData);
     }, [
       applyRasterLayers,
@@ -2709,15 +2666,6 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       const midSample = Number.isFinite(grid.values[midIdx])
         ? grid.values[midIdx]
         : null;
-      console.debug("[RasterMesh] build", {
-        datasetId: currentDataset?.id ?? null,
-        min,
-        max,
-        flatShading: !rasterBlurEnabled,
-        smoothValues: false,
-        sampleStep: meshSamplingStep,
-        midSample,
-      });
       const mesh = buildRasterMesh({
         lat: grid.lat,
         lon: grid.lon,
@@ -2734,13 +2682,6 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       });
       const meshMidIdx = Math.floor(mesh.colors.length / 2);
       const meshMid = mesh.colors.slice(meshMidIdx, meshMidIdx + 4);
-      console.debug("[RasterMesh] colors", {
-        datasetId: currentDataset?.id ?? null,
-        meshColors: mesh.colors.length,
-        meshMid: Array.from(meshMid),
-        flatShading: !rasterBlurEnabled,
-        opacity: effectiveOpacity,
-      });
       applyMeshColorGain(mesh);
       const meshKey = rasterGridState.requestKey
         ? `${rasterGridState.requestKey}|blur:${rasterBlurEnabled ? 1 : 0}|grid:${meshSamplingStep}|op:${meshOpacityKey}`

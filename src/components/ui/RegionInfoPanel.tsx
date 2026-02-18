@@ -414,22 +414,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
       .sort((a, b) => String(a.date).localeCompare(String(b.date)));
   }, [rawTimeseriesData, datasetId, useFahrenheit, datasetText]);
 
-  useEffect(() => {
-    if (!rawTimeseriesData.length || !datasetId) return;
-    const numericCount = rawTimeseriesData.filter((point: any) =>
-      Number.isFinite(point?.[datasetId]),
-    ).length;
-    const sampleRaw = rawTimeseriesData.slice(0, 3);
-    const sampleValues = sampleRaw.map((point: any) => point?.[datasetId]);
-    console.debug("[Timeseries] summary", {
-      datasetId,
-      rawPoints: rawTimeseriesData.length,
-      numericCount,
-      chartPoints: chartData.length,
-      sampleValues,
-    });
-  }, [rawTimeseriesData, datasetId, chartData.length]);
-
   const displayedChartData = useMemo(() => {
     if (!zoomWindow || !chartData.length) return chartData;
     const [s, e] = zoomWindow;
@@ -538,37 +522,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     !timeseriesLoading &&
     !timeseriesError &&
     numericChartValues.length === 0;
-
-  useEffect(() => {
-    if (!timeseriesOpen || !datasetId) return;
-    console.debug("[Timeseries] chart-state", {
-      datasetId,
-      rawPoints: rawTimeseriesData.length,
-      chartPoints: chartData.length,
-      displayedPoints: displayedLineData.length,
-      validPointCount,
-      valueRange: chartValueRange,
-      hasData,
-    });
-  }, [
-    timeseriesOpen,
-    datasetId,
-    rawTimeseriesData.length,
-    chartData.length,
-    displayedLineData.length,
-    validPointCount,
-    chartValueRange,
-    hasData,
-  ]);
-
-  useEffect(() => {
-    if (!timeseriesOpen || !displayedLineData.length) return;
-    console.debug("[Timeseries] line-sample", {
-      first: displayedLineData[0],
-      last: displayedLineData[displayedLineData.length - 1],
-      yAxisDomain,
-    });
-  }, [timeseriesOpen, displayedLineData, yAxisDomain]);
 
   // ── Clamp helper ──
   const clampPos = useCallback((x: number, y: number): Position => {
@@ -782,16 +735,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     }
 
     const { start: startDate, end: endDate } = calculateDateRange();
-    console.debug("[Timeseries] request", {
-      datasetId,
-      latitude,
-      longitude,
-      requestLongitude,
-      useLongitude360,
-      dateRangeOption,
-      startDate: isoDate(startDate),
-      endDate: isoDate(endDate),
-    });
     setTimeseriesLoading(true);
     setTimeseriesError(null);
 
@@ -829,13 +772,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
           return { date: point.date, ...point.values };
         }
         return point;
-      });
-      console.debug("[Timeseries] response", {
-        datasetId,
-        points: normalized.length,
-        sampleKeys: normalized[0] ? Object.keys(normalized[0]) : [],
-        sample: normalized[0] ?? null,
-        metadataKeys: result.metadata ? Object.keys(result.metadata) : [],
       });
       setRawTimeseriesData(normalized);
       setTimeseriesUnits(result.metadata?.[datasetId]?.units ?? datasetUnit);

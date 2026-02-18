@@ -202,14 +202,6 @@ export async function fetchRasterGrid(options: {
     (entry) => entry.id === timestampId,
   );
   const resolvedLevel = levels.find((entry) => entry.id === levelId);
-  console.debug("[RasterGrid] resolved ids", {
-    datasetId: targetDatasetId,
-    date: dateKey,
-    timestampId,
-    timestampRaw: resolvedTimestamp?.raw ?? null,
-    levelId,
-    levelName: resolvedLevel?.name ?? null,
-  });
 
   const gridboxPayload = await fetchGridboxData({
     datasetId: targetDatasetId,
@@ -225,8 +217,8 @@ export async function fetchRasterGrid(options: {
   if (isOceanOnlyDatasetGuard(dataset)) {
     try {
       mask = await buildLandMaskForGrid(grid.lat, grid.lon);
-    } catch (error) {
-      console.debug("[RasterGrid] land mask unavailable", error);
+    } catch {
+      // Ignore land mask failures silently.
     }
   }
   const sampler = buildSampler(
@@ -246,13 +238,6 @@ export async function fetchRasterGrid(options: {
     effectiveRange?.enabled && effectiveRange?.max != null
       ? Number(effectiveRange.max)
       : computedRange.max;
-  console.debug("[RasterGrid] ranges", {
-    datasetId: targetDatasetId,
-    computedMin: computedRange.min,
-    computedMax: computedRange.max,
-    appliedMin,
-    appliedMax,
-  });
 
   return {
     lat: grid.lat,

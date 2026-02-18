@@ -72,7 +72,6 @@ export const applyLandMask = async (args: {
   const rasterHeight =
     args.height ?? rasterImg.naturalHeight ?? rasterImg.height;
   if (!rasterWidth || !rasterHeight) {
-    console.debug("[LandMask] missing raster dimensions");
     return args.imageUrl;
   }
 
@@ -81,7 +80,6 @@ export const applyLandMask = async (args: {
   canvas.height = rasterHeight;
   const ctx = canvas.getContext("2d");
   if (!ctx) {
-    console.debug("[LandMask] missing 2d context");
     return args.imageUrl;
   }
 
@@ -93,7 +91,6 @@ export const applyLandMask = async (args: {
   maskCanvas.height = maskImg.naturalHeight || maskImg.height;
   const maskCtx = maskCanvas.getContext("2d");
   if (!maskCtx) {
-    console.debug("[LandMask] missing mask 2d context");
     return args.imageUrl;
   }
   maskCtx.drawImage(maskImg, 0, 0);
@@ -146,13 +143,6 @@ export const applyLandMask = async (args: {
   }
 
   ctx.putImageData(rasterData, 0, 0);
-  console.debug("[LandMask] applied", {
-    width: rasterWidth,
-    height: rasterHeight,
-    masked,
-    total,
-    threshold: LAND_MASK_THRESHOLD,
-  });
   return canvas.toDataURL("image/png");
 };
 
@@ -290,13 +280,6 @@ export async function fetchRasterVisualization(options: {
   const midSample = Number.isFinite(gridValues[midIdx])
     ? gridValues[midIdx]
     : null;
-  console.debug("[RasterLayer] ranges", {
-    datasetId: targetDatasetId,
-    min,
-    max,
-    colors: colors.length,
-    midSample,
-  });
   const effectiveMask = isOceanOnlyDataset ? grid.mask : undefined;
 
   const prepared = prepareRasterMeshGrid({
@@ -336,12 +319,6 @@ export async function fetchRasterVisualization(options: {
 
   const meshMidIdx = Math.floor(mesh.colors.length / 2);
   const meshMid = mesh.colors.slice(meshMidIdx, meshMidIdx + 4);
-  console.debug("[RasterLayer] mesh colors", {
-    datasetId: targetDatasetId,
-    meshColors: mesh.colors.length,
-    meshMid: Array.from(meshMid),
-    flatShading: smoothGridBoxValues === false,
-  });
 
   const image = buildRasterImageFromMesh({
     lat: prepared.lat,
@@ -361,21 +338,6 @@ export async function fetchRasterVisualization(options: {
           rectangle: image.rectangle,
         })
       : image?.dataUrl;
-  console.debug("[RasterLayer] land mask", {
-    datasetId: targetDatasetId,
-    isOceanOnlyDataset,
-    applied: Boolean(
-      image && isOceanOnlyDataset && image.width && image.height,
-    ),
-  });
-  console.debug("[RasterLayer] image built", {
-    datasetId: targetDatasetId,
-    hasImage: Boolean(image),
-    urlSize: image?.dataUrl?.length ?? 0,
-    imageRows: prepared.rows,
-    imageCols: prepared.cols,
-    rectangle: image?.rectangle ?? null,
-  });
 
   return {
     textures: image
@@ -552,8 +514,7 @@ export const useRasterLayer = ({
             setData({ ...prefetched, textures });
             setIsLoading(false);
           })
-          .catch((err) => {
-            console.warn("[RasterLayer] land mask failed", err);
+          .catch(() => {
             setData(prefetched);
             setIsLoading(false);
           });
