@@ -2,16 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Dataset } from "@/types";
 import {
   formatDateForApi,
-  decodeNumericValues,
-  decodeUint8,
   computeValueRange,
-  deriveCustomRange,
   buildSampler,
   resolveEffectiveColorbarRange,
-  getDatasetIdentifierText,
+  normalizeLon,
 } from "@/lib/mesh/rasterUtils";
 import {
-  isPostgresDataset,
   fetchDatasetTimestamps,
   fetchDatasetLevels,
   fetchDatasetGridboxes,
@@ -20,6 +16,7 @@ import {
   fetchGridboxData,
   buildGridFromPoints,
 } from "@/lib/postgresRaster";
+import { isOceanOnlyDataset as isOceanOnlyDatasetGuard } from "@/utils/datasetGuards";
 
 export type RasterGridData = {
   lat: Float64Array;
@@ -30,6 +27,72 @@ export type RasterGridData = {
   min?: number;
   max?: number;
   sampleValue: (latitude: number, longitude: number) => number | null;
+};
+
+const LAND_MASK_URL = "/_land/earth_specularmap_flat_8192x4096.jpg";
+const LAND_MASK_THRESHOLD = 60;
+let landMaskImagePromise: Promise<HTMLImageElement> | null = null;
+
+const loadLandMaskImage = () => {
+  if (landMaskImagePromise) return landMaskImagePromise;
+  landMaskImagePromise = new Promise((resolve, reject) => {
+    if (typeof Image === "undefined") {
+      reject(new Error("Land mask image not available"));
+      return;
+    }
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = LAND_MASK_URL;
+  });
+  return landMaskImagePromise;
+};
+
+const buildLandMaskForGrid = async (
+  latValues: Float64Array,
+  lonValues: Float64Array,
+): Promise<Uint8Array | undefined> => {
+  if (typeof document === "undefined") return undefined;
+  const rows = latValues.length;
+  const cols = lonValues.length;
+  if (!rows || !cols) return undefined;
+  const maskImg = await loadLandMaskImage();
+  const maskCanvas = document.createElement("canvas");
+  maskCanvas.width = maskImg.naturalWidth || maskImg.width;
+  maskCanvas.height = maskImg.naturalHeight || maskImg.height;
+  const maskCtx = maskCanvas.getContext("2d");
+  if (!maskCtx) return undefined;
+  maskCtx.drawImage(maskImg, 0, 0);
+  const maskWidth = maskCanvas.width;
+  const maskHeight = maskCanvas.height;
+  const maskData = maskCtx.getImageData(0, 0, maskWidth, maskHeight).data;
+
+  const out = new Uint8Array(rows * cols);
+  for (let row = 0; row < rows; row += 1) {
+    const lat = latValues[row];
+    const v = (90 - lat) / 180;
+    const maskY = Math.min(
+      Math.max(Math.floor(v * maskHeight), 0),
+      maskHeight - 1,
+    );
+    for (let col = 0; col < cols; col += 1) {
+      const lon = normalizeLon(lonValues[col]);
+      const u = (lon + 180) / 360;
+      const maskX = Math.min(
+        Math.max(Math.floor(u * maskWidth), 0),
+        maskWidth - 1,
+      );
+      const maskIdx = (maskY * maskWidth + maskX) * 4;
+      const r = maskData[maskIdx];
+      const g = maskData[maskIdx + 1];
+      const b = maskData[maskIdx + 2];
+      const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      out[row * cols + col] = luminance < LAND_MASK_THRESHOLD ? 0 : 1;
+    }
+  }
+
+  return out;
 };
 
 type UseRasterGridOptions = {
@@ -124,130 +187,64 @@ export async function fetchRasterGrid(options: {
     colorbarRange,
   );
 
-  if (isPostgresDataset(dataset)) {
-    const targetDate = new Date(dateKey);
-    const [timestamps, levels, gridboxes] = await Promise.all([
-      fetchDatasetTimestamps(targetDatasetId, signal),
-      fetchDatasetLevels(targetDatasetId, signal),
-      fetchDatasetGridboxes(targetDatasetId, signal),
-    ]);
-    const timestampId = resolveTimestampId(timestamps, targetDate);
-    const levelId = resolveLevelId(levels, level);
-    if (timestampId == null || levelId == null) {
-      throw new Error("Missing timestamp or level mapping for dataset");
-    }
-
-    const gridboxPayload = await fetchGridboxData({
-      datasetId: targetDatasetId,
-      timestampId,
-      levelId,
-      signal,
-    });
-
-    const grid = buildGridFromPoints(gridboxPayload, gridboxes);
-    const rows = grid.lat.length;
-    const cols = grid.lon.length;
-    const sampler = buildSampler(
-      grid.lat,
-      grid.lon,
-      grid.values,
-      undefined,
-      rows,
-      cols,
-    );
-    const computedRange = computeValueRange(grid.values, undefined);
-    const appliedMin =
-      effectiveRange?.enabled && effectiveRange?.min != null
-        ? Number(effectiveRange.min)
-        : computedRange.min;
-    const appliedMax =
-      effectiveRange?.enabled && effectiveRange?.max != null
-        ? Number(effectiveRange.max)
-        : computedRange.max;
-
-    return {
-      lat: grid.lat,
-      lon: grid.lon,
-      values: grid.values,
-      units: dataset?.units,
-      min: appliedMin ?? undefined,
-      max: appliedMax ?? undefined,
-      sampleValue: sampler,
-    };
+  const targetDate = new Date(dateKey);
+  const [timestamps, levels, gridboxes] = await Promise.all([
+    fetchDatasetTimestamps(targetDatasetId, signal),
+    fetchDatasetLevels(targetDatasetId, signal),
+    fetchDatasetGridboxes(targetDatasetId, signal),
+  ]);
+  const timestampId = resolveTimestampId(timestamps, targetDate);
+  const levelId = resolveLevelId(levels, level);
+  if (timestampId == null || levelId == null) {
+    throw new Error("Missing timestamp or level mapping for dataset");
   }
+  const resolvedTimestamp = timestamps.find(
+    (entry) => entry.id === timestampId,
+  );
+  const resolvedLevel = levels.find((entry) => entry.id === levelId);
 
-  const customRange = deriveCustomRange(effectiveRange);
-
-  const response = await fetch("/api/raster/grid", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      datasetId: targetDatasetId,
-      date: dateKey,
-      level: level ?? undefined,
-      maskZeroValues: maskZeroValues || undefined,
-      minValue: customRange?.min ?? null,
-      maxValue: customRange?.max ?? null,
-      min: customRange?.min ?? null,
-      max: customRange?.max ?? null,
-    }),
+  const gridboxPayload = await fetchGridboxData({
+    datasetId: targetDatasetId,
+    timestampId,
+    levelId,
     signal,
   });
 
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(
-      message || `Failed to generate raster grid (status ${response.status})`,
-    );
-  }
-
-  const payload = await response.json();
-  const rows = Number(payload?.shape?.[0]) || 0;
-  const cols = Number(payload?.shape?.[1]) || 0;
-  const values = decodeNumericValues(payload?.values, rows, cols);
-  let mask =
-    typeof payload?.mask === "string" ? decodeUint8(payload.mask) : undefined;
-  const latArray = Float64Array.from(payload?.lat ?? []);
-  const lonArray = Float64Array.from(payload?.lon ?? []);
-
-  // Drop overly aggressive masks for non-ocean datasets
-  const datasetText = getDatasetIdentifierText(dataset);
-  const isOceanDataset =
-    datasetText.includes("ocean") ||
-    datasetText.includes("sea surface") ||
-    datasetText.includes("sst") ||
-    datasetText.includes("godas");
-
-  if (mask && rows * cols === mask.length) {
-    const validCount = mask.reduce((acc, value) => acc + (value ? 1 : 0), 0);
-    const validFraction = mask.length ? validCount / mask.length : 1;
-    if (!isOceanDataset && validFraction < 0.6) {
-      mask = undefined;
+  const grid = buildGridFromPoints(gridboxPayload, gridboxes);
+  const rows = grid.lat.length;
+  const cols = grid.lon.length;
+  let mask: Uint8Array | undefined;
+  if (isOceanOnlyDatasetGuard(dataset)) {
+    try {
+      mask = await buildLandMaskForGrid(grid.lat, grid.lon);
+    } catch {
+      // Ignore land mask failures silently.
     }
   }
-
-  const sampler = buildSampler(latArray, lonArray, values, mask, rows, cols);
-  const computedRange = computeValueRange(values, mask);
-  const serverRangeMin = payload?.valueRange?.min ?? null;
-  const serverRangeMax = payload?.valueRange?.max ?? null;
-  const fallbackMin = payload?.actualRange?.min ?? null;
-  const fallbackMax = payload?.actualRange?.max ?? null;
-
+  const sampler = buildSampler(
+    grid.lat,
+    grid.lon,
+    grid.values,
+    mask,
+    rows,
+    cols,
+  );
+  const computedRange = computeValueRange(grid.values, mask);
   const appliedMin =
     effectiveRange?.enabled && effectiveRange?.min != null
       ? Number(effectiveRange.min)
-      : (serverRangeMin ?? computedRange.min ?? fallbackMin);
+      : computedRange.min;
   const appliedMax =
     effectiveRange?.enabled && effectiveRange?.max != null
       ? Number(effectiveRange.max)
-      : (serverRangeMax ?? computedRange.max ?? fallbackMax);
+      : computedRange.max;
 
   return {
-    lat: latArray,
-    lon: lonArray,
-    values,
+    lat: grid.lat,
+    lon: grid.lon,
+    values: grid.values,
     mask,
-    units: payload?.units ?? dataset?.units,
+    units: dataset?.units,
     min: appliedMin ?? undefined,
     max: appliedMax ?? undefined,
     sampleValue: sampler,

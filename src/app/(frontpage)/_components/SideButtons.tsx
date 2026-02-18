@@ -40,6 +40,8 @@ interface SideButtonsProps {
   onBaseMapModeChange: (mode: "satellite" | "street") => void;
   onSatelliteToggle: (visible: boolean) => void;
   onBoundaryToggle: (visible: boolean) => void;
+  onCountryBoundaryResolutionChange: (resolution: GlobeLineResolution) => void;
+  onStateBoundaryResolutionChange: (resolution: GlobeLineResolution) => void;
   onGeographicLinesToggle: (visible: boolean) => void;
   onTimeZoneLinesToggle: (visible: boolean) => void;
   onPacificCenteredToggle: (enabled: boolean) => void;
@@ -84,6 +86,8 @@ export function SideButtons({
   onBaseMapModeChange,
   onSatelliteToggle,
   onBoundaryToggle,
+  onCountryBoundaryResolutionChange,
+  onStateBoundaryResolutionChange,
   onGeographicLinesToggle,
   onTimeZoneLinesToggle,
   onPacificCenteredToggle,
@@ -124,25 +128,10 @@ export function SideButtons({
 
   // Filter datasets based on source
   const filteredDatasets = useMemo(() => {
-    console.log("=== FILTER DEBUG ===");
-    console.log("Filter selected:", dataSourceFilter);
-    console.log("Total datasets:", datasets.length);
-
-    // Check what stored values actually exist
-    const storedValues = datasets.map((d) => ({
-      name: d.name,
-      stored: d.stored,
-      backendExists: !!d,
-    }));
-    console.log("Dataset stored values:", storedValues);
-
     const filtered = datasets.filter((dataset) => {
       if (dataSourceFilter === "all") return true;
 
       const storedValue = dataset.stored?.toLowerCase();
-      console.log(
-        `Checking ${dataset.name}: stored="${storedValue}", filter="${dataSourceFilter}"`,
-      );
 
       if (dataSourceFilter === "local") {
         return storedValue === "local" || storedValue === "postgres";
@@ -154,9 +143,6 @@ export function SideButtons({
 
       return true;
     });
-
-    console.log("Filtered count:", filtered.length);
-    console.log("===================");
 
     return filtered;
   }, [datasets, dataSourceFilter]);
@@ -712,6 +698,10 @@ export function SideButtons({
         onSatelliteLayerToggle={onSatelliteToggle}
         boundaryLinesVisible={globeSettings.boundaryLinesVisible}
         onBoundaryLinesToggle={onBoundaryToggle}
+        countryBoundaryResolution={globeSettings.countryBoundaryResolution}
+        onCountryBoundaryResolutionChange={onCountryBoundaryResolutionChange}
+        stateBoundaryResolution={globeSettings.stateBoundaryResolution}
+        onStateBoundaryResolutionChange={onStateBoundaryResolutionChange}
         geographicLinesVisible={globeSettings.geographicLinesVisible}
         onGeographicLinesToggle={onGeographicLinesToggle}
         timeZoneLinesVisible={globeSettings.timeZoneLinesVisible}

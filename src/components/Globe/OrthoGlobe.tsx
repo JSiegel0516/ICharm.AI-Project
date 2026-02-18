@@ -17,6 +17,7 @@ import {
 import { useGlobeLines } from "@/hooks/useGlobeLines";
 import { LineGeometryProcessor } from "@/utils/lineGeometryProcessor";
 import type { NELineData } from "@/utils/naturalEarthLoader";
+import { fetchGeoJson, preloadGeoJson } from "@/utils/geoJsonCache";
 import {
   BASE_RADIUS,
   BASE_TEXTURE_URL,
@@ -61,6 +62,8 @@ type Props = {
   rasterOpacity: number;
   satelliteLayerVisible: boolean;
   boundaryLinesVisible: boolean;
+  countryBoundaryResolution?: GlobeLineResolution;
+  stateBoundaryResolution?: GlobeLineResolution;
   geographicLinesVisible: boolean;
   timeZoneLinesVisible?: boolean;
   coastlineResolution?: GlobeLineResolution;
@@ -78,6 +81,7 @@ type Props = {
   hideZeroValues?: boolean;
   minZoom?: number;
   maxZoom?: number;
+  fadeDurationMs?: number;
   clearMarkerSignal?: number;
   onRegionClick?: (lat: number, lon: number, data: RegionData) => void;
 };
@@ -96,6 +100,8 @@ const OrthoGlobe: React.FC<Props> = ({
   rasterOpacity,
   satelliteLayerVisible,
   boundaryLinesVisible,
+  countryBoundaryResolution = "low",
+  stateBoundaryResolution = "low",
   geographicLinesVisible,
   timeZoneLinesVisible = false,
   coastlineResolution = "low",
@@ -113,6 +119,7 @@ const OrthoGlobe: React.FC<Props> = ({
   hideZeroValues = false,
   minZoom = DEFAULT_MIN_ZOOM,
   maxZoom = DEFAULT_MAX_ZOOM,
+  fadeDurationMs = 0,
   clearMarkerSignal = 0,
   onRegionClick,
 }) => {
@@ -127,6 +134,10 @@ const OrthoGlobe: React.FC<Props> = ({
   const meshMaterialRef = useRef<THREE.ShaderMaterial | null>(null);
   const rasterOverlayRef = useRef<THREE.Mesh | null>(null);
   const rasterMaterialRef = useRef<THREE.ShaderMaterial | null>(null);
+  const rasterFadeOverlayRef = useRef<THREE.Mesh | null>(null);
+  const rasterFadeMaterialRef = useRef<THREE.ShaderMaterial | null>(null);
+  const rasterFadeTextureRef = useRef<THREE.Texture | null>(null);
+  const rasterFadeFrameRef = useRef<number | null>(null);
   const geographicLineGroupRef = useRef<THREE.Group | null>(null);
   const timeZoneLineGroupRef = useRef<THREE.Group | null>(null);
   const timeZoneDataRef = useRef<NELineData | null>(null);
@@ -138,6 +149,13 @@ const OrthoGlobe: React.FC<Props> = ({
   const normalMapTextureRef = useRef<THREE.Texture | null>(null);
   const baseTextureRef = useRef<THREE.Texture | null>(null);
   const sunlightRef = useRef<THREE.DirectionalLight | null>(null);
+  const adminBoundaryGroupRef = useRef<THREE.Group | null>(null);
+  const countryBoundaryLineRef = useRef<THREE.LineSegments | null>(null);
+  const stateBoundaryLineRef = useRef<THREE.LineSegments | null>(null);
+  const adminBoundaryConfigRef = useRef<string>("");
+  const adminBoundarySegmentsRef = useRef<
+    Map<string, ReturnType<typeof LineGeometryProcessor.processGeoJSON>>
+  >(new Map());
   const markerBaseScaleRef = useRef(1);
   const markerBaseZoomRef = useRef(1);
   const zoomRef = useRef(1);
@@ -153,6 +171,7 @@ const OrthoGlobe: React.FC<Props> = ({
   const labelTileZoomRef = useRef<number | null>(null);
   const labelUpdateInFlightRef = useRef(false);
   const labelUpdateRequestedRef = useRef(false);
+  const labelTierKeyRef = useRef<string | null>(null);
   const labelRafRef = useRef<number | null>(null);
   const labelZoomRef = useRef<number | null>(null);
   const labelLastFrameRef = useRef<number>(0);
@@ -168,6 +187,35 @@ const OrthoGlobe: React.FC<Props> = ({
   useEffect(() => {
     useMeshRasterActiveRef.current = useMeshRasterActive;
   }, [useMeshRasterActive]);
+
+  useEffect(() => {
+    const resMap: Record<Exclude<GlobeLineResolution, "none">, string> = {
+      low: "110m",
+      medium: "50m",
+      high: "10m",
+    };
+    const urls: string[] = [];
+    if (countryBoundaryResolution !== "none") {
+      const res = resMap[countryBoundaryResolution];
+      urls.push(`/_countries/ne_${res}_admin_0_boundary_lines_land.geojson`);
+    }
+    if (stateBoundaryResolution !== "none") {
+      const res = resMap[stateBoundaryResolution];
+      urls.push(`/_countries/ne_${res}_admin_1_states_provinces_lines.geojson`);
+    }
+    if (!urls.length) return;
+    const preload = () => {
+      urls.forEach((url) => preloadGeoJson(url));
+    };
+    const requestIdle = (globalThis as any).requestIdleCallback as
+      | ((cb: () => void, options?: { timeout?: number }) => void)
+      | undefined;
+    if (typeof requestIdle === "function") {
+      requestIdle(preload, { timeout: 1200 });
+    } else {
+      setTimeout(preload, 300);
+    }
+  }, [countryBoundaryResolution, stateBoundaryResolution]);
 
   const requestRender = useCallback(() => {
     if (rafRef.current !== null) return;
@@ -221,6 +269,7 @@ const OrthoGlobe: React.FC<Props> = ({
     }
     containerRef.current.appendChild(layer);
     labelLayerRef.current = layer;
+
     return () => {
       layer.remove();
       if (labelLayerRef.current === layer) {
@@ -241,6 +290,7 @@ const OrthoGlobe: React.FC<Props> = ({
     labelTileCacheRef.current.clear();
     labelTilePendingRef.current.clear();
     labelTileZoomRef.current = null;
+    labelTierKeyRef.current = null;
     if (labelTileAbortRef.current) {
       labelTileAbortRef.current.abort();
       labelTileAbortRef.current = null;
@@ -306,6 +356,20 @@ const OrthoGlobe: React.FC<Props> = ({
     return { width, height };
   }, []);
 
+  const angularDistanceDeg = useCallback(
+    (lat1: number, lon1: number, lat2: number, lon2: number) => {
+      const toRad = (value: number) => (value * Math.PI) / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return (c * 180) / Math.PI;
+    },
+    [],
+  );
+
   const getLabelScreenPosition = useCallback((feature: LabelFeature) => {
     if (!cameraRef.current || !globeGroupRef.current || !containerRef.current) {
       return null;
@@ -343,86 +407,219 @@ const OrthoGlobe: React.FC<Props> = ({
     };
   }, []);
 
-  const getTileKeysForView = useCallback((zoom: number) => {
-    if (!cameraRef.current || !globeGroupRef.current) return null;
-    const corners: Array<{ lon: number; lat: number }> = [];
-    const raycaster = new THREE.Raycaster();
-    const targetMesh =
-      baseMeshRef.current ??
-      (useMeshRasterActiveRef.current && meshOverlayRef.current
-        ? meshOverlayRef.current
-        : rasterOverlayRef.current);
-    if (!targetMesh) return null;
-    cameraRef.current.updateMatrixWorld(true);
-    globeGroupRef.current.updateMatrixWorld(true);
-    targetMesh.updateMatrixWorld(true);
+  const removeAdminLine = useCallback((line: THREE.LineSegments | null) => {
+    if (!line || !adminBoundaryGroupRef.current) return;
+    adminBoundaryGroupRef.current.remove(line);
+    line.geometry.dispose();
+    if (Array.isArray(line.material)) {
+      line.material.forEach((material) => material.dispose());
+    } else {
+      line.material.dispose();
+    }
+  }, []);
 
-    const sampleCorner = (x: number, y: number) => {
-      raycaster.setFromCamera(new THREE.Vector2(x, y), cameraRef.current!);
-      const intersects = raycaster.intersectObject(targetMesh);
-      if (!intersects.length) return;
-      const point = intersects[0].point;
-      const localPoint = globeGroupRef.current
-        ? globeGroupRef.current.worldToLocal(point.clone())
-        : point;
-      const lat =
-        90 - (Math.acos(localPoint.y / OVERLAY_RADIUS) * 180) / Math.PI;
-      const lon =
-        ((Math.atan2(localPoint.z, localPoint.x) * 180) / Math.PI) * -1;
-      corners.push({ lon, lat });
-    };
-
-    const samples = [-1, -0.5, 0, 0.5, 1];
-    samples.forEach((x) => {
-      samples.forEach((y) => {
-        sampleCorner(x, y);
-      });
+  const loadAdminBoundaries = useCallback(async () => {
+    if (!adminBoundaryGroupRef.current) return;
+    const boundaryColor =
+      lineColors?.boundaryLines ?? lineColors?.coastlines ?? "#9ca3af";
+    const configKey = JSON.stringify({
+      countryBoundaryResolution,
+      stateBoundaryResolution,
+      boundaryColor,
     });
-    if (!corners.length) return null;
+    if (adminBoundaryConfigRef.current === configKey) return;
+    adminBoundaryConfigRef.current = configKey;
 
-    const lats = corners.map((p) => p.lat);
-    const lons = corners.map((p) => p.lon);
-    const south = Math.min(...lats);
-    const north = Math.max(...lats);
-    const lonSpan = Math.max(...lons) - Math.min(...lons);
-    const crossesDateline = lonSpan > 180;
-    const buffer = 1;
-    const tileCount = 2 ** zoom;
+    removeAdminLine(countryBoundaryLineRef.current);
+    removeAdminLine(stateBoundaryLineRef.current);
+    countryBoundaryLineRef.current = null;
+    stateBoundaryLineRef.current = null;
 
-    const collectRange = (rangeWest: number, rangeEast: number) => {
-      const xStart = lonToTileX(rangeWest, zoom);
-      const xEnd = lonToTileX(rangeEast, zoom);
-      const yStart = latToTileY(north, zoom);
-      const yEnd = latToTileY(south, zoom);
-      const keys: string[] = [];
-      for (
-        let x = Math.max(0, xStart - buffer);
-        x <= Math.min(tileCount - 1, xEnd + buffer);
-        x += 1
-      ) {
-        for (
-          let y = Math.max(0, yStart - buffer);
-          y <= Math.min(tileCount - 1, yEnd + buffer);
-          y += 1
-        ) {
-          keys.push(`${zoom}/${x}/${y}`);
+    if (countryBoundaryResolution !== "none") {
+      const resMap: Record<Exclude<GlobeLineResolution, "none">, string> = {
+        low: "110m",
+        medium: "50m",
+        high: "10m",
+      };
+      const res = resMap[countryBoundaryResolution];
+      const url = `/_countries/ne_${res}_admin_0_boundary_lines_land.geojson`;
+      const cacheKey = `${url}|${OVERLAY_RADIUS + 0.002}`;
+      let segments = adminBoundarySegmentsRef.current.get(cacheKey);
+      if (!segments) {
+        const data = await fetchGeoJson(url);
+        if (data) {
+          segments = LineGeometryProcessor.processGeoJSON(
+            data,
+            OVERLAY_RADIUS + 0.002,
+            boundaryColor,
+          );
+          adminBoundarySegmentsRef.current.set(cacheKey, segments);
         }
       }
-      return keys;
-    };
+      if (segments?.length) {
+        const line = LineGeometryProcessor.createLineGeometry(segments, 1.2, {
+          color: boundaryColor,
+          opacity: 0.7,
+        });
+        line.renderOrder = 12;
+        line.frustumCulled = false;
+        adminBoundaryGroupRef.current.add(line);
+        countryBoundaryLineRef.current = line;
+      }
+    }
 
-    let centerLon = lons.reduce((sum, value) => sum + value, 0) / lons.length;
-    let centerLat = lats.reduce((sum, value) => sum + value, 0) / lats.length;
+    if (stateBoundaryResolution !== "none") {
+      const resMap: Record<Exclude<GlobeLineResolution, "none">, string> = {
+        low: "110m",
+        medium: "50m",
+        high: "10m",
+      };
+      const res = resMap[stateBoundaryResolution];
+      const url = `/_countries/ne_${res}_admin_1_states_provinces_lines.geojson`;
+      const cacheKey = `${url}|${OVERLAY_RADIUS + 0.002}`;
+      let segments = adminBoundarySegmentsRef.current.get(cacheKey);
+      if (!segments) {
+        const data = await fetchGeoJson(url);
+        if (data) {
+          segments = LineGeometryProcessor.processGeoJSON(
+            data,
+            OVERLAY_RADIUS + 0.002,
+            boundaryColor,
+          );
+          adminBoundarySegmentsRef.current.set(cacheKey, segments);
+        }
+      }
+      if (segments?.length) {
+        const line = LineGeometryProcessor.createLineGeometry(segments, 1, {
+          dashed: true,
+          dashSize: 2.5,
+          gapSize: 2.5,
+          color: boundaryColor,
+          opacity: 0.7,
+        });
+        line.renderOrder = 12;
+        line.frustumCulled = false;
+        adminBoundaryGroupRef.current.add(line);
+        stateBoundaryLineRef.current = line;
+      }
+    }
+    requestRender();
+  }, [
+    countryBoundaryResolution,
+    lineColors?.boundaryLines,
+    lineColors?.coastlines,
+    removeAdminLine,
+    requestRender,
+    stateBoundaryResolution,
+  ]);
 
-    const keys = crossesDateline
-      ? [
-          ...collectRange(-180, Math.max(...lons)),
-          ...collectRange(Math.min(...lons), 180),
-        ]
-      : collectRange(Math.min(...lons), Math.max(...lons));
+  useEffect(() => {
+    if (!adminBoundaryGroupRef.current || !linesRoot) return;
+    loadAdminBoundaries();
+  }, [loadAdminBoundaries, linesRoot]);
 
-    return { keys, centerLon, centerLat };
-  }, []);
+  const getTileKeysForView = useCallback(
+    (zoom: number) => {
+      if (!cameraRef.current || !globeGroupRef.current) return null;
+      const corners: Array<{ lon: number; lat: number }> = [];
+      const raycaster = new THREE.Raycaster();
+      const targetMesh =
+        baseMeshRef.current ??
+        (useMeshRasterActiveRef.current && meshOverlayRef.current
+          ? meshOverlayRef.current
+          : rasterOverlayRef.current);
+      if (!targetMesh) return null;
+      cameraRef.current.updateMatrixWorld(true);
+      globeGroupRef.current.updateMatrixWorld(true);
+      targetMesh.updateMatrixWorld(true);
+
+      const samplePoint = (x: number, y: number) => {
+        raycaster.setFromCamera(new THREE.Vector2(x, y), cameraRef.current!);
+        const intersects = raycaster.intersectObject(targetMesh);
+        if (!intersects.length) return;
+        const point = intersects[0].point;
+        const localPoint = globeGroupRef.current
+          ? globeGroupRef.current.worldToLocal(point.clone())
+          : point;
+        const lat =
+          90 - (Math.acos(localPoint.y / OVERLAY_RADIUS) * 180) / Math.PI;
+        const lon =
+          ((Math.atan2(localPoint.z, localPoint.x) * 180) / Math.PI) * -1;
+        return { lon, lat };
+      };
+
+      const samples = [-1, -0.5, 0, 0.5, 1];
+      samples.forEach((x) => {
+        samples.forEach((y) => {
+          const point = samplePoint(x, y);
+          if (point) corners.push(point);
+        });
+      });
+      if (!corners.length) return null;
+
+      const centerPoint = samplePoint(0, 0);
+      const lats = corners.map((p) => p.lat);
+      const lons = corners.map((p) => p.lon);
+      const south = Math.min(...lats);
+      const north = Math.max(...lats);
+      const lonSpan = Math.max(...lons) - Math.min(...lons);
+      const crossesDateline = lonSpan > 180;
+      const buffer = 1;
+      const tileCount = 2 ** zoom;
+
+      const collectRange = (rangeWest: number, rangeEast: number) => {
+        const xStart = lonToTileX(rangeWest, zoom);
+        const xEnd = lonToTileX(rangeEast, zoom);
+        const yStart = latToTileY(north, zoom);
+        const yEnd = latToTileY(south, zoom);
+        const keys: string[] = [];
+        for (
+          let x = Math.max(0, xStart - buffer);
+          x <= Math.min(tileCount - 1, xEnd + buffer);
+          x += 1
+        ) {
+          for (
+            let y = Math.max(0, yStart - buffer);
+            y <= Math.min(tileCount - 1, yEnd + buffer);
+            y += 1
+          ) {
+            keys.push(`${zoom}/${x}/${y}`);
+          }
+        }
+        return keys;
+      };
+
+      let centerLon = centerPoint
+        ? centerPoint.lon
+        : lons.reduce((sum, value) => sum + value, 0) / lons.length;
+      let centerLat = centerPoint
+        ? centerPoint.lat
+        : lats.reduce((sum, value) => sum + value, 0) / lats.length;
+
+      let maxAngularDistance = 0;
+      corners.forEach((point) => {
+        const distance = angularDistanceDeg(
+          point.lat,
+          point.lon,
+          centerLat,
+          centerLon,
+        );
+        if (distance > maxAngularDistance) {
+          maxAngularDistance = distance;
+        }
+      });
+
+      const keys = crossesDateline
+        ? [
+            ...collectRange(-180, Math.max(...lons)),
+            ...collectRange(Math.min(...lons), 180),
+          ]
+        : collectRange(Math.min(...lons), Math.max(...lons));
+
+      return { keys, centerLon, centerLat, maxAngularDistance };
+    },
+    [angularDistanceDeg],
+  );
 
   const updateLabelVisibility = useCallback(() => {
     if (!labelsVisible) {
@@ -432,6 +629,12 @@ const OrthoGlobe: React.FC<Props> = ({
           setLabelOpacity(entry, 0);
         });
       });
+      if (countryBoundaryLineRef.current) {
+        countryBoundaryLineRef.current.visible = false;
+      }
+      if (stateBoundaryLineRef.current) {
+        stateBoundaryLineRef.current.visible = false;
+      }
       return;
     }
 
@@ -443,6 +646,17 @@ const OrthoGlobe: React.FC<Props> = ({
 
     const centerLon = tileInfo.centerLon;
     const centerLat = tileInfo.centerLat;
+    const maxAngularDistance = tileInfo.maxAngularDistance + 6;
+    const showCountryLines =
+      countryBoundaryResolution !== "none" && tier.display.includes("country");
+    const showStateLines =
+      stateBoundaryResolution !== "none" && tier.display.includes("state");
+    if (countryBoundaryLineRef.current) {
+      countryBoundaryLineRef.current.visible = showCountryLines;
+    }
+    if (stateBoundaryLineRef.current) {
+      stateBoundaryLineRef.current.visible = showStateLines;
+    }
 
     const occupied = new Map<
       string,
@@ -511,6 +725,16 @@ const OrthoGlobe: React.FC<Props> = ({
       entries.forEach((entry) => {
         totalEntries += 1;
         if (!activeKinds.has(entry.kind)) {
+          setLabelTarget(entry, 0);
+          return;
+        }
+        const distance = angularDistanceDeg(
+          entry.feature.lat,
+          entry.feature.lon,
+          centerLat,
+          centerLon,
+        );
+        if (distance > maxAngularDistance) {
           setLabelTarget(entry, 0);
           return;
         }
@@ -583,10 +807,12 @@ const OrthoGlobe: React.FC<Props> = ({
       };
     }
   }, [
+    countryBoundaryResolution,
     estimateLabelSize,
     getLabelScreenPosition,
     getTileKeysForView,
     labelsVisible,
+    stateBoundaryResolution,
     setLabelOpacity,
     setLabelTarget,
   ]);
@@ -635,6 +861,11 @@ const OrthoGlobe: React.FC<Props> = ({
     const tileZoomFloat = cameraZoomToTileZoom(cameraRef.current?.zoom ?? 1);
     const zoom = Math.min(10, Math.round(tileZoomFloat));
     const tier = getLabelTier(tileZoomFloat);
+    const tierKey = `${tier.display.join(",")}|${tier.eligible.join(",")}`;
+    if (labelTierKeyRef.current !== tierKey) {
+      clearLabelTiles();
+      labelTierKeyRef.current = tierKey;
+    }
     const activeKinds = new Set<LabelKind>(tier.eligible);
     const tileInfo = getTileKeysForView(zoom);
     if (!tileInfo || !tileInfo.keys.length) {
@@ -663,7 +894,12 @@ const OrthoGlobe: React.FC<Props> = ({
         lastFetch: null,
       };
     }
-    const { keys: tileKeys, centerLon, centerLat } = tileInfo;
+    const {
+      keys: tileKeys,
+      centerLon,
+      centerLat,
+      maxAngularDistance,
+    } = tileInfo;
     tileKeys.sort((a, b) => {
       const [za, xa, ya] = a.split("/").map((value) => Number(value));
       const [zb, xb, yb] = b.split("/").map((value) => Number(value));
@@ -678,6 +914,17 @@ const OrthoGlobe: React.FC<Props> = ({
       const dLatB = cb.lat - centerLat;
       return dLonA * dLonA + dLatA * dLatA - (dLonB * dLonB + dLatB * dLatB);
     });
+    const filteredTileKeys = tileKeys.filter((key) => {
+      const [z, x, y] = key.split("/").map((value) => Number(value));
+      const center = tileCenter(x, y, z);
+      const distance = angularDistanceDeg(
+        center.lat,
+        center.lon,
+        centerLat,
+        centerLon,
+      );
+      return distance <= maxAngularDistance + 6;
+    });
 
     if (labelTileZoomRef.current !== zoom) {
       clearLabelTiles();
@@ -689,14 +936,14 @@ const OrthoGlobe: React.FC<Props> = ({
     const { signal } = labelTileAbortRef.current;
 
     const maxTiles = 24;
-    if (tileKeys.length > maxTiles) {
-      tileKeys.length = maxTiles;
+    if (filteredTileKeys.length > maxTiles) {
+      filteredTileKeys.length = maxTiles;
     }
 
     let addedTiles = false;
     const maxConcurrent = 6;
-    for (let i = 0; i < tileKeys.length; i += maxConcurrent) {
-      const chunk = tileKeys.slice(i, i + maxConcurrent);
+    for (let i = 0; i < filteredTileKeys.length; i += maxConcurrent) {
+      const chunk = filteredTileKeys.slice(i, i + maxConcurrent);
       await Promise.all(
         chunk.map(async (key) => {
           if (labelTileCacheRef.current.has(key)) return;
@@ -801,6 +1048,11 @@ const OrthoGlobe: React.FC<Props> = ({
         ? !useMeshRasterActiveRef.current && Boolean(rasterTextureRef.current)
         : !useVertexColorsActive && Boolean(rasterTextureRef.current);
     }
+    if (rasterFadeOverlayRef.current) {
+      rasterFadeOverlayRef.current.visible =
+        Boolean(rasterFadeTextureRef.current) &&
+        rasterFadeMaterialRef.current?.uniforms.opacity.value > 0.001;
+    }
     requestRender();
   }, [requestRender, useGridTexture, useVertexColorsActive]);
 
@@ -814,8 +1066,42 @@ const OrthoGlobe: React.FC<Props> = ({
       rasterMaterialRef.current.uniforms.opacity.value = opacity;
       rasterMaterialRef.current.needsUpdate = true;
     }
+    if (rasterFadeMaterialRef.current) {
+      rasterFadeMaterialRef.current.uniforms.opacity.value = opacity;
+      rasterFadeMaterialRef.current.needsUpdate = true;
+    }
     requestRender();
   }, [rasterOpacity, requestRender]);
+
+  const animateRasterFade = useCallback(
+    (from: number, to: number, duration: number, onComplete?: () => void) => {
+      if (!rasterFadeMaterialRef.current) {
+        onComplete?.();
+        return;
+      }
+      if (rasterFadeFrameRef.current != null) {
+        cancelAnimationFrame(rasterFadeFrameRef.current);
+      }
+      const start = performance.now();
+      const step = (now: number) => {
+        const t = duration > 0 ? Math.min(1, (now - start) / duration) : 1;
+        const opacity = from + (to - from) * t;
+        if (rasterFadeMaterialRef.current) {
+          rasterFadeMaterialRef.current.uniforms.opacity.value = opacity;
+          rasterFadeMaterialRef.current.needsUpdate = true;
+        }
+        requestRender();
+        if (t < 1) {
+          rasterFadeFrameRef.current = requestAnimationFrame(step);
+        } else {
+          rasterFadeFrameRef.current = null;
+          onComplete?.();
+        }
+      };
+      rasterFadeFrameRef.current = requestAnimationFrame(step);
+    },
+    [requestRender],
+  );
 
   const updateSatelliteVisibility = useCallback(() => {
     const visible = satelliteLayerVisible && !useMeshRasterActiveRef.current;
@@ -1128,6 +1414,11 @@ const OrthoGlobe: React.FC<Props> = ({
     scene.add(group);
     setLinesRoot(group);
 
+    const adminGroup = new THREE.Group();
+    adminGroup.renderOrder = 12;
+    adminBoundaryGroupRef.current = adminGroup;
+    group.add(adminGroup);
+
     const geometry = new THREE.SphereGeometry(BASE_RADIUS, 96, 64);
     setSolidVertexColor(geometry, BASE_FILL_COLOR_SRGB);
     ensureTangents(geometry);
@@ -1175,6 +1466,25 @@ const OrthoGlobe: React.FC<Props> = ({
     rasterOverlayRef.current = rasterOverlay;
     rasterMaterialRef.current = rasterMaterial;
     group.add(rasterOverlay);
+
+    const rasterFadeMaterial = createGlobeMaterial({
+      transparent: true,
+      depthWrite: false,
+      opacity: 0,
+      useTexture: false,
+      useVertexColor: false,
+      baseColor: BASE_FILL_COLOR_SRGB,
+      lightingEnabled: false,
+    });
+    const rasterFadeOverlay = new THREE.Mesh(
+      overlayGeometry,
+      rasterFadeMaterial,
+    );
+    rasterFadeOverlay.renderOrder = rasterOverlay.renderOrder + 1;
+    rasterFadeOverlay.visible = false;
+    rasterFadeOverlayRef.current = rasterFadeOverlay;
+    rasterFadeMaterialRef.current = rasterFadeMaterial;
+    group.add(rasterFadeOverlay);
 
     const loader = new THREE.TextureLoader();
     loader.load(BASE_TEXTURE_URL, (texture) => {
@@ -1380,6 +1690,10 @@ const OrthoGlobe: React.FC<Props> = ({
         rasterTextureRef.current.dispose();
         rasterTextureRef.current = null;
       }
+      if (rasterFadeTextureRef.current) {
+        rasterFadeTextureRef.current.dispose();
+        rasterFadeTextureRef.current = null;
+      }
       if (rasterMaterialRef.current) {
         rasterMaterialRef.current.uniforms.useTexture.value = false;
         rasterMaterialRef.current.uniforms.useVertexColor.value = false;
@@ -1389,19 +1703,67 @@ const OrthoGlobe: React.FC<Props> = ({
           BASE_FILL_COLOR_SRGB,
         );
       }
+      if (rasterFadeMaterialRef.current) {
+        rasterFadeMaterialRef.current.uniforms.useTexture.value = false;
+        rasterFadeMaterialRef.current.uniforms.useVertexColor.value = false;
+        rasterFadeMaterialRef.current.uniforms.colorMap.value =
+          DEFAULT_COLOR_TEXTURE;
+        rasterFadeMaterialRef.current.uniforms.opacity.value = 0;
+      }
       updateMeshVisibility();
       return;
     }
     const textureUrl = rasterData.textures[0]?.imageUrl;
     if (!textureUrl) return;
     let cancelled = false;
+    const previousTexture = rasterTextureRef.current;
     loadRasterTexture(textureUrl)
       .then((texture) => {
         if (cancelled) {
           texture.dispose();
           return;
         }
-        if (rasterTextureRef.current) rasterTextureRef.current.dispose();
+        if (
+          previousTexture &&
+          rasterFadeMaterialRef.current &&
+          fadeDurationMs > 0
+        ) {
+          if (rasterFadeTextureRef.current) {
+            rasterFadeTextureRef.current.dispose();
+          }
+          rasterFadeTextureRef.current = previousTexture;
+          rasterFadeMaterialRef.current.uniforms.useTexture.value = true;
+          rasterFadeMaterialRef.current.uniforms.useVertexColor.value = false;
+          rasterFadeMaterialRef.current.uniforms.colorMap.value =
+            previousTexture;
+          rasterFadeMaterialRef.current.uniforms.opacity.value = clamp(
+            rasterOpacity,
+            0,
+            1,
+          );
+          if (rasterFadeOverlayRef.current) {
+            rasterFadeOverlayRef.current.visible = true;
+          }
+          animateRasterFade(
+            clamp(rasterOpacity, 0, 1),
+            0,
+            fadeDurationMs,
+            () => {
+              if (rasterFadeMaterialRef.current) {
+                rasterFadeMaterialRef.current.uniforms.opacity.value = 0;
+              }
+              if (rasterFadeOverlayRef.current) {
+                rasterFadeOverlayRef.current.visible = false;
+              }
+              if (rasterFadeTextureRef.current) {
+                rasterFadeTextureRef.current.dispose();
+                rasterFadeTextureRef.current = null;
+              }
+            },
+          );
+        } else if (previousTexture) {
+          previousTexture.dispose();
+        }
         rasterTextureRef.current = texture;
         if (rasterMaterialRef.current) {
           rasterMaterialRef.current.uniforms.useTexture.value = true;
@@ -1414,7 +1776,14 @@ const OrthoGlobe: React.FC<Props> = ({
     return () => {
       cancelled = true;
     };
-  }, [loadRasterTexture, rasterData, updateMeshVisibility]);
+  }, [
+    animateRasterFade,
+    fadeDurationMs,
+    loadRasterTexture,
+    rasterData,
+    rasterOpacity,
+    updateMeshVisibility,
+  ]);
 
   useEffect(() => {
     if (!useMeshRaster) {

@@ -230,6 +230,21 @@ const dayIndexToDate = (index: number, minDate: Date, maxDate: Date) => {
   return clampDateToRange(next, minDate, maxDate);
 };
 
+const yieldToBrowser = () =>
+  new Promise<void>((resolve) => {
+    if (typeof window === "undefined") {
+      resolve();
+      return;
+    }
+    const idle = (window as unknown as { requestIdleCallback?: Function })
+      .requestIdleCallback;
+    if (typeof idle === "function") {
+      idle(() => resolve(), { timeout: 200 });
+      return;
+    }
+    window.requestAnimationFrame(() => resolve());
+  });
+
 export default function HomePage() {
   const {
     showColorbar,
@@ -299,6 +314,7 @@ export default function HomePage() {
   );
   const visualizationPrefetchIndexRef = useRef(0);
   const visualizationResumeTimeoutRef = useRef<number | null>(null);
+  const visualizationInteractionTimeoutRef = useRef<number | null>(null);
   const visualizationPausedRef = useRef(false);
   const visualizationPrefetchConfigRef = useRef<{
     dataset: Dataset;
@@ -428,6 +444,8 @@ export default function HomePage() {
     baseMapMode: "satellite",
     satelliteLayerVisible: true,
     boundaryLinesVisible: true,
+    countryBoundaryResolution: "low",
+    stateBoundaryResolution: "low",
     geographicLinesVisible: false,
     timeZoneLinesVisible: false,
     pacificCentered: false,
@@ -829,6 +847,10 @@ export default function HomePage() {
       window.clearTimeout(visualizationResumeTimeoutRef.current);
       visualizationResumeTimeoutRef.current = null;
     }
+    if (visualizationInteractionTimeoutRef.current != null) {
+      window.clearTimeout(visualizationInteractionTimeoutRef.current);
+      visualizationInteractionTimeoutRef.current = null;
+    }
     visualizationPausedRef.current = false;
     visualizationPrefetchConfigRef.current = null;
     visualizationPrefetchIndexRef.current = 0;
@@ -900,19 +922,16 @@ export default function HomePage() {
           return;
         }
 
+        // Yield so interactive imagery can render while prefetching.
+        if (i > startIndex) {
+          await yieldToBrowser();
+          if (controller.signal.aborted || visualizationPausedRef.current) {
+            visualizationPrefetchIndexRef.current = i;
+            return;
+          }
+        }
+
         const frameDate = config.frames[i];
-        const raster = await fetchRasterVisualization({
-          dataset: config.dataset,
-          backendDatasetId: config.keyDatasetId,
-          date: frameDate,
-          level: config.level ?? undefined,
-          cssColors: config.cssColors,
-          maskZeroValues: config.hideZero,
-          smoothGridBoxValues: config.smoothGridBoxValues,
-          colorbarRange: config.colorbarRange,
-          signal: controller.signal,
-        });
-        await preloadTextureImages(raster.textures);
         const rasterGrid = await fetchRasterGrid({
           dataset: config.dataset,
           backendDatasetId: config.keyDatasetId,
@@ -922,6 +941,25 @@ export default function HomePage() {
           colorbarRange: config.colorbarRange,
           signal: controller.signal,
         });
+        const raster = await fetchRasterVisualization({
+          dataset: config.dataset,
+          backendDatasetId: config.keyDatasetId,
+          date: frameDate,
+          level: config.level ?? undefined,
+          cssColors: config.cssColors,
+          maskZeroValues: config.hideZero,
+          smoothGridBoxValues: config.smoothGridBoxValues,
+          gridData: rasterGrid,
+          colorbarRange: config.colorbarRange,
+          signal: controller.signal,
+        });
+        await preloadTextureImages(raster.textures);
+
+        await yieldToBrowser();
+        if (controller.signal.aborted || visualizationPausedRef.current) {
+          visualizationPrefetchIndexRef.current = i + 1;
+          return;
+        }
 
         const key = buildRasterRequestKey({
           dataset: config.dataset,
@@ -1108,26 +1146,33 @@ export default function HomePage() {
       return;
     }
 
-    const isCmorphDataset = [
+    const datasetText = [
+      currentDataset?.id,
+      currentDataset?.slug,
       currentDataset?.name,
       currentDataset?.description,
-      currentDataset?.slug,
-      currentDataset?.id,
+      currentDataset?.sourceName,
     ]
       .filter(Boolean)
-      .some((value) => String(value).toLowerCase().includes("cmorph"));
+      .map((value) => String(value).toLowerCase())
+      .join(" ");
+    const isCmorphDataset = datasetText.includes("cmorph");
+    const isGodasDataset =
+      datasetText.includes("godas") ||
+      datasetText.includes("global ocean data assimilation system") ||
+      datasetText.includes("ncep global ocean data assimilation");
 
     const isNewDataset = lastDatasetIdRef.current !== datasetId;
     if (isNewDataset) {
       lastDatasetIdRef.current = datasetId;
       setGlobeSettings((prev) => {
-        if (isCmorphDataset) {
+        if (isCmorphDataset || isGodasDataset) {
           return prev.hideZeroPrecipitation
             ? prev
             : { ...prev, hideZeroPrecipitation: true };
         }
 
-        // Non-CMORPH datasets should default to showing all values.
+        // Non-CMORPH/GODAS datasets should default to showing all values.
         return prev.hideZeroPrecipitation
           ? { ...prev, hideZeroPrecipitation: false }
           : prev;
@@ -1176,6 +1221,25 @@ export default function HomePage() {
     visualizationStatus,
     visualizationTarget?.datasetId,
   ]);
+
+  useEffect(() => {
+    if (visualizationStatus !== "preparing") {
+      return;
+    }
+    if (visualizationInteractionTimeoutRef.current != null) {
+      window.clearTimeout(visualizationInteractionTimeoutRef.current);
+    }
+    visualizationPausedRef.current = true;
+    if (visualizationAbortRef.current) {
+      visualizationAbortRef.current.abort();
+      visualizationAbortRef.current = null;
+    }
+    visualizationInteractionTimeoutRef.current = window.setTimeout(() => {
+      visualizationInteractionTimeoutRef.current = null;
+      visualizationPausedRef.current = false;
+      runVisualizationPrefetch(visualizationPrefetchIndexRef.current);
+    }, 1000);
+  }, [selectedDate, runVisualizationPrefetch, visualizationStatus]);
 
   // Event Handlers
   const handleDateChange = useCallback(
@@ -1256,6 +1320,26 @@ export default function HomePage() {
   const handleBoundaryToggle = useCallback((visible: boolean) => {
     setGlobeSettings((prev) => ({ ...prev, boundaryLinesVisible: visible }));
   }, []);
+
+  const handleCountryBoundaryResolutionChange = useCallback(
+    (resolution: GlobeLineResolution) => {
+      setGlobeSettings((prev) => ({
+        ...prev,
+        countryBoundaryResolution: resolution,
+      }));
+    },
+    [],
+  );
+
+  const handleStateBoundaryResolutionChange = useCallback(
+    (resolution: GlobeLineResolution) => {
+      setGlobeSettings((prev) => ({
+        ...prev,
+        stateBoundaryResolution: resolution,
+      }));
+    },
+    [],
+  );
 
   const handleGeographicLinesToggle = useCallback((visible: boolean) => {
     setGlobeSettings((prev) => ({ ...prev, geographicLinesVisible: visible }));
@@ -1469,6 +1553,8 @@ export default function HomePage() {
     level: selectedLevelValue ?? null,
     maskZeroValues: globeSettings.hideZeroPrecipitation,
     smoothGridBoxValues: globeSettings.rasterBlurEnabled,
+    opacity: globeSettings.rasterOpacity,
+    keepPreviousData: visualizationStatus === "playing",
     colorbarRange,
     prefetchedData: prefetchedRasters,
   });
@@ -1586,6 +1672,8 @@ export default function HomePage() {
         baseMapMode={globeSettings.baseMapMode}
         satelliteLayerVisible={globeSettings.satelliteLayerVisible}
         boundaryLinesVisible={globeSettings.boundaryLinesVisible}
+        countryBoundaryResolution={globeSettings.countryBoundaryResolution}
+        stateBoundaryResolution={globeSettings.stateBoundaryResolution}
         geographicLinesVisible={globeSettings.geographicLinesVisible}
         timeZoneLinesVisible={globeSettings.timeZoneLinesVisible}
         pacificCentered={globeSettings.pacificCentered}
@@ -1625,6 +1713,12 @@ export default function HomePage() {
             onBaseMapModeChange={handleBaseMapModeChange}
             onSatelliteToggle={handleSatelliteToggle}
             onBoundaryToggle={handleBoundaryToggle}
+            onCountryBoundaryResolutionChange={
+              handleCountryBoundaryResolutionChange
+            }
+            onStateBoundaryResolutionChange={
+              handleStateBoundaryResolutionChange
+            }
             onGeographicLinesToggle={handleGeographicLinesToggle}
             onTimeZoneLinesToggle={handleTimeZoneLinesToggle}
             onPacificCenteredToggle={handlePacificCenteredToggle}
@@ -2099,6 +2193,8 @@ export default function HomePage() {
         colorBarPosition={colorBarPosition}
         colorBarCollapsed={colorBarCollapsed}
         colorBarOrientation={colorBarOrientation}
+        colorbarCustomMin={globeSettings.colorbarCustomMin}
+        colorbarCustomMax={globeSettings.colorbarCustomMax}
         currentDataset={currentDataset ?? undefined}
         selectedDate={selectedDate}
         temperatureUnit={temperatureUnit}

@@ -10,6 +10,15 @@ export type RasterMesh = {
   tiles?: RasterMeshTile[];
 };
 
+export type PreparedRasterMeshGrid = {
+  lat: Float64Array;
+  lon: Float64Array;
+  values: Float32Array | Float64Array;
+  mask?: Uint8Array;
+  rows: number;
+  cols: number;
+};
+
 export type RasterMeshTile = {
   positionsDegrees: Float64Array;
   colors: Uint8Array;
@@ -28,6 +37,7 @@ type RasterMeshOptions = {
   lon: Float64Array;
   values: Float32Array | Float64Array;
   mask?: Uint8Array;
+  preparedGrid?: PreparedRasterMeshGrid;
   min: number;
   max: number;
   colors: string[];
@@ -37,7 +47,13 @@ type RasterMeshOptions = {
   sampleStep?: number;
   flatShading?: boolean;
   useTiling?: boolean;
+  maskZeroValues?: boolean;
 };
+
+type RasterGridOptions = Omit<
+  RasterMeshOptions,
+  "min" | "max" | "colors" | "opacity" | "useTiling"
+>;
 
 const MAX_VERTS_PER_TILE = 32000;
 
@@ -109,6 +125,69 @@ const ensureAscendingGrid = (
     lonValues = flipped;
     data = next;
     maskData = nextMask;
+  }
+
+  if (lonValues.length > 1) {
+    let minLon = lonValues[0];
+    let maxLon = lonValues[0];
+    for (let i = 1; i < lonValues.length; i += 1) {
+      const value = lonValues[i];
+      if (value < minLon) minLon = value;
+      if (value > maxLon) maxLon = value;
+    }
+
+    const isGlobal = maxLon - minLon > 300;
+    if (isGlobal) {
+      let splitIdx = -1;
+      for (let i = 0; i < lonValues.length; i += 1) {
+        if (lonValues[i] > 180) {
+          splitIdx = i;
+          break;
+        }
+      }
+
+      if (splitIdx === -1 && minLon >= 0) {
+        splitIdx = 0;
+      }
+
+      if (splitIdx > 0 || (splitIdx === 0 && minLon >= 0)) {
+        const nextLon = new Float64Array(lonValues.length);
+        const nextValues = createValueArray(values, rows * cols);
+        const nextMask = maskData ? new Uint8Array(rows * cols) : undefined;
+
+        const leftCount = lonValues.length - splitIdx;
+        for (let i = 0; i < leftCount; i += 1) {
+          nextLon[i] = lonValues[splitIdx + i] - 360;
+        }
+        for (let i = 0; i < splitIdx; i += 1) {
+          nextLon[leftCount + i] = lonValues[i];
+        }
+
+        for (let r = 0; r < rows; r += 1) {
+          const rowStart = r * cols;
+          for (let c = 0; c < leftCount; c += 1) {
+            const src = rowStart + (splitIdx + c);
+            const dest = rowStart + c;
+            nextValues[dest] = data[src];
+            if (nextMask && maskData) {
+              nextMask[dest] = maskData[src];
+            }
+          }
+          for (let c = 0; c < splitIdx; c += 1) {
+            const src = rowStart + c;
+            const dest = rowStart + leftCount + c;
+            nextValues[dest] = data[src];
+            if (nextMask && maskData) {
+              nextMask[dest] = maskData[src];
+            }
+          }
+        }
+
+        lonValues = nextLon;
+        data = nextValues;
+        maskData = nextMask;
+      }
+    }
   }
 
   return { lat: latValues, lon: lonValues, values: data, mask: maskData };
@@ -259,7 +338,7 @@ const computeCellAverage = (
   return sum / count;
 };
 
-const prepareRasterMesh = (options: RasterMeshOptions) => {
+export const prepareRasterMeshGrid = (options: RasterGridOptions) => {
   const {
     lat,
     lon,
@@ -308,19 +387,13 @@ const prepareRasterMesh = (options: RasterMeshOptions) => {
 };
 
 const buildSingleMesh = (
-  prepared: {
-    lat: Float64Array;
-    lon: Float64Array;
-    values: Float32Array | Float64Array;
-    mask?: Uint8Array;
-    rows: number;
-    cols: number;
-  },
+  prepared: PreparedRasterMeshGrid,
   min: number,
   max: number,
   colors: string[],
   opacity: number,
   flatShading: boolean,
+  maskZeroValues: boolean,
 ): RasterMesh => {
   const rows = prepared.rows;
   const cols = prepared.cols;
@@ -341,8 +414,8 @@ const buildSingleMesh = (
     let iOffset = 0;
 
     for (let r = 0; r < cellRows; r += 1) {
-      const latTop = prepared.lat[r];
-      const latBottom = prepared.lat[r + 1];
+      const latSouth = prepared.lat[r];
+      const latNorth = prepared.lat[r + 1];
       for (let c = 0; c < cellCols; c += 1) {
         const lonLeft = prepared.lon[c];
         const lonRight = prepared.lon[c + 1];
@@ -358,18 +431,20 @@ const buildSingleMesh = (
         ]);
 
         const rgba =
-          avg === null ? [0, 0, 0, 0] : mapValueToRgba(avg, min, max, stops);
+          avg === null || (maskZeroValues && avg === 0)
+            ? [0, 0, 0, 0]
+            : mapValueToRgba(avg, min, max, stops);
         rgba[3] = Math.round(rgba[3] * opacity);
 
         const base = vOffset * 4;
         flatPositions[base * 2] = lonLeft;
-        flatPositions[base * 2 + 1] = latTop;
+        flatPositions[base * 2 + 1] = latNorth;
         flatPositions[(base + 1) * 2] = lonRight;
-        flatPositions[(base + 1) * 2 + 1] = latTop;
+        flatPositions[(base + 1) * 2 + 1] = latNorth;
         flatPositions[(base + 2) * 2] = lonLeft;
-        flatPositions[(base + 2) * 2 + 1] = latBottom;
+        flatPositions[(base + 2) * 2 + 1] = latSouth;
         flatPositions[(base + 3) * 2] = lonRight;
-        flatPositions[(base + 3) * 2 + 1] = latBottom;
+        flatPositions[(base + 3) * 2 + 1] = latSouth;
 
         for (let v = 0; v < 4; v += 1) {
           flatColors.set(rgba, (base + v) * 4);
@@ -410,6 +485,10 @@ const buildSingleMesh = (
       }
 
       const value = prepared.values[idx];
+      if (maskZeroValues && value === 0) {
+        colorsOut.set([0, 0, 0, 0], idx * 4);
+        continue;
+      }
       const rgba = mapValueToRgba(value, min, max, stops);
       rgba[3] = Math.round(rgba[3] * opacity);
       colorsOut.set(rgba, idx * 4);
@@ -444,18 +523,12 @@ const buildSingleMesh = (
 };
 
 const buildFlatMeshTiles = (
-  prepared: {
-    lat: Float64Array;
-    lon: Float64Array;
-    values: Float32Array | Float64Array;
-    mask?: Uint8Array;
-    rows: number;
-    cols: number;
-  },
+  prepared: PreparedRasterMeshGrid,
   min: number,
   max: number,
   colors: string[],
   opacity: number,
+  maskZeroValues: boolean,
 ): RasterMesh => {
   const rows = prepared.rows;
   const cols = prepared.cols;
@@ -508,8 +581,8 @@ const buildFlatMeshTiles = (
       let iOffset = 0;
 
       for (let r = rowStart; r < rowEnd - 1; r += 1) {
-        const latTop = prepared.lat[r];
-        const latBottom = prepared.lat[r + 1];
+        const latSouth = prepared.lat[r];
+        const latNorth = prepared.lat[r + 1];
         for (let c = colStart; c < colEnd - 1; c += 1) {
           const lonLeft = prepared.lon[c];
           const lonRight = prepared.lon[c + 1];
@@ -525,18 +598,20 @@ const buildFlatMeshTiles = (
           ]);
 
           const rgba =
-            avg === null ? [0, 0, 0, 0] : mapValueToRgba(avg, min, max, stops);
+            avg === null || (maskZeroValues && avg === 0)
+              ? [0, 0, 0, 0]
+              : mapValueToRgba(avg, min, max, stops);
           rgba[3] = Math.round(rgba[3] * opacity);
 
           const base = vOffset * 4;
           tilePositions[base * 2] = lonLeft;
-          tilePositions[base * 2 + 1] = latTop;
+          tilePositions[base * 2 + 1] = latNorth;
           tilePositions[(base + 1) * 2] = lonRight;
-          tilePositions[(base + 1) * 2 + 1] = latTop;
+          tilePositions[(base + 1) * 2 + 1] = latNorth;
           tilePositions[(base + 2) * 2] = lonLeft;
-          tilePositions[(base + 2) * 2 + 1] = latBottom;
+          tilePositions[(base + 2) * 2 + 1] = latSouth;
           tilePositions[(base + 3) * 2] = lonRight;
-          tilePositions[(base + 3) * 2 + 1] = latBottom;
+          tilePositions[(base + 3) * 2 + 1] = latSouth;
 
           for (let v = 0; v < 4; v += 1) {
             tileColors.set(rgba, (base + v) * 4);
@@ -581,18 +656,40 @@ const buildFlatMeshTiles = (
 export const buildRasterMeshTiles = (
   options: RasterMeshOptions,
 ): RasterMesh => {
-  const { min, max, colors, opacity = 1, flatShading = false } = options;
-  const prepared = prepareRasterMesh(options);
+  const {
+    min,
+    max,
+    colors,
+    opacity = 1,
+    flatShading = false,
+    maskZeroValues = false,
+  } = options;
+  const prepared = options.preparedGrid ?? prepareRasterMeshGrid(options);
   const rows = prepared.rows;
   const cols = prepared.cols;
   const totalVerts = rows * cols;
 
   if (!shouldTileMesh(rows, cols)) {
-    return buildSingleMesh(prepared, min, max, colors, opacity, flatShading);
+    return buildSingleMesh(
+      prepared,
+      min,
+      max,
+      colors,
+      opacity,
+      flatShading,
+      maskZeroValues,
+    );
   }
 
   if (flatShading) {
-    return buildFlatMeshTiles(prepared, min, max, colors, opacity);
+    return buildFlatMeshTiles(
+      prepared,
+      min,
+      max,
+      colors,
+      opacity,
+      maskZeroValues,
+    );
   }
 
   const vertsPerRow = cols;
@@ -653,6 +750,11 @@ export const buildRasterMeshTiles = (
             tileColors.set([0, 0, 0, 0], tileIdx * 4);
           } else {
             const value = prepared.values[origIdx];
+            if (maskZeroValues && value === 0) {
+              tileColors.set([0, 0, 0, 0], tileIdx * 4);
+              tileIdx += 1;
+              continue;
+            }
             const rgba = mapValueToRgba(value, min, max, stops);
             rgba[3] = Math.round(rgba[3] * opacity);
             tileColors.set(rgba, tileIdx * 4);
@@ -709,13 +811,39 @@ export const buildRasterMesh = (options: RasterMeshOptions): RasterMesh => {
     lat,
     lon,
     values,
+    preparedGrid,
     min,
     max,
     colors,
     opacity = 1,
     useTiling,
     flatShading = false,
+    maskZeroValues = false,
   } = options;
+
+  if (preparedGrid) {
+    if (!preparedGrid.rows || !preparedGrid.cols) {
+      return {
+        positionsDegrees: new Float64Array(),
+        colors: new Uint8Array(),
+        indices: new Uint32Array(),
+        rows: 0,
+        cols: 0,
+      };
+    }
+    if (useTiling) {
+      return buildRasterMeshTiles(options);
+    }
+    return buildSingleMesh(
+      preparedGrid,
+      min,
+      max,
+      colors,
+      opacity,
+      flatShading,
+      maskZeroValues,
+    );
+  }
 
   if (!lat.length || !lon.length || !values.length) {
     return {
@@ -731,6 +859,14 @@ export const buildRasterMesh = (options: RasterMeshOptions): RasterMesh => {
     return buildRasterMeshTiles(options);
   }
 
-  const prepared = prepareRasterMesh(options);
-  return buildSingleMesh(prepared, min, max, colors, opacity, flatShading);
+  const prepared = prepareRasterMeshGrid(options);
+  return buildSingleMesh(
+    prepared,
+    min,
+    max,
+    colors,
+    opacity,
+    flatShading,
+    maskZeroValues,
+  );
 };

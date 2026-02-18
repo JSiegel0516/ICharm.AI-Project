@@ -148,6 +148,8 @@ const useAppStateInternal = () => {
       baseMapMode: "satellite",
       satelliteLayerVisible: true,
       boundaryLinesVisible: true,
+      countryBoundaryResolution: "low",
+      stateBoundaryResolution: "low",
       geographicLinesVisible: false,
       timeZoneLinesVisible: false,
       pacificCentered: false,

@@ -7,39 +7,46 @@ export type LabelTier = {
 };
 
 export const getLabelTier = (tileZoom: number): LabelTier => {
-  if (tileZoom <= 3.5) {
+  if (tileZoom <= 2.05) {
+    return {
+      display: [],
+      eligible: [],
+      fadeRange: [1.8, 2.05],
+    };
+  }
+  if (tileZoom <= 2.38) {
     return {
       display: ["continent"],
-      eligible: ["continent", "country"],
-      fadeRange: [3.0, 3.5],
+      eligible: ["continent"],
+      fadeRange: [2.2, 2.38],
     };
   }
-  if (tileZoom <= 5.5) {
+  if (tileZoom <= 4.2) {
     return {
       display: ["continent", "country"],
-      eligible: ["continent", "country", "state"],
-      fadeRange: [5.0, 5.5],
+      eligible: ["continent", "country"],
+      fadeRange: [3.0, 3.4],
     };
   }
-  if (tileZoom <= 7.5) {
+  if (tileZoom <= 5.2) {
     return {
       display: ["country", "state"],
-      eligible: ["country", "state", "cityLarge"],
-      fadeRange: [7.0, 7.5],
+      eligible: ["country", "state"],
+      fadeRange: [4.8, 5.2],
     };
   }
-  if (tileZoom <= 9) {
+  if (tileZoom <= 6.2) {
     return {
       display: ["state", "cityLarge"],
-      eligible: ["state", "cityLarge", "cityMedium"],
-      fadeRange: [8.5, 9.0],
+      eligible: ["state", "cityLarge"],
+      fadeRange: [5.8, 6.2],
     };
   }
-  if (tileZoom <= 10.5) {
+  if (tileZoom <= 7.2) {
     return {
       display: ["cityLarge", "cityMedium"],
-      eligible: ["cityLarge", "cityMedium", "citySmall"],
-      fadeRange: [10.0, 10.5],
+      eligible: ["cityLarge", "cityMedium"],
+      fadeRange: [6.8, 7.2],
     };
   }
   return {

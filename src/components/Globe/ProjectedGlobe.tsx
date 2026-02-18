@@ -35,6 +35,7 @@ type Props = {
   rasterGridDataKey?: string;
   currentDataset?: Dataset;
   rasterOpacity?: number;
+  fadeDurationMs?: number;
   hideZeroValues: boolean;
   smoothGridBoxValues: boolean;
   boundaryLinesVisible: boolean;
@@ -71,6 +72,7 @@ const ProjectedGlobe: React.FC<Props> = ({
   rasterGridDataKey,
   currentDataset,
   rasterOpacity = 1,
+  fadeDurationMs = 0,
   hideZeroValues,
   smoothGridBoxValues,
   boundaryLinesVisible,
@@ -91,6 +93,8 @@ const ProjectedGlobe: React.FC<Props> = ({
   const svgRef = useRef<SVGSVGElement | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const meshCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const overlayFadeCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const meshFadeCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const markerSvgRef = useRef<SVGSVGElement | null>(null);
   const markerStateRef = useRef<{ lat: number; lon: number } | null>(null);
   const meshWorkerRef = useRef<Worker | null>(null);
@@ -340,6 +344,35 @@ const ProjectedGlobe: React.FC<Props> = ({
     svg.appendChild(image);
   }, []);
 
+  const triggerCanvasFade = useCallback(
+    (
+      source: HTMLCanvasElement | null,
+      fadeCanvas: HTMLCanvasElement | null,
+      duration: number,
+    ) => {
+      if (!source || !fadeCanvas || duration <= 0) return;
+      const ctx = fadeCanvas.getContext("2d");
+      if (!ctx) return;
+      const width = source.width;
+      const height = source.height;
+      if (width <= 0 || height <= 0) return;
+      if (fadeCanvas.width !== width) fadeCanvas.width = width;
+      if (fadeCanvas.height !== height) fadeCanvas.height = height;
+      ctx.clearRect(0, 0, width, height);
+      try {
+        ctx.drawImage(source, 0, 0);
+      } catch {
+        return;
+      }
+      fadeCanvas.style.opacity = "1";
+      fadeCanvas.style.transition = `opacity ${duration}ms ease`;
+      requestAnimationFrame(() => {
+        fadeCanvas.style.opacity = "0";
+      });
+    },
+    [],
+  );
+
   useEffect(() => {
     if (clearMarkerSignal === undefined) return;
     markerStateRef.current = null;
@@ -512,6 +545,20 @@ const ProjectedGlobe: React.FC<Props> = ({
   }, [currentDataset?.id, rasterGridData, scheduleMeshRender]);
 
   useEffect(() => {
+    if (!rasterGridDataKey || fadeDurationMs <= 0) return;
+    triggerCanvasFade(
+      overlayCanvasRef.current,
+      overlayFadeCanvasRef.current,
+      fadeDurationMs,
+    );
+    triggerCanvasFade(
+      meshCanvasRef.current,
+      meshFadeCanvasRef.current,
+      fadeDurationMs,
+    );
+  }, [fadeDurationMs, rasterGridDataKey, triggerCanvasFade]);
+
+  useEffect(() => {
     if (
       !rasterGridData?.lat ||
       !rasterGridData?.lon ||
@@ -618,6 +665,10 @@ const ProjectedGlobe: React.FC<Props> = ({
         overlayCanvasRef.current.width = width;
         overlayCanvasRef.current.height = height;
       }
+      if (overlayFadeCanvasRef.current) {
+        overlayFadeCanvasRef.current.width = width;
+        overlayFadeCanvasRef.current.height = height;
+      }
       if (
         meshCanvasRef.current &&
         !meshWorkerRef.current &&
@@ -625,6 +676,10 @@ const ProjectedGlobe: React.FC<Props> = ({
       ) {
         meshCanvasRef.current.width = width;
         meshCanvasRef.current.height = height;
+      }
+      if (meshFadeCanvasRef.current) {
+        meshFadeCanvasRef.current.width = width;
+        meshFadeCanvasRef.current.height = height;
       }
       if (meshWorkerRef.current) {
         meshWorkerRef.current.postMessage({
@@ -727,6 +782,17 @@ const ProjectedGlobe: React.FC<Props> = ({
     renderBoundaries();
     requestRender();
   }, [renderBoundaries, requestRender]);
+
+  useEffect(() => {
+    requestRender();
+    scheduleMeshRender(true);
+  }, [
+    hideZeroValues,
+    rasterOpacity,
+    requestRender,
+    scheduleMeshRender,
+    smoothGridBoxValues,
+  ]);
 
   useEffect(() => {
     if (!projectionRef.current) return;
@@ -1050,11 +1116,25 @@ const ProjectedGlobe: React.FC<Props> = ({
         style={{ opacity: meshVisible ? 0 : 1 }}
       />
       <canvas
+        ref={overlayFadeCanvasRef}
+        width={size.width}
+        height={size.height}
+        className="pointer-events-none absolute inset-0 h-full w-full"
+        style={{ opacity: 0, zIndex: 15 }}
+      />
+      <canvas
         ref={meshCanvasRef}
         width={size.width}
         height={size.height}
         className="pointer-events-none absolute inset-0 z-0 h-full w-full"
         style={{ opacity: meshVisible ? 1 : 0, transition: "opacity 200ms" }}
+      />
+      <canvas
+        ref={meshFadeCanvasRef}
+        width={size.width}
+        height={size.height}
+        className="pointer-events-none absolute inset-0 h-full w-full"
+        style={{ opacity: 0, zIndex: 5 }}
       />
     </div>
   );

@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { GlobeSettings } from "@/types";
+import type { GlobeSettings, GlobeLineResolution } from "@/types";
 import { MAP_PROJECTIONS } from "@/components/Globe/projectionConfig";
 
 interface GlobeSettingsPanelProps {
@@ -26,24 +26,22 @@ interface GlobeSettingsPanelProps {
   onSatelliteLayerToggle: (visible: boolean) => void;
   boundaryLinesVisible: boolean;
   onBoundaryLinesToggle: (visible: boolean) => void;
+  countryBoundaryResolution: GlobeLineResolution;
+  onCountryBoundaryResolutionChange: (resolution: GlobeLineResolution) => void;
+  stateBoundaryResolution: GlobeLineResolution;
+  onStateBoundaryResolutionChange: (resolution: GlobeLineResolution) => void;
   geographicLinesVisible: boolean;
   onGeographicLinesToggle: (visible: boolean) => void;
   timeZoneLinesVisible: boolean;
   onTimeZoneLinesToggle: (visible: boolean) => void;
   pacificCentered: boolean;
   onPacificCenteredToggle: (enabled: boolean) => void;
-  coastlineResolution?: "none" | "low" | "medium" | "high";
-  onCoastlineResolutionChange?: (
-    resolution: "none" | "low" | "medium" | "high",
-  ) => void;
-  riverResolution?: "none" | "low" | "medium" | "high";
-  onRiverResolutionChange?: (
-    resolution: "none" | "low" | "medium" | "high",
-  ) => void;
-  lakeResolution?: "none" | "low" | "medium" | "high";
-  onLakeResolutionChange?: (
-    resolution: "none" | "low" | "medium" | "high",
-  ) => void;
+  coastlineResolution?: GlobeLineResolution;
+  onCoastlineResolutionChange?: (resolution: GlobeLineResolution) => void;
+  riverResolution?: GlobeLineResolution;
+  onRiverResolutionChange?: (resolution: GlobeLineResolution) => void;
+  lakeResolution?: GlobeLineResolution;
+  onLakeResolutionChange?: (resolution: GlobeLineResolution) => void;
   naturalEarthGeographicLinesVisible?: boolean;
   onNaturalEarthGeographicLinesToggle?: (visible: boolean) => void;
   labelsVisible: boolean;
@@ -77,6 +75,10 @@ export function GlobeSettingsPanel({
   onSatelliteLayerToggle,
   boundaryLinesVisible,
   onBoundaryLinesToggle,
+  countryBoundaryResolution,
+  onCountryBoundaryResolutionChange,
+  stateBoundaryResolution,
+  onStateBoundaryResolutionChange,
   geographicLinesVisible,
   onGeographicLinesToggle,
   timeZoneLinesVisible,
@@ -121,6 +123,7 @@ export function GlobeSettingsPanel({
     { value: "medium", label: "Medium (50m)" },
     { value: "high", label: "High (10m)" },
   ] as const;
+  const adminResolutionOptions = resolutionOptions;
 
   // Click-outside handler
   useEffect(() => {

@@ -5,6 +5,7 @@ import React, {
   useRef,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useCallback,
   forwardRef,
 } from "react";
@@ -16,6 +17,7 @@ import type {
   MapProjectionId,
 } from "@/types";
 import { useRasterLayer } from "@/hooks/useRasterLayer";
+import { isOceanOnlyDataset as isOceanOnlyDatasetGuard } from "@/utils/datasetGuards";
 import { useRasterGrid, RasterGridData } from "@/hooks/useRasterGrid";
 import { buildRasterMesh } from "@/lib/mesh/rasterMesh";
 import type { RasterLayerData } from "@/hooks/useRasterLayer";
@@ -30,11 +32,10 @@ import {
   loadGeographicBoundaries,
 } from "./_cesium/naturalEarthBoundaries";
 import { useCesiumLabels } from "./_cesium/useCesiumLabels";
-import {
-  IMAGERY_HIDE_HEIGHT,
-  IMAGERY_PRELOAD_HEIGHT,
-  VERTEX_COLOR_GAIN,
-} from "./_cesium/constants";
+import { addGeoJsonLines } from "./_cesium/geoJsonLines";
+import { IMAGERY_PRELOAD_HEIGHT, VERTEX_COLOR_GAIN } from "./_cesium/constants";
+import { getLabelTier, heightToTileZoomFloat } from "./_cesium/labelUtils";
+import { fetchGeoJson, preloadGeoJson } from "@/utils/geoJsonCache";
 
 const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
   (
@@ -48,6 +49,8 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       baseMapMode = "satellite",
       satelliteLayerVisible = true,
       boundaryLinesVisible = true,
+      countryBoundaryResolution = "low",
+      stateBoundaryResolution = "low",
       geographicLinesVisible = false,
       timeZoneLinesVisible = false,
       coastlineResolution = "low",
@@ -74,6 +77,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
   ) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const viewerRef = useRef<any>(null);
+    const cesiumDebugRef = useRef<HTMLDivElement | null>(null);
     const initializingViewerRef = useRef(false);
 
     // FIXED: Better loading state management
@@ -103,7 +107,11 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
     const geographicLineEntitiesRef = useRef<any[]>([]);
     const timeZoneLineEntitiesRef = useRef<any[]>([]);
     const naturalEarthLineEntitiesRef = useRef<any[]>([]);
+    const countryBoundaryEntitiesRef = useRef<any[]>([]);
+    const stateBoundaryEntitiesRef = useRef<any[]>([]);
     const rasterLayerRef = useRef<any[]>([]);
+    const lastDatasetIdRef = useRef<string | null>(null);
+    const lastRasterKeyRef = useRef<string | undefined>(undefined);
     const textureLoadIdRef = useRef(0);
     const isComponentUnmountedRef = useRef(false);
     const isUpdatingMarkerRef = useRef(false);
@@ -116,6 +124,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
     });
     const globeMaterialRef = useRef<any>(null);
     const boundaryConfigRef = useRef<string>("");
+    const adminBoundaryConfigRef = useRef<string>("");
 
     const rasterDataRef = useRef<RasterLayerData | RasterGridData | undefined>(
       undefined,
@@ -123,10 +132,26 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
     const [orthoClearMarkerTick, setOrthoClearMarkerTick] = useState(0);
     const [projectionClearMarkerTick, setProjectionClearMarkerTick] =
       useState(0);
-    const datasetName = (currentDataset?.name ?? "").toLowerCase();
+    const datasetText = [
+      currentDataset?.id,
+      currentDataset?.slug,
+      currentDataset?.name,
+      currentDataset?.description,
+      currentDataset?.sourceName,
+    ]
+      .filter(Boolean)
+      .map((value) => String(value).toLowerCase())
+      .join(" ");
+    const datasetId = currentDataset?.id ?? null;
+    const isGodasDataset =
+      datasetText.includes("godas") ||
+      datasetText.includes("global ocean data assimilation system") ||
+      datasetText.includes("ncep global ocean data assimilation");
     const datasetSupportsZeroMask =
       currentDataset?.dataType === "precipitation" ||
-      datasetName.includes("cmorph");
+      datasetText.includes("cmorph") ||
+      isGodasDataset;
+    const datasetName = (currentDataset?.name ?? "").toLowerCase();
     const shouldHideZero = datasetSupportsZeroMask && hideZeroPrecipitation;
     const shouldTileLargeMesh =
       datasetName.includes("noaa/cires/doe") ||
@@ -145,6 +170,10 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
     const effectiveSatelliteVisible = !isOrtho && satelliteLayerVisible;
     const effectiveLabelsVisible = !isOrtho && labelsVisible;
     const effectiveBaseMapMode = isOrtho ? "satellite" : baseMapMode;
+    const shouldBuildMesh =
+      useMeshRasterEffective && effectiveViewMode !== "ortho" && !isPlaying;
+    // Mesh is generated for sampling/caching but kept hidden; imagery is visible.
+    const shouldShowMesh = false;
 
     useCesiumLabels({
       cesiumInstance,
@@ -154,12 +183,25 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       viewerReady,
     });
 
+    const [useMeshRasterActive, setUseMeshRasterActive] = useState(
+      useMeshRasterEffective,
+    );
+    const useMeshRasterActiveRef = useRef(useMeshRasterEffective);
+    const rasterOpacityRef = useRef(rasterOpacity);
+    const [clientRasterizeImagery] = useState(true);
+    const clientRasterizeImageryRef = useRef(true);
+    const allowKeepPrevious =
+      (isPlaying || meshFadeDurationMs > 0) &&
+      lastDatasetIdRef.current === datasetId;
     const rasterState = useRasterLayer({
       dataset: rasterLayerDataset,
       date: selectedDate,
       level: selectedLevel ?? null,
       maskZeroValues: shouldHideZero,
       smoothGridBoxValues: rasterBlurEnabled,
+      opacity: rasterOpacity,
+      clientRasterize: clientRasterizeImagery,
+      keepPreviousData: allowKeepPrevious,
       colorbarRange,
       prefetchedData: prefetchedRasters,
     });
@@ -172,10 +214,17 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       enabled: effectiveViewMode !== "ortho" || useMeshRasterEffective,
       prefetchedData: prefetchedRasterGrids,
     });
-    const [useMeshRasterActive, setUseMeshRasterActive] = useState(
-      useMeshRasterEffective,
+
+    const isOceanOnlyDataset = useMemo(
+      () => isOceanOnlyDatasetGuard(currentDataset),
+      [currentDataset],
     );
-    const useMeshRasterActiveRef = useRef(useMeshRasterEffective);
+
+    useEffect(() => {
+      rasterOpacityRef.current = rasterOpacity;
+    }, [rasterOpacity]);
+
+    const imageryData = rasterState.data;
 
     // FIXED: Add loading timeout to prevent infinite loading
     useEffect(() => {
@@ -211,19 +260,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       viewerRef.current?.scene?.requestRender();
     }, []);
 
-    const getShowImagery = useCallback(() => {
-      const viewer = viewerRef.current;
-      if (!viewer) return true;
-      if (
-        !useMeshRasterActiveRef.current ||
-        effectiveViewMode === "2d" ||
-        effectiveViewMode === "ortho"
-      ) {
-        return true;
-      }
-      const height = viewer.camera.positionCartographic.height;
-      return height < IMAGERY_HIDE_HEIGHT;
-    }, [effectiveViewMode, IMAGERY_HIDE_HEIGHT]);
+    const getShowImagery = useCallback(() => true, []);
 
     const setMarkerLayerVisibility = useCallback((showImagery: boolean) => {
       if (!viewerRef.current) return;
@@ -274,40 +311,25 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
 
     const updateRasterLod = useCallback(() => {
       if (!viewerRef.current || !viewerReady) return;
-
-      if (isPlaying) {
-        setMeshRasterActive(false);
-        return;
-      }
-
       if (!useMeshRasterEffective || effectiveViewMode === "ortho") {
         setMeshRasterActive(false);
-        return;
+      } else if (isPlaying) {
+        setMeshRasterActive(false);
+      } else {
+        setMeshRasterActive(true);
       }
 
-      setMeshRasterActive(true);
+      setMarkerLayerVisibility(true);
 
       const viewer = viewerRef.current;
-      const height = viewer.camera.positionCartographic.height;
-
-      const showImagery = height < IMAGERY_HIDE_HEIGHT;
-      setMarkerLayerVisibility(showImagery);
-
-      // Keep imagery in sync with zoom even if mesh state lags.
       const layers = rasterLayerRef.current;
       if (layers.length) {
         layers.forEach((layer) => {
-          layer.show = showImagery;
-          layer.alpha = showImagery ? rasterOpacity : 0;
+          layer.show = true;
+          layer.alpha = rasterOpacity;
         });
-        if (showImagery) {
-          if (viewer.scene.globe.material) {
-            viewer.scene.globe.material = undefined;
-          }
-        } else if (globeMaterialRef.current) {
-          if (viewer.scene.globe.material !== globeMaterialRef.current) {
-            viewer.scene.globe.material = globeMaterialRef.current;
-          }
+        if (viewer.scene.globe.material) {
+          viewer.scene.globe.material = undefined;
         }
         viewer.scene.requestRender();
       }
@@ -317,8 +339,8 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       viewerReady,
       effectiveViewMode,
       rasterOpacity,
-      smoothGridBoxValues,
       setMarkerLayerVisibility,
+      isPlaying,
     ]);
 
     const clearMarker = useCallback(() => {
@@ -581,16 +603,12 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
     );
 
     useEffect(() => {
-      if (!useMeshRasterEffective) {
+      if (!shouldBuildMesh) {
         setMeshRasterActive(false);
+        return;
       }
-    }, [setMeshRasterActive, useMeshRasterEffective]);
-
-    useEffect(() => {
-      if (isPlaying) {
-        setMeshRasterActive(false);
-      }
-    }, [isPlaying, setMeshRasterActive]);
+      setMeshRasterActive(true);
+    }, [setMeshRasterActive, shouldBuildMesh]);
 
     useEffect(() => {
       if (!viewerReady || !viewerRef.current) return;
@@ -846,13 +864,6 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
             includeGeographicLines: naturalEarthGeographicLinesVisible,
             includeBoundaries: boundaryLinesVisible,
           });
-          console.log("[CesiumGlobe] initial boundary load", {
-            count: boundaryData.length,
-            boundaryLinesVisible,
-            geographicLinesVisible,
-            naturalEarthGeographicLinesVisible,
-          });
-
           if (effectiveViewMode !== "ortho") {
             const {
               boundaryEntities,
@@ -864,11 +875,6 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
               boundaryData,
               lineColors,
             );
-            console.log("[CesiumGlobe] initial boundary entities", {
-              boundary: boundaryEntities.length,
-              geographic: geographicLineEntities.length,
-              naturalEarth: naturalEarthLineEntities.length,
-            });
             boundaryEntitiesRef.current = boundaryEntities;
             geographicLineEntitiesRef.current = geographicLineEntities;
             naturalEarthLineEntitiesRef.current = naturalEarthLineEntities;
@@ -918,9 +924,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
                   const datasetType =
                     currentDataset?.dataType?.toLowerCase() ?? "";
                   const isOceanOnlyDataset =
-                    datasetName.includes("sea surface") ||
-                    datasetName.includes("godas") ||
-                    datasetName.includes("ocean data assimilation");
+                    isOceanOnlyDatasetGuard(currentDataset);
                   const looksTemperature =
                     datasetType.includes("temp") ||
                     datasetName.includes("temp") ||
@@ -947,6 +951,57 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
                   };
 
                   onRegionClick(latitude, longitude, regionData);
+
+                  const texture = imageryData?.textures?.[0];
+                  const rect = texture?.rectangle;
+                  const width = texture?.width;
+                  const height = texture?.height;
+                  if (
+                    rect &&
+                    typeof width === "number" &&
+                    typeof height === "number" &&
+                    width > 0 &&
+                    height > 0 &&
+                    typeof texture?.imageUrl === "string"
+                  ) {
+                    const lonRange = rect.east - rect.west;
+                    let lonForSample = longitude;
+                    if (lonRange > 300 && lonForSample < rect.west) {
+                      lonForSample += 360;
+                    }
+                    const x =
+                      lonRange !== 0
+                        ? Math.floor(
+                            ((lonForSample - rect.west) / lonRange) * width,
+                          )
+                        : 0;
+                    const yRange = rect.north - rect.south;
+                    const y =
+                      yRange !== 0
+                        ? Math.floor(
+                            ((rect.north - latitude) / yRange) * height,
+                          )
+                        : 0;
+
+                    const image = new Image();
+                    image.crossOrigin = "anonymous";
+                    image.onload = () => {
+                      const canvas = document.createElement("canvas");
+                      canvas.width = width;
+                      canvas.height = height;
+                      const ctx = canvas.getContext("2d");
+                      if (!ctx) return;
+                      ctx.drawImage(image, 0, 0, width, height);
+                      const px = Math.min(Math.max(x, 0), width - 1);
+                      const py = Math.min(Math.max(y, 0), height - 1);
+                      const data = ctx.getImageData(px, py, 1, 1).data;
+                    };
+                    image.onerror = (err) => {
+                      void err;
+                    };
+                    image.src = texture.imageUrl;
+                  } else {
+                  }
                 }
               }
             },
@@ -1126,12 +1181,16 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       [],
     );
 
+    const rasterLayerLoadIdRef = useRef(0);
+
     const applyRasterLayers = useCallback(
-      (layerData?: RasterLayerData) => {
+      async (layerData?: RasterLayerData) => {
         const viewer = viewerRef.current;
         if (!viewer || !cesiumInstance) {
           return;
         }
+        const rasterLoadId = rasterLayerLoadIdRef.current + 1;
+        rasterLayerLoadIdRef.current = rasterLoadId;
 
         const previousLayers = [...rasterLayerRef.current];
 
@@ -1157,7 +1216,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
         const startAlpha =
           previousLayers[0]?.alpha !== undefined
             ? previousLayers[0].alpha
-            : rasterOpacity;
+            : rasterOpacityRef.current;
 
         if (
           !layerData ||
@@ -1168,19 +1227,29 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
           // FIXED: Clear loading state when no data
           setIsRasterImageryLoading(false);
           if (previousLayers.length) {
-            animateLayerAlpha(previousLayers, startAlpha, 0, 200, () => {
-              previousLayers.forEach((layer) => {
-                try {
-                  viewer.scene.imageryLayers.remove(layer, true);
-                } catch (err) {
-                  console.warn(
-                    "Failed to remove raster layer during fade-out",
-                    err,
-                  );
-                }
-              });
-              viewer.scene.requestRender();
-            });
+            const fadeDuration =
+              typeof meshFadeDurationMs === "number" && meshFadeDurationMs > 0
+                ? meshFadeDurationMs
+                : 160;
+            animateLayerAlpha(
+              previousLayers,
+              startAlpha,
+              0,
+              fadeDuration,
+              () => {
+                previousLayers.forEach((layer) => {
+                  try {
+                    viewer.scene.imageryLayers.remove(layer, true);
+                  } catch (err) {
+                    console.warn(
+                      "Failed to remove raster layer during fade-out",
+                      err,
+                    );
+                  }
+                });
+                viewer.scene.requestRender();
+              },
+            );
           } else {
             viewer.scene.requestRender();
           }
@@ -1216,19 +1285,29 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
           // FIXED: Clear loading state when invalid textures
           setIsRasterImageryLoading(false);
           if (previousLayers.length) {
-            animateLayerAlpha(previousLayers, startAlpha, 0, 200, () => {
-              previousLayers.forEach((layer) => {
-                try {
-                  viewer.scene.imageryLayers.remove(layer, true);
-                } catch (err) {
-                  console.warn(
-                    "Failed to remove raster layer during fade-out",
-                    err,
-                  );
-                }
-              });
-              viewer.scene.requestRender();
-            });
+            const fadeDuration =
+              typeof meshFadeDurationMs === "number" && meshFadeDurationMs > 0
+                ? meshFadeDurationMs
+                : 160;
+            animateLayerAlpha(
+              previousLayers,
+              startAlpha,
+              0,
+              fadeDuration,
+              () => {
+                previousLayers.forEach((layer) => {
+                  try {
+                    viewer.scene.imageryLayers.remove(layer, true);
+                  } catch (err) {
+                    console.warn(
+                      "Failed to remove raster layer during fade-out",
+                      err,
+                    );
+                  }
+                });
+                viewer.scene.requestRender();
+              },
+            );
           } else {
             viewer.scene.requestRender();
           }
@@ -1255,7 +1334,24 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
           Number.isFinite(height) && height < IMAGERY_PRELOAD_HEIGHT;
         const visible = true;
 
-        validTextures.forEach((texture, index) => {
+        const cleanupNewLayers = (layers: any[], reason?: string) => {
+          if (!layers.length) return;
+          layers.forEach((layer) => {
+            try {
+              viewer.scene.imageryLayers.remove(layer, true);
+            } catch (err) {
+              console.warn("Failed to cleanup raster layer", err);
+            }
+          });
+          viewer.scene.requestRender();
+        };
+
+        for (let index = 0; index < validTextures.length; index += 1) {
+          if (rasterLayerLoadIdRef.current !== rasterLoadId) {
+            cleanupNewLayers(newLayers, "cancelled-during-add");
+            return;
+          }
+          const texture = validTextures[index];
           try {
             const provider = new cesiumInstance.SingleTileImageryProvider({
               url: texture.imageUrl,
@@ -1275,37 +1371,45 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
             layer.hue = 0.0;
             layer.saturation = 1.0;
             layer.gamma = 1.0;
+            layer.__rasterLayer = true;
+            layer.__rasterDatasetId = datasetId;
+            layer.__rasterRequestKey = rasterState.requestKey ?? null;
 
             const filter = rasterBlurEnabled
-              ? cesiumInstance.TextureMinificationFilter.NEAREST
-              : cesiumInstance.TextureMinificationFilter.LINEAR;
+              ? cesiumInstance.TextureMinificationFilter.LINEAR
+              : cesiumInstance.TextureMinificationFilter.NEAREST;
             layer.minificationFilter = filter;
             layer.magnificationFilter = rasterBlurEnabled
-              ? cesiumInstance.TextureMagnificationFilter.NEAREST
-              : cesiumInstance.TextureMagnificationFilter.LINEAR;
+              ? cesiumInstance.TextureMagnificationFilter.LINEAR
+              : cesiumInstance.TextureMagnificationFilter.NEAREST;
 
             viewer.scene.imageryLayers.raiseToTop(layer);
             newLayers.push(layer);
           } catch (err) {
             console.error(`Failed to add texture ${index}:`, err);
           }
-        });
+        }
 
+        if (rasterLayerLoadIdRef.current !== rasterLoadId) {
+          cleanupNewLayers(newLayers, "cancelled-after-add");
+          return;
+        }
         rasterLayerRef.current = newLayers;
-        const fadeDuration = 100; // Reduced from 220ms
+        const fadeDuration =
+          typeof meshFadeDurationMs === "number" && meshFadeDurationMs > 0
+            ? meshFadeDurationMs
+            : 160;
 
-        const targetOpacity = visible ? rasterOpacity : 0;
+        const targetOpacity = visible ? rasterOpacityRef.current : 0;
         const shouldShow = visible || shouldPreload;
 
-        // OPTIMIZED: Direct assignment for faster rendering
         newLayers.forEach((layer) => {
-          layer.alpha = targetOpacity;
+          layer.alpha = previousLayers.length ? 0 : targetOpacity;
           layer.show = shouldShow;
         });
 
-        // OPTIMIZED: Quick cleanup of previous layers
-        if (previousLayers.length) {
-          setTimeout(() => {
+        if (previousLayers.length && fadeDuration > 0) {
+          animateLayerAlpha(previousLayers, startAlpha, 0, fadeDuration, () => {
             previousLayers.forEach((layer) => {
               try {
                 viewer.scene.imageryLayers.remove(layer, true);
@@ -1313,7 +1417,21 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
                 console.warn("Failed to remove raster layer", err);
               }
             });
-          }, 50);
+          });
+          animateLayerAlpha(newLayers, 0, targetOpacity, fadeDuration);
+        } else {
+          newLayers.forEach((layer) => {
+            layer.alpha = targetOpacity;
+          });
+          if (previousLayers.length) {
+            previousLayers.forEach((layer) => {
+              try {
+                viewer.scene.imageryLayers.remove(layer, true);
+              } catch (err) {
+                console.warn("Failed to remove raster layer", err);
+              }
+            });
+          }
         }
 
         // FIXED: Ensure loading state is cleared
@@ -1326,10 +1444,12 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       [
         animateLayerAlpha,
         cesiumInstance,
+        datasetId,
         rasterBlurEnabled,
-        rasterOpacity,
         viewerReady,
         effectiveViewMode,
+        meshFadeDurationMs,
+        rasterState.requestKey,
       ],
     );
 
@@ -1399,20 +1519,21 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
         }
 
         const buildAppearance = () => {
-          const isOpaque = rasterOpacity >= 0.999;
-          return new cesiumInstance.Appearance({
+          const alphaState = { value: rasterOpacityRef.current };
+          const appearance = new cesiumInstance.Appearance({
             vertexFormat: cesiumInstance.VertexFormat.POSITION_AND_COLOR,
             renderState: {
               depthTest: { enabled: true },
               depthMask: true,
-              blending: isOpaque
-                ? undefined
-                : cesiumInstance.BlendingState.ALPHA_BLEND,
+              blending: cesiumInstance.BlendingState.ALPHA_BLEND,
               cull: { enabled: false },
               polygonOffset: { enabled: true, factor: -1, units: -1 },
             },
-            translucent: !isOpaque,
+            translucent: true,
             closed: false,
+            uniforms: {
+              u_alpha: alphaState,
+            },
             vertexShaderSource: `
               attribute vec3 position3DHigh;
               attribute vec3 position3DLow;
@@ -1427,11 +1548,14 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
             `,
             fragmentShaderSource: `
               varying vec4 v_color;
+              uniform float u_alpha;
               void main() {
-                gl_FragColor = v_color;
+                gl_FragColor = vec4(v_color.rgb, v_color.a * u_alpha);
               }
             `,
           });
+          (appearance as any).__meshAlphaUniform = alphaState;
+          return appearance;
         };
 
         const surfaceOffset = 20000;
@@ -1489,6 +1613,9 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
               appearance,
               asynchronous: true, // Keep asynchronous for better performance
             });
+            primitive.__meshAlphaUniform = (
+              appearance as any
+            ).__meshAlphaUniform;
 
             primitive.show = false;
             primitives.push(primitive);
@@ -1554,6 +1681,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
           appearance,
           asynchronous: true, // Keep asynchronous for better performance
         });
+        primitive.__meshAlphaUniform = (appearance as any).__meshAlphaUniform;
         primitive.show = false;
         viewer.scene.primitives.add(primitive);
         try {
@@ -1563,7 +1691,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
         }
         return primitive;
       },
-      [cesiumInstance, rasterOpacity],
+      [cesiumInstance],
     );
 
     const activateMeshPrimitives = useCallback(
@@ -1573,10 +1701,10 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
           setMeshVisibility(rasterMeshRef.current, false);
         }
         rasterMeshRef.current = target;
-        setMeshVisibility(target, true);
+        setMeshVisibility(target, shouldShowMesh);
         viewerRef.current.scene.requestRender();
       },
-      [setMeshVisibility],
+      [setMeshVisibility, shouldShowMesh],
     );
 
     const clearMeshCache = useCallback(() => {
@@ -1611,6 +1739,73 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       rasterMeshRef.current = null;
       viewer.scene.requestRender();
     }, [cancelMeshFade, setMeshVisibility]);
+
+    useEffect(() => {
+      if (lastDatasetIdRef.current === datasetId) return;
+      const previous = lastDatasetIdRef.current;
+      lastDatasetIdRef.current = datasetId;
+      if (!previous || !viewerReady || !viewerRef.current) {
+        return;
+      }
+
+      const viewer = viewerRef.current;
+      const layersToRemove: any[] = [];
+      if (rasterLayerRef.current.length) {
+        layersToRemove.push(...rasterLayerRef.current);
+      }
+      const imageryLayers = viewer.scene?.imageryLayers;
+      if (imageryLayers && imageryLayers.length > 0) {
+        for (let i = imageryLayers.length - 1; i >= 0; i -= 1) {
+          const layer = imageryLayers.get(i);
+          if (layer && layer.__rasterLayer) {
+            layersToRemove.push(layer);
+          }
+        }
+      }
+      if (layersToRemove.length) {
+        layersToRemove.forEach((layer) => {
+          try {
+            viewer.scene.imageryLayers.remove(layer, true);
+          } catch (err) {
+            console.warn(
+              "Failed to remove raster layer on dataset change",
+              err,
+            );
+          }
+        });
+        rasterLayerRef.current = [];
+      }
+      clearRasterMesh();
+      viewer.scene.requestRender();
+    }, [datasetId, viewerReady, clearRasterMesh]);
+
+    useEffect(() => {
+      if (process.env.NODE_ENV !== "development") {
+        lastRasterKeyRef.current = rasterState.requestKey;
+        return;
+      }
+      if (!viewerReady || !viewerRef.current) return;
+      if (
+        lastRasterKeyRef.current &&
+        rasterState.requestKey &&
+        lastRasterKeyRef.current !== rasterState.requestKey
+      ) {
+        const viewer = viewerRef.current;
+        if (rasterLayerRef.current.length) {
+          rasterLayerRef.current.forEach((layer) => {
+            try {
+              viewer.scene.imageryLayers.remove(layer, true);
+            } catch (err) {
+              console.warn("Failed to remove raster layer on dev refresh", err);
+            }
+          });
+          rasterLayerRef.current = [];
+        }
+        clearRasterMesh();
+        viewer.scene.requestRender();
+      }
+      lastRasterKeyRef.current = rasterState.requestKey;
+    }, [rasterState.requestKey, viewerReady, clearRasterMesh]);
 
     const applyRasterMesh = useCallback(
       (meshData?: ReturnType<typeof buildRasterMesh>, cacheKey?: string) => {
@@ -1811,14 +2006,17 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
     useEffect(() => {
       if (!satelliteLayerRef.current) return;
 
+      const forceSatellite = isOceanOnlyDataset;
       satelliteLayerRef.current.show =
-        effectiveBaseMapMode === "satellite" && effectiveSatelliteVisible;
-    }, [effectiveSatelliteVisible, effectiveBaseMapMode]);
+        forceSatellite ||
+        (effectiveBaseMapMode === "satellite" && effectiveSatelliteVisible);
+    }, [effectiveSatelliteVisible, effectiveBaseMapMode, isOceanOnlyDataset]);
 
     useEffect(() => {
       if (!streetLayerRef.current) return;
-      streetLayerRef.current.show = effectiveBaseMapMode === "street";
-    }, [effectiveBaseMapMode]);
+      streetLayerRef.current.show =
+        effectiveBaseMapMode === "street" && !isOceanOnlyDataset;
+    }, [effectiveBaseMapMode, isOceanOnlyDataset]);
 
     useEffect(() => {
       if (!streetOverlayLayerRef.current) return;
@@ -1864,6 +2062,202 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
             : naturalEarthGeographicLinesVisible;
       });
     }, [naturalEarthGeographicLinesVisible, effectiveViewMode]);
+
+    const updateAdminBoundaryVisibility = useCallback(() => {
+      if (!viewerRef.current) return;
+      if (effectiveViewMode === "ortho") {
+        countryBoundaryEntitiesRef.current.forEach((entity) => {
+          entity.show = false;
+        });
+        stateBoundaryEntitiesRef.current.forEach((entity) => {
+          entity.show = false;
+        });
+        return;
+      }
+
+      const height = viewerRef.current.camera.positionCartographic.height;
+      const zoomFloat = heightToTileZoomFloat(height);
+      const tier = getLabelTier(zoomFloat);
+      const showCountry =
+        labelsVisible &&
+        countryBoundaryResolution !== "none" &&
+        tier.display.includes("country");
+      const showState =
+        labelsVisible &&
+        stateBoundaryResolution !== "none" &&
+        tier.display.includes("state");
+
+      countryBoundaryEntitiesRef.current.forEach((entity) => {
+        entity.show = showCountry;
+      });
+      stateBoundaryEntitiesRef.current.forEach((entity) => {
+        entity.show = showState;
+      });
+    }, [
+      countryBoundaryResolution,
+      effectiveViewMode,
+      labelsVisible,
+      stateBoundaryResolution,
+    ]);
+
+    useEffect(() => {
+      if (!viewerReady || !viewerRef.current || !cesiumInstance) return;
+      const viewer = viewerRef.current;
+      const handleCameraChange = () => {
+        updateAdminBoundaryVisibility();
+      };
+      viewer.camera.changed.addEventListener(handleCameraChange);
+      viewer.scene.preRender.addEventListener(handleCameraChange);
+      updateAdminBoundaryVisibility();
+      return () => {
+        if (!viewerRef.current || viewerRef.current.isDestroyed()) return;
+        viewer.camera.changed.removeEventListener(handleCameraChange);
+        viewer.scene.preRender.removeEventListener(handleCameraChange);
+      };
+    }, [cesiumInstance, updateAdminBoundaryVisibility, viewerReady]);
+
+    useEffect(() => {
+      if (!cesiumDebugRef.current) return;
+      const interval = window.setInterval(() => {
+        const viewer = viewerRef.current;
+        if (!viewer || viewer.isDestroyed?.()) return;
+        const height = viewer.camera.positionCartographic.height;
+        const tileZoom = heightToTileZoomFloat(height);
+        if (cesiumDebugRef.current) {
+          cesiumDebugRef.current.textContent = `height: ${Math.round(
+            height,
+          ).toLocaleString()}m | tileZoom: ${tileZoom.toFixed(2)}`;
+        }
+      }, 200);
+      return () => {
+        window.clearInterval(interval);
+      };
+    }, []);
+
+    useEffect(() => {
+      if (effectiveViewMode === "ortho") return;
+      const resMap = { low: "110m", medium: "50m", high: "10m" } as const;
+      const urls: string[] = [];
+      if (countryBoundaryResolution !== "none") {
+        const res = resMap[countryBoundaryResolution];
+        urls.push(`/_countries/ne_${res}_admin_0_boundary_lines_land.geojson`);
+      }
+      if (stateBoundaryResolution !== "none") {
+        const res = resMap[stateBoundaryResolution];
+        urls.push(
+          `/_countries/ne_${res}_admin_1_states_provinces_lines.geojson`,
+        );
+      }
+      if (!urls.length) return;
+      const preload = () => {
+        urls.forEach((url) => preloadGeoJson(url));
+      };
+      const requestIdle = (globalThis as any).requestIdleCallback as
+        | ((cb: () => void, options?: { timeout?: number }) => void)
+        | undefined;
+      if (typeof requestIdle === "function") {
+        requestIdle(preload, { timeout: 1200 });
+      } else {
+        setTimeout(preload, 300);
+      }
+    }, [countryBoundaryResolution, effectiveViewMode, stateBoundaryResolution]);
+
+    useEffect(() => {
+      if (!viewerRef.current || !cesiumInstance) return;
+      if (!viewerReady) return;
+      if (effectiveViewMode === "ortho") return;
+
+      const viewer = viewerRef.current;
+      const removeEntities = (entities: any[]) => {
+        if (!entities.length) return;
+        entities.forEach((entity) => {
+          try {
+            viewer.entities.remove(entity);
+          } catch (err) {
+            console.warn("Failed to remove admin boundary entity", err);
+          }
+        });
+      };
+
+      const configKey = JSON.stringify({
+        countryBoundaryResolution,
+        stateBoundaryResolution,
+        lineColors: lineColors ?? null,
+      });
+      const configChanged = adminBoundaryConfigRef.current !== configKey;
+      if (configChanged) {
+        adminBoundaryConfigRef.current = configKey;
+        removeEntities(countryBoundaryEntitiesRef.current);
+        removeEntities(stateBoundaryEntitiesRef.current);
+        countryBoundaryEntitiesRef.current = [];
+        stateBoundaryEntitiesRef.current = [];
+      }
+
+      const shouldLoad =
+        countryBoundaryResolution !== "none" ||
+        stateBoundaryResolution !== "none";
+
+      if (!shouldLoad) {
+        updateAdminBoundaryVisibility();
+        return;
+      }
+
+      const boundaryColor =
+        lineColors?.boundaryLines ?? lineColors?.coastlines ?? "#e2e8f0";
+
+      const loadCountryBoundaries = async () => {
+        if (countryBoundaryResolution === "none") return;
+        if (countryBoundaryEntitiesRef.current.length) return;
+        const resMap = { low: "110m", medium: "50m", high: "10m" } as const;
+        const res = resMap[countryBoundaryResolution];
+        const data = await fetchGeoJson(
+          `/_countries/ne_${res}_admin_0_boundary_lines_land.geojson`,
+        );
+        if (!data) return;
+        const entities = addGeoJsonLines(cesiumInstance, viewer, data, {
+          color: boundaryColor,
+          width: 1.6,
+          height: 50,
+        });
+        countryBoundaryEntitiesRef.current = entities;
+      };
+
+      const loadStateBoundaries = async () => {
+        if (stateBoundaryResolution === "none") return;
+        if (stateBoundaryEntitiesRef.current.length) return;
+        const resMap = { low: "110m", medium: "50m", high: "10m" } as const;
+        const res = resMap[stateBoundaryResolution];
+        const data = await fetchGeoJson(
+          `/_countries/ne_${res}_admin_1_states_provinces_lines.geojson`,
+        );
+        if (!data) return;
+        const entities = addGeoJsonLines(cesiumInstance, viewer, data, {
+          color: boundaryColor,
+          width: 1.0,
+          dashed: true,
+          dashLength: 14,
+          height: 50,
+        });
+        stateBoundaryEntitiesRef.current = entities;
+      };
+
+      Promise.all([loadCountryBoundaries(), loadStateBoundaries()])
+        .then(() => {
+          updateAdminBoundaryVisibility();
+          viewer.scene?.requestRender();
+        })
+        .catch((err) => {
+          console.warn("Failed to load admin boundaries", err);
+        });
+    }, [
+      cesiumInstance,
+      countryBoundaryResolution,
+      effectiveViewMode,
+      lineColors,
+      stateBoundaryResolution,
+      updateAdminBoundaryVisibility,
+      viewerReady,
+    ]);
 
     useEffect(() => {
       if (!viewerRef.current || !cesiumInstance) return;
@@ -2014,29 +2408,43 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
         return;
       }
 
-      const textureCount = rasterState.data?.textures?.length ?? 0;
-      if (textureCount === 0) {
-        viewerRef.current?.scene?.requestRender();
+      const hasTextures = Boolean(imageryData?.textures?.length);
+      if (rasterState.isLoading && !hasTextures) {
+        const viewer = viewerRef.current;
+        if (viewer && rasterLayerRef.current.length) {
+          rasterLayerRef.current.forEach((layer) => {
+            try {
+              viewer.scene.imageryLayers.remove(layer, true);
+            } catch (err) {
+              console.warn("Failed to remove raster layer", err);
+            }
+          });
+          rasterLayerRef.current = [];
+          viewer.scene.requestRender();
+        } else {
+          viewerRef.current?.scene?.requestRender();
+        }
         return;
       }
 
-      applyRasterLayers(rasterState.data);
+      applyRasterLayers(imageryData);
     }, [
       applyRasterLayers,
-      rasterState.data,
+      imageryData,
+      rasterState.isLoading,
       rasterState.requestKey,
       viewerReady,
+      datasetId,
     ]);
 
     useEffect(() => {
       if (!viewerReady || !viewerRef.current) return;
       const viewer = viewerRef.current;
-      const hasRasterTextures = Boolean(rasterState.data?.textures?.length);
+      const hasRasterTextures = Boolean(imageryData?.textures?.length);
       const shouldShowImagery =
         hasRasterTextures && effectiveViewMode !== "ortho";
       const rasterOverlayActive =
-        effectiveViewMode !== "ortho" &&
-        (useMeshRasterActive || shouldShowImagery);
+        effectiveViewMode !== "ortho" && shouldShowImagery;
 
       // Cesium globe materials override imagery layers, so clear when showing rasters.
       if (shouldShowImagery) {
@@ -2055,13 +2463,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
         viewer.scene.globe.showGroundAtmosphere = !rasterOverlayActive;
         viewer.scene.requestRender();
       }
-    }, [
-      viewerReady,
-      rasterState.data,
-      rasterState.requestKey,
-      useMeshRasterActive,
-      effectiveViewMode,
-    ]);
+    }, [viewerReady, imageryData, rasterState.requestKey, effectiveViewMode]);
 
     useEffect(() => {
       if (effectiveViewMode !== "ortho") return;
@@ -2084,13 +2486,64 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       layers.forEach((layer) => {
         layer.show = true;
       });
+      if (Math.abs(startOpacity - targetOpacity) < 0.01) {
+        layers.forEach((layer) => {
+          layer.alpha = targetOpacity;
+          layer.show = visible;
+        });
+        viewerRef.current.scene?.requestRender();
+        return;
+      }
       animateLayerAlpha(layers, startOpacity, targetOpacity, 160, () => {
         layers.forEach((layer) => {
           layer.alpha = targetOpacity;
           layer.show = visible;
         });
       });
-    }, [animateLayerAlpha, rasterOpacity, useMeshRasterActive, viewerReady]);
+    }, [animateLayerAlpha, rasterOpacity, viewerReady]);
+
+    useEffect(() => {
+      if (!viewerReady || !viewerRef.current) return;
+      let layers = rasterLayerRef.current;
+      if (!layers.length) {
+        const viewer = viewerRef.current;
+        const imageryLayers = viewer?.scene?.imageryLayers;
+        if (imageryLayers && imageryLayers.length > 0) {
+          const tagged: any[] = [];
+          for (let i = imageryLayers.length - 1; i >= 0; i -= 1) {
+            const layer = imageryLayers.get(i);
+            if (layer && layer.__rasterLayer) {
+              tagged.push(layer);
+            }
+          }
+          if (tagged.length) {
+            layers = tagged;
+            rasterLayerRef.current = tagged;
+          }
+        }
+      }
+      if (!layers.length) return;
+      const clampedOpacity = Math.min(Math.max(rasterOpacity, 0), 1);
+      layers.forEach((layer) => {
+        layer.alpha = clampedOpacity;
+        layer.show = clampedOpacity > 0;
+      });
+      viewerRef.current.scene?.requestRender();
+    }, [rasterOpacity, viewerReady]);
+
+    useEffect(() => {
+      if (!viewerReady || !viewerRef.current) return;
+      const clampedOpacity = Math.min(Math.max(rasterOpacity, 0), 1);
+      if (rasterMeshRef.current) {
+        setMeshAlpha(rasterMeshRef.current, clampedOpacity);
+      }
+      if (meshPrimitiveCacheRef.current.size > 0) {
+        meshPrimitiveCacheRef.current.forEach((primitive) => {
+          setMeshAlpha(primitive, clampedOpacity);
+        });
+      }
+      viewerRef.current.scene?.requestRender();
+    }, [rasterOpacity, setMeshAlpha, viewerReady]);
 
     useEffect(() => {
       if (!viewerReady) return;
@@ -2209,6 +2662,10 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       const min = grid.min ?? 0;
       const max = grid.max ?? 1;
       const effectiveOpacity = rasterOpacity;
+      const midIdx = Math.floor(grid.values.length / 2);
+      const midSample = Number.isFinite(grid.values[midIdx])
+        ? grid.values[midIdx]
+        : null;
       const mesh = buildRasterMesh({
         lat: grid.lat,
         lon: grid.lon,
@@ -2223,6 +2680,8 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
         sampleStep: meshSamplingStep,
         useTiling: shouldTileLargeMesh,
       });
+      const meshMidIdx = Math.floor(mesh.colors.length / 2);
+      const meshMid = mesh.colors.slice(meshMidIdx, meshMidIdx + 4);
       applyMeshColorGain(mesh);
       const meshKey = rasterGridState.requestKey
         ? `${rasterGridState.requestKey}|blur:${rasterBlurEnabled ? 1 : 0}|grid:${meshSamplingStep}|op:${meshOpacityKey}`
@@ -2320,6 +2779,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
     ]);
 
     useEffect(() => {
+      rasterLayerLoadIdRef.current += 1;
       clearMeshCache();
     }, [clearMeshCache, currentDataset?.id, selectedLevel]);
     const showInitialLoading = !isProjection && isLoading && !viewerReady;
@@ -2393,6 +2853,17 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
             display: isProjection ? "none" : "block",
           }}
         />
+        <div
+          ref={cesiumDebugRef}
+          className="absolute bottom-3 left-3 z-10 rounded-lg px-2 py-1 text-xs"
+          style={{
+            background: "rgba(15, 23, 42, 0.7)",
+            color: "#e2e8f0",
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            pointerEvents: "none",
+            display: isProjection || isOrtho ? "none" : "block",
+          }}
+        />
 
         {isOrtho && (
           <OrthoGlobe
@@ -2401,8 +2872,11 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
               useMeshRasterEffective ? rasterGridState.data : undefined
             }
             rasterOpacity={rasterOpacity}
+            fadeDurationMs={meshFadeDurationMs}
             satelliteLayerVisible={effectiveSatelliteVisible}
             boundaryLinesVisible={boundaryLinesVisible}
+            countryBoundaryResolution={countryBoundaryResolution}
+            stateBoundaryResolution={stateBoundaryResolution}
             geographicLinesVisible={geographicLinesVisible}
             timeZoneLinesVisible={timeZoneLinesVisible}
             coastlineResolution={coastlineResolution}
@@ -2433,6 +2907,7 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
             rasterGridDataKey={rasterGridState.dataKey}
             currentDataset={currentDataset}
             rasterOpacity={rasterOpacity}
+            fadeDurationMs={meshFadeDurationMs}
             hideZeroValues={shouldHideZero}
             smoothGridBoxValues={rasterBlurEnabled}
             boundaryLinesVisible={boundaryLinesVisible}

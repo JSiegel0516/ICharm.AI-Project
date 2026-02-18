@@ -14,6 +14,8 @@ type LevelEntry = {
 
 type GridboxEntry = {
   gridboxId: number;
+  latId?: number;
+  lonId?: number;
   lat: number;
   lon: number;
 };
@@ -137,9 +139,13 @@ export const fetchDatasetGridboxes = async (
   const ids: number[] = payload?.gridbox_id ?? [];
   const lats: number[] = payload?.lat ?? [];
   const lons: number[] = payload?.lon ?? [];
+  const latIds: number[] = payload?.lat_id ?? [];
+  const lonIds: number[] = payload?.lon_id ?? [];
 
   const entries: GridboxEntry[] = ids.map((id, idx) => ({
     gridboxId: Number(id),
+    latId: Number(latIds[idx] ?? NaN),
+    lonId: Number(lonIds[idx] ?? NaN),
     lat: Number(lats[idx]),
     lon: Number(lons[idx]),
   }));
@@ -295,14 +301,58 @@ export const buildGridFromPoints = (
   payload: GridboxDataResponse,
   gridboxes?: GridboxEntry[],
 ) => {
-  const lats = gridboxes?.length
-    ? gridboxes.map((entry) => entry.lat)
-    : (payload.lat ?? []).map((v) => Number(v));
-  const lons = gridboxes?.length
-    ? gridboxes.map((entry) => entry.lon)
-    : (payload.lon ?? []).map((v) => Number(v));
   const values = (payload.value ?? []).map((v) => Number(v));
 
+  if (gridboxes?.length) {
+    const valid = gridboxes.filter(
+      (entry) =>
+        Number.isFinite(entry.latId) &&
+        Number.isFinite(entry.lonId) &&
+        Number.isFinite(entry.lat) &&
+        Number.isFinite(entry.lon),
+    );
+
+    const maxLatId = valid.reduce(
+      (acc, entry) => Math.max(acc, entry.latId ?? 0),
+      0,
+    );
+    const maxLonId = valid.reduce(
+      (acc, entry) => Math.max(acc, entry.lonId ?? 0),
+      0,
+    );
+
+    if (maxLatId > 0 && maxLonId > 0) {
+      const rows = maxLatId;
+      const cols = maxLonId;
+      const gridValues = new Float32Array(rows * cols);
+      for (let i = 0; i < gridValues.length; i += 1) {
+        gridValues[i] = Number.NaN;
+      }
+
+      const lat = new Float64Array(rows);
+      const lon = new Float64Array(cols);
+      valid.forEach((entry) => {
+        const row = (entry.latId ?? 1) - 1;
+        const col = (entry.lonId ?? 1) - 1;
+        if (row >= 0 && row < rows) lat[row] = entry.lat;
+        if (col >= 0 && col < cols) lon[col] = entry.lon;
+      });
+
+      const valueCount = Math.min(values.length, valid.length);
+      for (let i = 0; i < valueCount; i += 1) {
+        const entry = valid[i];
+        const row = (entry.latId ?? 1) - 1;
+        const col = (entry.lonId ?? 1) - 1;
+        if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
+        gridValues[row * cols + col] = values[i];
+      }
+
+      return { lat, lon, values: gridValues };
+    }
+  }
+
+  const lats = (payload.lat ?? []).map((v) => Number(v));
+  const lons = (payload.lon ?? []).map((v) => Number(v));
   const uniqueLat = Array.from(new Set(lats)).sort((a, b) => a - b);
   const uniqueLon = Array.from(new Set(lons)).sort((a, b) => a - b);
 
@@ -315,14 +365,14 @@ export const buildGridFromPoints = (
 
   const latIndex = new Map<number, number>();
   const lonIndex = new Map<number, number>();
-  uniqueLat.forEach((lat, idx) => latIndex.set(lat, idx));
-  uniqueLon.forEach((lon, idx) => lonIndex.set(lon, idx));
+  uniqueLat.forEach((latValue, idx) => latIndex.set(latValue, idx));
+  uniqueLon.forEach((lonValue, idx) => lonIndex.set(lonValue, idx));
 
   for (let i = 0; i < values.length; i += 1) {
-    const lat = lats[i];
-    const lon = lons[i];
-    const row = latIndex.get(lat);
-    const col = lonIndex.get(lon);
+    const latValue = lats[i];
+    const lonValue = lons[i];
+    const row = latIndex.get(latValue);
+    const col = lonIndex.get(lonValue);
     if (row == null || col == null) continue;
     gridValues[row * cols + col] = values[i];
   }

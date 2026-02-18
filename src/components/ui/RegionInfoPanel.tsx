@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/card";
 import { type ChartConfig, ChartContainer } from "@/components/ui/chart";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogClose,
@@ -50,14 +51,6 @@ import {
   Tooltip as RechartsTooltip,
   Legend,
 } from "recharts";
-import {
-  isPostgresDataset,
-  fetchDatasetGridboxes,
-  fetchDatasetLevels,
-  resolveGridboxId,
-  resolveLevelId,
-  fetchGridboxTimeseries,
-} from "@/lib/postgresRaster";
 
 // ============================================================================
 // Types
@@ -68,11 +61,12 @@ type TemperatureUnitInfo = {
   symbol: string;
 };
 
-type SeriesPoint = { date: string; value: number | null };
-
 type DateRangeOption =
   | "all"
   | "1year"
+  | "3years"
+  | "5years"
+  | "10years"
   | "6months"
   | "3months"
   | "1month"
@@ -151,7 +145,7 @@ const chartConfig = {
   desktop: {
     label: "Desktop",
     icon: Monitor,
-    color: "hsl(var(--primary))",
+    color: "var(--primary)",
   },
 } satisfies ChartConfig;
 
@@ -217,6 +211,15 @@ const isoDate = (d: Date) => {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+};
+
+const sanitizeTimeseriesValue = (value: number | string | null) => {
+  if (value === null || value === undefined) return null;
+  const numeric = typeof value === "string" ? Number(value) : value;
+  if (!Number.isFinite(numeric)) return null;
+  // Filter sentinel/missing values that blow out the chart scale.
+  if (Math.abs(numeric) >= 1e6) return null;
+  return numeric;
 };
 
 const downloadFile = (content: string, filename: string, type: string) => {
@@ -291,6 +294,8 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   colorBarPosition = { x: 24, y: 300 },
   colorBarCollapsed = false,
   colorBarOrientation = "horizontal",
+  colorbarCustomMin = null,
+  colorbarCustomMax = null,
   className = "",
   currentDataset,
   selectedDate,
@@ -321,8 +326,9 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   const [timeseriesOpen, setTimeseriesOpen] = useState(false);
   const [timeseriesLoading, setTimeseriesLoading] = useState(false);
   const [timeseriesError, setTimeseriesError] = useState<string | null>(null);
-  const [timeseriesSeries, setTimeseriesSeries] = useState<SeriesPoint[]>([]);
+  const [rawTimeseriesData, setRawTimeseriesData] = useState<any[]>([]);
   const [timeseriesUnits, setTimeseriesUnits] = useState<string | null>(null);
+  const [timeseriesRequested, setTimeseriesRequested] = useState(false);
   const [dateRangeOption, setDateRangeOption] =
     useState<DateRangeOption>("1year");
   const [customStartDate, setCustomStartDate] = useState("");
@@ -357,16 +363,56 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     return useFahrenheit ? c2f(raw) : raw;
   }, [regionData.temperature, regionData.precipitation, useFahrenheit]);
 
-  const chartData = useMemo(
-    () =>
-      timeseriesSeries.map((e) => {
-        if (e.value == null || !Number.isFinite(e.value))
-          return { date: e.date, value: null };
-        const v = useFahrenheit ? c2f(Number(e.value)) : Number(e.value);
-        return { date: e.date, value: Number(v.toFixed(2)) };
-      }),
-    [timeseriesSeries, useFahrenheit],
-  );
+  const datasetId = currentDataset?.id ?? null;
+  const datasetText = useMemo(() => {
+    if (!currentDataset) return "";
+    return [
+      currentDataset.name,
+      currentDataset.slug,
+      currentDataset.id,
+      currentDataset.layerParameter,
+      currentDataset.sourceName,
+    ]
+      .filter((value): value is string => typeof value === "string")
+      .map((value) => value.toLowerCase())
+      .join(" ");
+  }, [currentDataset]);
+  const useLongitude360 = useMemo(() => {
+    return (
+      datasetText.includes("sea surface") ||
+      datasetText.includes("sst") ||
+      datasetText.includes("ersst") ||
+      datasetText.includes("godas") ||
+      datasetText.includes("ocean data assimilation") ||
+      datasetText.includes("ocean reanalysis")
+    );
+  }, [datasetText]);
+  const requestLongitude =
+    useLongitude360 && Number.isFinite(longitude) && longitude < 0
+      ? longitude + 360
+      : longitude;
+
+  const chartData = useMemo(() => {
+    if (!datasetId || rawTimeseriesData.length === 0) return [];
+    const isGodas =
+      datasetText.includes("godas") ||
+      datasetText.includes("global ocean data assimilation system") ||
+      datasetText.includes("ncep global ocean data assimilation") ||
+      datasetText.includes("ocean data assimilation") ||
+      datasetText.includes("ocean reanalysis");
+
+    return rawTimeseriesData
+      .map((point: any) => {
+        const raw = sanitizeTimeseriesValue(point?.[datasetId] ?? null);
+        if (raw === null) {
+          return { ...point, [datasetId]: null, value: null };
+        }
+        const v = useFahrenheit ? c2f(raw) : raw;
+        const value = isGodas ? v : Number(v.toFixed(2));
+        return { ...point, [datasetId]: value, value };
+      })
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  }, [rawTimeseriesData, datasetId, useFahrenheit, datasetText]);
 
   const displayedChartData = useMemo(() => {
     if (!zoomWindow || !chartData.length) return chartData;
@@ -374,14 +420,72 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     return chartData.slice(s, Math.min(e + 1, chartData.length));
   }, [chartData, zoomWindow]);
 
-  const yAxisDomain = useMemo((): [number, number] | undefined => {
-    const vals = displayedChartData
-      .map((p) => p.value)
-      .filter((v): v is number => typeof v === "number");
-    if (!vals.length) return undefined;
+  const displayedLineData = useMemo(() => {
+    if (!displayedChartData.length || !datasetId) return displayedChartData;
+    return displayedChartData.map((point) => {
+      if (typeof point?.value === "number" && Number.isFinite(point.value))
+        return point;
+      const fallback = point?.[datasetId];
+      return {
+        ...point,
+        value:
+          typeof fallback === "number" && Number.isFinite(fallback)
+            ? fallback
+            : null,
+      };
+    });
+  }, [displayedChartData, datasetId]);
 
-    let min = Math.min(...vals);
-    let max = Math.max(...vals);
+  const numericChartValues = useMemo(() => {
+    return displayedLineData
+      .map((p) => p?.value)
+      .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  }, [displayedLineData]);
+  const validPointCount = numericChartValues.length;
+  const chartValueRange = useMemo(() => {
+    if (!numericChartValues.length) return null;
+    return {
+      min: Math.min(...numericChartValues),
+      max: Math.max(...numericChartValues),
+    };
+  }, [numericChartValues]);
+
+  const yAxisDomain = useMemo((): [number, number] | undefined => {
+    if (!numericChartValues.length) return undefined;
+
+    const isGodas =
+      datasetText.includes("godas") ||
+      datasetText.includes("global ocean data assimilation system") ||
+      datasetText.includes("ncep global ocean data assimilation") ||
+      datasetText.includes("ocean data assimilation") ||
+      datasetText.includes("ocean reanalysis");
+
+    if (isGodas) {
+      const GODAS_DEFAULT_MIN = -0.0000005;
+      const GODAS_DEFAULT_MAX = 0.0000005;
+      const customRangeEnabled =
+        colorbarCustomMin !== null || colorbarCustomMax !== null;
+      const overrideMin =
+        customRangeEnabled && Number.isFinite(colorbarCustomMin ?? NaN)
+          ? Number(colorbarCustomMin)
+          : null;
+      const overrideMax =
+        customRangeEnabled && Number.isFinite(colorbarCustomMax ?? NaN)
+          ? Number(colorbarCustomMax)
+          : null;
+
+      const min = overrideMin ?? GODAS_DEFAULT_MIN;
+      const max = overrideMax ?? GODAS_DEFAULT_MAX;
+      if (min === max) {
+        const pad = Math.abs(min) * 0.05 || 1;
+        return [min - pad, max + pad];
+      }
+      if (min < max) return [min, max];
+      return [max, min];
+    }
+
+    let min = Math.min(...numericChartValues);
+    let max = Math.max(...numericChartValues);
     if (!Number.isFinite(min) || !Number.isFinite(max)) return undefined;
 
     if (min === max) {
@@ -390,9 +494,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     }
     const pad = (max - min) * 0.1;
     return [min - pad, max + pad];
-  }, [displayedChartData]);
-
-  const datasetId = currentDataset?.id ?? null;
+  }, [numericChartValues, datasetText, colorbarCustomMin, colorbarCustomMax]);
 
   const datasetStart = useMemo(() => {
     const s = currentDataset?.startDate;
@@ -414,7 +516,12 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   }, [currentDataset?.name]);
 
   const hasData =
-    chartData.length > 0 && !timeseriesLoading && !timeseriesError;
+    numericChartValues.length > 0 && !timeseriesLoading && !timeseriesError;
+  const hasRequestedButEmpty =
+    timeseriesRequested &&
+    !timeseriesLoading &&
+    !timeseriesError &&
+    numericChartValues.length === 0;
 
   // ── Clamp helper ──
   const clampPos = useCallback((x: number, y: number): Position => {
@@ -521,6 +628,18 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
           startDate = new Date(target.getFullYear() - 1, target.getMonth(), 1);
           endDate = endOfMonth();
           break;
+        case "3years":
+          startDate = new Date(target.getFullYear() - 3, target.getMonth(), 1);
+          endDate = endOfMonth();
+          break;
+        case "5years":
+          startDate = new Date(target.getFullYear() - 5, target.getMonth(), 1);
+          endDate = endOfMonth();
+          break;
+        case "10years":
+          startDate = new Date(target.getFullYear() - 10, target.getMonth(), 1);
+          endDate = endOfMonth();
+          break;
         case "6months":
           startDate = new Date(target.getFullYear(), target.getMonth() - 6, 1);
           endDate = endOfMonth();
@@ -535,10 +654,24 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
           break;
         case "custom":
           if (customStartDate && customEndDate) {
-            startDate = new Date(customStartDate);
-            endDate = new Date(customEndDate);
-            endDate.setHours(23, 59, 59, 999);
-          } else {
+            const parsedStart = new Date(customStartDate);
+            const parsedEnd = new Date(customEndDate);
+            if (
+              Number.isFinite(parsedStart.getTime()) &&
+              Number.isFinite(parsedEnd.getTime())
+            ) {
+              if (parsedEnd < parsedStart) {
+                startDate = parsedEnd;
+                endDate = parsedStart;
+              } else {
+                startDate = parsedStart;
+                endDate = parsedEnd;
+              }
+              endDate.setHours(23, 59, 59, 999);
+              break;
+            }
+          }
+          {
             startDate = new Date(
               target.getFullYear() - 1,
               target.getMonth(),
@@ -567,13 +700,36 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     customEndDate,
   ]);
 
+  const customRangeDefaults = useMemo(() => {
+    const base = selectedDate ?? datasetEnd ?? new Date();
+    const start = new Date(base.getFullYear() - 1, base.getMonth(), 1);
+    const end = new Date(base.getFullYear(), base.getMonth() + 1, 0);
+    const clampedStart =
+      datasetStart && start < datasetStart ? datasetStart : start;
+    const clampedEnd = datasetEnd && end > datasetEnd ? datasetEnd : end;
+    return { start: isoDate(clampedStart), end: isoDate(clampedEnd) };
+  }, [datasetEnd, datasetStart, selectedDate]);
+
+  const isCustomRangeValid = useMemo(() => {
+    if (dateRangeOption !== "custom") return true;
+    if (!customStartDate || !customEndDate) return false;
+    const start = new Date(customStartDate);
+    const end = new Date(customEndDate);
+    return (
+      Number.isFinite(start.getTime()) &&
+      Number.isFinite(end.getTime()) &&
+      start.getTime() <= end.getTime()
+    );
+  }, [customEndDate, customStartDate, dateRangeOption]);
+
   // ── Timeseries fetch ──
   const handleTimeseriesClick = useCallback(async () => {
     setTimeseriesOpen(true);
+    setTimeseriesRequested(true);
 
     if (!datasetId) {
       setTimeseriesError("No dataset selected.");
-      setTimeseriesSeries([]);
+      setRawTimeseriesData([]);
       setTimeseriesUnits(null);
       return;
     }
@@ -583,40 +739,6 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     setTimeseriesError(null);
 
     try {
-      if (isPostgresDataset(currentDataset)) {
-        const [gridboxes, levels] = await Promise.all([
-          fetchDatasetGridboxes(datasetId),
-          fetchDatasetLevels(datasetId),
-        ]);
-        const gridboxId = resolveGridboxId(gridboxes, latitude, longitude);
-        const levelId = resolveLevelId(levels, null);
-
-        if (gridboxId == null || levelId == null) {
-          throw new Error("Missing gridbox or level mapping for dataset");
-        }
-
-        const timeseries = await fetchGridboxTimeseries({
-          datasetId,
-          gridboxId,
-          levelId,
-        });
-
-        const startMs = startDate.getTime();
-        const endMs = endDate.getTime();
-
-        setTimeseriesSeries(
-          timeseries
-            .filter((e) => {
-              const t = e.date.getTime();
-              return t >= startMs && t <= endMs;
-            })
-            .sort((a, b) => a.date.getTime() - b.date.getTime())
-            .map((e) => ({ date: isoDate(e.date), value: e.value })),
-        );
-        setTimeseriesUnits(datasetUnit);
-        return;
-      }
-
       const res = await fetch("/api/timeseries/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -624,7 +746,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
           datasetIds: [datasetId],
           startDate: isoDate(startDate),
           endDate: isoDate(endDate),
-          focusCoordinates: `${latitude},${longitude}`,
+          focusCoordinates: `${latitude},${requestLongitude}`,
           aggregation: "mean",
           includeStatistics: false,
           includeMetadata: true,
@@ -645,19 +767,20 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
         throw new Error("Invalid response format");
       }
 
-      setTimeseriesSeries(
-        result.data.map((p: any) => ({
-          date: p.date,
-          value: p.values?.[datasetId] ?? null,
-        })),
-      );
+      const normalized = result.data.map((point: any) => {
+        if (point && typeof point === "object" && point.values) {
+          return { date: point.date, ...point.values };
+        }
+        return point;
+      });
+      setRawTimeseriesData(normalized);
       setTimeseriesUnits(result.metadata?.[datasetId]?.units ?? datasetUnit);
     } catch (error) {
       const msg =
         error instanceof Error ? error.message : "Failed to load timeseries";
       console.error("[Timeseries]", msg);
       setTimeseriesError(msg);
-      setTimeseriesSeries([]);
+      setRawTimeseriesData([]);
       setTimeseriesUnits(null);
     } finally {
       setTimeseriesLoading(false);
@@ -667,8 +790,9 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     calculateDateRange,
     latitude,
     longitude,
+    requestLongitude,
+    useLongitude360,
     datasetUnit,
-    currentDataset,
   ]);
 
   // ── Export handlers ──
@@ -779,6 +903,12 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
 
   // Reset zoom on new data
   useEffect(() => setZoomWindow(null), [chartData]);
+
+  useEffect(() => {
+    if (!timeseriesOpen) {
+      setTimeseriesRequested(false);
+    }
+  }, [timeseriesOpen]);
 
   // Handle resize
   useEffect(() => {
@@ -986,9 +1116,17 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                     <div className="flex flex-wrap items-center gap-3 sm:gap-4">
                       <NativeSelect
                         value={dateRangeOption}
-                        onChange={(e) =>
-                          setDateRangeOption(e.target.value as DateRangeOption)
-                        }
+                        onChange={(e) => {
+                          const next = e.target.value as DateRangeOption;
+                          setDateRangeOption(next);
+                          if (
+                            next === "custom" &&
+                            (!customStartDate || !customEndDate)
+                          ) {
+                            setCustomStartDate(customRangeDefaults.start);
+                            setCustomEndDate(customRangeDefaults.end);
+                          }
+                        }}
                       >
                         <NativeSelectOption value="1month">
                           1 Month
@@ -1002,16 +1140,68 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                         <NativeSelectOption value="1year">
                           1 Year
                         </NativeSelectOption>
+                        <NativeSelectOption value="3years">
+                          3 Years
+                        </NativeSelectOption>
+                        <NativeSelectOption value="5years">
+                          5 Years
+                        </NativeSelectOption>
+                        <NativeSelectOption value="10years">
+                          10 Years
+                        </NativeSelectOption>
+                        <NativeSelectOption value="custom">
+                          Custom Range
+                        </NativeSelectOption>
                       </NativeSelect>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={handleTimeseriesClick}
-                        disabled={timeseriesLoading}
+                        disabled={timeseriesLoading || !isCustomRangeValid}
                       >
                         {timeseriesLoading ? "Loading..." : "Update"}
                       </Button>
                     </div>
+
+                    {dateRangeOption === "custom" && (
+                      <div className="flex flex-wrap items-end gap-3 sm:gap-4">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs text-slate-300">
+                            Start date
+                          </label>
+                          <Input
+                            type="date"
+                            value={customStartDate}
+                            min={
+                              datasetStart ? isoDate(datasetStart) : undefined
+                            }
+                            max={datasetEnd ? isoDate(datasetEnd) : undefined}
+                            onChange={(e) => setCustomStartDate(e.target.value)}
+                            className="h-9"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs text-slate-300">
+                            End date
+                          </label>
+                          <Input
+                            type="date"
+                            value={customEndDate}
+                            min={
+                              datasetStart ? isoDate(datasetStart) : undefined
+                            }
+                            max={datasetEnd ? isoDate(datasetEnd) : undefined}
+                            onChange={(e) => setCustomEndDate(e.target.value)}
+                            className="h-9"
+                          />
+                        </div>
+                        {!isCustomRangeValid && (
+                          <p className="text-xs text-red-400">
+                            Pick a valid start and end date.
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1049,14 +1239,14 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                       }
                       title={timeseriesError}
                     />
-                  ) : chartData.length > 0 ? (
+                  ) : hasData ? (
                     <ChartContainer
                       config={chartConfig}
                       className="h-full w-full"
                     >
                       <LineChart
                         accessibilityLayer
-                        data={displayedChartData}
+                        data={displayedLineData}
                         margin={{ top: 10, right: 10, bottom: 10, left: 10 }}
                       >
                         <CartesianGrid
@@ -1096,7 +1286,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                             fontSize: "12px",
                           }}
                           itemStyle={{
-                            color: "hsl(var(--primary))",
+                            color: "var(--primary)",
                             fontSize: "12px",
                           }}
                         />
@@ -1107,13 +1297,14 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                           }}
                         />
                         <Line
-                          type="monotone"
+                          type="linear"
                           dataKey="value"
                           name={currentDataset?.name || "Value"}
-                          stroke="hsl(var(--primary))"
+                          stroke="var(--primary)"
                           strokeWidth={2}
-                          dot={false}
+                          dot={validPointCount <= 1 ? { r: 3 } : false}
                           connectNulls
+                          isAnimationActive={false}
                           activeDot={{ r: 4, strokeWidth: 0 }}
                         />
                       </LineChart>
@@ -1135,8 +1326,16 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                           />
                         </svg>
                       }
-                      title="Click on the globe to select a location"
-                      subtitle="Time series data will appear here"
+                      title={
+                        hasRequestedButEmpty
+                          ? "No data available for this location"
+                          : "Click on the globe to select a location"
+                      }
+                      subtitle={
+                        hasRequestedButEmpty
+                          ? "Try a nearby point or a different date range."
+                          : "Time series data will appear here"
+                      }
                     />
                   )}
                 </div>

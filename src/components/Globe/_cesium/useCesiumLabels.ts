@@ -209,7 +209,8 @@ export const useCesiumLabels = ({
     const centerLat =
       viewCenter?.lat ?? Cesium.Math.toDegrees(cameraCarto.latitude);
     const { keys: tileKeys } = tileInfo;
-    const maxAngularDistance = degreesFromHeight(height) + 4;
+    const distanceBuffer = zoomFloat < 6.5 ? 1.5 : 4;
+    const maxAngularDistance = degreesFromHeight(height) + distanceBuffer;
     tileKeys.sort((a, b) => {
       const [za, xa, ya] = a.split("/").map((value) => Number(value));
       const [zb, xb, yb] = b.split("/").map((value) => Number(value));
@@ -234,7 +235,7 @@ export const useCesiumLabels = ({
         centerLat,
         centerLon,
       );
-      return distance <= maxAngularDistance + 4;
+      return distance <= maxAngularDistance + distanceBuffer + 1.5;
     });
     const activeKeys = new Set(filteredTileKeys);
     const occluder = new Cesium.EllipsoidalOccluder(
@@ -558,7 +559,8 @@ export const useCesiumLabels = ({
     const centerLat =
       viewCenter?.lat ?? Cesium.Math.toDegrees(cameraCarto.latitude);
     const { keys: tileKeys } = tileInfo;
-    const maxAngularDistance = degreesFromHeight(height) + 6;
+    const distanceBuffer = zoomFloat < 6.5 ? 2 : 6;
+    const maxAngularDistance = degreesFromHeight(height) + distanceBuffer;
     tileKeys.sort((a, b) => {
       const [za, xa, ya] = a.split("/").map((value) => Number(value));
       const [zb, xb, yb] = b.split("/").map((value) => Number(value));
@@ -590,7 +592,7 @@ export const useCesiumLabels = ({
       labelTileZoomRef.current = zoom;
     }
 
-    const maxTiles = 24;
+    const maxTiles = zoomFloat < 6.5 ? 8 : 24;
     if (filteredTileKeys.length > maxTiles) {
       filteredTileKeys.length = maxTiles;
     }
@@ -600,7 +602,7 @@ export const useCesiumLabels = ({
     const { signal } = labelTileAbortRef.current;
 
     let addedTiles = false;
-    const maxConcurrent = 6;
+    const maxConcurrent = zoomFloat < 6.5 ? 2 : 6;
     for (let i = 0; i < filteredTileKeys.length; i += maxConcurrent) {
       const chunk = filteredTileKeys.slice(i, i + maxConcurrent);
       await Promise.all(
@@ -739,7 +741,14 @@ export const useCesiumLabels = ({
   useEffect(() => {
     if (!viewerReady) return;
     const tick = (time: number) => {
-      if (time - labelLastFrameRef.current > LABEL_VISIBILITY_THROTTLE_MS) {
+      const height = viewerRef.current?.camera?.positionCartographic?.height;
+      const zoomFloat =
+        typeof height === "number" ? heightToTileZoomFloat(height) : null;
+      const minInterval =
+        zoomFloat !== null && zoomFloat < 6.5
+          ? 140
+          : LABEL_VISIBILITY_THROTTLE_MS;
+      if (time - labelLastFrameRef.current > minInterval) {
         updateLabelVisibility();
         labelLastFrameRef.current = time;
       }

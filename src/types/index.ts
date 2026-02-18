@@ -168,6 +168,8 @@ export interface RegionInfoPanelProps {
   selectedDate?: Date;
   temperatureUnit?: TemperatureUnit;
   colorBarOrientation?: ColorBarOrientation;
+  colorbarCustomMin?: number | null;
+  colorbarCustomMax?: number | null;
 }
 
 export interface SettingsIconHandle {
@@ -184,6 +186,8 @@ export interface GlobeSettings {
   baseMapMode?: "satellite" | "street";
   satelliteLayerVisible: boolean;
   boundaryLinesVisible: boolean;
+  countryBoundaryResolution: GlobeLineResolution;
+  stateBoundaryResolution: GlobeLineResolution;
   geographicLinesVisible: boolean;
   timeZoneLinesVisible: boolean;
   pacificCentered: boolean;
@@ -305,6 +309,8 @@ export interface GlobeProps {
   // NEW: Globe settings props
   satelliteLayerVisible?: boolean;
   boundaryLinesVisible?: boolean;
+  countryBoundaryResolution?: GlobeLineResolution;
+  stateBoundaryResolution?: GlobeLineResolution;
   geographicLinesVisible?: boolean;
   timeZoneLinesVisible?: boolean;
   pacificCentered?: boolean;
@@ -496,6 +502,10 @@ export interface GlobeSettingsPanelProps {
   onSatelliteLayerToggle: (visible: boolean) => void;
   boundaryLinesVisible: boolean;
   onBoundaryLinesToggle: (visible: boolean) => void;
+  countryBoundaryResolution: GlobeLineResolution;
+  onCountryBoundaryResolutionChange: (resolution: GlobeLineResolution) => void;
+  stateBoundaryResolution: GlobeLineResolution;
+  onStateBoundaryResolutionChange: (resolution: GlobeLineResolution) => void;
   geographicLinesVisible: boolean;
   onGeographicLinesToggle: (visible: boolean) => void;
   timeZoneLinesVisible: boolean;

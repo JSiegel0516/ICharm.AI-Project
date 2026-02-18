@@ -160,12 +160,27 @@ export const buildSampler = (
     return () => null;
   }
 
+  let minLon = lonValues[0];
+  let maxLon = lonValues[0];
+  for (let i = 1; i < lonValues.length; i += 1) {
+    const value = lonValues[i];
+    if (value < minLon) minLon = value;
+    if (value > maxLon) maxLon = value;
+  }
+  const lonRange = maxLon - minLon;
+  const use360Range = lonRange > 300 && minLon >= 0;
+
   return (latitude: number, longitude: number) => {
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
       return null;
     }
     const latIdx = nearestIndex(latValues, latitude);
-    const lonIdx = nearestIndex(lonValues, normalizeLon(longitude));
+    const normalizedLon = use360Range
+      ? longitude < 0
+        ? longitude + 360
+        : longitude
+      : normalizeLon(longitude);
+    const lonIdx = nearestIndex(lonValues, normalizedLon);
     const flatIdx = latIdx * cols + lonIdx;
     if (flatIdx < 0 || flatIdx >= values.length) {
       return null;
