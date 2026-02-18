@@ -138,10 +138,25 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
     const [orthoClearMarkerTick, setOrthoClearMarkerTick] = useState(0);
     const [projectionClearMarkerTick, setProjectionClearMarkerTick] =
       useState(0);
-    const datasetName = (currentDataset?.name ?? "").toLowerCase();
+    const datasetText = [
+      currentDataset?.id,
+      currentDataset?.slug,
+      currentDataset?.name,
+      currentDataset?.description,
+      currentDataset?.sourceName,
+    ]
+      .filter(Boolean)
+      .map((value) => String(value).toLowerCase())
+      .join(" ");
+    const isGodasDataset =
+      datasetText.includes("godas") ||
+      datasetText.includes("global ocean data assimilation system") ||
+      datasetText.includes("ncep global ocean data assimilation");
     const datasetSupportsZeroMask =
       currentDataset?.dataType === "precipitation" ||
-      datasetName.includes("cmorph");
+      datasetText.includes("cmorph") ||
+      isGodasDataset;
+    const datasetName = (currentDataset?.name ?? "").toLowerCase();
     const shouldHideZero = datasetSupportsZeroMask && hideZeroPrecipitation;
     const shouldTileLargeMesh =
       datasetName.includes("noaa/cires/doe") ||
@@ -2223,10 +2238,13 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       const preload = () => {
         urls.forEach((url) => preloadGeoJson(url));
       };
-      if ("requestIdleCallback" in window) {
-        (window as any).requestIdleCallback(preload, { timeout: 1200 });
+      const requestIdle = (globalThis as any).requestIdleCallback as
+        | ((cb: () => void, options?: { timeout?: number }) => void)
+        | undefined;
+      if (typeof requestIdle === "function") {
+        requestIdle(preload, { timeout: 1200 });
       } else {
-        window.setTimeout(preload, 300);
+        setTimeout(preload, 300);
       }
     }, [countryBoundaryResolution, effectiveViewMode, stateBoundaryResolution]);
 

@@ -168,6 +168,8 @@ export interface RegionInfoPanelProps {
   selectedDate?: Date;
   temperatureUnit?: TemperatureUnit;
   colorBarOrientation?: ColorBarOrientation;
+  colorbarCustomMin?: number | null;
+  colorbarCustomMax?: number | null;
 }
 
 export interface SettingsIconHandle {

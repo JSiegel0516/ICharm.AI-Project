@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/card";
 import { ChartConfig, ChartContainer } from "@/components/ui/chart";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogClose,
@@ -190,6 +191,8 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   colorBarPosition = { x: 24, y: 300 },
   colorBarCollapsed = false,
   colorBarOrientation = "horizontal",
+  colorbarCustomMin = null,
+  colorbarCustomMax = null,
   className = "",
   currentDataset,
   selectedDate,
@@ -319,7 +322,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     return chartData.slice(start, Math.min(end + 1, chartData.length));
   }, [chartData, zoomWindow]);
 
-  const yAxisDomain = useMemo((): [number, number] | undefined => {
+  const baseYAxisDomain = useMemo((): [number, number] | undefined => {
     const values = displayedChartData
       .map((point) => point.value)
       .filter((value): value is number => typeof value === "number");
@@ -343,6 +346,60 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
 
     return [min, max];
   }, [displayedChartData]);
+
+  const datasetText = useMemo(
+    () =>
+      [
+        currentDataset?.id,
+        currentDataset?.slug,
+        currentDataset?.name,
+        currentDataset?.description,
+        currentDataset?.sourceName,
+      ]
+        .filter(Boolean)
+        .map((value) => String(value).toLowerCase())
+        .join(" "),
+    [currentDataset],
+  );
+  const isGodasDataset =
+    datasetText.includes("godas") ||
+    datasetText.includes("global ocean data assimilation system") ||
+    datasetText.includes("ncep global ocean data assimilation");
+  const hasColorbarOverrides =
+    Number.isFinite(colorbarCustomMin as number) &&
+    Number.isFinite(colorbarCustomMax as number);
+
+  const [yAxisMode, setYAxisMode] = useState<"auto" | "custom">("auto");
+  const [customYAxisMin, setCustomYAxisMin] = useState<string>("");
+  const [customYAxisMax, setCustomYAxisMax] = useState<string>("");
+
+  const isCustomYAxisValid = useMemo(() => {
+    if (yAxisMode !== "custom") return true;
+    if (!customYAxisMin || !customYAxisMax) return false;
+    const min = Number(customYAxisMin);
+    const max = Number(customYAxisMax);
+    return Number.isFinite(min) && Number.isFinite(max) && min < max;
+  }, [customYAxisMax, customYAxisMin, yAxisMode]);
+
+  const yAxisDomain = useMemo((): [number, number] | undefined => {
+    if (isGodasDataset && hasColorbarOverrides) {
+      return [Number(colorbarCustomMin), Number(colorbarCustomMax)];
+    }
+    if (yAxisMode === "custom" && isCustomYAxisValid) {
+      return [Number(customYAxisMin), Number(customYAxisMax)];
+    }
+    return baseYAxisDomain;
+  }, [
+    baseYAxisDomain,
+    colorbarCustomMax,
+    colorbarCustomMin,
+    customYAxisMax,
+    customYAxisMin,
+    hasColorbarOverrides,
+    isCustomYAxisValid,
+    isGodasDataset,
+    yAxisMode,
+  ]);
 
   const datasetId = useMemo(() => {
     return currentDataset?.id ?? currentDataset?.id ?? null;
@@ -538,10 +595,24 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
 
         case "custom":
           if (customStartDate && customEndDate) {
-            startDate = new Date(customStartDate);
-            endDate = new Date(customEndDate);
-            endDate.setHours(23, 59, 59, 999);
-          } else {
+            const parsedStart = new Date(customStartDate);
+            const parsedEnd = new Date(customEndDate);
+            if (
+              Number.isFinite(parsedStart.getTime()) &&
+              Number.isFinite(parsedEnd.getTime())
+            ) {
+              if (parsedEnd < parsedStart) {
+                startDate = parsedEnd;
+                endDate = parsedStart;
+              } else {
+                startDate = parsedStart;
+                endDate = parsedEnd;
+              }
+              endDate.setHours(23, 59, 59, 999);
+              break;
+            }
+          }
+          {
             startDate = new Date(
               targetDate.getFullYear() - 1,
               targetDate.getMonth(),
@@ -592,6 +663,55 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     customStartDate,
     customEndDate,
   ]);
+
+  const customRangeDefaults = useMemo(() => {
+    const baseDate = selectedDate ?? datasetEnd ?? new Date();
+    const baseStart = new Date(
+      baseDate.getFullYear() - 1,
+      baseDate.getMonth(),
+      1,
+    );
+    const baseEnd = new Date(
+      baseDate.getFullYear(),
+      baseDate.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+    );
+    const clampedStart =
+      datasetStart && baseStart < datasetStart ? datasetStart : baseStart;
+    const clampedEnd =
+      datasetEnd && baseEnd > datasetEnd ? datasetEnd : baseEnd;
+    return {
+      start: formatDate(clampedStart),
+      end: formatDate(clampedEnd),
+    };
+  }, [datasetEnd, datasetStart, selectedDate]);
+
+  useEffect(() => {
+    if (yAxisMode !== "custom") {
+      return;
+    }
+    if (!customYAxisMin || !customYAxisMax) {
+      if (baseYAxisDomain) {
+        setCustomYAxisMin(baseYAxisDomain[0].toFixed(3));
+        setCustomYAxisMax(baseYAxisDomain[1].toFixed(3));
+      }
+    }
+  }, [baseYAxisDomain, customYAxisMax, customYAxisMin, yAxisMode]);
+
+  const isCustomRangeValid = useMemo(() => {
+    if (dateRangeOption !== "custom") return true;
+    if (!customStartDate || !customEndDate) return false;
+    const start = new Date(customStartDate);
+    const end = new Date(customEndDate);
+    return (
+      Number.isFinite(start.getTime()) &&
+      Number.isFinite(end.getTime()) &&
+      start.getTime() <= end.getTime()
+    );
+  }, [customEndDate, customStartDate, dateRangeOption]);
 
   const handleTimeseriesClick = useCallback(async () => {
     setTimeseriesOpen(true);
@@ -974,9 +1094,17 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                     <div className="flex flex-wrap items-center gap-3 sm:gap-4">
                       <NativeSelect
                         value={dateRangeOption}
-                        onChange={(e) =>
-                          setDateRangeOption(e.target.value as DateRangeOption)
-                        }
+                        onChange={(e) => {
+                          const next = e.target.value as DateRangeOption;
+                          setDateRangeOption(next);
+                          if (
+                            next === "custom" &&
+                            (!customStartDate || !customEndDate)
+                          ) {
+                            setCustomStartDate(customRangeDefaults.start);
+                            setCustomEndDate(customRangeDefaults.end);
+                          }
+                        }}
                       >
                         <NativeSelectOption value="1month">
                           1 Month
@@ -990,19 +1118,135 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                         <NativeSelectOption value="1year">
                           1 Year
                         </NativeSelectOption>
+                        <NativeSelectOption value="custom">
+                          Custom Range
+                        </NativeSelectOption>
                       </NativeSelect>
 
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={handleTimeseriesClick}
-                        disabled={timeseriesLoading}
+                        disabled={timeseriesLoading || !isCustomRangeValid}
                       >
                         {timeseriesLoading ? "Loading..." : "Update"}
                       </Button>
                     </div>
+
+                    {dateRangeOption === "custom" && (
+                      <div className="flex flex-wrap items-end gap-3 sm:gap-4">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs text-slate-300">
+                            Start date
+                          </label>
+                          <Input
+                            type="date"
+                            value={customStartDate}
+                            min={
+                              datasetStart
+                                ? formatDate(datasetStart)
+                                : undefined
+                            }
+                            max={
+                              datasetEnd ? formatDate(datasetEnd) : undefined
+                            }
+                            onChange={(e) => setCustomStartDate(e.target.value)}
+                            className="h-9"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs text-slate-300">
+                            End date
+                          </label>
+                          <Input
+                            type="date"
+                            value={customEndDate}
+                            min={
+                              datasetStart
+                                ? formatDate(datasetStart)
+                                : undefined
+                            }
+                            max={
+                              datasetEnd ? formatDate(datasetEnd) : undefined
+                            }
+                            onChange={(e) => setCustomEndDate(e.target.value)}
+                            className="h-9"
+                          />
+                        </div>
+                        {!isCustomRangeValid && (
+                          <p className="text-xs text-red-400">
+                            Pick a valid start and end date.
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
+
+                <div className="space-y-2">
+                  <label className="text-card-foreground flex items-center gap-2 text-xs font-medium sm:text-sm">
+                    <Activity className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                    Y-Axis Range
+                  </label>
+                  {isGodasDataset && hasColorbarOverrides ? (
+                    <p className="text-xs text-slate-300">
+                      GODAS uses the colorbar override range for the Y axis.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+                        <NativeSelect
+                          value={yAxisMode}
+                          onChange={(e) =>
+                            setYAxisMode(e.target.value as "auto" | "custom")
+                          }
+                        >
+                          <NativeSelectOption value="auto">
+                            Auto
+                          </NativeSelectOption>
+                          <NativeSelectOption value="custom">
+                            Custom
+                          </NativeSelectOption>
+                        </NativeSelect>
+                      </div>
+                      {yAxisMode === "custom" && (
+                        <div className="flex flex-wrap items-end gap-3 sm:gap-4">
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs text-slate-300">
+                              Min
+                            </label>
+                            <Input
+                              type="number"
+                              value={customYAxisMin}
+                              onChange={(e) =>
+                                setCustomYAxisMin(e.target.value)
+                              }
+                              className="h-9"
+                            />
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs text-slate-300">
+                              Max
+                            </label>
+                            <Input
+                              type="number"
+                              value={customYAxisMax}
+                              onChange={(e) =>
+                                setCustomYAxisMax(e.target.value)
+                              }
+                              className="h-9"
+                            />
+                          </div>
+                          {!isCustomYAxisValid && (
+                            <p className="text-xs text-red-400">
+                              Enter a valid min/max (min &lt; max).
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
 
                 {/* Chart Area */}
                 <div

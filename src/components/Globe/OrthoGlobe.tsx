@@ -207,10 +207,13 @@ const OrthoGlobe: React.FC<Props> = ({
     const preload = () => {
       urls.forEach((url) => preloadGeoJson(url));
     };
-    if ("requestIdleCallback" in window) {
-      (window as any).requestIdleCallback(preload, { timeout: 1200 });
+    const requestIdle = (globalThis as any).requestIdleCallback as
+      | ((cb: () => void, options?: { timeout?: number }) => void)
+      | undefined;
+    if (typeof requestIdle === "function") {
+      requestIdle(preload, { timeout: 1200 });
     } else {
-      window.setTimeout(preload, 300);
+      setTimeout(preload, 300);
     }
   }, [countryBoundaryResolution, stateBoundaryResolution]);
 

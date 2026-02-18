@@ -1146,26 +1146,33 @@ export default function HomePage() {
       return;
     }
 
-    const isCmorphDataset = [
+    const datasetText = [
+      currentDataset?.id,
+      currentDataset?.slug,
       currentDataset?.name,
       currentDataset?.description,
-      currentDataset?.slug,
-      currentDataset?.id,
+      currentDataset?.sourceName,
     ]
       .filter(Boolean)
-      .some((value) => String(value).toLowerCase().includes("cmorph"));
+      .map((value) => String(value).toLowerCase())
+      .join(" ");
+    const isCmorphDataset = datasetText.includes("cmorph");
+    const isGodasDataset =
+      datasetText.includes("godas") ||
+      datasetText.includes("global ocean data assimilation system") ||
+      datasetText.includes("ncep global ocean data assimilation");
 
     const isNewDataset = lastDatasetIdRef.current !== datasetId;
     if (isNewDataset) {
       lastDatasetIdRef.current = datasetId;
       setGlobeSettings((prev) => {
-        if (isCmorphDataset) {
+        if (isCmorphDataset || isGodasDataset) {
           return prev.hideZeroPrecipitation
             ? prev
             : { ...prev, hideZeroPrecipitation: true };
         }
 
-        // Non-CMORPH datasets should default to showing all values.
+        // Non-CMORPH/GODAS datasets should default to showing all values.
         return prev.hideZeroPrecipitation
           ? { ...prev, hideZeroPrecipitation: false }
           : prev;
@@ -2186,6 +2193,8 @@ export default function HomePage() {
         colorBarPosition={colorBarPosition}
         colorBarCollapsed={colorBarCollapsed}
         colorBarOrientation={colorBarOrientation}
+        colorbarCustomMin={globeSettings.colorbarCustomMin}
+        colorbarCustomMax={globeSettings.colorbarCustomMax}
         currentDataset={currentDataset ?? undefined}
         selectedDate={selectedDate}
         temperatureUnit={temperatureUnit}
