@@ -13,15 +13,9 @@ import type {
   AppState,
   TemperatureUnit,
   RegionData,
-  ColorBarOrientation,
   ColorScale,
 } from "@/types";
-import { getColorMapColors } from "@/utils/colorMaps";
-import {
-  AIR_TEMPERATURE_BASE,
-  SHARP_BANDS,
-  resolveColorMapColors,
-} from "@/utils/colorScales";
+import { SHARP_BANDS, resolveColorMapColors } from "@/utils/colorScales";
 import { transformBackendDataset } from "@/lib/datasets";
 
 const reducePalette = (colors: string[], count: number): string[] => {
@@ -107,43 +101,55 @@ const applyColorMapToDataset = (
   };
 };
 
-type AppStateContextType = ReturnType<typeof useAppStateInternal>;
+type DatasetAppState = {
+  showSettings: boolean;
+  showAbout: boolean;
+  showTutorial: boolean;
+  showChat: boolean;
+  showColorbar: boolean;
+  showRegionInfo: boolean;
+  datasets: Dataset[];
+  currentDataset: Dataset | null;
+  regionInfoData: {
+    latitude: number;
+    longitude: number;
+    regionData: RegionData;
+  };
+  currentLocationMarker: AppState["currentLocationMarker"];
+  globePosition: AppState["globePosition"];
+  locationFocusRequest?: AppState["locationFocusRequest"];
+  isLoading: boolean;
+  error: string | null;
+  globeSettings: AppState["globeSettings"];
+  colorScaleBaselines: Record<string, ColorScale | undefined>;
+};
 
-const AppStateContext = createContext<AppStateContextType | undefined>(
-  undefined,
-);
+type DatasetContextType = ReturnType<typeof useDatasetInternal>;
 
-const COLOR_BAR_ORIENTATION_STORAGE_KEY = "icharm_colorBarOrientation";
+const DatasetContext = createContext<DatasetContextType | undefined>(undefined);
+
 const DEFAULT_COLOR_MAP_PRESET = "dataset-default";
 const DEFAULT_COLOR_MAP_INVERSE = false;
 
-const useAppStateInternal = () => {
-  const [state, setState] = useState<AppState>({
+const useDatasetInternal = () => {
+  const [state, setState] = useState<DatasetAppState>({
     showSettings: false,
     showAbout: false,
     showTutorial: false,
     showChat: false,
     showColorbar: true,
     showRegionInfo: false,
-    datasets: [], // Start with empty array
-    currentDataset: null, // Start with null
+    datasets: [],
+    currentDataset: null,
     regionInfoData: {
       latitude: 0,
       longitude: 0,
-      regionData: {
-        name: "",
-        dataset: "",
-      },
+      regionData: { name: "", dataset: "" },
     },
     currentLocationMarker: null,
-    globePosition: {
-      latitude: 0,
-      longitude: 0,
-      zoom: 1,
-    },
+    globePosition: { latitude: 0, longitude: 0, zoom: 1 },
     isLoading: true,
     error: null,
-    colorBarOrientation: "horizontal",
     globeSettings: {
       baseMapMode: "satellite",
       satelliteLayerVisible: true,
@@ -161,18 +167,15 @@ const useAppStateInternal = () => {
       rasterBlurEnabled: true,
       bumpMapMode: "none",
     },
-    lineColors: {
-      boundaryLines: "#000000",
-      coastlines: "#000000",
-      rivers: "#000000",
-      lakes: "#000000",
-      geographicLines: "#000000",
-      geographicGrid: "#000000",
-    },
-    selectedColorMap: "dataset-default",
-    selectedColorMapInverse: DEFAULT_COLOR_MAP_INVERSE,
     colorScaleBaselines: {},
   });
+
+  const [appliedColorMap, setAppliedColorMap] = useState(
+    DEFAULT_COLOR_MAP_PRESET,
+  );
+  const [appliedColorMapInverse, setAppliedColorMapInverse] = useState(
+    DEFAULT_COLOR_MAP_INVERSE,
+  );
 
   const [selectedYear, setSelectedYear] = useState<number>(
     new Date().getFullYear(),
@@ -188,70 +191,33 @@ const useAppStateInternal = () => {
   }>({
     latitude: 0,
     longitude: 0,
-    regionData: {
-      name: "",
-      dataset: "",
-    },
+    regionData: { name: "", dataset: "" },
   });
 
+  // Re-apply color map to all datasets when it changes
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    try {
-      const storedOrientation = window.localStorage.getItem(
-        COLOR_BAR_ORIENTATION_STORAGE_KEY,
-      );
-      if (
-        storedOrientation === "horizontal" ||
-        storedOrientation === "vertical"
-      ) {
-        const normalizedOrientation = storedOrientation as ColorBarOrientation;
-        setState((prev) => {
-          if (prev.colorBarOrientation === normalizedOrientation) {
-            return prev;
-          }
-          return {
-            ...prev,
-            colorBarOrientation: normalizedOrientation,
-          };
-        });
-      }
-    } catch (error) {
-      console.warn("Failed to load color bar orientation preference:", error);
-    }
-  }, []);
-
-  // Re-apply selected color map to datasets and current dataset
-  useEffect(() => {
-    const preset = state.selectedColorMap ?? DEFAULT_COLOR_MAP_PRESET;
-    const invert = state.selectedColorMapInverse ?? DEFAULT_COLOR_MAP_INVERSE;
+    const preset = appliedColorMap;
+    const invert = appliedColorMapInverse;
     setState((prev) => {
       const baselines = prev.colorScaleBaselines ?? {};
       const apply = (dataset: Dataset) =>
         applyColorMapToDataset(dataset, preset, baselines, invert);
-
       return {
         ...prev,
         datasets: prev.datasets.map(apply),
         currentDataset: prev.currentDataset ? apply(prev.currentDataset) : null,
       };
     });
-  }, [state.selectedColorMap, state.selectedColorMapInverse]);
+  }, [appliedColorMap, appliedColorMapInverse]);
+
+  // Stable applyColorMap — called by SettingsContext when color map changes
+  const applyColorMap = useCallback((preset: string, invert: boolean) => {
+    setAppliedColorMap(preset);
+    setAppliedColorMapInverse(invert);
+  }, []);
 
   const setShowSettings = useCallback((show: boolean) => {
     setState((prev) => ({ ...prev, showSettings: show }));
-  }, []);
-
-  const setLineColors = useCallback((next: Partial<AppState["lineColors"]>) => {
-    setState((prev) => ({
-      ...prev,
-      lineColors: {
-        ...prev.lineColors,
-        ...next,
-      } as AppState["lineColors"],
-    }));
   }, []);
 
   const setShowAbout = useCallback((show: boolean) => {
@@ -275,10 +241,7 @@ const useAppStateInternal = () => {
         source?: "marker" | "search" | "region" | "unknown" | null;
       } | null,
     ) => {
-      setState((prev) => ({
-        ...prev,
-        currentLocationMarker: marker,
-      }));
+      setState((prev) => ({ ...prev, currentLocationMarker: marker }));
     },
     [],
   );
@@ -310,10 +273,7 @@ const useAppStateInternal = () => {
   const requestLocationMarkerClear = useCallback(() => {
     setState((prev) => ({
       ...prev,
-      locationFocusRequest: {
-        id: Date.now(),
-        mode: "clear",
-      },
+      locationFocusRequest: { id: Date.now(), mode: "clear" },
       currentLocationMarker: null,
     }));
   }, []);
@@ -322,42 +282,36 @@ const useAppStateInternal = () => {
     setState((prev) => ({ ...prev, locationFocusRequest: null }));
   }, []);
 
-  const setColorBarOrientation = useCallback(
-    (orientation: ColorBarOrientation) => {
-      setState((prev) => ({ ...prev, colorBarOrientation: orientation }));
+  // Accepts an optional color map override so dataset switch and color map
+  // restoration happen atomically in a single setState call
+  const setCurrentDataset = useCallback(
+    (
+      dataset: Dataset,
+      colorMapOverride?: { preset: string; invert: boolean },
+    ) => {
+      const preset = colorMapOverride?.preset ?? appliedColorMap;
+      const invert = colorMapOverride?.invert ?? appliedColorMapInverse;
+
+      if (colorMapOverride) {
+        setAppliedColorMap(preset);
+        setAppliedColorMapInverse(invert);
+      }
+
+      setState((prev) => {
+        const baselines = prev.colorScaleBaselines ?? {};
+        return {
+          ...prev,
+          currentDataset: applyColorMapToDataset(
+            dataset,
+            preset,
+            baselines,
+            invert,
+          ),
+        };
+      });
     },
-    [],
+    [appliedColorMap, appliedColorMapInverse],
   );
-
-  const setSelectedColorMap = useCallback((preset: string | null) => {
-    setState((prev) => ({
-      ...prev,
-      selectedColorMap: preset ?? DEFAULT_COLOR_MAP_PRESET,
-    }));
-  }, []);
-
-  const setSelectedColorMapInverse = useCallback((invert: boolean) => {
-    setState((prev) => ({
-      ...prev,
-      selectedColorMapInverse: invert,
-    }));
-  }, []);
-
-  const setCurrentDataset = useCallback((dataset: Dataset) => {
-    setState((prev) => {
-      const baselines = prev.colorScaleBaselines ?? {};
-      const colorMap = prev.selectedColorMap ?? DEFAULT_COLOR_MAP_PRESET;
-      return {
-        ...prev,
-        currentDataset: applyColorMapToDataset(
-          dataset,
-          colorMap,
-          baselines,
-          prev.selectedColorMapInverse ?? DEFAULT_COLOR_MAP_INVERSE,
-        ),
-      };
-    });
-  }, []);
 
   const fetchDatasets = useCallback(
     async (signal?: AbortSignal) => {
@@ -380,22 +334,17 @@ const useAppStateInternal = () => {
 
         console.log("Raw API response:", rawDatasets?.[0]);
 
-        // Transform database datasets to app format
         const datasets: Dataset[] = rawDatasets.map(
           (record: ClimateDatasetRecord) => transformBackendDataset(record),
         );
 
-        if (signal?.aborted) {
-          return false;
-        }
+        if (signal?.aborted) return false;
 
-        const preset = state.selectedColorMap ?? DEFAULT_COLOR_MAP_PRESET;
-        const invert =
-          state.selectedColorMapInverse ?? DEFAULT_COLOR_MAP_INVERSE;
+        const preset = appliedColorMap;
+        const invert = appliedColorMapInverse;
 
         setState((prev) => {
           if (!datasets.length) {
-            // No mock data fallback - just show empty state
             return {
               ...prev,
               datasets: [],
@@ -436,13 +385,10 @@ const useAppStateInternal = () => {
 
         return true;
       } catch (error) {
-        if (signal?.aborted) {
-          return false;
-        }
+        if (signal?.aborted) return false;
 
         console.error("Failed to fetch datasets from database:", error);
 
-        // No mock data fallback - just show error state
         setState((prev) => ({
           ...prev,
           datasets: [],
@@ -456,21 +402,17 @@ const useAppStateInternal = () => {
         return false;
       }
     },
-    [state.selectedColorMap, state.selectedColorMapInverse],
+    [appliedColorMap, appliedColorMapInverse],
   );
 
   const refreshDatasets = useCallback(() => {
     return fetchDatasets();
   }, [fetchDatasets]);
 
-  // Fetch datasets on mount
   useEffect(() => {
     const controller = new AbortController();
     fetchDatasets(controller.signal);
-
-    return () => {
-      controller.abort();
-    };
+    return () => controller.abort();
   }, [fetchDatasets]);
 
   return {
@@ -490,41 +432,37 @@ const useAppStateInternal = () => {
     setShowTutorial,
     setShowChat,
     toggleColorbar,
-    setColorBarOrientation,
-    setSelectedColorMap,
-    setSelectedColorMapInverse,
     setCurrentDataset,
     refreshDatasets,
     currentLocationMarker: state.currentLocationMarker,
     setCurrentLocationMarker,
-    lineColors: state.lineColors,
-    setLineColors,
     requestLocationFocus,
     requestLocationMarkerClear,
     clearLocationFocusRequest,
-    selectedColorMap: state.selectedColorMap,
-    selectedColorMapInverse: state.selectedColorMapInverse,
+    applyColorMap,
   };
 };
 
-export const AppStateProvider = ({
+export const DatasetProvider = ({
   children,
 }: {
   children: React.ReactNode;
 }) => {
-  const appState = useAppStateInternal();
-
+  const datasetState = useDatasetInternal();
   return (
-    <AppStateContext.Provider value={appState}>
+    <DatasetContext.Provider value={datasetState}>
       {children}
-    </AppStateContext.Provider>
+    </DatasetContext.Provider>
   );
 };
 
-export const useAppState = () => {
-  const context = useContext(AppStateContext);
+export const useDataset = () => {
+  const context = useContext(DatasetContext);
   if (!context) {
-    throw new Error("useAppState must be used within an AppStateProvider");
+    throw new Error("useDataset must be used within a DatasetProvider");
   }
   return context;
 };
+
+export const useAppState = useDataset;
+export const AppStateProvider = DatasetProvider;

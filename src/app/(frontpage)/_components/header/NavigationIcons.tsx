@@ -37,11 +37,13 @@ import { ChartSplineIcon } from "@/components/ui/chart-spline";
 import { SettingsGearIcon } from "@/components/ui/settings-gear";
 import { Info } from "lucide-react";
 import { ModeToggle } from "@/components/ui/modetoggle";
-import { useAppState } from "@/context/HeaderContext";
+import { useAppState } from "@/context/dataset-context";
+import { useSettings } from "@/context/settings-context";
 import type { LineColorSettings } from "@/types";
 import { COLOR_MAP_PRESETS } from "@/utils/colorScales";
 
 export default function NavigationIcons() {
+  const { globeSettings } = useAppState();
   const {
     colorBarOrientation,
     setColorBarOrientation,
@@ -51,83 +53,33 @@ export default function NavigationIcons() {
     setSelectedColorMapInverse,
     lineColors,
     setLineColors,
-    globeSettings,
-  } = useAppState();
+    activeColorMapCategory,
+    setActiveColorMapCategory,
+    resetToDefaults,
+    getDefaultLineColors,
+  } = useSettings();
+
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
-
-  const viewMode = globeSettings?.viewMode ?? "3d";
-  const defaultLineColors =
-    viewMode === "3d" || viewMode === "2d" || viewMode === "ortho"
-      ? {
-          boundaryLines: "#000000",
-          coastlines: "#000000",
-          rivers: "#000000",
-          lakes: "#000000",
-          geographicLines: "#000000",
-          geographicGrid: "#000000",
-        }
-      : {
-          boundaryLines: "#4b5563",
-          coastlines: "#4b5563",
-          rivers: "#4b5563",
-          lakes: "#4b5563",
-          geographicLines: "#4b5563",
-          geographicGrid: "#4b5563",
-        };
-
-  const [settings, setSettings] = React.useState(() => ({
-    colorBarOrientation,
-    colorMapPreset: selectedColorMap ?? "dataset-default",
-    colorMapInverse: selectedColorMapInverse ?? false,
-    lineColors: lineColors ?? defaultLineColors,
-  }));
-
-  const DEFAULT_COLOR_MAP_CATEGORY = "cb-zero";
-  const [activeColorMapCategory, setActiveColorMapCategory] = React.useState(
-    DEFAULT_COLOR_MAP_CATEGORY,
-  );
-  const [lineColorSelection, setLineColorSelection] = React.useState(() => ({
+  const [lineColorSelection, setLineColorSelection] = React.useState({
     boundaryLines: false,
     coastlines: false,
     rivers: false,
     lakes: false,
     geographicLines: false,
     geographicGrid: false,
-  }));
+  });
 
-  React.useEffect(() => {
-    setSettings((prev) => ({
-      ...prev,
-      colorBarOrientation,
-      colorMapPreset: selectedColorMap ?? "dataset-default",
-      colorMapInverse: selectedColorMapInverse ?? false,
-      lineColors: lineColors ?? prev.lineColors,
-    }));
-  }, [
-    colorBarOrientation,
-    selectedColorMap,
-    selectedColorMapInverse,
-    lineColors,
-  ]);
-
-  const updateSetting = (key: string, value: any) => {
-    setSettings((prev) => ({ ...prev, [key]: value }));
-  };
+  const viewMode = globeSettings?.viewMode ?? "3d";
 
   const handleColorMapSelect = (preset: string) => {
-    updateSetting("colorMapPreset", preset);
     setSelectedColorMap(preset);
   };
 
   const handleColorMapInverseToggle = (checked: boolean) => {
-    updateSetting("colorMapInverse", checked);
     setSelectedColorMapInverse(checked);
   };
 
   const handleSave = () => {
-    if (settings.lineColors) {
-      setLineColors(settings.lineColors);
-    }
     setLineColorSelection({
       boundaryLines: false,
       coastlines: false,
@@ -139,18 +91,21 @@ export default function NavigationIcons() {
     setIsSettingsOpen(false);
   };
 
-  const resetToDefaults = () => {
-    setSettings({
-      colorBarOrientation: "horizontal",
-      colorMapPreset: "dataset-default",
-      colorMapInverse: false,
-      lineColors: defaultLineColors,
+  const handleResetToDefaults = () => {
+    resetToDefaults(viewMode);
+    setActiveColorMapCategory("cb-zero");
+    setLineColorSelection({
+      boundaryLines: false,
+      coastlines: false,
+      rivers: false,
+      lakes: false,
+      geographicLines: false,
+      geographicGrid: false,
     });
-    setColorBarOrientation("horizontal");
-    setSelectedColorMap("dataset-default");
-    setSelectedColorMapInverse(false);
-    setActiveColorMapCategory(DEFAULT_COLOR_MAP_CATEGORY);
-    setLineColors(defaultLineColors);
+  };
+
+  const resetLineColors = () => {
+    setLineColors(getDefaultLineColors(viewMode));
     setLineColorSelection({
       boundaryLines: false,
       coastlines: false,
@@ -183,18 +138,6 @@ export default function NavigationIcons() {
     { key: "geographicLines", label: "Geographic Lines" },
     { key: "geographicGrid", label: "Geographic Grid" },
   ];
-
-  const resetLineColors = () => {
-    setSettings((prev) => ({ ...prev, lineColors: defaultLineColors }));
-    setLineColorSelection({
-      boundaryLines: false,
-      coastlines: false,
-      rivers: false,
-      lakes: false,
-      geographicLines: false,
-      geographicGrid: false,
-    });
-  };
 
   const colorMapCategories = React.useMemo(
     () => [
@@ -250,6 +193,15 @@ export default function NavigationIcons() {
     [colorMapCategories],
   );
 
+  const filteredPresets = React.useMemo(() => {
+    const category =
+      visibleColorMapCategories.find(
+        (cat) => cat.id === activeColorMapCategory,
+      ) ?? visibleColorMapCategories[0];
+    if (!category) return [];
+    return COLOR_MAP_PRESETS.filter((preset) => category.match(preset.id));
+  }, [activeColorMapCategory, visibleColorMapCategories]);
+
   const buildLinearGradient = (colors: string[]) =>
     colors
       .map((color, index) => {
@@ -270,16 +222,11 @@ export default function NavigationIcons() {
     ) {
       setActiveColorMapCategory(visibleColorMapCategories[0].id);
     }
-  }, [activeColorMapCategory, visibleColorMapCategories]);
-
-  const filteredPresets = React.useMemo(() => {
-    const category =
-      visibleColorMapCategories.find(
-        (cat) => cat.id === activeColorMapCategory,
-      ) ?? visibleColorMapCategories[0];
-    if (!category) return [];
-    return COLOR_MAP_PRESETS.filter((preset) => category.match(preset.id));
-  }, [activeColorMapCategory, visibleColorMapCategories]);
+  }, [
+    activeColorMapCategory,
+    visibleColorMapCategories,
+    setActiveColorMapCategory,
+  ]);
 
   return (
     <ButtonGroup>
@@ -375,7 +322,6 @@ export default function NavigationIcons() {
               </DialogDescription>
             </DialogHeader>
 
-            {/* Scrollable content */}
             <div
               className="overflow-y-auto px-4 py-6 sm:px-6"
               style={{
@@ -386,14 +332,12 @@ export default function NavigationIcons() {
               onTouchMove={(e) => e.stopPropagation()}
             >
               <div className="space-y-8">
-                {/* ── Color Maps ── */}
+                {/* Color Maps */}
                 <section className="space-y-4">
                   <div className="flex items-center gap-2">
                     <Eye className="text-primary h-4 w-4" />
                     <h3 className="text-sm font-semibold">Color Maps</h3>
                   </div>
-
-                  {/* Controls */}
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <Label
@@ -404,7 +348,7 @@ export default function NavigationIcons() {
                       </Label>
                       <Switch
                         id="inverse-toggle"
-                        checked={settings.colorMapInverse}
+                        checked={selectedColorMapInverse}
                         onCheckedChange={handleColorMapInverseToggle}
                       />
                     </div>
@@ -414,9 +358,8 @@ export default function NavigationIcons() {
                         size="sm"
                         onClick={() => {
                           handleColorMapSelect("dataset-default");
-                          setActiveColorMapCategory(DEFAULT_COLOR_MAP_CATEGORY);
+                          setActiveColorMapCategory("cb-zero");
                           setSelectedColorMapInverse(false);
-                          updateSetting("colorMapInverse", false);
                         }}
                         className="text-muted-foreground h-7 gap-1.5 text-xs"
                       >
@@ -440,8 +383,6 @@ export default function NavigationIcons() {
                       </Select>
                     </div>
                   </div>
-
-                  {/* Category pills */}
                   <div className="flex flex-wrap gap-1.5">
                     {visibleColorMapCategories.map((cat) => (
                       <Badge
@@ -458,16 +399,13 @@ export default function NavigationIcons() {
                       </Badge>
                     ))}
                   </div>
-
-                  {/* Color map grid */}
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {filteredPresets.map((preset) => {
-                      const displayColors = settings.colorMapInverse
+                      const displayColors = selectedColorMapInverse
                         ? [...preset.colors].reverse()
                         : preset.colors;
                       const gradient = buildLinearGradient(displayColors);
-                      const isActive = settings.colorMapPreset === preset.id;
-
+                      const isActive = selectedColorMap === preset.id;
                       return (
                         <button
                           key={preset.id}
@@ -504,13 +442,12 @@ export default function NavigationIcons() {
 
                 <Separator />
 
-                {/* ── Visualization ── */}
+                {/* Visualization */}
                 <section className="space-y-4">
                   <div className="flex items-center gap-2">
                     <LayoutList className="text-primary h-4 w-4" />
                     <h3 className="text-sm font-semibold">Visualization</h3>
                   </div>
-
                   <div className="flex items-center justify-between">
                     <div>
                       <Label className="text-sm font-medium">
@@ -523,29 +460,15 @@ export default function NavigationIcons() {
                     <div className="border-border flex overflow-hidden rounded-lg border">
                       <button
                         type="button"
-                        onClick={() => {
-                          setColorBarOrientation("horizontal");
-                          updateSetting("colorBarOrientation", "horizontal");
-                        }}
-                        className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                          colorBarOrientation === "horizontal"
-                            ? "bg-primary text-primary-foreground"
-                            : "hover:bg-muted"
-                        }`}
+                        onClick={() => setColorBarOrientation("horizontal")}
+                        className={`px-3 py-1.5 text-xs font-medium transition-colors ${colorBarOrientation === "horizontal" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
                       >
                         Horizontal
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          setColorBarOrientation("vertical");
-                          updateSetting("colorBarOrientation", "vertical");
-                        }}
-                        className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                          colorBarOrientation === "vertical"
-                            ? "bg-primary text-primary-foreground"
-                            : "hover:bg-muted"
-                        }`}
+                        onClick={() => setColorBarOrientation("vertical")}
+                        className={`px-3 py-1.5 text-xs font-medium transition-colors ${colorBarOrientation === "vertical" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
                       >
                         Vertical
                       </button>
@@ -555,13 +478,12 @@ export default function NavigationIcons() {
 
                 <Separator />
 
-                {/* ── Appearance ── */}
+                {/* Appearance */}
                 <section className="space-y-4">
                   <div className="flex items-center gap-2">
                     <Monitor className="text-primary h-4 w-4" />
                     <h3 className="text-sm font-semibold">Appearance</h3>
                   </div>
-
                   <div className="flex items-center justify-between">
                     <div>
                       <Label className="text-sm font-medium">Theme</Label>
@@ -575,7 +497,7 @@ export default function NavigationIcons() {
 
                 <Separator />
 
-                {/* ── Map Overlay Colors ── */}
+                {/* Map Overlay Colors */}
                 <section className="space-y-4">
                   <div className="flex items-center gap-2">
                     <Palette className="text-primary h-4 w-4" />
@@ -583,8 +505,6 @@ export default function NavigationIcons() {
                       Map Overlay Colors
                     </h3>
                   </div>
-
-                  {/* Master color + reset */}
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <Label className="text-sm font-medium">
@@ -607,15 +527,11 @@ export default function NavigationIcons() {
                               ? selectedKeys
                               : lineColorItems.map((i) => i.key)
                           ) as Array<keyof LineColorSettings>;
-                          setSettings((prev) => {
-                            const next: LineColorSettings = {
-                              ...prev.lineColors,
-                            };
-                            keysToApply.forEach((k) => {
-                              next[k] = value;
-                            });
-                            return { ...prev, lineColors: next };
+                          const next: LineColorSettings = { ...lineColors };
+                          keysToApply.forEach((k) => {
+                            next[k] = value;
                           });
+                          setLineColors(next);
                         }}
                       >
                         <SelectTrigger className="h-8 w-[120px] text-xs">
@@ -646,8 +562,6 @@ export default function NavigationIcons() {
                       </Button>
                     </div>
                   </div>
-
-                  {/* Individual line colors */}
                   <div className="border-border divide-border divide-y rounded-lg border">
                     {lineColorItems.map((item) => (
                       <div
@@ -674,8 +588,8 @@ export default function NavigationIcons() {
                             className="border-border h-3 w-3 rounded-full border"
                             style={{
                               backgroundColor:
-                                settings.lineColors?.[
-                                  item.key as keyof typeof settings.lineColors
+                                lineColors?.[
+                                  item.key as keyof LineColorSettings
                                 ] ?? "#000000",
                             }}
                           />
@@ -685,18 +599,11 @@ export default function NavigationIcons() {
                         </div>
                         <Select
                           value={
-                            settings.lineColors?.[
-                              item.key as keyof typeof settings.lineColors
-                            ] ?? "#000000"
+                            lineColors?.[item.key as keyof LineColorSettings] ??
+                            "#000000"
                           }
                           onValueChange={(value) =>
-                            setSettings((prev) => ({
-                              ...prev,
-                              lineColors: {
-                                ...prev.lineColors,
-                                [item.key]: value,
-                              },
-                            }))
+                            setLineColors({ ...lineColors, [item.key]: value })
                           }
                         >
                           <SelectTrigger className="h-7 w-[110px] text-xs">
@@ -723,7 +630,7 @@ export default function NavigationIcons() {
 
                 <Separator />
 
-                {/* ── Reset All ── */}
+                {/* Reset All */}
                 <section>
                   <div className="flex items-center justify-between rounded-lg border border-red-500/20 bg-red-500/5 p-4">
                     <div className="flex items-center gap-3">
@@ -740,7 +647,7 @@ export default function NavigationIcons() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={resetToDefaults}
+                      onClick={handleResetToDefaults}
                       className="text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300"
                     >
                       Reset All
@@ -750,7 +657,6 @@ export default function NavigationIcons() {
               </div>
             </div>
 
-            {/* Footer */}
             <div className="flex items-center justify-end gap-2 border-t px-4 py-3 sm:px-6">
               <DialogClose asChild>
                 <Button variant="outline" size="sm">
