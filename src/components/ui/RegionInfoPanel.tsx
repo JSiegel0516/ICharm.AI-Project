@@ -64,6 +64,9 @@ type TemperatureUnitInfo = {
 type DateRangeOption =
   | "all"
   | "1year"
+  | "3years"
+  | "5years"
+  | "10years"
   | "6months"
   | "3months"
   | "1month"
@@ -142,7 +145,7 @@ const chartConfig = {
   desktop: {
     label: "Desktop",
     icon: Monitor,
-    color: "hsl(var(--primary))",
+    color: "var(--primary)",
   },
 } satisfies ChartConfig;
 
@@ -210,11 +213,13 @@ const isoDate = (d: Date) => {
   return `${y}-${m}-${day}`;
 };
 
-const sanitizeTimeseriesValue = (value: number | null) => {
-  if (value === null || !Number.isFinite(value)) return null;
+const sanitizeTimeseriesValue = (value: number | string | null) => {
+  if (value === null || value === undefined) return null;
+  const numeric = typeof value === "string" ? Number(value) : value;
+  if (!Number.isFinite(numeric)) return null;
   // Filter sentinel/missing values that blow out the chart scale.
-  if (Math.abs(value) >= 1e6) return null;
-  return value;
+  if (Math.abs(numeric) >= 1e6) return null;
+  return numeric;
 };
 
 const downloadFile = (content: string, filename: string, type: string) => {
@@ -364,10 +369,10 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     return rawTimeseriesData
       .map((point: any) => {
         const raw = sanitizeTimeseriesValue(point?.[datasetId] ?? null);
-        if (raw == null) {
+        if (raw === null) {
           return { ...point, [datasetId]: null, value: null };
         }
-        const v = useFahrenheit ? c2f(Number(raw)) : Number(raw);
+        const v = useFahrenheit ? c2f(raw) : raw;
         const value = Number(v.toFixed(2));
         return { ...point, [datasetId]: value, value };
       })
@@ -379,11 +384,14 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     const numericCount = rawTimeseriesData.filter((point: any) =>
       Number.isFinite(point?.[datasetId]),
     ).length;
+    const sampleRaw = rawTimeseriesData.slice(0, 3);
+    const sampleValues = sampleRaw.map((point: any) => point?.[datasetId]);
     console.debug("[Timeseries] summary", {
       datasetId,
       rawPoints: rawTimeseriesData.length,
       numericCount,
       chartPoints: chartData.length,
+      sampleValues,
     });
   }, [rawTimeseriesData, datasetId, chartData.length]);
 
@@ -396,11 +404,15 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   const displayedLineData = useMemo(() => {
     if (!displayedChartData.length || !datasetId) return displayedChartData;
     return displayedChartData.map((point) => {
-      if (typeof point?.value === "number") return point;
+      if (typeof point?.value === "number" && Number.isFinite(point.value))
+        return point;
       const fallback = point?.[datasetId];
       return {
         ...point,
-        value: typeof fallback === "number" ? fallback : null,
+        value:
+          typeof fallback === "number" && Number.isFinite(fallback)
+            ? fallback
+            : null,
       };
     });
   }, [displayedChartData, datasetId]);
@@ -408,9 +420,16 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   const numericChartValues = useMemo(() => {
     return displayedLineData
       .map((p) => p?.value)
-      .filter((v): v is number => typeof v === "number");
+      .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
   }, [displayedLineData]);
   const validPointCount = numericChartValues.length;
+  const chartValueRange = useMemo(() => {
+    if (!numericChartValues.length) return null;
+    return {
+      min: Math.min(...numericChartValues),
+      max: Math.max(...numericChartValues),
+    };
+  }, [numericChartValues]);
 
   const yAxisDomain = useMemo((): [number, number] | undefined => {
     const vals = numericChartValues;
@@ -449,6 +468,37 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
 
   const hasData =
     numericChartValues.length > 0 && !timeseriesLoading && !timeseriesError;
+
+  useEffect(() => {
+    if (!timeseriesOpen || !datasetId) return;
+    console.debug("[Timeseries] chart-state", {
+      datasetId,
+      rawPoints: rawTimeseriesData.length,
+      chartPoints: chartData.length,
+      displayedPoints: displayedLineData.length,
+      validPointCount,
+      valueRange: chartValueRange,
+      hasData,
+    });
+  }, [
+    timeseriesOpen,
+    datasetId,
+    rawTimeseriesData.length,
+    chartData.length,
+    displayedLineData.length,
+    validPointCount,
+    chartValueRange,
+    hasData,
+  ]);
+
+  useEffect(() => {
+    if (!timeseriesOpen || !displayedLineData.length) return;
+    console.debug("[Timeseries] line-sample", {
+      first: displayedLineData[0],
+      last: displayedLineData[displayedLineData.length - 1],
+      yAxisDomain,
+    });
+  }, [timeseriesOpen, displayedLineData, yAxisDomain]);
 
   // ── Clamp helper ──
   const clampPos = useCallback((x: number, y: number): Position => {
@@ -553,6 +603,18 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
           break;
         case "1year":
           startDate = new Date(target.getFullYear() - 1, target.getMonth(), 1);
+          endDate = endOfMonth();
+          break;
+        case "3years":
+          startDate = new Date(target.getFullYear() - 3, target.getMonth(), 1);
+          endDate = endOfMonth();
+          break;
+        case "5years":
+          startDate = new Date(target.getFullYear() - 5, target.getMonth(), 1);
+          endDate = endOfMonth();
+          break;
+        case "10years":
+          startDate = new Date(target.getFullYear() - 10, target.getMonth(), 1);
           endDate = endOfMonth();
           break;
         case "6months":
@@ -1055,6 +1117,15 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                         <NativeSelectOption value="1year">
                           1 Year
                         </NativeSelectOption>
+                        <NativeSelectOption value="3years">
+                          3 Years
+                        </NativeSelectOption>
+                        <NativeSelectOption value="5years">
+                          5 Years
+                        </NativeSelectOption>
+                        <NativeSelectOption value="10years">
+                          10 Years
+                        </NativeSelectOption>
                         <NativeSelectOption value="custom">
                           Custom Range
                         </NativeSelectOption>
@@ -1192,7 +1263,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                             fontSize: "12px",
                           }}
                           itemStyle={{
-                            color: "hsl(var(--primary))",
+                            color: "var(--primary)",
                             fontSize: "12px",
                           }}
                         />
@@ -1206,7 +1277,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
                           type="linear"
                           dataKey="value"
                           name={currentDataset?.name || "Value"}
-                          stroke="hsl(var(--primary))"
+                          stroke="var(--primary)"
                           strokeWidth={2}
                           dot={validPointCount <= 1 ? { r: 3 } : false}
                           connectNulls
