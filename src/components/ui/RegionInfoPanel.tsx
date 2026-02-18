@@ -394,6 +394,13 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
 
   const chartData = useMemo(() => {
     if (!datasetId || rawTimeseriesData.length === 0) return [];
+    const isGodas =
+      datasetText.includes("godas") ||
+      datasetText.includes("global ocean data assimilation system") ||
+      datasetText.includes("ncep global ocean data assimilation") ||
+      datasetText.includes("ocean data assimilation") ||
+      datasetText.includes("ocean reanalysis");
+
     return rawTimeseriesData
       .map((point: any) => {
         const raw = sanitizeTimeseriesValue(point?.[datasetId] ?? null);
@@ -401,11 +408,11 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
           return { ...point, [datasetId]: null, value: null };
         }
         const v = useFahrenheit ? c2f(raw) : raw;
-        const value = Number(v.toFixed(2));
+        const value = isGodas ? v : Number(v.toFixed(2));
         return { ...point, [datasetId]: value, value };
       })
       .sort((a, b) => String(a.date).localeCompare(String(b.date)));
-  }, [rawTimeseriesData, datasetId, useFahrenheit]);
+  }, [rawTimeseriesData, datasetId, useFahrenheit, datasetText]);
 
   useEffect(() => {
     if (!rawTimeseriesData.length || !datasetId) return;
@@ -460,11 +467,41 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
   }, [numericChartValues]);
 
   const yAxisDomain = useMemo((): [number, number] | undefined => {
-    const vals = numericChartValues;
-    if (!vals.length) return undefined;
+    if (!numericChartValues.length) return undefined;
 
-    let min = Math.min(...vals);
-    let max = Math.max(...vals);
+    const isGodas =
+      datasetText.includes("godas") ||
+      datasetText.includes("global ocean data assimilation system") ||
+      datasetText.includes("ncep global ocean data assimilation") ||
+      datasetText.includes("ocean data assimilation") ||
+      datasetText.includes("ocean reanalysis");
+
+    if (isGodas) {
+      const GODAS_DEFAULT_MIN = -0.0000005;
+      const GODAS_DEFAULT_MAX = 0.0000005;
+      const customRangeEnabled =
+        colorbarCustomMin !== null || colorbarCustomMax !== null;
+      const overrideMin =
+        customRangeEnabled && Number.isFinite(colorbarCustomMin ?? NaN)
+          ? Number(colorbarCustomMin)
+          : null;
+      const overrideMax =
+        customRangeEnabled && Number.isFinite(colorbarCustomMax ?? NaN)
+          ? Number(colorbarCustomMax)
+          : null;
+
+      const min = overrideMin ?? GODAS_DEFAULT_MIN;
+      const max = overrideMax ?? GODAS_DEFAULT_MAX;
+      if (min === max) {
+        const pad = Math.abs(min) * 0.05 || 1;
+        return [min - pad, max + pad];
+      }
+      if (min < max) return [min, max];
+      return [max, min];
+    }
+
+    let min = Math.min(...numericChartValues);
+    let max = Math.max(...numericChartValues);
     if (!Number.isFinite(min) || !Number.isFinite(max)) return undefined;
 
     if (min === max) {
@@ -473,7 +510,7 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     }
     const pad = (max - min) * 0.1;
     return [min - pad, max + pad];
-  }, [numericChartValues]);
+  }, [numericChartValues, datasetText, colorbarCustomMin, colorbarCustomMax]);
 
   const datasetStart = useMemo(() => {
     const s = currentDataset?.startDate;
