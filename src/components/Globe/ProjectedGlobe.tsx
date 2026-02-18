@@ -784,6 +784,17 @@ const ProjectedGlobe: React.FC<Props> = ({
   }, [renderBoundaries, requestRender]);
 
   useEffect(() => {
+    requestRender();
+    scheduleMeshRender(true);
+  }, [
+    hideZeroValues,
+    rasterOpacity,
+    requestRender,
+    scheduleMeshRender,
+    smoothGridBoxValues,
+  ]);
+
+  useEffect(() => {
     if (!projectionRef.current) return;
     if (renderOrientation) {
       lastPacificOffsetRef.current = pacificOffset;

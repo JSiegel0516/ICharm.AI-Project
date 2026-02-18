@@ -361,9 +361,28 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
 
   const datasetId = currentDataset?.id ?? null;
 
+  const seriesKey = useMemo(() => {
+    if (!rawTimeseriesData.length) return null;
+    if (datasetId) {
+      const hasId = rawTimeseriesData.some(
+        (point: any) => typeof point?.[datasetId] === "number",
+      );
+      if (hasId) return datasetId;
+    }
+    const sample = rawTimeseriesData.find(
+      (point: any) => point && typeof point === "object",
+    );
+    const keys = sample
+      ? Object.keys(sample).filter(
+          (key) => key !== "date" && key !== "timestamp",
+        )
+      : [];
+    return keys[0] ?? datasetId ?? null;
+  }, [datasetId, rawTimeseriesData]);
+
   const chartData = useMemo(() => {
-    if (!datasetId || rawTimeseriesData.length === 0) return [];
-    const transformed = applyTransformations(rawTimeseriesData, [datasetId], {
+    if (!seriesKey || rawTimeseriesData.length === 0) return [];
+    const transformed = applyTransformations(rawTimeseriesData, [seriesKey], {
       normalize: false,
       smoothingWindow: undefined,
       resampleFreq: undefined,
@@ -371,13 +390,27 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     });
     return transformed
       .map((point: any) => {
-        const raw = sanitizeTimeseriesValue(point?.[datasetId] ?? null);
+        const raw = sanitizeTimeseriesValue(point?.[seriesKey] ?? null);
         if (raw == null) return { date: point.date, value: null };
         const v = useFahrenheit ? c2f(Number(raw)) : Number(raw);
         return { date: point.date, value: Number(v.toFixed(2)) };
       })
       .sort((a, b) => String(a.date).localeCompare(String(b.date)));
-  }, [datasetId, rawTimeseriesData, useFahrenheit]);
+  }, [rawTimeseriesData, seriesKey, useFahrenheit]);
+
+  useEffect(() => {
+    if (!rawTimeseriesData.length || !seriesKey) return;
+    const numericCount = rawTimeseriesData.filter((point: any) =>
+      Number.isFinite(point?.[seriesKey]),
+    ).length;
+    console.debug("[Timeseries] summary", {
+      datasetId,
+      seriesKey,
+      rawPoints: rawTimeseriesData.length,
+      numericCount,
+      chartPoints: chartData.length,
+    });
+  }, [rawTimeseriesData, seriesKey, chartData.length, datasetId]);
 
   const displayedChartData = useMemo(() => {
     if (!zoomWindow || !chartData.length) return chartData;
@@ -631,6 +664,14 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
     }
 
     const { start: startDate, end: endDate } = calculateDateRange();
+    console.debug("[Timeseries] request", {
+      datasetId,
+      latitude,
+      longitude,
+      dateRangeOption,
+      startDate: isoDate(startDate),
+      endDate: isoDate(endDate),
+    });
     setTimeseriesLoading(true);
     setTimeseriesError(null);
 
@@ -663,7 +704,20 @@ const RegionInfoPanel: React.FC<RegionInfoPanelProps> = ({
         throw new Error("Invalid response format");
       }
 
-      setRawTimeseriesData(result.data);
+      const normalized = result.data.map((point: any) => {
+        if (point && typeof point === "object" && point.values) {
+          return { date: point.date, ...point.values };
+        }
+        return point;
+      });
+      console.debug("[Timeseries] response", {
+        datasetId,
+        points: normalized.length,
+        sampleKeys: normalized[0] ? Object.keys(normalized[0]) : [],
+        sample: normalized[0] ?? null,
+        metadataKeys: result.metadata ? Object.keys(result.metadata) : [],
+      });
+      setRawTimeseriesData(normalized);
       setTimeseriesUnits(result.metadata?.[datasetId]?.units ?? datasetUnit);
     } catch (error) {
       const msg =

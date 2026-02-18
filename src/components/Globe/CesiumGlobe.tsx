@@ -2585,6 +2585,14 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
       layers.forEach((layer) => {
         layer.show = true;
       });
+      if (Math.abs(startOpacity - targetOpacity) < 0.01) {
+        layers.forEach((layer) => {
+          layer.alpha = targetOpacity;
+          layer.show = visible;
+        });
+        viewerRef.current.scene?.requestRender();
+        return;
+      }
       animateLayerAlpha(layers, startOpacity, targetOpacity, 160, () => {
         layers.forEach((layer) => {
           layer.alpha = targetOpacity;
@@ -2592,6 +2600,18 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
         });
       });
     }, [animateLayerAlpha, rasterOpacity, useMeshRasterActive, viewerReady]);
+
+    useEffect(() => {
+      if (!viewerReady || !viewerRef.current) return;
+      const layers = rasterLayerRef.current;
+      if (!layers.length) return;
+      const clampedOpacity = Math.min(Math.max(rasterOpacity, 0), 1);
+      layers.forEach((layer) => {
+        layer.alpha = clampedOpacity;
+        layer.show = clampedOpacity > 0;
+      });
+      viewerRef.current.scene?.requestRender();
+    }, [rasterOpacity, viewerReady]);
 
     useEffect(() => {
       if (!viewerReady) return;
