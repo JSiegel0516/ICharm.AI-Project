@@ -77,7 +77,6 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
   ) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const viewerRef = useRef<any>(null);
-    const cesiumDebugRef = useRef<HTMLDivElement | null>(null);
     const initializingViewerRef = useRef(false);
 
     // FIXED: Better loading state management
@@ -2117,24 +2116,6 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
     }, [cesiumInstance, updateAdminBoundaryVisibility, viewerReady]);
 
     useEffect(() => {
-      if (!cesiumDebugRef.current) return;
-      const interval = window.setInterval(() => {
-        const viewer = viewerRef.current;
-        if (!viewer || viewer.isDestroyed?.()) return;
-        const height = viewer.camera.positionCartographic.height;
-        const tileZoom = heightToTileZoomFloat(height);
-        if (cesiumDebugRef.current) {
-          cesiumDebugRef.current.textContent = `height: ${Math.round(
-            height,
-          ).toLocaleString()}m | tileZoom: ${tileZoom.toFixed(2)}`;
-        }
-      }, 200);
-      return () => {
-        window.clearInterval(interval);
-      };
-    }, []);
-
-    useEffect(() => {
       if (effectiveViewMode === "ortho") return;
       const resMap = { low: "110m", medium: "50m", high: "10m" } as const;
       const urls: string[] = [];
@@ -2853,18 +2834,6 @@ const CesiumGlobe = forwardRef<GlobeRef, GlobeProps>(
             display: isProjection ? "none" : "block",
           }}
         />
-        <div
-          ref={cesiumDebugRef}
-          className="absolute bottom-3 left-3 z-10 rounded-lg px-2 py-1 text-xs"
-          style={{
-            background: "rgba(15, 23, 42, 0.7)",
-            color: "#e2e8f0",
-            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-            pointerEvents: "none",
-            display: isProjection || isOrtho ? "none" : "block",
-          }}
-        />
-
         {isOrtho && (
           <OrthoGlobe
             rasterData={rasterState.data}
