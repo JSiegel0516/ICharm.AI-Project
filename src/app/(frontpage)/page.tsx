@@ -24,7 +24,8 @@ import {
 } from "@/components/ui/dialog";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
-import { useAppState } from "@/context/HeaderContext";
+import { useAppState } from "@/context/dataset-context";
+import { useSettings } from "@/context/settings-context";
 import {
   RegionData,
   PressureLevel,
@@ -52,7 +53,6 @@ import { resolveEffectiveColorbarRange } from "@/lib/mesh/rasterUtils";
 import { Play, Square, Loader2 } from "lucide-react";
 import { SideButtons } from "./_components/SideButtons";
 import { Tutorial } from "./_components/Tutorial";
-
 import { useRasterLayer } from "@/hooks/useRasterLayer";
 import { useRasterGrid } from "@/hooks/useRasterGrid";
 
@@ -68,38 +68,24 @@ const normalizeLevelUnit = (
       normalized === "mb" ||
       normalized.includes("millibar") ||
       normalized.includes("mbar")
-    ) {
+    )
       return "millibar";
-    }
-    if (normalized === "hpa" || normalized.includes("hectopascal")) {
+    if (normalized === "hpa" || normalized.includes("hectopascal"))
       return "hPa";
-    }
-    if (normalized === "pa" || normalized.includes("pascal")) {
-      return "Pa";
-    }
-    if (normalized === "m" || normalized.includes("meter")) {
-      return "m";
-    }
-    if (normalized === "km" || normalized.includes("kilometer")) {
-      return "km";
-    }
+    if (normalized === "pa" || normalized.includes("pascal")) return "Pa";
+    if (normalized === "m" || normalized.includes("meter")) return "m";
+    if (normalized === "km" || normalized.includes("kilometer")) return "km";
     return normalized;
   }
-
   const descriptorText = descriptor?.toLowerCase() ?? "";
   if (
     descriptorText.includes("pressure") ||
     descriptorText.includes("millibar") ||
     descriptorText.includes("mbar")
-  ) {
+  )
     return "millibar";
-  }
-  if (
-    descriptorText.includes("height") ||
-    descriptorText.includes("altitude")
-  ) {
+  if (descriptorText.includes("height") || descriptorText.includes("altitude"))
     return "m";
-  }
   return "level";
 };
 
@@ -111,38 +97,27 @@ const isPressureUnit = (unit: string) => {
 };
 
 const formatLevelValue = (value: number) => {
-  if (Number.isInteger(value)) {
-    return value.toString();
-  }
+  if (Number.isInteger(value)) return value.toString();
   const fixed = value.toFixed(1);
   return fixed.endsWith(".0") ? fixed.slice(0, -2) : fixed;
 };
 
 const formatPressureLevelLabel = (value: number, unit: string) => {
   const formattedValue = formatLevelValue(value);
-  if (unit === "level") {
-    return formattedValue;
-  }
+  if (unit === "level") return formattedValue;
   return `${formattedValue} ${unit}`;
 };
 
 const parseNumericList = (input: unknown): number[] => {
   if (!input) return [];
-  if (Array.isArray(input)) {
-    return input
-      .map((value) => Number(value))
-      .filter((value) => Number.isFinite(value));
-  }
+  if (Array.isArray(input))
+    return input.map((v) => Number(v)).filter((v) => Number.isFinite(v));
   if (typeof input === "string") {
     const matches = input.match(/-?\d+(\.\d+)?/g);
     if (!matches) return [];
-    return matches
-      .map((value) => Number(value))
-      .filter((value) => Number.isFinite(value));
+    return matches.map((v) => Number(v)).filter((v) => Number.isFinite(v));
   }
-  if (typeof input === "number" && Number.isFinite(input)) {
-    return [input];
-  }
+  if (typeof input === "number" && Number.isFinite(input)) return [input];
   return [];
 };
 
@@ -156,13 +131,9 @@ const clampDateToRange = (date: Date, minDate: Date, maxDate: Date) => {
 
 const stepDate = (date: Date, step: VisualizationStep) => {
   const next = new Date(date);
-  if (step === "year") {
-    next.setFullYear(next.getFullYear() + 1);
-  } else if (step === "month") {
-    next.setMonth(next.getMonth() + 1);
-  } else {
-    next.setDate(next.getDate() + 1);
-  }
+  if (step === "year") next.setFullYear(next.getFullYear() + 1);
+  else if (step === "month") next.setMonth(next.getMonth() + 1);
+  else next.setDate(next.getDate() + 1);
   return next;
 };
 
@@ -175,17 +146,13 @@ const buildFrameDates = (
   let cursor = new Date(start);
   const limit = 10_000;
   let guard = 0;
-
   while (cursor <= end && guard < limit) {
     frames.push(new Date(cursor));
     const next = stepDate(cursor, step);
-    if (next <= cursor) {
-      break;
-    }
+    if (next <= cursor) break;
     cursor = next;
     guard += 1;
   }
-
   return frames;
 };
 
@@ -203,13 +170,9 @@ const parseDateInput = (
   minDate: Date,
   maxDate: Date,
 ): Date | null => {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return null;
-  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return null;
-  }
+  if (Number.isNaN(parsed.getTime())) return null;
   return clampDateToRange(parsed, minDate, maxDate);
 };
 
@@ -251,7 +214,6 @@ export default function HomePage() {
     currentDataset,
     toggleColorbar,
     datasets,
-    colorBarOrientation,
     locationFocusRequest,
     clearLocationFocusRequest,
     showRegionInfo,
@@ -266,13 +228,20 @@ export default function HomePage() {
     setTemperatureUnit,
     isLoading,
     error,
+  } = useAppState();
+
+  const {
+    colorBarOrientation,
     lineColors,
     setLineColors,
-  } = useAppState();
+    colorbarCustomMin,
+    colorbarCustomMax,
+    setColorbarRange,
+    resetColorbarRange,
+  } = useSettings();
+
   const globeRef = useRef<GlobeRef>(null);
   const lastDatasetIdRef = useRef<string | null>(null);
-
-  // FIXED: Add ref to track if we've set initial date for current dataset
   const initialDateSetRef = useRef<string | null>(null);
 
   // Visualization State
@@ -307,6 +276,7 @@ export default function HomePage() {
     datasetSnapshot: Dataset;
     level: number | null;
   } | null>(null);
+
   const visualizationAbortRef = useRef<AbortController | null>(null);
   const prefetchedRastersRef = useRef<Map<string, RasterLayerData>>(new Map());
   const prefetchedRasterGridsRef = useRef<Map<string, RasterGridData>>(
@@ -335,19 +305,12 @@ export default function HomePage() {
   const [colorBarPosition, setColorBarPosition] = useState({ x: 24, y: 300 });
 
   const datasetPressureLevels = useMemo<PressureLevel[] | null>(() => {
-    if (isSeaSurfaceTemperatureDataset(currentDataset)) {
-      return null;
-    }
-
+    if (isSeaSurfaceTemperatureDataset(currentDataset)) return null;
     const backend = currentDataset;
-    if (!backend) {
-      return null;
-    }
+    if (!backend) return null;
 
     let rawValues = parseNumericList(backend.levelValues);
-    if (!rawValues.length) {
-      rawValues = parseNumericList(backend.levels);
-    }
+    if (!rawValues.length) rawValues = parseNumericList(backend.levels);
 
     const normalizedUnit = normalizeLevelUnit(
       backend.levelUnits,
@@ -364,15 +327,11 @@ export default function HomePage() {
     if (!rawValues.length && isLikelyPressureDataset) {
       return pressureLevels.map((level) => ({
         ...level,
-        id: `${
-          backend.id ?? currentDataset?.id ?? "dataset"
-        }-default-${level.id}`,
+        id: `${backend.id ?? currentDataset?.id ?? "dataset"}-default-${level.id}`,
       }));
     }
 
-    if (!rawValues.length) {
-      return null;
-    }
+    if (!rawValues.length) return null;
 
     const shouldSortDescending =
       isPressureUnit(normalizedUnit) ||
@@ -383,9 +342,7 @@ export default function HomePage() {
     );
 
     return sortedValues.map((value, index) => ({
-      id: `${
-        backend.id ?? currentDataset?.id ?? "dataset"
-      }-level-${index}-${value}`,
+      id: `${backend.id ?? currentDataset?.id ?? "dataset"}-level-${index}-${value}`,
       value,
       unit: normalizedUnit,
       label: formatPressureLevelLabel(value, normalizedUnit),
@@ -393,6 +350,7 @@ export default function HomePage() {
   }, [currentDataset]);
 
   const hasPressureLevels = Boolean(datasetPressureLevels?.length);
+
   const isGodasDataset = useMemo(() => {
     const datasetText = [
       currentDataset?.id,
@@ -400,33 +358,27 @@ export default function HomePage() {
       currentDataset?.name,
       currentDataset?.description,
       currentDataset?.sourceName,
-      currentDataset?.slug,
-      currentDataset?.id,
     ]
       .filter((v) => typeof v === "string")
       .map((v) => v.toLowerCase())
       .join(" ");
-
     return (
       datasetText.includes("godas") ||
       datasetText.includes("global ocean data assimilation system") ||
       datasetText.includes("ncep global ocean data assimilation")
     );
   }, [currentDataset]);
+
   const defaultPressureLevel = useMemo(() => {
-    if (!datasetPressureLevels || datasetPressureLevels.length === 0) {
+    if (!datasetPressureLevels || datasetPressureLevels.length === 0)
       return null;
-    }
-    if (!isGodasDataset) {
-      return datasetPressureLevels[0];
-    }
+    if (!isGodasDataset) return datasetPressureLevels[0];
     const match = datasetPressureLevels.find(
       (level) => Math.abs(level.value - 4225) < 0.5,
     );
     return match ?? datasetPressureLevels[0];
   }, [datasetPressureLevels, isGodasDataset]);
 
-  // Pressure Level State
   const [selectedPressureLevel, setSelectedPressureLevel] =
     useState<PressureLevel | null>(null);
   const [rasterMeta, setRasterMeta] = useState<{
@@ -434,12 +386,12 @@ export default function HomePage() {
     min?: number | null;
     max?: number | null;
   } | null>(null);
+
   const selectedLevelValue =
     hasPressureLevels && selectedPressureLevel
       ? selectedPressureLevel.value
       : null;
 
-  // Globe Settings State
   const [globeSettings, setGlobeSettings] = useState<GlobeSettings>({
     baseMapMode: "satellite",
     satelliteLayerVisible: true,
@@ -463,12 +415,17 @@ export default function HomePage() {
     viewMode: "3d",
     mapOrientations: {},
   });
+
   const lastSatelliteLabelsVisibleRef = useRef(true);
   const lastCesiumLabelsVisibleRef = useRef(true);
   const lastNonProjectionGridVisibleRef = useRef(
     globeSettings.geographicLinesVisible,
   );
   const lastCesiumGridVisibleRef = useRef(false);
+  const lastNonOrthoGridVisibleRef = useRef(
+    globeSettings.geographicLinesVisible,
+  );
+  const lastViewModeRef = useRef<GlobeViewMode | null>(null);
 
   const DEFAULT_LINE_COLORS_BLACK = useMemo(
     () => ({
@@ -505,11 +462,16 @@ export default function HomePage() {
     },
     [DEFAULT_LINE_COLORS_BLACK],
   );
-  const lastNonOrthoGridVisibleRef = useRef(
-    globeSettings.geographicLinesVisible,
-  );
 
-  const lastViewModeRef = useRef<GlobeViewMode | null>(null);
+  // Colorbar range derived from SettingsContext (per-dataset)
+  const colorbarRange = useMemo(
+    () => ({
+      enabled: colorbarCustomMin !== null || colorbarCustomMax !== null,
+      min: colorbarCustomMin ?? null,
+      max: colorbarCustomMax ?? null,
+    }),
+    [colorbarCustomMin, colorbarCustomMax],
+  );
 
   useEffect(() => {
     const lastMode = lastViewModeRef.current;
@@ -520,12 +482,8 @@ export default function HomePage() {
     const isCesium = nextMode === "3d" || nextMode === "2d";
     const wasOrtho = lastMode === "ortho";
     const isOrtho = nextMode === "ortho";
-    const wasProjection = MAP_PROJECTIONS.some(
-      (projection) => projection.id === lastMode,
-    );
-    const isProjection = MAP_PROJECTIONS.some(
-      (projection) => projection.id === nextMode,
-    );
+    const wasProjection = MAP_PROJECTIONS.some((p) => p.id === lastMode);
+    const isProjection = MAP_PROJECTIONS.some((p) => p.id === nextMode);
 
     if (wasCesium && !isCesium) {
       lastCesiumLabelsVisibleRef.current = globeSettings.labelsVisible;
@@ -600,11 +558,6 @@ export default function HomePage() {
     globeSettings.geographicLinesVisible,
     globeSettings.labelsVisible,
     globeSettings.viewMode,
-    isLineColorDefault,
-    lineColors,
-    setLineColors,
-    DEFAULT_LINE_COLORS_BLACK,
-    DEFAULT_LINE_COLORS_GRAY,
   ]);
 
   useEffect(() => {
@@ -618,7 +571,6 @@ export default function HomePage() {
     const other = useBlack
       ? DEFAULT_LINE_COLORS_GRAY
       : DEFAULT_LINE_COLORS_BLACK;
-
     if (isLineColorDefault(lineColors, other)) {
       setLineColors(desired);
     }
@@ -630,17 +582,6 @@ export default function HomePage() {
     lineColors,
     setLineColors,
   ]);
-
-  const colorbarRange = useMemo(
-    () => ({
-      enabled:
-        globeSettings.colorbarCustomMin !== null ||
-        globeSettings.colorbarCustomMax !== null,
-      min: globeSettings.colorbarCustomMin ?? null,
-      max: globeSettings.colorbarCustomMax ?? null,
-    }),
-    [globeSettings.colorbarCustomMin, globeSettings.colorbarCustomMax],
-  );
 
   const datasetStartDate = useMemo(
     () =>
@@ -656,26 +597,21 @@ export default function HomePage() {
     [currentDataset?.endDate],
   );
 
-  // FIXED: Calculate the default date as the dataset's most recent date
   const defaultDateForDataset = useMemo(() => {
     if (!currentDataset) return new Date();
     return datasetEndDate;
   }, [currentDataset, datasetEndDate]);
-  // Clamp selectedDate to the new dataset's valid range when switching datasets
+
   useEffect(() => {
     const datasetId = currentDataset?.id;
     if (!datasetId) return;
-
     if (initialDateSetRef.current === datasetId) return;
     initialDateSetRef.current = datasetId;
-
-    // Keep the current date if it's within range, otherwise clamp
     const clamped = clampDateToRange(
       selectedDate,
       datasetStartDate,
       datasetEndDate,
     );
-
     if (clamped.getTime() !== selectedDate.getTime()) {
       setSelectedDate(clamped);
     }
@@ -708,9 +644,8 @@ export default function HomePage() {
       stepOptions.includes(visualizationStep) && visualizationStep
         ? visualizationStep
         : stepOptions[0];
-    if (nextStep && nextStep !== visualizationStep) {
+    if (nextStep && nextStep !== visualizationStep)
       setVisualizationStep(nextStep);
-    }
 
     const defaultStart =
       visualizationStart ??
@@ -735,15 +670,13 @@ export default function HomePage() {
     if (
       !visualizationStart ||
       visualizationStart.getTime() !== clampedStart.getTime()
-    ) {
+    )
       setVisualizationStart(clampedStart);
-    }
     if (
       !visualizationEnd ||
       visualizationEnd.getTime() !== clampedEnd.getTime()
-    ) {
+    )
       setVisualizationEnd(clampedEnd);
-    }
   }, [
     datasetEndDate,
     datasetStartDate,
@@ -756,9 +689,7 @@ export default function HomePage() {
   ]);
 
   useEffect(() => {
-    if (!showVisualizationModal) {
-      return;
-    }
+    if (!showVisualizationModal) return;
     const fallbackStart = clampDateToRange(
       visualizationStart ??
         selectedDate ??
@@ -795,11 +726,6 @@ export default function HomePage() {
     defaultDateForDataset,
   ]);
 
-  useEffect(() => {
-    // If the user changes visualization inputs while a previous run is active,
-    // we intentionally keep the existing progress so they can browse other datasets.
-  }, []);
-
   const playbackIntervalMs = useMemo(() => {
     if (visualizationStep === "year") return 1200;
     if (visualizationStep === "month") return 800;
@@ -812,9 +738,8 @@ export default function HomePage() {
       prefetchedRasters.size === 0 ||
       prefetchedRasterGrids.size === 0 ||
       !visualizationTarget
-    ) {
+    )
       return;
-    }
     if (visualizationTarget.datasetId) {
       const targetDataset =
         datasets.find((ds) => ds.id === visualizationTarget.datasetId) ??
@@ -836,6 +761,7 @@ export default function HomePage() {
     visualizationDates,
     datasets,
     setCurrentDataset,
+    visualizationTarget,
   ]);
 
   const handleStopVisualization = useCallback(() => {
@@ -865,20 +791,15 @@ export default function HomePage() {
   useEffect(() => {
     prefetchedRastersRef.current = prefetchedRasters;
   }, [prefetchedRasters]);
-
   useEffect(() => {
     prefetchedRasterGridsRef.current = prefetchedRasterGrids;
   }, [prefetchedRasterGrids]);
 
   const runVisualizationPrefetch = useCallback(async (startIndex: number) => {
     const config = visualizationPrefetchConfigRef.current;
-    if (!config) {
-      return;
-    }
+    if (!config) return;
 
-    if (visualizationAbortRef.current) {
-      visualizationAbortRef.current.abort();
-    }
+    if (visualizationAbortRef.current) visualizationAbortRef.current.abort();
     const controller = new AbortController();
     visualizationAbortRef.current = controller;
     visualizationPausedRef.current = false;
@@ -886,21 +807,18 @@ export default function HomePage() {
     const nextMap = new Map(prefetchedRastersRef.current);
     const nextGridMap = new Map(prefetchedRasterGridsRef.current);
     const loadedImageUrls = new Set<string>();
+
     const preloadTextureImages = async (
       textures: RasterLayerData["textures"],
     ) => {
-      if (!Array.isArray(textures) || textures.length === 0) {
-        return;
-      }
+      if (!Array.isArray(textures) || textures.length === 0) return;
       await Promise.all(
         textures.map((texture) => {
           const url =
             typeof texture?.imageUrl === "string"
               ? texture.imageUrl.trim()
               : "";
-          if (!url || loadedImageUrls.has(url)) {
-            return Promise.resolve();
-          }
+          if (!url || loadedImageUrls.has(url)) return Promise.resolve();
           loadedImageUrls.add(url);
           return new Promise<void>((resolve) => {
             const image = new Image();
@@ -971,10 +889,7 @@ export default function HomePage() {
           smoothGridBoxValues: config.smoothGridBoxValues,
           colorbarRange: config.colorbarRange,
         });
-
-        if (key) {
-          nextMap.set(key, raster);
-        }
+        if (key) nextMap.set(key, raster);
 
         const gridKey = buildRasterGridRequestKey({
           dataset: config.dataset,
@@ -984,9 +899,7 @@ export default function HomePage() {
           maskZeroValues: config.hideZero,
           colorbarRange: config.colorbarRange,
         });
-        if (gridKey) {
-          nextGridMap.set(gridKey, rasterGrid);
-        }
+        if (gridKey) nextGridMap.set(gridKey, rasterGrid);
 
         visualizationPrefetchIndexRef.current = i + 1;
         setPrefetchedRasters(new Map(nextMap));
@@ -1002,9 +915,7 @@ export default function HomePage() {
         error instanceof DOMException &&
         (error as DOMException).name === "AbortError"
       ) {
-        if (visualizationPausedRef.current) {
-          return;
-        }
+        if (visualizationPausedRef.current) return;
       } else {
         setVisualizationError(
           error instanceof Error
@@ -1014,9 +925,8 @@ export default function HomePage() {
       }
       setVisualizationStatus("idle");
     } finally {
-      if (visualizationAbortRef.current === controller) {
+      if (visualizationAbortRef.current === controller)
         visualizationAbortRef.current = null;
-      }
     }
   }, []);
 
@@ -1107,10 +1017,7 @@ export default function HomePage() {
   ]);
 
   useEffect(() => {
-    if (visualizationStatus !== "playing") {
-      return;
-    }
-
+    if (visualizationStatus !== "playing") return;
     const frames = visualizationDates;
     if (!frames.length) {
       setVisualizationStatus("ready");
@@ -1142,9 +1049,7 @@ export default function HomePage() {
 
   useEffect(() => {
     const datasetId = currentDataset?.id;
-    if (!datasetId) {
-      return;
-    }
+    if (!datasetId) return;
 
     const datasetText = [
       currentDataset?.id,
@@ -1182,13 +1087,9 @@ export default function HomePage() {
 
   useEffect(() => {
     const datasetId = currentDataset?.id;
-    if (!datasetId || !visualizationTarget?.datasetId) {
-      return;
-    }
+    if (!datasetId || !visualizationTarget?.datasetId) return;
     const switchedDatasets = visualizationTarget.datasetId !== datasetId;
-    if (visualizationStatus !== "preparing") {
-      return;
-    }
+    if (visualizationStatus !== "preparing") return;
 
     if (!switchedDatasets) {
       if (visualizationPausedRef.current) {
@@ -1207,9 +1108,8 @@ export default function HomePage() {
       visualizationAbortRef.current.abort();
       visualizationAbortRef.current = null;
     }
-    if (visualizationResumeTimeoutRef.current != null) {
+    if (visualizationResumeTimeoutRef.current != null)
       window.clearTimeout(visualizationResumeTimeoutRef.current);
-    }
     visualizationResumeTimeoutRef.current = window.setTimeout(() => {
       visualizationResumeTimeoutRef.current = null;
       visualizationPausedRef.current = false;
@@ -1245,9 +1145,7 @@ export default function HomePage() {
   const handleDateChange = useCallback(
     (date: Date) => {
       setSelectedDate(date);
-      if (visualizationStatus === "playing") {
-        setVisualizationStatus("ready");
-      }
+      if (visualizationStatus === "playing") setVisualizationStatus("ready");
     },
     [setSelectedDate, visualizationStatus],
   );
@@ -1277,13 +1175,10 @@ export default function HomePage() {
     ],
   );
 
-  const handlePressureLevelChange = useCallback(
-    (level: PressureLevel) => {
-      setSelectedPressureLevel(level);
-      setRasterMeta(null);
-    },
-    [setRasterMeta],
-  );
+  const handlePressureLevelChange = useCallback((level: PressureLevel) => {
+    setSelectedPressureLevel(level);
+    setRasterMeta(null);
+  }, []);
 
   const handleRegionClick = useCallback(
     (latitude: number, longitude: number, data?: RegionData) => {
@@ -1304,7 +1199,12 @@ export default function HomePage() {
         source: "marker",
       });
     },
-    [setRegionInfoData, setShowRegionInfo, setCurrentLocationMarker],
+    [
+      setRegionInfoData,
+      setShowRegionInfo,
+      setCurrentLocationMarker,
+      currentDataset,
+    ],
   );
 
   const handleRegionInfoClose = useCallback(() => {
@@ -1312,7 +1212,6 @@ export default function HomePage() {
     globeRef.current?.clearMarker();
   }, [setShowRegionInfo]);
 
-  // Globe Settings Handlers
   const handleSatelliteToggle = useCallback((visible: boolean) => {
     setGlobeSettings((prev) => ({ ...prev, satelliteLayerVisible: visible }));
   }, []);
@@ -1365,20 +1264,14 @@ export default function HomePage() {
 
   const handleRiverResolutionChange = useCallback(
     (resolution: GlobeLineResolution) => {
-      setGlobeSettings((prev) => ({
-        ...prev,
-        riverResolution: resolution,
-      }));
+      setGlobeSettings((prev) => ({ ...prev, riverResolution: resolution }));
     },
     [],
   );
 
   const handleLakeResolutionChange = useCallback(
     (resolution: GlobeLineResolution) => {
-      setGlobeSettings((prev) => ({
-        ...prev,
-        lakeResolution: resolution,
-      }));
+      setGlobeSettings((prev) => ({ ...prev, lakeResolution: resolution }));
     },
     [],
   );
@@ -1407,9 +1300,8 @@ export default function HomePage() {
 
   const handleLabelsToggle = useCallback((visible: boolean) => {
     setGlobeSettings((prev) => {
-      if (prev.baseMapMode !== "street") {
+      if (prev.baseMapMode !== "street")
         lastSatelliteLabelsVisibleRef.current = visible;
-      }
       return { ...prev, labelsVisible: visible };
     });
   }, []);
@@ -1430,37 +1322,23 @@ export default function HomePage() {
   }, []);
 
   const handleHideZeroPrecipToggle = useCallback((enabled: boolean) => {
-    setGlobeSettings((prev) => ({
-      ...prev,
-      hideZeroPrecipitation: enabled,
-    }));
+    setGlobeSettings((prev) => ({ ...prev, hideZeroPrecipitation: enabled }));
   }, []);
 
   const handleColorbarRangeChange = useCallback(
     (payload: { min: number | null; max: number | null }) => {
-      setGlobeSettings((prev) => ({
-        ...prev,
-        colorbarCustomMin: payload.min,
-        colorbarCustomMax: payload.max,
-      }));
+      setColorbarRange(payload.min, payload.max);
     },
-    [],
+    [setColorbarRange],
   );
 
   const handleColorbarRangeReset = useCallback(() => {
-    setGlobeSettings((prev) => ({
-      ...prev,
-      colorbarCustomMin: null,
-      colorbarCustomMax: null,
-    }));
-  }, []);
+    resetColorbarRange();
+  }, [resetColorbarRange]);
 
   const handleViewModeChange = useCallback(
     (mode: GlobeSettings["viewMode"]) => {
-      setGlobeSettings((prev) => ({
-        ...prev,
-        viewMode: mode ?? "3d",
-      }));
+      setGlobeSettings((prev) => ({ ...prev, viewMode: mode ?? "3d" }));
     },
     [],
   );
@@ -1488,15 +1366,12 @@ export default function HomePage() {
       setSelectedPressureLevel(null);
       return;
     }
-
     setSelectedPressureLevel((prev) => {
       if (prev) {
         const match = datasetPressureLevels.find(
           (level) => level.value === prev.value,
         );
-        if (match) {
-          return match;
-        }
+        if (match) return match;
       }
       return defaultPressureLevel ?? datasetPressureLevels[0];
     });
@@ -1508,42 +1383,33 @@ export default function HomePage() {
   ]);
 
   useEffect(() => {
-    if (!hasPressureLevels) {
-      return;
-    }
+    if (!hasPressureLevels) return;
     setRasterMeta(null);
   }, [selectedPressureLevel, hasPressureLevels]);
 
   useEffect(() => {
-    if (!hasPressureLevels || !datasetPressureLevels) {
-      setSelectedPressureLevel(null);
+    if (
+      !visualizationTarget ||
+      !currentDataset ||
+      currentDataset.id !== visualizationTarget.datasetId
+    )
       return;
+    if (
+      visualizationTarget.level != null &&
+      hasPressureLevels &&
+      datasetPressureLevels
+    ) {
+      const match = datasetPressureLevels.find(
+        (lvl) => lvl.value === visualizationTarget.level,
+      );
+      if (match) setSelectedPressureLevel(match);
     }
-
-    setSelectedPressureLevel((prev) => {
-      if (prev) {
-        const match = datasetPressureLevels.find(
-          (level) => level.value === prev.value,
-        );
-        if (match) {
-          return match;
-        }
-      }
-      return defaultPressureLevel ?? datasetPressureLevels[0];
-    });
   }, [
-    hasPressureLevels,
+    currentDataset,
     datasetPressureLevels,
-    currentDataset?.id,
-    defaultPressureLevel,
+    hasPressureLevels,
+    visualizationTarget,
   ]);
-
-  useEffect(() => {
-    if (!hasPressureLevels) {
-      return;
-    }
-    setRasterMeta(null);
-  }, [selectedPressureLevel, hasPressureLevels]);
 
   const useMeshRaster = true;
 
@@ -1570,24 +1436,16 @@ export default function HomePage() {
   });
 
   useEffect(() => {
-    if (!locationFocusRequest || !globeRef.current) {
-      return;
-    }
-
+    if (!locationFocusRequest || !globeRef.current) return;
     if (locationFocusRequest.mode === "clear") {
       globeRef.current.clearSearchMarker();
       setCurrentLocationMarker(null);
       clearLocationFocusRequest();
       return;
     }
-
     const { latitude, longitude, name } = locationFocusRequest;
     if (typeof latitude === "number" && typeof longitude === "number") {
-      globeRef.current.focusOnLocation({
-        latitude,
-        longitude,
-        name,
-      });
+      globeRef.current.focusOnLocation({ latitude, longitude, name });
       setCurrentLocationMarker({
         latitude,
         longitude,
@@ -1602,41 +1460,13 @@ export default function HomePage() {
     setCurrentLocationMarker,
   ]);
 
-  // Ensure the stored visualization level is applied when returning to its dataset
-  useEffect(() => {
-    if (
-      !visualizationTarget ||
-      !currentDataset ||
-      currentDataset.id !== visualizationTarget.datasetId
-    ) {
-      return;
-    }
-    if (
-      visualizationTarget.level != null &&
-      hasPressureLevels &&
-      datasetPressureLevels
-    ) {
-      const match = datasetPressureLevels.find(
-        (lvl) => lvl.value === visualizationTarget.level,
-      );
-      if (match) {
-        setSelectedPressureLevel(match);
-      }
-    }
-  }, [
-    currentDataset,
-    datasetPressureLevels,
-    hasPressureLevels,
-    visualizationTarget,
-    setSelectedPressureLevel,
-  ]);
-
   const isPlaybackReady =
     prefetchedRasters.size > 0 &&
     prefetchedRasterGrids.size > 0 &&
     visualizationDates.length > 0 &&
     visualizationStatus !== "preparing" &&
     Boolean(visualizationTarget);
+
   const progressPercent = Math.round(
     Math.min(Math.max(visualizationProgress, 0), 1) * 100,
   );
@@ -1702,7 +1532,6 @@ export default function HomePage() {
       />
 
       <div className="pointer-events-none absolute inset-0 z-20">
-        {/* Side Menu */}
         <div className="pointer-events-auto">
           <SideButtons
             selectedDate={selectedDate}
@@ -1745,7 +1574,6 @@ export default function HomePage() {
           />
         </div>
 
-        {/* Visualization Progress */}
         {showVisualizationBar &&
           (visualizationStatus === "preparing" ||
             isPlaybackReady ||
@@ -1790,14 +1618,11 @@ export default function HomePage() {
                       setVisualizationStatus("ready");
                       return;
                     }
-                    if (isPlaybackReady) {
-                      startPlayback();
-                    }
+                    if (isPlaybackReady) startPlayback();
                   }}
                 >
-                  {visualizationStatus === "preparing" ? (
-                    <Square className="h-4 w-4" />
-                  ) : visualizationStatus === "playing" ? (
+                  {visualizationStatus === "preparing" ||
+                  visualizationStatus === "playing" ? (
                     <Square className="h-4 w-4" />
                   ) : (
                     <Play className="h-4 w-4" />
@@ -1814,7 +1639,6 @@ export default function HomePage() {
             </div>
           )}
 
-        {/* Tutorial Modal */}
         <div className="pointer-events-auto">
           <Tutorial
             isOpen={tutorialOpen}
@@ -1822,7 +1646,6 @@ export default function HomePage() {
           />
         </div>
 
-        {/* Color Bar */}
         <div className="pointer-events-auto z-9999">
           <ColorBar
             show={showColorbar}
@@ -1839,19 +1662,15 @@ export default function HomePage() {
             orientation={colorBarOrientation}
             selectedLevel={selectedLevelValue}
             customRange={{
-              enabled:
-                globeSettings.colorbarCustomMin !== null ||
-                globeSettings.colorbarCustomMax !== null,
-              min: globeSettings.colorbarCustomMin ?? null,
-              max: globeSettings.colorbarCustomMax ?? null,
+              enabled: colorbarCustomMin !== null || colorbarCustomMax !== null,
+              min: colorbarCustomMin ?? null,
+              max: colorbarCustomMax ?? null,
             }}
           />
         </div>
 
-        {/* Bottom Controls */}
         <div className="pointer-events-auto absolute right-0 bottom-0 left-0 z-20 pb-6">
           <div className="relative flex items-end justify-center px-4 py-2">
-            {/* TimeBar - Centered */}
             <div className="pointer-events-auto w-full max-w-4xl">
               <TimeBar
                 selectedDate={selectedDate}
@@ -1866,8 +1685,6 @@ export default function HomePage() {
                 }
               />
             </div>
-
-            {/* Pressure Levels Selector - Right of TimeBar */}
             {hasPressureLevels && datasetPressureLevels && (
               <div
                 className="pointer-events-auto absolute bottom-0"
@@ -1888,9 +1705,7 @@ export default function HomePage() {
         open={showVisualizationModal}
         onOpenChange={(open) => {
           setShowVisualizationModal(open);
-          if (!open) {
-            setVisualizationError(null);
-          }
+          if (!open) setVisualizationError(null);
         }}
       >
         <DialogContent className="max-w-[95vw] sm:max-w-225 lg:max-w-250">
@@ -2004,6 +1819,7 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
+
             <div className="space-y-2 rounded-lg border border-white/10 bg-white/5 p-3">
               <p className="mb-2 text-sm font-semibold text-white">End</p>
               <Input
@@ -2111,9 +1927,7 @@ export default function HomePage() {
                 value={visualizationStep}
                 onChange={(e) => {
                   const next = e.target.value as VisualizationStep;
-                  if (stepOptions.includes(next)) {
-                    setVisualizationStep(next);
-                  }
+                  if (stepOptions.includes(next)) setVisualizationStep(next);
                 }}
               >
                 {stepOptions.map((step) => (
@@ -2183,7 +1997,6 @@ export default function HomePage() {
         </DialogContent>
       </Dialog>
 
-      {/* Region Info Panel */}
       <RegionInfoPanel
         show={showRegionInfo}
         onClose={handleRegionInfoClose}

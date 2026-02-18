@@ -26,7 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { GlobeSettingsPanel } from "@/app/(frontpage)/_components/GlobeSettingsPanel";
-import { useAppState } from "@/context/HeaderContext";
+import { useAppState } from "@/context/dataset-context";
 import type { Dataset, GlobeSettings } from "@/types";
 import { Database, Cloud, Server, Globe, X } from "lucide-react";
 import type { GlobeLineResolution } from "@/types";
