@@ -124,7 +124,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
   const [isDraggingRange, setIsDraggingRange] = useState<"min" | "max" | null>(
     null,
   );
-  // dragTemp is live feedback only while dragging — never persisted directly
   const [dragTemp, setDragTemp] = useState<{ min: number; max: number } | null>(
     null,
   );
@@ -253,7 +252,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
     const customRangeEnabled = Boolean(customRange?.enabled);
     const GODAS_DEFAULT_MIN = -0.0000005;
     const GODAS_DEFAULT_MAX = 0.0000005;
-    const { isGodas, isGodasDeepLevel } = datasetFlags;
+    const { isGodas } = datasetFlags;
 
     const overrideMin =
       customRangeEnabled &&
@@ -280,7 +279,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
         ? Number(rasterMeta.max)
         : null;
 
-    // Default range (used for gradient — never changes)
     const defaultMin = godasDefaultMin ?? metaMin ?? dataset.colorScale.min;
     const defaultMax = godasDefaultMax ?? metaMax ?? dataset.colorScale.max;
     const safeDefaultMin = Number.isFinite(defaultMin) ? Number(defaultMin) : 0;
@@ -288,9 +286,10 @@ const ColorBar: React.FC<ColorBarProps> = ({
       ? Number(defaultMax)
       : safeDefaultMin;
 
-    // Label range — uses custom range when active, otherwise defaults
-    const labelMin = overrideMin ?? safeDefaultMin;
-    const labelMax = overrideMax ?? safeDefaultMax;
+    // Labels always reflect the full dataset range so the gradient tick marks
+    // stay fixed. The narrowed range is shown only via indicator lines.
+    const labelMin = safeDefaultMin;
+    const labelMax = safeDefaultMax;
 
     const MAX_TICKS = 7;
     const labelCount = Math.min(
@@ -331,36 +330,27 @@ const ColorBar: React.FC<ColorBarProps> = ({
     return `${(v / 1000).toFixed(1)}k`;
   }, []);
 
-  const displayLabels = useMemo(() => {
-    // While dragging, generate labels from the drag range in display units
-    if (dragTemp) {
-      const min = dragTemp.min;
-      const max = dragTemp.max;
-      const labelCount = Math.max(colorScale.labels.length, 2);
-      if (Math.abs(max - min) < 1e-9)
-        return Array(labelCount).fill(formatTick(min));
-      return Array.from({ length: labelCount }, (_, i) =>
-        formatTick(min + ((max - min) * i) / (labelCount - 1)),
-      );
-    }
+  // Store the stable "original" full range so that when rasterMeta changes
+  // due to custom range filtering, displayLimits stays pinned and indicators
+  // don't shift.
+  const stableRangeRef = useRef<{ min: number; max: number } | null>(null);
 
-    const values =
-      unitInfo.allowToggle && unit === "fahrenheit"
-        ? colorScale.labels.map((v) => (v * 9) / 5 + 32)
-        : colorScale.labels;
-
-    return values.map(formatTick);
-  }, [colorScale.labels, unitInfo.allowToggle, unit, dragTemp, formatTick]);
-
-  const labels = isVertical ? [...displayLabels].reverse() : displayLabels;
-
-  // rangeLimits and displayRange are now identical — always the full dataset range.
-  // The custom range only affects the drag indicators and the onRangeChange callback.
   const rangeLimits = useMemo(() => {
     const { rangeMin, rangeMax } = colorScale;
-    return { min: rangeMin, max: rangeMax };
-  }, [colorScale]);
+    const current = { min: rangeMin, max: rangeMax };
 
+    if (!customRange?.enabled) {
+      // No custom range active — update the stable reference
+      stableRangeRef.current = current;
+      return current;
+    }
+
+    // Custom range is active — use the stored stable range if available
+    // so that rasterMeta changes don't shift the scale
+    return stableRangeRef.current ?? current;
+  }, [colorScale, customRange?.enabled]);
+
+  // MOVED ABOVE fullRangeLabels to avoid TDZ error
   const toDisplayValue = useCallback(
     (value: number) => {
       if (!unitInfo.allowToggle || unit !== "fahrenheit") return value;
@@ -377,7 +367,28 @@ const ColorBar: React.FC<ColorBarProps> = ({
     [unitInfo.allowToggle, unit],
   );
 
-  // The currently active display range — either custom (from props) or full dataset range
+  // Labels always reflect the full dataset range so the gradient tick marks
+  // stay fixed regardless of the custom range.
+  const fullRangeLabels = useMemo(() => {
+    const { rangeMin, rangeMax } = colorScale;
+    const min = toDisplayValue(rangeMin);
+    const max = toDisplayValue(rangeMax);
+    const labelCount = Math.min(7, Math.max(colorScale.labels.length, 2));
+    if (labelCount <= 1 || Math.abs(max - min) < 1e-9)
+      return Array(labelCount).fill(min);
+    return Array.from(
+      { length: labelCount },
+      (_, i) => min + ((max - min) * i) / (labelCount - 1),
+    );
+  }, [colorScale, toDisplayValue]);
+
+  const displayLabels = useMemo(() => {
+    return fullRangeLabels.map(formatTick);
+  }, [fullRangeLabels, formatTick]);
+
+  const labels = isVertical ? [...displayLabels].reverse() : displayLabels;
+
+  // The currently active display range
   const displayLimits = useMemo(() => {
     const min = toDisplayValue(rangeLimits.min);
     const max = toDisplayValue(rangeLimits.max);
@@ -448,8 +459,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     [isVertical, displayLimits],
   );
 
-  // The custom range in display units, used for drag start positioning.
-  // Falls back to the full displayLimits when no custom range is active.
   const customDisplayRange = useMemo(() => {
     const hasMin =
       customRange?.enabled &&
@@ -502,7 +511,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
 
   const commitRange = useCallback(
     (range: { min: number; max: number }) => {
-      // Convert back from display units before persisting
       const baseMin = fromDisplayValue(range.min);
       const baseMax = fromDisplayValue(range.max);
       onRangeChange?.({ min: baseMin, max: baseMax });
@@ -598,15 +606,14 @@ const ColorBar: React.FC<ColorBarProps> = ({
   // EFFECTS
   // ============================================================================
 
-  // Reset hover and drag state on dataset change
   useEffect(() => {
     setIsGradientHovered(false);
     setIsDraggingRange(null);
     setDragTemp(null);
     dragTempRef.current = null;
+    stableRangeRef.current = null;
   }, [dataset?.id]);
 
-  // Initialize position on mount
   useEffect(() => {
     if (
       !uiState.hasInitialized &&
@@ -620,7 +627,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     }
   }, [uiState.hasInitialized, uiState.isCollapsed, getDefaultPosition]);
 
-  // Reset position when orientation changes
   useEffect(() => {
     if (uiState.hasInitialized && !uiState.isCollapsed) {
       dispatch({ type: "RESET_POSITION", payload: getDefaultPosition() });
@@ -632,17 +638,14 @@ const ColorBar: React.FC<ColorBarProps> = ({
     getDefaultPosition,
   ]);
 
-  // Sync collapsed from props
   useEffect(() => {
     dispatch({ type: "SET_COLLAPSED", payload: collapsed });
   }, [collapsed]);
 
-  // Notify parent of position changes
   useEffect(() => {
     onPositionChange?.(uiState.position);
   }, [uiState.position, onPositionChange]);
 
-  // Handle colorbar dragging
   useEffect(() => {
     if (!uiState.isDragging || uiState.isCollapsed) return;
 
@@ -688,7 +691,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
     clampPosition,
   ]);
 
-  // Handle window resize
   useEffect(() => {
     const handleResize = () => {
       if (uiState.isCollapsed) {
@@ -787,12 +789,151 @@ const ColorBar: React.FC<ColorBarProps> = ({
   // RENDER
   // ============================================================================
 
-  const showIndicators = false;
   const hasCustomRange = Boolean(customRange?.enabled);
+  const showIndicators =
+    isGradientHovered || isDraggingRange !== null || hasCustomRange;
 
-  const rangeIndicators = null;
+  const indicatorPositions = useMemo(() => {
+    const range = displayLimits.max - displayLimits.min;
+    if (Math.abs(range) < 1e-12) return null;
 
-  const dragTooltip = null;
+    const source = dragTemp ?? customDisplayRange;
+    const minPct = ((source.min - displayLimits.min) / range) * 100;
+    const maxPct = ((source.max - displayLimits.min) / range) * 100;
+
+    return {
+      min: Math.max(0, Math.min(100, isVertical ? 100 - minPct : minPct)),
+      max: Math.max(0, Math.min(100, isVertical ? 100 - maxPct : maxPct)),
+    };
+  }, [displayLimits, dragTemp, customDisplayRange, isVertical]);
+
+  const rangeIndicators =
+    showIndicators && indicatorPositions ? (
+      <>
+        {/* Min line */}
+        {isVertical ? (
+          <div
+            className="pointer-events-none absolute left-0 w-full"
+            style={{ top: `${indicatorPositions.min}%` }}
+          >
+            <div className="h-0.5 w-full bg-white shadow-[0_0_4px_rgba(0,0,0,0.6)]" />
+          </div>
+        ) : (
+          <div
+            className="pointer-events-none absolute top-0 h-full"
+            style={{ left: `${indicatorPositions.min}%` }}
+          >
+            <div className="h-full w-0.5 bg-white shadow-[0_0_4px_rgba(0,0,0,0.6)]" />
+          </div>
+        )}
+        {/* Max line */}
+        {isVertical ? (
+          <div
+            className="pointer-events-none absolute left-0 w-full"
+            style={{ top: `${indicatorPositions.max}%` }}
+          >
+            <div className="h-0.5 w-full bg-white shadow-[0_0_4px_rgba(0,0,0,0.6)]" />
+          </div>
+        ) : (
+          <div
+            className="pointer-events-none absolute top-0 h-full"
+            style={{ left: `${indicatorPositions.max}%` }}
+          >
+            <div className="h-full w-0.5 bg-white shadow-[0_0_4px_rgba(0,0,0,0.6)]" />
+          </div>
+        )}
+        {/* Dimming overlay outside the selected range */}
+        {isVertical
+          ? (() => {
+              const top = Math.min(
+                indicatorPositions.min,
+                indicatorPositions.max,
+              );
+              const bottom = Math.max(
+                indicatorPositions.min,
+                indicatorPositions.max,
+              );
+              return (
+                <>
+                  <div
+                    className="pointer-events-none absolute left-0 w-full rounded-t-lg bg-black/40"
+                    style={{ top: 0, height: `${top}%` }}
+                  />
+                  <div
+                    className="pointer-events-none absolute left-0 w-full rounded-b-lg bg-black/40"
+                    style={{
+                      top: `${bottom}%`,
+                      height: `${100 - bottom}%`,
+                    }}
+                  />
+                </>
+              );
+            })()
+          : (() => {
+              const left = Math.min(
+                indicatorPositions.min,
+                indicatorPositions.max,
+              );
+              const right = Math.max(
+                indicatorPositions.min,
+                indicatorPositions.max,
+              );
+              return (
+                <>
+                  <div
+                    className="pointer-events-none absolute top-0 h-full rounded-l-xl bg-black/40"
+                    style={{ left: 0, width: `${left}%` }}
+                  />
+                  <div
+                    className="pointer-events-none absolute top-0 h-full rounded-r-xl bg-black/40"
+                    style={{
+                      left: `${right}%`,
+                      width: `${100 - right}%`,
+                    }}
+                  />
+                </>
+              );
+            })()}
+      </>
+    ) : null;
+
+  const dragTooltip =
+    isDraggingRange && dragTemp
+      ? (() => {
+          const range = displayLimits.max - displayLimits.min;
+          if (Math.abs(range) < 1e-12) return null;
+          const activeValue =
+            isDraggingRange === "min" ? dragTemp.min : dragTemp.max;
+          const pct = ((activeValue - displayLimits.min) / range) * 100;
+          const clampedPct = Math.max(0, Math.min(100, pct));
+
+          return isVertical ? (
+            <div
+              className="pointer-events-none absolute right-full mr-2"
+              style={{
+                top: `${100 - clampedPct}%`,
+                transform: "translateY(-50%)",
+              }}
+            >
+              <div className="rounded bg-black/80 px-2 py-1 font-mono text-xs whitespace-nowrap text-white shadow-lg">
+                {formatTick(activeValue)}
+              </div>
+            </div>
+          ) : (
+            <div
+              className="pointer-events-none absolute bottom-full mb-2"
+              style={{
+                left: `${clampedPct}%`,
+                transform: "translateX(-50%)",
+              }}
+            >
+              <div className="rounded bg-black/80 px-2 py-1 font-mono text-xs whitespace-nowrap text-white shadow-lg">
+                {formatTick(activeValue)}
+              </div>
+            </div>
+          );
+        })()
+      : null;
 
   if (!show) return null;
 
