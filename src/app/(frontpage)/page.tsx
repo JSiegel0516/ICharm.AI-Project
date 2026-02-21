@@ -713,8 +713,8 @@ export default function HomePage() {
       datasetEndDate,
     );
     setStartInputValue(fallbackStart.toISOString().slice(0, 10));
-    setVisualizationStart(fallbackStart);
     setEndInputValue(fallbackEnd.toISOString().slice(0, 10));
+    setVisualizationStart(fallbackStart);
     setVisualizationEnd(fallbackEnd);
   }, [
     datasetEndDate,
