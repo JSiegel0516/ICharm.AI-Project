@@ -229,8 +229,8 @@ export default function NavigationIcons() {
   ]);
 
   return (
-    <ButtonGroup>
-      <ButtonGroup className="hidden sm:flex">
+    <ButtonGroup className="hidden lg:flex">
+      <ButtonGroup>
         <Tooltip>
           <TooltipTrigger asChild>
             <Link
@@ -370,7 +370,7 @@ export default function NavigationIcons() {
                         value={activeColorMapCategory}
                         onValueChange={setActiveColorMapCategory}
                       >
-                        <SelectTrigger className="h-8 w-auto min-w-[140px] text-xs">
+                        <SelectTrigger className="h-8 w-auto min-w-35 text-xs">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -534,7 +534,7 @@ export default function NavigationIcons() {
                           setLineColors(next);
                         }}
                       >
-                        <SelectTrigger className="h-8 w-[120px] text-xs">
+                        <SelectTrigger className="h-8 w-30 text-xs">
                           <SelectValue placeholder="Select..." />
                         </SelectTrigger>
                         <SelectContent>
@@ -606,7 +606,7 @@ export default function NavigationIcons() {
                             setLineColors({ ...lineColors, [item.key]: value })
                           }
                         >
-                          <SelectTrigger className="h-7 w-[110px] text-xs">
+                          <SelectTrigger className="h-7 w-27.5 text-xs">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>

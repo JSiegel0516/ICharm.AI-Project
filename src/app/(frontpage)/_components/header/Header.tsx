@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { ChartSplineIcon } from "@/components/ui/chart-spline";
 
 const Header: React.FC = () => {
   const { currentDataset } = useAppState();
@@ -26,7 +27,7 @@ const Header: React.FC = () => {
     <div
       title="Click for dataset details"
       id="dataset-title"
-      className="flex cursor-pointer flex-col items-center rounded-md px-3 py-1 text-center text-base font-semibold transition-colors hover:bg-white/10 lg:text-3xl"
+      className="flex cursor-pointer flex-col items-center rounded-md text-center text-base font-semibold transition-colors hover:bg-white/10 lg:text-3xl"
     >
       <span>{currentDataset?.name}</span>
       <span className="text-sm font-normal lg:text-2xl">
@@ -112,9 +113,9 @@ const Header: React.FC = () => {
   );
 
   return (
-    <div className="fixed inset-x-0 top-0 z-50 mt-2 px-4 py-2 lg:px-10 lg:py-8">
+    <div className="fixed inset-x-0 top-0 z-50 mx-4 mt-4 lg:mx-10 lg:mt-6">
       {/* Mobile layout */}
-      <div className="flex flex-col items-center gap-1 sm:hidden">
+      <div className="flex flex-col items-start gap-1 sm:hidden">
         <div className="mb-2 flex w-full items-center justify-between">
           <MobileNav />
           <Link href="/" className="flex items-center gap-2">
@@ -127,7 +128,21 @@ const Header: React.FC = () => {
               iCHARM
             </h1>
           </Link>
-          <div className="w-9" />
+          <Link
+            href="/dashboard/timeseries"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center"
+          >
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Data Analysis Dashboard"
+              id="time-series-button"
+            >
+              <ChartSplineIcon />
+            </Button>
+          </Link>
         </div>
         <Dialog>
           <DialogTrigger asChild>{datasetTrigger}</DialogTrigger>
@@ -135,15 +150,55 @@ const Header: React.FC = () => {
         </Dialog>
       </div>
 
+      {/* Tablet layout */}
+      <div className="hidden items-start justify-between md:flex lg:hidden">
+        <div className="flex flex-1 flex-row gap-4">
+          <MobileNav />
+          <Link href="/" className="flex items-center gap-3">
+            <img
+              src="/images/icharmlogo.png"
+              alt="IC Logo"
+              className="h-6 w-6 rounded-lg"
+            />
+            <h1 className="bg-linear-to-r from-red-400 via-green-400 to-blue-400 bg-clip-text text-base font-semibold text-transparent">
+              iCHARM
+            </h1>
+          </Link>
+        </div>
+
+        <Dialog>
+          <DialogTrigger asChild>{datasetTrigger}</DialogTrigger>
+          {datasetDialog}
+        </Dialog>
+
+        <div className="flex flex-1 justify-end">
+          <Link
+            href="/dashboard/timeseries"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center"
+          >
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Data Analysis Dashboard"
+              id="time-series-button"
+            >
+              <ChartSplineIcon />
+            </Button>
+          </Link>
+        </div>
+      </div>
+
       {/* Desktop layout */}
-      <div className="hidden items-center justify-between sm:flex">
-        <Link href="/" className="flex items-center gap-3 lg:gap-4">
+      <div className="hidden items-start justify-between lg:flex">
+        <Link href="/" className="flex items-center gap-4">
           <img
             src="/images/icharmlogo.png"
             alt="IC Logo"
-            className="h-6 w-6 rounded-lg lg:h-10 lg:w-10"
+            className="h-10 w-10 rounded-lg"
           />
-          <h1 className="bg-linear-to-r from-red-400 via-green-400 to-blue-400 bg-clip-text text-base font-semibold text-transparent lg:text-xl">
+          <h1 className="bg-linear-to-r from-red-400 via-green-400 to-blue-400 bg-clip-text text-xl font-semibold text-transparent">
             iCHARM
           </h1>
         </Link>
