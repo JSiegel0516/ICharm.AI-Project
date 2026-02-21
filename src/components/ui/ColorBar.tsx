@@ -129,10 +129,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
   );
   const dragTempRef = useRef<{ min: number; max: number } | null>(null);
 
-  // Stable range ref — pins the full dataset range so indicator positions
-  // don't shift when rasterMeta updates due to custom range filtering
-  const stableRangeRef = useRef<{ min: number; max: number } | null>(null);
-
   const [uiState, dispatch] = useReducer(uiReducer, {
     position: { x: 24, y: 24 },
     previousPosition: { x: 24, y: 24 },
@@ -272,14 +268,23 @@ const ColorBar: React.FC<ColorBarProps> = ({
     return { isGodas, isGodasDeepLevel };
   }, [dataset, selectedLevel]);
 
-  const colorScale = useMemo(() => {
-    const GODAS_DEFAULT_MIN = -0.0000005;
-    const GODAS_DEFAULT_MAX = 0.0000005;
-    const { isGodas } = datasetFlags;
+  // Track the last rasterMeta range observed WITHOUT a custom range active.
+  // When a custom range is active, rasterMeta reflects the filtered subset,
+  // not the true dataset extent, so we must ignore it and use the stored value.
+  const unfilteredMetaRef = useRef<{ min: number; max: number } | null>(null);
+  const lastMetaDatasetIdRef = useRef<string | null>(null);
 
-    const godasDefaultMin = isGodas ? GODAS_DEFAULT_MIN : null;
-    const godasDefaultMax = isGodas ? GODAS_DEFAULT_MAX : null;
+  // Reset the unfiltered meta cache when the dataset changes
+  useEffect(() => {
+    if (dataset?.id !== lastMetaDatasetIdRef.current) {
+      lastMetaDatasetIdRef.current = dataset?.id ?? null;
+      unfilteredMetaRef.current = null;
+    }
+  }, [dataset?.id]);
 
+  // Capture unfiltered rasterMeta only when no custom range is active
+  useEffect(() => {
+    if (customRange?.enabled) return;
     const metaMin =
       typeof rasterMeta?.min === "number" && Number.isFinite(rasterMeta.min)
         ? Number(rasterMeta.min)
@@ -288,6 +293,37 @@ const ColorBar: React.FC<ColorBarProps> = ({
       typeof rasterMeta?.max === "number" && Number.isFinite(rasterMeta.max)
         ? Number(rasterMeta.max)
         : null;
+    if (metaMin !== null && metaMax !== null) {
+      unfilteredMetaRef.current = { min: metaMin, max: metaMax };
+    }
+  }, [rasterMeta, customRange?.enabled]);
+
+  const colorScale = useMemo(() => {
+    const GODAS_DEFAULT_MIN = -0.0000005;
+    const GODAS_DEFAULT_MAX = 0.0000005;
+    const { isGodas } = datasetFlags;
+
+    const godasDefaultMin = isGodas ? GODAS_DEFAULT_MIN : null;
+    const godasDefaultMax = isGodas ? GODAS_DEFAULT_MAX : null;
+
+    // When a custom range is active, rasterMeta reflects the filtered range —
+    // use the cached unfiltered meta instead so the full scale stays stable.
+    let metaMin: number | null = null;
+    let metaMax: number | null = null;
+
+    if (customRange?.enabled) {
+      metaMin = unfilteredMetaRef.current?.min ?? null;
+      metaMax = unfilteredMetaRef.current?.max ?? null;
+    } else {
+      metaMin =
+        typeof rasterMeta?.min === "number" && Number.isFinite(rasterMeta.min)
+          ? Number(rasterMeta.min)
+          : null;
+      metaMax =
+        typeof rasterMeta?.max === "number" && Number.isFinite(rasterMeta.max)
+          ? Number(rasterMeta.max)
+          : null;
+    }
 
     const defaultMin = godasDefaultMin ?? metaMin ?? dataset.colorScale.min;
     const defaultMax = godasDefaultMax ?? metaMax ?? dataset.colorScale.max;
@@ -296,8 +332,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
       ? Number(defaultMax)
       : safeDefaultMin;
 
-    // Labels always reflect the full dataset range — custom range is
-    // visualised only via indicator lines and dimming overlays.
     const labelMin = safeDefaultMin;
     const labelMax = safeDefaultMax;
 
@@ -323,7 +357,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
       rangeMin: safeDefaultMin,
       rangeMax: safeDefaultMax,
     };
-  }, [dataset.colorScale, datasetFlags, rasterMeta]);
+  }, [dataset.colorScale, datasetFlags, rasterMeta, customRange?.enabled]);
 
   const formatTick = useCallback((v: number) => {
     if (!Number.isFinite(v)) return "–";
@@ -341,22 +375,13 @@ const ColorBar: React.FC<ColorBarProps> = ({
   }, []);
 
   // ============================================================================
-  // STABLE RANGE — prevents indicator drift when rasterMeta changes
+  // FULL DATASET RANGE — always the true min/max, never affected by custom range
   // ============================================================================
 
   const rangeLimits = useMemo(() => {
     const { rangeMin, rangeMax } = colorScale;
-    const current = { min: rangeMin, max: rangeMax };
-
-    if (!customRange?.enabled) {
-      // No custom range active — update the stable reference
-      stableRangeRef.current = current;
-      return current;
-    }
-
-    // Custom range is active — use stored stable range so indicators stay put
-    return stableRangeRef.current ?? current;
-  }, [colorScale, customRange?.enabled]);
+    return { min: rangeMin, max: rangeMax };
+  }, [colorScale]);
 
   // ============================================================================
   // DISPLAY LABELS & LIMITS
@@ -375,20 +400,8 @@ const ColorBar: React.FC<ColorBarProps> = ({
   }, [colorScale.labels.length, toDisplayValue, rangeLimits]);
 
   const displayLabels = useMemo(() => {
-    // While dragging, show labels from drag range for live feedback
-    if (dragTemp) {
-      const min = dragTemp.min;
-      const max = dragTemp.max;
-      const labelCount = Math.max(fullRangeLabels.length, 2);
-      if (Math.abs(max - min) < 1e-9)
-        return Array(labelCount).fill(formatTick(min));
-      return Array.from({ length: labelCount }, (_, i) =>
-        formatTick(min + ((max - min) * i) / (labelCount - 1)),
-      );
-    }
-
     return fullRangeLabels.map(formatTick);
-  }, [fullRangeLabels, dragTemp, formatTick]);
+  }, [fullRangeLabels, formatTick]);
 
   const labels = isVertical ? [...displayLabels].reverse() : displayLabels;
 
@@ -650,13 +663,12 @@ const ColorBar: React.FC<ColorBarProps> = ({
   // EFFECTS
   // ============================================================================
 
-  // Reset hover, drag, and stable range on dataset change
+  // Reset hover and drag state on dataset change
   useEffect(() => {
     setIsGradientHovered(false);
     setIsDraggingRange(null);
     setDragTemp(null);
     dragTempRef.current = null;
-    stableRangeRef.current = null;
   }, [dataset?.id]);
 
   useEffect(() => {
