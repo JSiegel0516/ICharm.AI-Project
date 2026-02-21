@@ -27,6 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { GlobeSettingsPanel } from "@/app/(frontpage)/_components/GlobeSettingsPanel";
 import { useAppState } from "@/context/dataset-context";
+import { useSidebar } from "@/context/sidebar-context";
 import type { Dataset, GlobeSettings } from "@/types";
 import { Database, Cloud, Server, Globe, X } from "lucide-react";
 import type { GlobeLineResolution } from "@/types";
@@ -104,12 +105,20 @@ export function SideButtons({
 }: SideButtonsProps) {
   const { datasets, currentDataset, setCurrentDataset, isLoading, error } =
     useAppState();
+  const {
+    activePanel,
+    openPanel,
+    closePanel,
+    registerActions,
+    isDownloading,
+    setIsDownloading,
+  } = useSidebar();
+
+  const showCalendar = activePanel === "calendar";
+  const showDatasetCard = activePanel === "datasets";
+  const showGlobeSettings = activePanel === "globeSettings";
 
   const [isExpanded, setIsExpanded] = useState(true);
-  const [showCalendar, setShowCalendar] = useState(false);
-  const [showDatasetCard, setShowDatasetCard] = useState(false);
-  const [showGlobeSettings, setShowGlobeSettings] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
   const [selectedDatasets, setSelectedDatasets] = useState<Set<string>>(() =>
     currentDataset ? new Set([currentDataset.id]) : new Set(),
   );
@@ -122,27 +131,45 @@ export function SideButtons({
   const calendarRef = useRef<HTMLDivElement>(null);
   const datasetCardRef = useRef<HTMLDivElement>(null);
 
+  // Register actions so mobile-nav can call the same callbacks
+  const handleDownloadClick = useCallback(() => {
+    if (!currentDataset) {
+      alert("Please select a dataset first");
+      return;
+    }
+
+    const origLocation = currentDataset.origLocation;
+
+    if (!origLocation) {
+      alert("This dataset does not have a download location available.");
+      return;
+    }
+
+    // Open the download link in a new tab
+    window.open(origLocation, "_blank");
+  }, [currentDataset]);
+
+  useEffect(() => {
+    registerActions({
+      onShowTutorial,
+      onDownload: handleDownloadClick,
+      onShowVisualizationModal,
+      onShowSidebarPanel,
+    });
+  }, [
+    registerActions,
+    onShowTutorial,
+    handleDownloadClick,
+    onShowVisualizationModal,
+    onShowSidebarPanel,
+  ]);
+
   // Filter datasets based on source
   const filteredDatasets = useMemo(() => {
-    console.log("=== FILTER DEBUG ===");
-    console.log("Filter selected:", dataSourceFilter);
-    console.log("Total datasets:", datasets.length);
-
-    // Check what stored values actually exist
-    const storedValues = datasets.map((d) => ({
-      name: d.name,
-      stored: d.stored,
-      backendExists: !!d,
-    }));
-    console.log("Dataset stored values:", storedValues);
-
     const filtered = datasets.filter((dataset) => {
       if (dataSourceFilter === "all") return true;
 
       const storedValue = dataset.stored?.toLowerCase();
-      console.log(
-        `Checking ${dataset.name}: stored="${storedValue}", filter="${dataSourceFilter}"`,
-      );
 
       if (dataSourceFilter === "local") {
         return storedValue === "local" || storedValue === "postgres";
@@ -154,9 +181,6 @@ export function SideButtons({
 
       return true;
     });
-
-    console.log("Filtered count:", filtered.length);
-    console.log("===================");
 
     return filtered;
   }, [datasets, dataSourceFilter]);
@@ -179,30 +203,13 @@ export function SideButtons({
   const toggleMenu = useCallback(() => setIsExpanded((prev) => !prev), []);
 
   const handleFileTextClick = useCallback(() => {
-    setShowDatasetCard(true);
+    openPanel("datasets");
     onShowSidebarPanel("datasets");
-  }, [onShowSidebarPanel]);
-
-  const handleDownloadClick = useCallback(() => {
-    if (!currentDataset) {
-      alert("Please select a dataset first");
-      return;
-    }
-
-    const origLocation = currentDataset.origLocation;
-
-    if (!origLocation) {
-      alert("This dataset does not have a download location available.");
-      return;
-    }
-
-    // Open the download link in a new tab
-    window.open(origLocation, "_blank");
-  }, [currentDataset]);
+  }, [openPanel, onShowSidebarPanel]);
 
   const handlePreferencesClick = useCallback(() => {
-    setShowGlobeSettings(true);
-  }, []);
+    openPanel("globeSettings");
+  }, [openPanel]);
 
   const handleFullscreenClick = useCallback(() => {
     if (document.fullscreenElement) {
@@ -213,22 +220,22 @@ export function SideButtons({
   }, []);
 
   const handleCalendarClick = useCallback(() => {
-    setShowCalendar(true);
+    openPanel("calendar");
     setCalendarMonth(selectedDate);
-  }, [selectedDate]);
+  }, [openPanel, selectedDate]);
 
   const closeCalendar = useCallback(() => {
-    setShowCalendar(false);
-  }, []);
+    closePanel();
+  }, [closePanel]);
 
   const closeDatasetCard = useCallback(() => {
-    setShowDatasetCard(false);
+    closePanel();
     onShowSidebarPanel(null);
-  }, [onShowSidebarPanel]);
+  }, [closePanel, onShowSidebarPanel]);
 
   const closeGlobeSettings = useCallback(() => {
-    setShowGlobeSettings(false);
-  }, []);
+    closePanel();
+  }, [closePanel]);
 
   const toggleDatasetSelection = useCallback(
     (datasetId: string) => {
@@ -321,11 +328,9 @@ export function SideButtons({
       }
 
       // Otherwise, close everything
-      if (showCalendar) {
-        closeCalendar();
-      }
-      if (showDatasetCard) {
-        closeDatasetCard();
+      if (showCalendar || showDatasetCard) {
+        closePanel();
+        if (showDatasetCard) onShowSidebarPanel(null);
       }
     };
 
@@ -337,7 +342,7 @@ export function SideButtons({
       document.removeEventListener("mousedown", handleClickOutside, true);
       document.removeEventListener("click", handleClickOutside, true);
     };
-  }, [showCalendar, showDatasetCard, closeCalendar, closeDatasetCard]);
+  }, [showCalendar, showDatasetCard, closePanel, onShowSidebarPanel]);
 
   useEffect(() => {
     if (showCalendar) {
@@ -441,14 +446,14 @@ export function SideButtons({
 
   return (
     <>
-      {/* Side Menu */}
+      {/* Side Menu — hidden on mobile, visible on lg+ */}
       <AnimatePresence>
         {!showCalendar && !showDatasetCard && !showGlobeSettings && (
           <motion.div
             initial={{ x: 0 }}
             exit={{ x: -100, opacity: 0 }}
             transition={{ duration: 0.3, ease: "easeInOut" }}
-            className="pointer-events-auto fixed top-0 left-4 z-50 flex h-screen flex-col items-center justify-center gap-2"
+            className="pointer-events-auto fixed top-0 left-4 z-50 hidden h-screen flex-col items-center justify-center gap-2 lg:flex"
           >
             {buttonConfigs.map(
               ({ id, icon, label, onClick, delay, disabled }) => (
