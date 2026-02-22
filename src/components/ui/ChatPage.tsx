@@ -12,7 +12,7 @@ import {
   Loader2,
   Trash2,
 } from "lucide-react";
-import { useAppState } from "@/context/HeaderContext";
+import { useAppState } from "@/context/dataset-context";
 import {
   ChatMessage,
   ChatPageProps,

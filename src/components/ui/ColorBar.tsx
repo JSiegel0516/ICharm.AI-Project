@@ -11,7 +11,6 @@ import React, {
 import { ChevronDown, ChevronUp, RotateCcw, Move } from "lucide-react";
 import { Button } from "./button";
 
-// Types
 type TemperatureUnit = "celsius" | "fahrenheit";
 
 interface ColorBarProps {
@@ -40,7 +39,6 @@ interface Position {
   y: number;
 }
 
-// State management with useReducer
 type UIState = {
   position: Position;
   previousPosition: Position;
@@ -63,13 +61,10 @@ function uiReducer(state: UIState, action: UIAction): UIState {
   switch (action.type) {
     case "SET_POSITION":
       return { ...state, position: action.payload };
-
     case "START_DRAG":
       return { ...state, isDragging: true, dragStart: action.payload };
-
     case "STOP_DRAG":
       return { ...state, isDragging: false };
-
     case "TOGGLE_COLLAPSE":
       if (state.isCollapsed) {
         return {
@@ -77,18 +72,15 @@ function uiReducer(state: UIState, action: UIAction): UIState {
           isCollapsed: false,
           position: state.previousPosition,
         };
-      } else {
-        return {
-          ...state,
-          isCollapsed: true,
-          previousPosition: state.position,
-          position: { x: 24, y: window.innerHeight - 60 },
-        };
       }
-
+      return {
+        ...state,
+        isCollapsed: true,
+        previousPosition: state.position,
+        position: { x: 24, y: window.innerHeight - 60 },
+      };
     case "SET_COLLAPSED":
       return { ...state, isCollapsed: action.payload };
-
     case "INITIALIZE":
       return {
         ...state,
@@ -96,14 +88,12 @@ function uiReducer(state: UIState, action: UIAction): UIState {
         previousPosition: action.payload,
         hasInitialized: true,
       };
-
     case "RESET_POSITION":
       return {
         ...state,
         position: action.payload,
         previousPosition: action.payload,
       };
-
     default:
       return state;
   }
@@ -129,19 +119,15 @@ const ColorBar: React.FC<ColorBarProps> = ({
   const gradientRef = useRef<HTMLDivElement>(null);
   const isVertical = orientation === "vertical";
 
-  // Range adjustment state
+  // Hover and drag range state
   const [isGradientHovered, setIsGradientHovered] = useState(false);
-  const pointerInsideGradientRef = useRef(false);
-  const [isColorBarHovered, setIsColorBarHovered] = useState(false);
   const [isDraggingRange, setIsDraggingRange] = useState<"min" | "max" | null>(
     null,
   );
-  const [hoverPosition, setHoverPosition] = useState<number | null>(null);
-  const [tempRange, setTempRange] = useState<{
-    min: number;
-    max: number;
-  } | null>(null);
-  const [hasCustomRange, setHasCustomRange] = useState(false);
+  const [dragTemp, setDragTemp] = useState<{ min: number; max: number } | null>(
+    null,
+  );
+  const dragTempRef = useRef<{ min: number; max: number } | null>(null);
 
   const [uiState, dispatch] = useReducer(uiReducer, {
     position: { x: 24, y: 24 },
@@ -153,7 +139,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
   });
 
   // ============================================================================
-  // UNIT DETECTION AND CONVERSION
+  // UNIT DETECTION
   // ============================================================================
 
   const unitInfo = useMemo(() => {
@@ -179,7 +165,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
         symbol = "°C";
         break;
       }
-
       if (
         normalized.includes("℉") ||
         lower.includes("fahrenheit") ||
@@ -190,7 +175,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
         symbol = "°F";
         break;
       }
-
       if (
         normalized.includes("K") ||
         lower.includes("kelvin") ||
@@ -201,13 +185,11 @@ const ColorBar: React.FC<ColorBarProps> = ({
         symbol = "K";
         break;
       }
-
       if (!symbol) symbol = normalized;
     }
 
-    if (!symbol && dataset.dataType?.toLowerCase() === "temperature") {
+    if (!symbol && dataset.dataType?.toLowerCase() === "temperature")
       symbol = "°C";
-    }
 
     const parts = [
       dataset?.dataType,
@@ -226,10 +208,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
       parts.includes("sea surface") ||
       parts.includes("sst");
 
-    return {
-      symbol,
-      allowToggle: symbol === "°C" && hasTemperatureHints,
-    };
+    return { symbol, allowToggle: symbol === "°C" && hasTemperatureHints };
   }, [dataset, rasterMeta?.units]);
 
   const currentUnitSymbol = unitInfo.allowToggle
@@ -237,6 +216,26 @@ const ColorBar: React.FC<ColorBarProps> = ({
       ? "°F"
       : "°C"
     : unitInfo.symbol || "";
+
+  // ============================================================================
+  // UNIT CONVERSION (declared early — used by everything below)
+  // ============================================================================
+
+  const toDisplayValue = useCallback(
+    (value: number) => {
+      if (!unitInfo.allowToggle || unit !== "fahrenheit") return value;
+      return (value * 9) / 5 + 32;
+    },
+    [unitInfo.allowToggle, unit],
+  );
+
+  const fromDisplayValue = useCallback(
+    (value: number) => {
+      if (!unitInfo.allowToggle || unit !== "fahrenheit") return value;
+      return ((value - 32) * 5) / 9;
+    },
+    [unitInfo.allowToggle, unit],
+  );
 
   // ============================================================================
   // COLOR SCALE CALCULATIONS
@@ -269,131 +268,23 @@ const ColorBar: React.FC<ColorBarProps> = ({
     return { isGodas, isGodasDeepLevel };
   }, [dataset, selectedLevel]);
 
-  const colorScale = useMemo(() => {
-    const customRangeEnabled = Boolean(customRange?.enabled);
-    const GODAS_DEFAULT_MIN = -0.0000005;
-    const GODAS_DEFAULT_MAX = 0.0000005;
-    const GODAS_DEEP_MIN = -0.0000005;
-    const GODAS_DEEP_MAX = 0.0000005;
-    const { isGodas, isGodasDeepLevel } = datasetFlags;
+  // Track the last rasterMeta range observed WITHOUT a custom range active.
+  // When a custom range is active, rasterMeta reflects the filtered subset,
+  // not the true dataset extent, so we must ignore it and use the stored value.
+  const unfilteredMetaRef = useRef<{ min: number; max: number } | null>(null);
+  const lastMetaDatasetIdRef = useRef<string | null>(null);
 
-    const preferBaselineRange = false;
+  // Reset the unfiltered meta cache when the dataset changes
+  useEffect(() => {
+    if (dataset?.id !== lastMetaDatasetIdRef.current) {
+      lastMetaDatasetIdRef.current = dataset?.id ?? null;
+      unfilteredMetaRef.current = null;
+    }
+  }, [dataset?.id]);
 
-    const overrideMin =
-      customRangeEnabled &&
-      typeof customRange?.min === "number" &&
-      Number.isFinite(customRange.min)
-        ? Number(customRange.min)
-        : null;
-    const overrideMax =
-      customRangeEnabled &&
-      typeof customRange?.max === "number" &&
-      Number.isFinite(customRange.max)
-        ? Number(customRange.max)
-        : null;
-
-    const godasDefaultMin = isGodas
-      ? isGodasDeepLevel
-        ? GODAS_DEEP_MIN
-        : GODAS_DEFAULT_MIN
-      : null;
-    const godasDefaultMax = isGodas
-      ? isGodasDeepLevel
-        ? GODAS_DEEP_MAX
-        : GODAS_DEFAULT_MAX
-      : null;
-    const metaMin =
-      !preferBaselineRange &&
-      typeof rasterMeta?.min === "number" &&
-      Number.isFinite(rasterMeta.min)
-        ? Number(rasterMeta.min)
-        : null;
-    const metaMax =
-      !preferBaselineRange &&
-      typeof rasterMeta?.max === "number" &&
-      Number.isFinite(rasterMeta.max)
-        ? Number(rasterMeta.max)
-        : null;
-
-    const min =
-      overrideMin ?? godasDefaultMin ?? metaMin ?? dataset.colorScale.min;
-    const max =
-      overrideMax ?? godasDefaultMax ?? metaMax ?? dataset.colorScale.max;
-    const safeMin = Number.isFinite(min) ? Number(min) : 0;
-    const safeMax = Number.isFinite(max) ? Number(max) : safeMin;
-
-    const rangeMin = safeMin;
-    const rangeMax = safeMax;
-
-    const MAX_TICKS = 7;
-    const labelCount = Math.min(
-      MAX_TICKS,
-      Math.max(dataset.colorScale.labels.length || 0, 2),
-    );
-
-    const generateLabels = () => {
-      if (labelCount <= 1 || Math.abs(rangeMax - rangeMin) < 1e-9) {
-        return Array(labelCount).fill(rangeMin);
-      }
-
-      if (isGodas) {
-        return [rangeMin, rangeMax];
-      }
-
-      return Array.from(
-        { length: labelCount },
-        (_, i) => rangeMin + ((rangeMax - rangeMin) * i) / (labelCount - 1),
-      );
-    };
-
-    const labels = generateLabels();
-
-    return {
-      labels,
-      colors: dataset.colorScale.colors,
-      rangeMin,
-      rangeMax,
-    };
-  }, [customRange, dataset.colorScale, datasetFlags, rasterMeta]);
-
-  const displayLabels = useMemo(() => {
-    const values =
-      unitInfo.allowToggle && unit === "fahrenheit"
-        ? colorScale.labels.map((v) => (v * 9) / 5 + 32)
-        : colorScale.labels;
-
-    const formatTick = (v: number) => {
-      if (!Number.isFinite(v)) return "–";
-      if (v === 0) return "0";
-
-      const abs = Math.abs(v);
-      if (abs < 1e-4) return v.toExponential(2);
-      if (abs < 1) {
-        const precise = Number(v.toPrecision(3));
-        return (Object.is(precise, -0) ? 0 : precise).toString();
-      }
-      if (abs < 10) return v.toFixed(2);
-      if (abs < 100) return v.toFixed(1);
-      if (abs < 1000) return v.toFixed(0);
-      return `${(v / 1000).toFixed(1)}k`;
-    };
-
-    return values.map(formatTick);
-  }, [colorScale.labels, unitInfo.allowToggle, unit]);
-
-  const labels = isVertical ? [...displayLabels].reverse() : displayLabels;
-
-  const rangeLimits = useMemo(() => {
-    const baseMin =
-      typeof dataset?.colorScale?.min === "number" &&
-      Number.isFinite(dataset.colorScale.min)
-        ? Number(dataset.colorScale.min)
-        : null;
-    const baseMax =
-      typeof dataset?.colorScale?.max === "number" &&
-      Number.isFinite(dataset.colorScale.max)
-        ? Number(dataset.colorScale.max)
-        : null;
+  // Capture unfiltered rasterMeta only when no custom range is active
+  useEffect(() => {
+    if (customRange?.enabled) return;
     const metaMin =
       typeof rasterMeta?.min === "number" && Number.isFinite(rasterMeta.min)
         ? Number(rasterMeta.min)
@@ -402,75 +293,123 @@ const ColorBar: React.FC<ColorBarProps> = ({
       typeof rasterMeta?.max === "number" && Number.isFinite(rasterMeta.max)
         ? Number(rasterMeta.max)
         : null;
+    if (metaMin !== null && metaMax !== null) {
+      unfilteredMetaRef.current = { min: metaMin, max: metaMax };
+    }
+  }, [rasterMeta, customRange?.enabled]);
 
-    let min = baseMin ?? metaMin ?? 0;
-    let max = baseMax ?? metaMax ?? min + 1;
+  const colorScale = useMemo(() => {
+    const GODAS_DEFAULT_MIN = -0.0000005;
+    const GODAS_DEFAULT_MAX = 0.0000005;
+    const { isGodas } = datasetFlags;
 
-    if (datasetFlags.isGodasDeepLevel) {
-      min = -0.0000005;
-      max = 0.0000005;
+    const godasDefaultMin = isGodas ? GODAS_DEFAULT_MIN : null;
+    const godasDefaultMax = isGodas ? GODAS_DEFAULT_MAX : null;
+
+    // When a custom range is active, rasterMeta reflects the filtered range —
+    // use the cached unfiltered meta instead so the full scale stays stable.
+    let metaMin: number | null = null;
+    let metaMax: number | null = null;
+
+    if (customRange?.enabled) {
+      metaMin = unfilteredMetaRef.current?.min ?? null;
+      metaMax = unfilteredMetaRef.current?.max ?? null;
+    } else {
+      metaMin =
+        typeof rasterMeta?.min === "number" && Number.isFinite(rasterMeta.min)
+          ? Number(rasterMeta.min)
+          : null;
+      metaMax =
+        typeof rasterMeta?.max === "number" && Number.isFinite(rasterMeta.max)
+          ? Number(rasterMeta.max)
+          : null;
     }
 
-    if (!Number.isFinite(min)) min = 0;
-    if (!Number.isFinite(max)) max = min + 1;
-    if (min === max) {
-      max = min + 1;
+    const defaultMin = godasDefaultMin ?? metaMin ?? dataset.colorScale.min;
+    const defaultMax = godasDefaultMax ?? metaMax ?? dataset.colorScale.max;
+    const safeDefaultMin = Number.isFinite(defaultMin) ? Number(defaultMin) : 0;
+    const safeDefaultMax = Number.isFinite(defaultMax)
+      ? Number(defaultMax)
+      : safeDefaultMin;
+
+    const labelMin = safeDefaultMin;
+    const labelMax = safeDefaultMax;
+
+    const MAX_TICKS = 7;
+    const labelCount = Math.min(
+      MAX_TICKS,
+      Math.max(dataset.colorScale.labels.length || 0, 2),
+    );
+
+    const generateLabels = () => {
+      if (labelCount <= 1 || Math.abs(labelMax - labelMin) < 1e-9)
+        return Array(labelCount).fill(labelMin);
+      if (isGodas) return [labelMin, labelMax];
+      return Array.from(
+        { length: labelCount },
+        (_, i) => labelMin + ((labelMax - labelMin) * i) / (labelCount - 1),
+      );
+    };
+
+    return {
+      labels: generateLabels(),
+      colors: dataset.colorScale.colors,
+      rangeMin: safeDefaultMin,
+      rangeMax: safeDefaultMax,
+    };
+  }, [dataset.colorScale, datasetFlags, rasterMeta, customRange?.enabled]);
+
+  const formatTick = useCallback((v: number) => {
+    if (!Number.isFinite(v)) return "–";
+    if (v === 0) return "0";
+    const abs = Math.abs(v);
+    if (abs < 1e-4) return v.toExponential(2);
+    if (abs < 1) {
+      const p = Number(v.toPrecision(3));
+      return (Object.is(p, -0) ? 0 : p).toString();
     }
-    if (min > max) {
-      [min, max] = [max, min];
-    }
+    if (abs < 10) return v.toFixed(2);
+    if (abs < 100) return v.toFixed(1);
+    if (abs < 1000) return v.toFixed(0);
+    return `${(v / 1000).toFixed(1)}k`;
+  }, []);
 
-    return { min, max };
-  }, [
-    dataset?.colorScale?.min,
-    dataset?.colorScale?.max,
-    rasterMeta,
-    datasetFlags.isGodasDeepLevel,
-  ]);
+  // ============================================================================
+  // FULL DATASET RANGE — always the true min/max, never affected by custom range
+  // ============================================================================
 
-  const toDisplayValue = useCallback(
-    (value: number) => {
-      if (!unitInfo.allowToggle || unit !== "fahrenheit") return value;
-      return (value * 9) / 5 + 32;
-    },
-    [unitInfo.allowToggle, unit],
-  );
+  const rangeLimits = useMemo(() => {
+    const { rangeMin, rangeMax } = colorScale;
+    return { min: rangeMin, max: rangeMax };
+  }, [colorScale]);
 
-  const fromDisplayValue = useCallback(
-    (value: number) => {
-      if (!unitInfo.allowToggle || unit !== "fahrenheit") return value;
-      return ((value - 32) * 5) / 9;
-    },
-    [unitInfo.allowToggle, unit],
-  );
+  // ============================================================================
+  // DISPLAY LABELS & LIMITS
+  // ============================================================================
 
-  const displayRange = useMemo(() => {
-    const min = toDisplayValue(colorScale.rangeMin);
-    const max = toDisplayValue(colorScale.rangeMax);
-    return min <= max ? { min, max } : { min: max, max: min };
-  }, [colorScale.rangeMin, colorScale.rangeMax, toDisplayValue]);
+  const fullRangeLabels = useMemo(() => {
+    const min = toDisplayValue(rangeLimits.min);
+    const max = toDisplayValue(rangeLimits.max);
+    const labelCount = Math.min(7, Math.max(colorScale.labels.length, 2));
+    if (labelCount <= 1 || Math.abs(max - min) < 1e-9)
+      return Array(labelCount).fill(min);
+    return Array.from(
+      { length: labelCount },
+      (_, i) => min + ((max - min) * i) / (labelCount - 1),
+    );
+  }, [colorScale.labels.length, toDisplayValue, rangeLimits]);
+
+  const displayLabels = useMemo(() => {
+    return fullRangeLabels.map(formatTick);
+  }, [fullRangeLabels, formatTick]);
+
+  const labels = isVertical ? [...displayLabels].reverse() : displayLabels;
 
   const displayLimits = useMemo(() => {
     const min = toDisplayValue(rangeLimits.min);
     const max = toDisplayValue(rangeLimits.max);
     return min <= max ? { min, max } : { min: max, max: min };
   }, [rangeLimits, toDisplayValue]);
-
-  const formatRangeValue = useCallback((value: number) => {
-    if (!Number.isFinite(value)) return "–";
-    if (value === 0) return "0";
-
-    const abs = Math.abs(value);
-    if (abs < 1e-4) return value.toExponential(2);
-    if (abs < 1) {
-      const precise = Number(value.toPrecision(3));
-      return (Object.is(precise, -0) ? 0 : precise).toString();
-    }
-    if (abs < 10) return value.toFixed(2);
-    if (abs < 100) return value.toFixed(1);
-    if (abs < 1000) return value.toFixed(0);
-    return `${(value / 1000).toFixed(1)}k`;
-  }, []);
 
   const gradientStops = colorScale.colors
     .map((color: string, index: number) => {
@@ -483,25 +422,22 @@ const ColorBar: React.FC<ColorBarProps> = ({
   const gradientBackground = `linear-gradient(${isVertical ? "to top" : "to right"}, ${gradientStops})`;
 
   // ============================================================================
-  // POSITIONING LOGIC
+  // POSITIONING
   // ============================================================================
 
   const getDefaultPosition = useCallback((): Position => {
-    if (typeof window === "undefined") {
+    if (typeof window === "undefined")
       return isVertical ? { x: 24, y: 120 } : { x: 24, y: 180 };
-    }
-
     const margin = 16;
-
     if (isVertical) {
-      const colorBarElement = colorBarRef.current;
-      const cardWidth = colorBarElement ? colorBarElement.offsetWidth : 200;
-      const x = window.innerWidth - cardWidth - margin;
-      const verticalOffset = Math.round(window.innerHeight * 0.25);
-      const y = verticalOffset;
-      return { x, y };
+      const cardWidth = colorBarRef.current
+        ? colorBarRef.current.offsetWidth
+        : 200;
+      return {
+        x: window.innerWidth - cardWidth - margin,
+        y: Math.round(window.innerHeight * 0.25),
+      };
     }
-
     const actualHeight = colorBarRef.current?.offsetHeight ?? 250;
     return { x: margin, y: window.innerHeight - actualHeight - margin };
   }, [isVertical]);
@@ -509,10 +445,8 @@ const ColorBar: React.FC<ColorBarProps> = ({
   const clampPosition = useCallback((pos: Position): Position => {
     const element = colorBarRef.current;
     if (!element) return pos;
-
     const maxX = window.innerWidth - element.offsetWidth;
     const maxY = window.innerHeight - element.offsetHeight;
-
     return {
       x: Math.max(0, Math.min(pos.x, maxX)),
       y: Math.max(0, Math.min(pos.y, maxY)),
@@ -520,23 +454,20 @@ const ColorBar: React.FC<ColorBarProps> = ({
   }, []);
 
   // ============================================================================
-  // RANGE INTERACTION LOGIC
+  // RANGE INTERACTION
   // ============================================================================
 
   const getValueFromPosition = useCallback(
     (clientX: number, clientY: number): number => {
       const gradient = gradientRef.current;
       if (!gradient) return 0;
-
       const rect = gradient.getBoundingClientRect();
       let ratio: number;
-
       if (isVertical) {
         ratio = Math.max(0, Math.min(1, (rect.bottom - clientY) / rect.height));
       } else {
         ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
       }
-
       return (
         displayLimits.min + (displayLimits.max - displayLimits.min) * ratio
       );
@@ -544,14 +475,297 @@ const ColorBar: React.FC<ColorBarProps> = ({
     [isVertical, displayLimits],
   );
 
-  const getPositionFromValue = useCallback(
-    (value: number): number => {
-      const ratio =
-        (value - displayLimits.min) / (displayLimits.max - displayLimits.min);
-      return Math.max(0, Math.min(1, ratio));
+  // The custom range in display units for drag start positioning.
+  // Falls back to the full displayLimits when no custom range is active.
+  const customDisplayRange = useMemo(() => {
+    const hasMin =
+      customRange?.enabled &&
+      typeof customRange?.min === "number" &&
+      Number.isFinite(customRange.min);
+    const hasMax =
+      customRange?.enabled &&
+      typeof customRange?.max === "number" &&
+      Number.isFinite(customRange.max);
+    return {
+      min: hasMin ? toDisplayValue(customRange!.min!) : displayLimits.min,
+      max: hasMax ? toDisplayValue(customRange!.max!) : displayLimits.max,
+    };
+  }, [customRange, toDisplayValue, displayLimits]);
+
+  const handleGradientMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const value = getValueFromPosition(e.clientX, e.clientY);
+      const hasActiveRange = Boolean(customRange?.enabled);
+      let adjusting: "min" | "max";
+
+      if (hasActiveRange) {
+        // Snap to whichever indicator is closer
+        const distToMin = Math.abs(value - customDisplayRange.min);
+        const distToMax = Math.abs(value - customDisplayRange.max);
+        adjusting = distToMin <= distToMax ? "min" : "max";
+      } else {
+        // No range yet — left/bottom half sets min, right/top half sets max
+        const midpoint = (displayLimits.min + displayLimits.max) / 2;
+        adjusting = value <= midpoint ? "min" : "max";
+      }
+
+      const startRange = {
+        min: hasActiveRange ? customDisplayRange.min : displayLimits.min,
+        max: hasActiveRange ? customDisplayRange.max : displayLimits.max,
+      };
+
+      setIsDraggingRange(adjusting);
+      setDragTemp(startRange);
+      dragTempRef.current = startRange;
     },
-    [displayLimits],
+    [
+      getValueFromPosition,
+      customDisplayRange,
+      customRange?.enabled,
+      displayLimits,
+    ],
   );
+
+  const handleGradientTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const touch = e.touches[0];
+      const value = getValueFromPosition(touch.clientX, touch.clientY);
+
+      const hasActiveRange = Boolean(customRange?.enabled);
+      let adjusting: "min" | "max";
+
+      if (hasActiveRange) {
+        const distToMin = Math.abs(value - customDisplayRange.min);
+        const distToMax = Math.abs(value - customDisplayRange.max);
+        adjusting = distToMin <= distToMax ? "min" : "max";
+      } else {
+        const midpoint = (displayLimits.min + displayLimits.max) / 2;
+        adjusting = value <= midpoint ? "min" : "max";
+      }
+
+      const startRange = {
+        min: hasActiveRange ? customDisplayRange.min : displayLimits.min,
+        max: hasActiveRange ? customDisplayRange.max : displayLimits.max,
+      };
+
+      setIsDraggingRange(adjusting);
+      setIsGradientHovered(true);
+      setDragTemp(startRange);
+      dragTempRef.current = startRange;
+    },
+    [
+      getValueFromPosition,
+      customDisplayRange,
+      customRange?.enabled,
+      displayLimits,
+    ],
+  );
+
+  const commitRange = useCallback(
+    (range: { min: number; max: number }) => {
+      const baseMin = fromDisplayValue(range.min);
+      const baseMax = fromDisplayValue(range.max);
+      onRangeChange?.({ min: baseMin, max: baseMax });
+    },
+    [fromDisplayValue, onRangeChange],
+  );
+
+  // ============================================================================
+  // GLOBAL MOUSE/TOUCH HANDLERS FOR RANGE DRAG
+  // ============================================================================
+
+  useEffect(() => {
+    if (!isDraggingRange) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const value = getValueFromPosition(e.clientX, e.clientY);
+      setDragTemp((prev) => {
+        if (!prev) return prev;
+        const clamped = Math.max(
+          displayLimits.min,
+          Math.min(displayLimits.max, value),
+        );
+        const next =
+          isDraggingRange === "min"
+            ? { min: clamped, max: prev.max }
+            : { min: prev.min, max: clamped };
+        dragTempRef.current = next;
+        return next;
+      });
+    };
+
+    const handleMouseUp = () => {
+      const finalRange = dragTempRef.current;
+      setDragTemp(null);
+      dragTempRef.current = null;
+      setIsDraggingRange(null);
+      if (finalRange) {
+        const sorted = {
+          min: Math.min(finalRange.min, finalRange.max),
+          max: Math.max(finalRange.min, finalRange.max),
+        };
+        commitRange(sorted);
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      const value = getValueFromPosition(touch.clientX, touch.clientY);
+      setDragTemp((prev) => {
+        if (!prev) return prev;
+        const clamped = Math.max(
+          displayLimits.min,
+          Math.min(displayLimits.max, value),
+        );
+        const next =
+          isDraggingRange === "min"
+            ? { min: clamped, max: prev.max }
+            : { min: prev.min, max: clamped };
+        dragTempRef.current = next;
+        return next;
+      });
+    };
+
+    const handleTouchEnd = () => {
+      const finalRange = dragTempRef.current;
+      setDragTemp(null);
+      dragTempRef.current = null;
+      setIsDraggingRange(null);
+      if (finalRange) {
+        const sorted = {
+          min: Math.min(finalRange.min, finalRange.max),
+          max: Math.max(finalRange.min, finalRange.max),
+        };
+        commitRange(sorted);
+      }
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    document.addEventListener("touchmove", handleTouchMove, { passive: false });
+    document.addEventListener("touchend", handleTouchEnd);
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.removeEventListener("touchmove", handleTouchMove);
+      document.removeEventListener("touchend", handleTouchEnd);
+    };
+  }, [isDraggingRange, getValueFromPosition, commitRange, displayLimits]);
+
+  // ============================================================================
+  // EFFECTS
+  // ============================================================================
+
+  // Reset hover and drag state on dataset change
+  useEffect(() => {
+    setIsGradientHovered(false);
+    setIsDraggingRange(null);
+    setDragTemp(null);
+    dragTempRef.current = null;
+  }, [dataset?.id]);
+
+  useEffect(() => {
+    if (
+      !uiState.hasInitialized &&
+      colorBarRef.current &&
+      !uiState.isCollapsed
+    ) {
+      const timer = setTimeout(() => {
+        dispatch({ type: "INITIALIZE", payload: getDefaultPosition() });
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [uiState.hasInitialized, uiState.isCollapsed, getDefaultPosition]);
+
+  useEffect(() => {
+    if (uiState.hasInitialized && !uiState.isCollapsed) {
+      dispatch({ type: "RESET_POSITION", payload: getDefaultPosition() });
+    }
+  }, [
+    orientation,
+    uiState.hasInitialized,
+    uiState.isCollapsed,
+    getDefaultPosition,
+  ]);
+
+  useEffect(() => {
+    dispatch({ type: "SET_COLLAPSED", payload: collapsed });
+  }, [collapsed]);
+
+  useEffect(() => {
+    onPositionChange?.(uiState.position);
+  }, [uiState.position, onPositionChange]);
+
+  // Colorbar card dragging
+  useEffect(() => {
+    if (!uiState.isDragging || uiState.isCollapsed) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      dispatch({
+        type: "SET_POSITION",
+        payload: clampPosition({
+          x: e.clientX - uiState.dragStart.x,
+          y: e.clientY - uiState.dragStart.y,
+        }),
+      });
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      dispatch({
+        type: "SET_POSITION",
+        payload: clampPosition({
+          x: touch.clientX - uiState.dragStart.x,
+          y: touch.clientY - uiState.dragStart.y,
+        }),
+      });
+    };
+
+    const handleUp = () => dispatch({ type: "STOP_DRAG" });
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleUp);
+    document.addEventListener("touchmove", handleTouchMove, { passive: false });
+    document.addEventListener("touchend", handleUp);
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleUp);
+      document.removeEventListener("touchmove", handleTouchMove);
+      document.removeEventListener("touchend", handleUp);
+    };
+  }, [
+    uiState.isDragging,
+    uiState.isCollapsed,
+    uiState.dragStart,
+    clampPosition,
+  ]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (uiState.isCollapsed) {
+        dispatch({
+          type: "SET_POSITION",
+          payload: { x: 24, y: window.innerHeight - 60 },
+        });
+      } else {
+        dispatch({
+          type: "SET_POSITION",
+          payload: clampPosition(uiState.position),
+        });
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [uiState.isCollapsed, uiState.position, clampPosition]);
 
   // ============================================================================
   // EVENT HANDLERS
@@ -574,8 +788,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
       e.preventDefault();
       e.stopPropagation();
       if (!uiState.isCollapsed && !uiState.isDragging) {
-        const defaultPos = getDefaultPosition();
-        dispatch({ type: "RESET_POSITION", payload: defaultPos });
+        dispatch({ type: "RESET_POSITION", payload: getDefaultPosition() });
       }
     },
     [uiState.isCollapsed, uiState.isDragging, getDefaultPosition],
@@ -586,7 +799,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
       if (uiState.isCollapsed) return;
       e.preventDefault();
       e.stopPropagation();
-
       dispatch({
         type: "START_DRAG",
         payload: {
@@ -603,7 +815,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
       if (uiState.isCollapsed) return;
       e.preventDefault();
       e.stopPropagation();
-
       const touch = e.touches[0];
       dispatch({
         type: "START_DRAG",
@@ -625,299 +836,168 @@ const ColorBar: React.FC<ColorBarProps> = ({
   );
 
   const handleRangeReset = useCallback(() => {
-    setTempRange(null);
-    setHasCustomRange(false);
+    setDragTemp(null);
+    dragTempRef.current = null;
+    setIsDraggingRange(null);
     onRangeReset?.();
-    if (!onRangeReset) {
-      onRangeChange?.({ min: null, max: null });
-    }
+    if (!onRangeReset) onRangeChange?.({ min: null, max: null });
   }, [onRangeChange, onRangeReset]);
 
-  // Gradient interaction handlers
-  const handleGradientMouseEnter = useCallback(() => {
-    pointerInsideGradientRef.current = true;
-    setIsGradientHovered(true);
-  }, []);
-
-  const handleGradientMouseLeave = useCallback(() => {
-    pointerInsideGradientRef.current = false;
-    if (!isDraggingRange) {
-      setIsGradientHovered(false);
-      setHoverPosition(null);
-      setTempRange(null);
-    }
-  }, [isDraggingRange]);
-
-  const handleGradientMouseMove = useCallback(
-    (e: React.MouseEvent) => {
-      if (!isGradientHovered && !isDraggingRange) return;
-
-      const value = getValueFromPosition(e.clientX, e.clientY);
-      setHoverPosition(value);
-
-      if (isDraggingRange) {
-        const currentRange = tempRange || displayRange;
-        let newRange: { min: number; max: number };
-
-        if (isDraggingRange === "min") {
-          newRange = {
-            min: Math.min(value, currentRange.max),
-            max: currentRange.max,
-          };
-        } else {
-          newRange = {
-            min: currentRange.min,
-            max: Math.max(value, currentRange.min),
-          };
-        }
-
-        setTempRange(newRange);
-      }
-    },
-    [
-      isGradientHovered,
-      isDraggingRange,
-      getValueFromPosition,
-      tempRange,
-      displayRange,
-    ],
-  );
-
-  const handleGradientMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      const value = getValueFromPosition(e.clientX, e.clientY);
-      const currentRange = displayRange;
-
-      const distToMin = Math.abs(value - currentRange.min);
-      const distToMax = Math.abs(value - currentRange.max);
-
-      const adjusting = distToMin < distToMax ? "min" : "max";
-      setIsDraggingRange(adjusting);
-      setTempRange(currentRange);
-    },
-    [getValueFromPosition, displayRange],
-  );
-
-  // Touch equivalents for gradient range interaction
-  const handleGradientTouchStart = useCallback(
-    (e: React.TouchEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      const touch = e.touches[0];
-      const value = getValueFromPosition(touch.clientX, touch.clientY);
-      const currentRange = displayRange;
-
-      const distToMin = Math.abs(value - currentRange.min);
-      const distToMax = Math.abs(value - currentRange.max);
-
-      const adjusting = distToMin < distToMax ? "min" : "max";
-      setIsDraggingRange(adjusting);
-      setIsGradientHovered(true);
-      setTempRange(currentRange);
-    },
-    [getValueFromPosition, displayRange],
-  );
-
-  const handleGradientMouseUp = useCallback(() => {
-    if (isDraggingRange && tempRange) {
-      const baseMin = fromDisplayValue(tempRange.min);
-      const baseMax = fromDisplayValue(tempRange.max);
-      onRangeChange?.({ min: baseMin, max: baseMax });
-      setHasCustomRange(true);
-    }
-    setIsDraggingRange(null);
-    setTempRange(null);
-    // Keep hovered if pointer is still inside
-    if (!pointerInsideGradientRef.current) {
-      setIsGradientHovered(false);
-    }
-  }, [isDraggingRange, tempRange, fromDisplayValue, onRangeChange]);
-
   // ============================================================================
-  // EFFECTS
+  // RANGE INDICATORS & DRAG TOOLTIP
   // ============================================================================
 
-  // Re-sync hover state after colorbar data updates
-  useEffect(() => {
-    if (pointerInsideGradientRef.current) {
-      setIsGradientHovered(true);
-    }
-  }, [colorScale, displayRange, rasterMeta]);
+  const hasCustomRange = Boolean(customRange?.enabled);
+  const showIndicators =
+    isGradientHovered || isDraggingRange !== null || hasCustomRange;
 
-  // Initialize hasCustomRange based on customRange prop
-  useEffect(() => {
-    setHasCustomRange(Boolean(customRange?.enabled));
-  }, [customRange?.enabled]);
+  const indicatorPositions = useMemo(() => {
+    const range = displayLimits.max - displayLimits.min;
+    if (Math.abs(range) < 1e-12) return null;
 
-  // Initialize position on mount
-  useEffect(() => {
-    if (
-      !uiState.hasInitialized &&
-      colorBarRef.current &&
-      !uiState.isCollapsed
-    ) {
-      const timer = setTimeout(() => {
-        const defaultPosition = getDefaultPosition();
-        dispatch({ type: "INITIALIZE", payload: defaultPosition });
-      }, 0);
-      return () => clearTimeout(timer);
-    }
-  }, [uiState.hasInitialized, uiState.isCollapsed, getDefaultPosition]);
+    const source = dragTemp ?? customDisplayRange;
+    const minPct = ((source.min - displayLimits.min) / range) * 100;
+    const maxPct = ((source.max - displayLimits.min) / range) * 100;
 
-  useEffect(() => {
-    if (uiState.hasInitialized && !uiState.isCollapsed) {
-      const defaultPosition = getDefaultPosition();
-      dispatch({ type: "RESET_POSITION", payload: defaultPosition });
-    }
-  }, [
-    orientation,
-    uiState.hasInitialized,
-    uiState.isCollapsed,
-    getDefaultPosition,
-  ]);
-
-  // Sync collapsed state from props
-  useEffect(() => {
-    dispatch({ type: "SET_COLLAPSED", payload: collapsed });
-  }, [collapsed]);
-
-  // Notify parent of position changes
-  useEffect(() => {
-    onPositionChange?.(uiState.position);
-  }, [uiState.position, onPositionChange]);
-
-  // Handle dragging (mouse + touch)
-  useEffect(() => {
-    if (!uiState.isDragging || uiState.isCollapsed) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const newPos = {
-        x: e.clientX - uiState.dragStart.x,
-        y: e.clientY - uiState.dragStart.y,
-      };
-      dispatch({ type: "SET_POSITION", payload: clampPosition(newPos) });
+    return {
+      min: Math.max(0, Math.min(100, isVertical ? 100 - minPct : minPct)),
+      max: Math.max(0, Math.min(100, isVertical ? 100 - maxPct : maxPct)),
     };
+  }, [displayLimits, dragTemp, customDisplayRange, isVertical]);
 
-    const handleTouchMove = (e: TouchEvent) => {
-      e.preventDefault();
-      const touch = e.touches[0];
-      const newPos = {
-        x: touch.clientX - uiState.dragStart.x,
-        y: touch.clientY - uiState.dragStart.y,
-      };
-      dispatch({ type: "SET_POSITION", payload: clampPosition(newPos) });
-    };
+  const rangeIndicators =
+    showIndicators && indicatorPositions ? (
+      <>
+        {/* Min indicator line */}
+        {isVertical ? (
+          <div
+            className="pointer-events-none absolute left-0 w-full"
+            style={{ top: `${indicatorPositions.min}%` }}
+          >
+            <div className="h-0.5 w-full bg-white shadow-[0_0_4px_rgba(0,0,0,0.6)]" />
+          </div>
+        ) : (
+          <div
+            className="pointer-events-none absolute top-0 h-full"
+            style={{ left: `${indicatorPositions.min}%` }}
+          >
+            <div className="h-full w-0.5 bg-white shadow-[0_0_4px_rgba(0,0,0,0.6)]" />
+          </div>
+        )}
+        {/* Max indicator line */}
+        {isVertical ? (
+          <div
+            className="pointer-events-none absolute left-0 w-full"
+            style={{ top: `${indicatorPositions.max}%` }}
+          >
+            <div className="h-0.5 w-full bg-white shadow-[0_0_4px_rgba(0,0,0,0.6)]" />
+          </div>
+        ) : (
+          <div
+            className="pointer-events-none absolute top-0 h-full"
+            style={{ left: `${indicatorPositions.max}%` }}
+          >
+            <div className="h-full w-0.5 bg-white shadow-[0_0_4px_rgba(0,0,0,0.6)]" />
+          </div>
+        )}
+        {/* Dimming overlays outside the selected range */}
+        {isVertical
+          ? (() => {
+              const top = Math.min(
+                indicatorPositions.min,
+                indicatorPositions.max,
+              );
+              const bottom = Math.max(
+                indicatorPositions.min,
+                indicatorPositions.max,
+              );
+              return (
+                <>
+                  <div
+                    className="pointer-events-none absolute left-0 w-full rounded-t-lg bg-black/40"
+                    style={{ top: 0, height: `${top}%` }}
+                  />
+                  <div
+                    className="pointer-events-none absolute left-0 w-full rounded-b-lg bg-black/40"
+                    style={{
+                      top: `${bottom}%`,
+                      height: `${100 - bottom}%`,
+                    }}
+                  />
+                </>
+              );
+            })()
+          : (() => {
+              const left = Math.min(
+                indicatorPositions.min,
+                indicatorPositions.max,
+              );
+              const right = Math.max(
+                indicatorPositions.min,
+                indicatorPositions.max,
+              );
+              return (
+                <>
+                  <div
+                    className="pointer-events-none absolute top-0 h-full rounded-l-xl bg-black/40"
+                    style={{ left: 0, width: `${left}%` }}
+                  />
+                  <div
+                    className="pointer-events-none absolute top-0 h-full rounded-r-xl bg-black/40"
+                    style={{
+                      left: `${right}%`,
+                      width: `${100 - right}%`,
+                    }}
+                  />
+                </>
+              );
+            })()}
+      </>
+    ) : null;
 
-    const handleMouseUp = () => {
-      dispatch({ type: "STOP_DRAG" });
-    };
+  const dragTooltip =
+    isDraggingRange && dragTemp
+      ? (() => {
+          const range = displayLimits.max - displayLimits.min;
+          if (Math.abs(range) < 1e-12) return null;
+          const activeValue =
+            isDraggingRange === "min" ? dragTemp.min : dragTemp.max;
+          const pct = ((activeValue - displayLimits.min) / range) * 100;
+          const clampedPct = Math.max(0, Math.min(100, pct));
 
-    const handleTouchEnd = () => {
-      dispatch({ type: "STOP_DRAG" });
-    };
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-    document.addEventListener("touchmove", handleTouchMove, { passive: false });
-    document.addEventListener("touchend", handleTouchEnd);
-
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-      document.removeEventListener("touchmove", handleTouchMove);
-      document.removeEventListener("touchend", handleTouchEnd);
-    };
-  }, [
-    uiState.isDragging,
-    uiState.isCollapsed,
-    uiState.dragStart,
-    clampPosition,
-  ]);
-
-  // Handle global mouse/touch up for range dragging
-  useEffect(() => {
-    if (!isDraggingRange) return;
-
-    const handleMouseUp = () => {
-      handleGradientMouseUp();
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      e.preventDefault();
-      const touch = e.touches[0];
-      const value = getValueFromPosition(touch.clientX, touch.clientY);
-      setHoverPosition(value);
-
-      const currentRange = tempRange || displayRange;
-      let newRange: { min: number; max: number };
-
-      if (isDraggingRange === "min") {
-        newRange = {
-          min: Math.min(value, currentRange.max),
-          max: currentRange.max,
-        };
-      } else {
-        newRange = {
-          min: currentRange.min,
-          max: Math.max(value, currentRange.min),
-        };
-      }
-
-      setTempRange(newRange);
-    };
-
-    const handleTouchEnd = () => {
-      handleGradientMouseUp();
-    };
-
-    document.addEventListener("mouseup", handleMouseUp);
-    document.addEventListener("touchmove", handleTouchMove, { passive: false });
-    document.addEventListener("touchend", handleTouchEnd);
-
-    return () => {
-      document.removeEventListener("mouseup", handleMouseUp);
-      document.removeEventListener("touchmove", handleTouchMove);
-      document.removeEventListener("touchend", handleTouchEnd);
-    };
-  }, [
-    isDraggingRange,
-    handleGradientMouseUp,
-    getValueFromPosition,
-    tempRange,
-    displayRange,
-  ]);
-
-  // Handle window resize
-  useEffect(() => {
-    const handleResize = () => {
-      if (uiState.isCollapsed) {
-        dispatch({
-          type: "SET_POSITION",
-          payload: { x: 24, y: window.innerHeight - 60 },
-        });
-      } else {
-        dispatch({
-          type: "SET_POSITION",
-          payload: clampPosition(uiState.position),
-        });
-      }
-    };
-
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [uiState.isCollapsed, uiState.position, clampPosition]);
+          return isVertical ? (
+            <div
+              className="pointer-events-none absolute right-full mr-2"
+              style={{
+                top: `${100 - clampedPct}%`,
+                transform: "translateY(-50%)",
+              }}
+            >
+              <div className="rounded bg-black/80 px-2 py-1 font-mono text-xs whitespace-nowrap text-white shadow-lg">
+                {formatTick(activeValue)}
+              </div>
+            </div>
+          ) : (
+            <div
+              className="pointer-events-none absolute bottom-full mb-2"
+              style={{
+                left: `${clampedPct}%`,
+                transform: "translateX(-50%)",
+              }}
+            >
+              <div className="rounded bg-black/80 px-2 py-1 font-mono text-xs whitespace-nowrap text-white shadow-lg">
+                {formatTick(activeValue)}
+              </div>
+            </div>
+          );
+        })()
+      : null;
 
   // ============================================================================
   // RENDER
   // ============================================================================
 
-  const currentRange = tempRange || displayRange;
-  const minPosition = getPositionFromValue(currentRange.min);
-  const maxPosition = getPositionFromValue(currentRange.max);
+  if (!show) return null;
 
   return (
     <div
@@ -941,11 +1021,7 @@ const ColorBar: React.FC<ColorBarProps> = ({
           </span>
         </Button>
       ) : (
-        <div
-          className="border-border bg-card/90 text-primary group pointer-events-auto relative rounded-2xl border px-4 pt-4 pb-4 shadow-2xl backdrop-blur-md transition-all duration-200 lg:px-6 lg:pt-6 lg:pb-8"
-          onMouseEnter={() => setIsColorBarHovered(true)}
-          onMouseLeave={() => setIsColorBarHovered(false)}
-        >
+        <div className="border-border bg-card/90 text-primary group pointer-events-auto relative rounded-2xl border px-4 pt-4 pb-4 shadow-2xl backdrop-blur-md transition-all duration-200 lg:px-6 lg:pt-6 lg:pb-8">
           {/* Header Controls */}
           <div className="-mt-2 flex w-full items-center justify-between gap-2 sm:mb-2 lg:mb-4">
             <button
@@ -980,10 +1056,9 @@ const ColorBar: React.FC<ColorBarProps> = ({
             </button>
           </div>
 
-          {/* Unit Selector */}
+          {/* Unit and Reset Row */}
           <div className="mb-3">
             <div className="text-muted-foreground flex w-full items-center text-sm font-medium">
-              {/* Fixed-width slot for reset button to prevent layout shift */}
               <div className="w-24">
                 {hasCustomRange && (onRangeReset || onRangeChange) && (
                   <Button size="xs" variant="ghost" onClick={handleRangeReset}>
@@ -992,7 +1067,6 @@ const ColorBar: React.FC<ColorBarProps> = ({
                 )}
               </div>
 
-              {/* Unit toggle pinned to the right */}
               {unitInfo.allowToggle ? (
                 <button
                   type="button"
@@ -1004,23 +1078,15 @@ const ColorBar: React.FC<ColorBarProps> = ({
                   className="bg-card/80 hover:bg-card relative ml-auto inline-flex h-6 w-12 shrink-0 items-center rounded-lg border border-white/20 transition-colors focus:ring-2 focus:ring-white/50 focus:outline-none lg:h-7 lg:w-14"
                 >
                   <span
-                    className={`inline-block h-6 w-6 transform rounded-lg bg-white/80 shadow-lg transition-transform lg:h-7 lg:w-7 ${
-                      unit === "fahrenheit"
-                        ? "translate-x-6 lg:translate-x-7"
-                        : "translate-x-0 lg:translate-x-0"
-                    }`}
+                    className={`inline-block h-6 w-6 transform rounded-lg bg-white/80 shadow-lg transition-transform lg:h-7 lg:w-7 ${unit === "fahrenheit" ? "translate-x-6 lg:translate-x-7" : "translate-x-0"}`}
                   />
                   <span
-                    className={`absolute left-0 w-7 text-center text-xs font-semibold transition-colors lg:text-sm ${
-                      unit === "celsius" ? "text-gray-900" : "text-white"
-                    }`}
+                    className={`absolute left-0 w-7 text-center text-xs font-semibold transition-colors lg:text-sm ${unit === "celsius" ? "text-gray-900" : "text-white"}`}
                   >
                     C
                   </span>
                   <span
-                    className={`absolute right-0 w-7 text-center text-xs font-semibold transition-colors lg:text-sm ${
-                      unit === "fahrenheit" ? "text-gray-900" : "text-white"
-                    }`}
+                    className={`absolute right-0 w-7 text-center text-xs font-semibold transition-colors lg:text-sm ${unit === "fahrenheit" ? "text-gray-900" : "text-white"}`}
                   >
                     F
                   </span>
@@ -1033,59 +1099,28 @@ const ColorBar: React.FC<ColorBarProps> = ({
             </div>
           </div>
 
-          {/* Color Scale with Interactive Range */}
+          {/* Color Scale */}
           <div className="relative">
             {isVertical ? (
               <div className="flex w-full items-center justify-center">
                 <div className="relative flex">
                   <div
                     ref={gradientRef}
-                    className="relative h-64 w-16 cursor-crosshair rounded-lg bg-white/10 p-1 shadow-inner"
+                    className="relative h-64 w-16 cursor-crosshair rounded-lg shadow-inner"
                     style={{
                       background: gradientBackground,
                       touchAction: "none",
                     }}
-                    onMouseEnter={handleGradientMouseEnter}
-                    onMouseLeave={handleGradientMouseLeave}
-                    onMouseMove={handleGradientMouseMove}
+                    onMouseEnter={() => setIsGradientHovered(true)}
+                    onMouseLeave={() => {
+                      if (!isDraggingRange) setIsGradientHovered(false);
+                    }}
                     onMouseDown={handleGradientMouseDown}
                     onTouchStart={handleGradientTouchStart}
                   >
-                    {/* Range indicators */}
-                    {(isGradientHovered || isDraggingRange) && (
-                      <>
-                        <div
-                          className="absolute right-0 left-0 h-1 bg-white shadow-lg"
-                          style={{ bottom: `${minPosition * 100}%` }}
-                        />
-                        <div
-                          className="absolute right-0 left-0 h-1 bg-white shadow-lg"
-                          style={{ bottom: `${maxPosition * 100}%` }}
-                        />
-                        <div
-                          className="absolute right-0 left-0 border-y border-white/40 bg-white/20"
-                          style={{
-                            bottom: `${Math.min(minPosition * 100, maxPosition * 100)}%`,
-                            height: `${Math.abs((maxPosition - minPosition) * 100)}%`,
-                          }}
-                        />
-                      </>
-                    )}
+                    {rangeIndicators}
                   </div>
-                  {isDraggingRange && tempRange && (
-                    <div className="absolute top-1/2 left-full z-50 ml-2 -translate-y-1/2 rounded-lg bg-black/80 px-3 py-2 font-mono text-xs whitespace-nowrap text-white">
-                      <div className="flex flex-col gap-1">
-                        <div>
-                          Min: {formatRangeValue(tempRange.min)}
-                          {currentUnitSymbol}
-                        </div>
-                        <div>
-                          Max: {formatRangeValue(tempRange.max)}
-                          {currentUnitSymbol}
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                  {dragTooltip}
                   <div className="text-card-foreground absolute inset-y-4 left-full ml-4 flex flex-col justify-between text-right text-xs">
                     {labels.map((label, index) => (
                       <span key={index} className="font-mono leading-none">
@@ -1104,48 +1139,16 @@ const ColorBar: React.FC<ColorBarProps> = ({
                     background: gradientBackground,
                     touchAction: "none",
                   }}
-                  onMouseEnter={handleGradientMouseEnter}
-                  onMouseLeave={handleGradientMouseLeave}
-                  onMouseMove={handleGradientMouseMove}
+                  onMouseEnter={() => setIsGradientHovered(true)}
+                  onMouseLeave={() => {
+                    if (!isDraggingRange) setIsGradientHovered(false);
+                  }}
                   onMouseDown={handleGradientMouseDown}
                   onTouchStart={handleGradientTouchStart}
                 >
-                  {/* Range indicators */}
-                  {(isGradientHovered || isDraggingRange) && (
-                    <>
-                      <div
-                        className="absolute top-0 bottom-0 w-1 bg-white shadow-lg"
-                        style={{ left: `${minPosition * 100}%` }}
-                      />
-                      <div
-                        className="absolute top-0 bottom-0 w-1 bg-white shadow-lg"
-                        style={{ left: `${maxPosition * 100}%` }}
-                      />
-                      <div
-                        className="absolute top-0 bottom-0 border-x border-white/40 bg-white/20"
-                        style={{
-                          left: `${Math.min(minPosition * 100, maxPosition * 100)}%`,
-                          width: `${Math.abs((maxPosition - minPosition) * 100)}%`,
-                        }}
-                      />
-                    </>
-                  )}
+                  {rangeIndicators}
                 </div>
-                {isDraggingRange && tempRange && (
-                  <div className="absolute -bottom-12 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-black/80 px-3 py-2 font-mono text-xs whitespace-nowrap text-white">
-                    <div className="flex gap-3">
-                      <div>
-                        Min: {formatRangeValue(tempRange.min)}
-                        {currentUnitSymbol}
-                      </div>
-                      <div>
-                        Max: {formatRangeValue(tempRange.max)}
-                        {currentUnitSymbol}
-                      </div>
-                    </div>
-                  </div>
-                )}
-                {/* Labels below the gradient */}
+                {dragTooltip}
                 <div className="mt-2 flex w-full justify-between text-xs">
                   {labels.map((label, index) => (
                     <span
